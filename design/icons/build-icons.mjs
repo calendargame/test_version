@@ -32,13 +32,18 @@ const lightSvg = readFileSync(join(here, 'icon-piday-trace.svg'), 'utf8')
 // The TEST (staging) variant: swap the purple gradient bg for a flat medium gray and drop the
 // purple-tinted glow. The white glyph is untouched. (Owner's pick: #6b7280, 2026-06-13.)
 const TEST_BG = '#6b7280'
+// The TEST glyph is SOLID WHITE on the gray bg. The light master paints the trace stroke with the
+// `trace` gradient (white → #c4b5fd lavender) — fine on the purple bg, but the lavender end reads as
+// purple "bleed" on gray. So the gray variant strokes the trace solid white (matching the white dots)
+// and drops ALL three gradient defs (bg + glow + trace) so the asset has zero purple + no dead markup.
 const graySvg = lightSvg
   .replace('fill="url(#bg)"', `fill="${TEST_BG}"`)
+  .replace('stroke="url(#trace)"', 'stroke="#ffffff"')
   .replace('<rect width="512" height="512" fill="url(#glow)"/>', '')
-  // Drop the now-unused gradient defs (bg + glow) so the gray asset carries no dead markup —
-  // only `trace` (the glyph stroke) is still referenced.
   .replace(/\s*<linearGradient id="bg"[\s\S]*?<\/linearGradient>/, '')
   .replace(/\s*<radialGradient id="glow"[\s\S]*?<\/radialGradient>/, '')
+  .replace(/\s*<linearGradient id="trace"[\s\S]*?<\/linearGradient>/, '')
+  .replace(/\s*<defs>\s*<\/defs>/, '')
 // Dark home-screen icon is DISABLED — iOS doesn't reliably honor a dark-variant apple-touch-icon
 // (it often needs a remove + re-add, or ignores it entirely), so we ship the single light icon.
 // The dark master SVG is kept. To re-enable: uncomment the 3 dark lines here + re-run this script,
