@@ -263,13 +263,22 @@ export function applyRefModel(m, kind, action, ctx) {
         return
       }
       if (live.burned) {
-        // Path 3 — credit the live wrong (with the wrong answer's time when tracked) and move on.
+        // Path 3 — credit the live wrong (with the wrong answer's time when tracked).
         live.credited = true
         live.time = tracking && live.wrongTime != null ? live.wrongTime : null
         live.burned = false
         live.revealed = false
-        advance(m, ctx.nextDed, true)
         m.pendingWrong = false // the credit consumed this question's correction
+        // AoX completing solve via Override (noAdvance, on a scored question): HOLD the credit on
+        // screen — locked + reversible — instead of advancing, exactly like an ANSWER `complete`. So
+        // an Ao-N finished via Reveal+Override completes ON the Nth question, not a phantom Nth+1.
+        // (Path 3 is only reachable when the question is scored, so ssFrozen is true here.)
+        if (action.noAdvance && live.ssFrozen === true) {
+          live.held = true
+          live.locked = true
+          return
+        }
+        advance(m, ctx.nextDed, true)
         return
       }
       const last = m.history[m.history.length - 1]

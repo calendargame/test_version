@@ -475,6 +475,42 @@ describe('AoX — characterization (batch 6: Reveal + Show Codes)', () => {
   })
 })
 
+// ── Batch 6c: completing an AoX run via Override stays on the Nth question (no phantom extra) ──────
+// With Allow Mistakes off, Reveal fails the run and Override credits it + resumes. When that credit is
+// the COMPLETING solve (good reaches N), the run must complete ON that question — not advance to a
+// phantom Q(N+1). Before the fix, the Override credit always advanced, so an Ao10 completed via
+// Reveal+Override showed Q11 (owner-reported). A normal final correct answer uses `complete` to stay
+// put; this gives the Override-completion the same behavior.
+describe('AoX — bug fix (Override-completed run stays on the Nth question, C2)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('Ao2, Allow Mistakes off: Reveal+Override twice completes ON Q2 (not a phantom Q3)', () => {
+    mountApp()
+    switchToAox()
+    setN(2) // Ao2, Allow Mistakes off (default)
+    click('Begin')
+    click('Reveal') // Q1 miss → run fails
+    click('Override') // credit Q1 → resume, advance to Q2 (good 1)
+    expect(statValue('Score')).toBe('1/1')
+    click('Reveal') // Q2 miss → run fails
+    click('Override') // credit Q2 → good 2 = N → COMPLETES, must stay on Q2
+    expect(statValue('Score')).toBe('2/2')
+    expect(ctrl('Reset')).toBeInTheDocument() // run is done
+    expect(screen.getByText('Q2')).toBeInTheDocument() // completing question shown…
+    expect(screen.queryByText('Q3')).toBeNull() // …NOT advanced to a phantom Q3 (the bug)
+    expect(isDisabled(ctrl('Reveal'))).toBe(true) // done → can't keep going
+  })
+})
+
 // ── Batch 6b: C2 Q2-B — practice mode (Save Stats off) lets Override rescue a misclick-ended run ──
 // AoX already always-tracks internally, so the off-gate on Override was the only thing stopping a
 // fat-finger rescue in practice mode. Now Override is available specifically to continue a run a

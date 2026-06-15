@@ -79,7 +79,10 @@ export default function GuidePage() {
           It runs entirely in your browser and saves your progress on this device. You can add it to
           your home screen and use it like an app — on iPhone via Safari's Share button → Add to
           Home Screen, on Android via Chrome's Install app / Add to Home screen — and once it has
-          loaded it works fully offline, with no connection needed to practice.
+          loaded it works fully offline, with no connection needed to practice. New versions load
+          automatically on your next visit; if you ever want to force the latest right now, the
+          Settings (⚙) panel has a <b>Check for updates</b> link that reloads the newest version
+          (your saved progress is kept).
         </p>
         <p className="mt-2">
           It pairs with the book{' '}

@@ -368,7 +368,27 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-15T01:26:05Z');
+    const DEPLOY_TS=new Date('2026-06-15T02:03:35Z');
+
+    // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
+    // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
+    // phone you can't easily hard-refresh or clear the cache). This unregisters the service worker(s)
+    // and deletes the Cache-API caches (the precached app shell + assets), then reloads — so the next
+    // load fetches everything fresh from the server. It does NOT touch localStorage, so saved stats,
+    // settings, bests, and Lookup history are all preserved (only the app code/asset cache is cleared).
+    const forceReloadLatest=async()=>{
+      try{
+        if('serviceWorker' in navigator){
+          const regs=await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r=>r.unregister()));
+        }
+        if('caches' in window){
+          const keys=await caches.keys();
+          await Promise.all(keys.map(k=>caches.delete(k)));
+        }
+      }catch{/* best-effort — reload regardless */}
+      window.location.reload();
+    };
 
     // ============================================================
     // makeDedPuzzle — the PURE Deduction puzzle generator (mode-untangle Step 4).
@@ -800,12 +820,17 @@ interface DedOpts {
         const reverseToWrong=reverseCompleting&&state.prevStatsSnapshot&&!state.prevStatsSnapshot.wasWrong;
         const retroToWrong=eng.retroOverrideEligible&&last?.capsule?.snapshot&&!last.capsule.snapshot.wasWrong; // Path 5: retro-flip a correct entry to wrong
         const crediting=state.countedWrong||state.pendingWrongOverride!=null;                           // Path 3/4: credit a wrong
+        // Crediting the CURRENT wrong (Path 3) when good is at N-1 is the run's COMPLETING solve →
+        // credit but DON'T advance (stay on this question, locked), or the run would complete while
+        // sitting on a phantom extra question (an Ao10 via Reveal+Override showed Q11). Mirrors a
+        // normal final correct answer's `complete`. (C2 fix.)
+        const completeViaOverride=state.countedWrong&&doneCount===n-1;
         const toWrong=reverseToWrong||retroToWrong;
         const failNow=toWrong&&!allowMistakes;
         if(state.countedWrong)setFlashWithTimeout({type:"good",idx:correct});   // crediting the current wrong → green flash
-        eng.override({noAdvance:!!(reverseCompleting&&failNow)});                // any Best impact reconciles in the effect above (standing fold / floor restore)
+        eng.override({noAdvance:!!((reverseCompleting&&failNow)||completeViaOverride)}); // any Best impact reconciles in the effect above
         if(failNow)setRunPhase("failed");                                        // a to-wrong override with no mistakes fails the run (bug #2 / unified rule)
-        else if(crediting&&runPhase==="failed")setRunPhase("running");           // crediting the wrong that failed the run resumes it
+        else if(crediting&&runPhase==="failed")setRunPhase("running");           // crediting the wrong that failed the run resumes it (the completion effect then flips a completing one to done)
         else if(reverseCompleting&&allowMistakes)setRunPhase("running");         // Allow Mistakes on: reversing the completing solve resumes the run
       };
       const reset=()=>{cancelRevealAdvance();eng.resetStats();setRunPhase("idle");setShown(false);setBestNew({});prevBestSnapRef.current=null;currentRunIdRef.current=null;};
@@ -2118,7 +2143,11 @@ interface DedOpts {
         </div>
         <div className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text">dayoftheweekcalculation@gmail.com</a></div>
-          <div>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
+            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. */}
+            <button type="button" onClick={forceReloadLatest} className="underline text-purple-300/80 hover:text-purple-100 select-none">Check for updates</button>
+          </div>
         </div>
       </div>);
       return(

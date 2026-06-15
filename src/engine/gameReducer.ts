@@ -835,6 +835,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         }
         const { curStreak, bestStreak } = streaksFromStacks(s.stack, s.forwardStack, true)
         s = { ...s, stats: { ...s.stats, streak: curStreak, best: bestStreak } }
+        // `noAdvance` (AoX): when crediting this wrong is the run's COMPLETING solve (good reaches N),
+        // HOLD it at the live edge — locked, correct shown, reversible (canOverrideCorrect) — instead
+        // of advancing, mirroring ANSWER's `complete` held solve. Otherwise the run completes (the
+        // component flips to done) while sitting on a phantom extra question (an Ao10 via Reveal+
+        // Override showed Q11). The held credit must be RECONSTRUCTABLE the same way a normal completing
+        // solve is — canOverrideCorrect at a SCORED edge (the strong oracle counts a held credit only
+        // when canOverrideCorrect && saveStatsThisQ===true) — so set canOverrideCorrect + a wasWrong=
+        // false snapshot (= it's a held credit; the snapshot keeps a back/forward round trip + a later
+        // reversal consistent). Gated on saveStatsThisQ===true: only a scored question can be a held
+        // credit (AoX always tracks, so this IS real AoX's completing override); an unscored noAdvance
+        // (only the fuzz produces it) falls through to the normal advance, whose history credit is
+        // reconstructable. The streak above (middle=true) already counts this live credit. (C2 fix.)
+        if (noAdvance && state.saveStatsThisQ === true) {
+          const contributed = state.wrongTime != null && tracking ? state.wrongTime : null
+          return {
+            ...s,
+            persistBtns: oneBtn(correct, 'correct'),
+            locked: true,
+            canOverrideCorrect: true,
+            prevStatsSnapshot: snapshot(state.stats, false, contributed),
+            pendingWrongOverride: null,
+          }
+        }
         s = advance(s, { nextDate, useJulian, finalBtns: oneBtn(correct, 'correct'), saved: true })
         if (s.stack.length)
           s = {
