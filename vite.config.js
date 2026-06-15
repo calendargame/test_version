@@ -8,7 +8,8 @@ import babel from '@rolldown/plugin-babel'
 import { VitePWA } from 'vite-plugin-pwa'
 import { visualizer } from 'rollup-plugin-visualizer'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
-import { copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -45,19 +46,20 @@ const cfWebAnalytics = () => ({
 
 // Test/staging gets a GRAY-background icon set (the live site stays purple) so the two installed apps +
 // browser tabs are distinguishable at a glance. The gray icons are pre-generated + committed in
-// design/icons/test-build/ (by build-icons.mjs) — NOT in public/, so they never ship to live. This
-// plugin copies them over the (purple) icons in the build OUTPUT for non-live builds, so the staging
-// site SERVES gray everywhere — browser tab (favicon), home screen (apple-touch), and the PWA manifest
-// icons. Same filenames, so index.html + the manifest references are unchanged. Build-only; non-live
-// only (staging + local). (Owner: distinguish test from live, 2026-06-13.)
-//
-// ★ Known benign caveat (staging only): vite-plugin-pwa fixes each icon's SW-precache `revision` from
-// the SOURCE public/ (purple) file before this swap, and its includeAssets/manifest-icon entries are
-// added outside the reach of workbox `manifestTransforms` — so the precache carries the purple file's
-// md5 as the gray icon's revision. This does NOT affect display: the SW still fetches + caches the
-// actual served (gray) file; the revision is only an update-detection key. The one effect: if the gray
-// SHADE is changed later, an already-installed staging PWA keeps the old gray until a hard refresh.
-// Not worth hacking the generated sw.js for; live is entirely unaffected (normal purple precache).
+// design/icons/test-build/ (by build-icons.mjs) — NOT in public/, so they never ship to live. For
+// non-live builds this plugin, AFTER VitePWA (enforce 'post'), does two things:
+//   (1) copies the gray icons over the build OUTPUT so the site SERVES gray everywhere — browser tab
+//       (favicon), home screen (apple-touch), and the PWA manifest icons (same filenames, so
+//       index.html + the manifest references are unchanged);
+//   (2) CORRECTS the service-worker precache revision for each icon. vite-plugin-pwa hashes the SOURCE
+//       public/ (purple) file for includeAssets/manifest-icon revisions — computed OUTSIDE workbox
+//       manifestTransforms' reach — so a gray icon would otherwise inherit the PURPLE file's md5 as its
+//       revision. Workbox then sees the SAME revision as the previous/live purple SW and treats the
+//       icon as unchanged → it keeps serving the cached PURPLE icon (the gray never shows). Rewriting
+//       the revision in sw.js to the GRAY file's md5 makes Workbox re-fetch the gray icon.
+// Build-only; non-live only (staging + local). Live is entirely untouched (normal purple precache).
+// (Owner: distinguish test from live, 2026-06-13.)
+const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public')
 const TEST_ICON_DIR = join(dirname(fileURLToPath(import.meta.url)), 'design', 'icons', 'test-build')
 const TEST_ICON_FILES = [
   'favicon.svg',
@@ -68,18 +70,40 @@ const TEST_ICON_FILES = [
   'pwa-512x512.png',
   'maskable-icon-512x512.png',
 ]
+const md5 = (buf) => createHash('md5').update(buf).digest('hex')
 const testIconVariant = () => {
   let outDir = 'dist'
   return {
     name: 'test-icon-variant',
     apply: 'build',
+    enforce: 'post', // run after VitePWA writes sw.js so we can correct its icon precache revisions
     configResolved(config) {
       outDir = config.build.outDir
     },
     closeBundle() {
+      // {purpleMd5 -> grayMd5} for each icon: the revision vite-plugin-pwa wrote (md5 of the purple
+      // source) -> the actual gray file's md5. Also serve the gray icons.
+      const revMap = {}
       for (const f of TEST_ICON_FILES) {
-        const src = join(TEST_ICON_DIR, f)
-        if (existsSync(src)) copyFileSync(src, join(outDir, f))
+        const grayPath = join(TEST_ICON_DIR, f)
+        if (!existsSync(grayPath)) continue
+        copyFileSync(grayPath, join(outDir, f)) // (1) serve gray
+        const pubPath = join(PUBLIC_DIR, f)
+        if (existsSync(pubPath)) revMap[md5(readFileSync(pubPath))] = md5(readFileSync(grayPath))
+      }
+      // (2) rewrite the precache revisions in the generated SW so Workbox re-fetches the gray icons.
+      for (const sf of readdirSync(outDir)) {
+        if (sf !== 'sw.js' && !/^workbox-.*\.js$/.test(sf)) continue
+        const p = join(outDir, sf)
+        let s = readFileSync(p, 'utf8')
+        let changed = false
+        for (const [purple, gray] of Object.entries(revMap)) {
+          if (purple !== gray && s.includes(purple)) {
+            s = s.split(purple).join(gray)
+            changed = true
+          }
+        }
+        if (changed) writeFileSync(p, s)
       }
     },
   }
@@ -107,12 +131,6 @@ export default defineConfig(({ command, mode }) => ({
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),
-    // Gray test/staging icon swap — non-live builds only (staging + local); the live build keeps the
-    // purple public/ icons. The served output icons are gray everywhere; see testIconVariant above
-    // (incl. the benign SW-precache-revision caveat).
-    ...(command === 'build' && !isLiveRepo(process.env.GITHUB_REPOSITORY)
-      ? [testIconVariant()]
-      : []),
     // PWA (Stage D3): installable + fully offline. vite-plugin-pwa generates the web app
     // manifest + a Workbox service worker that precaches the whole build (so the app runs
     // with no network). registerType 'autoUpdate' + injectRegister 'auto' silently swap in a
@@ -148,6 +166,12 @@ export default defineConfig(({ command, mode }) => ({
       // build via `vite preview`.
       devOptions: { enabled: false },
     }),
+    // Gray test/staging icon swap + SW precache-revision fix — non-live builds only (staging + local);
+    // the live build keeps the purple public/ icons. enforce:'post' + this position (after VitePWA)
+    // ensures it runs once sw.js exists. See testIconVariant above.
+    ...(command === 'build' && !isLiveRepo(process.env.GITHUB_REPOSITORY)
+      ? [testIconVariant()]
+      : []),
     // Cloudflare Web Analytics beacon — PRODUCTION build only (see cfWebAnalytics + isLiveRepo above),
     // so the staging repo and local/dev builds never report and the real numbers stay clean.
     ...(command === 'build' && isLiveRepo(process.env.GITHUB_REPOSITORY) ? [cfWebAnalytics()] : []),
