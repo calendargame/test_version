@@ -35,13 +35,11 @@ const TEST_BG = '#6b7280'
 // The TEST glyph KEEPS the master's trace TREATMENT, just gray-toned. The light master strokes the
 // trace with the `trace` gradient (white → #c4b5fd lavender): the soft non-white end makes the LINE
 // read as slightly dimmer than the pure-white DOTS, so it stays distinct where it passes through them.
-// On gray the lavender end reads as purple "bleed", so the gray variant recolors ONLY that end to a
-// light gray (#cbd5e1) — same white→soft fade, no purple — keeping the line/dot distinction (a flat
-// solid-white trace looks like one blob through the white dots). The glyph DOTS stay pure white; only
-// the purple bg + glow are removed.
-// The live trace's lavender end is #c4b5fd; DESATURATED to a neutral gray at the SAME lightness
-// (HSL L≈85%) that's #d9d9d9 — i.e. the exact live fade with the purple hue removed, nothing else
-// changed. Same lightness → the line stays the same touch dimmer than the pure-white dots as on live.
+// On gray the lavender end would read as purple "bleed", so the gray variant recolors ONLY that end —
+// keeping the white→soft fade (a flat solid-white trace looks like one blob through the white dots).
+// The exact "live fade minus the purple" = the lavender end #c4b5fd DESATURATED to a NEUTRAL gray at
+// the SAME lightness (HSL L≈85%) = #d9d9d9: same fade, same opacity, same line-vs-dot dimming as live,
+// just no hue. The glyph DOTS stay pure white; only the purple bg + glow are removed.
 const TEST_TRACE = '#d9d9d9'
 const graySvg = lightSvg
   .replace('fill="url(#bg)"', `fill="${TEST_BG}"`)

@@ -368,7 +368,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-15T02:42:09Z');
+    const DEPLOY_TS=new Date('2026-06-15T02:58:01Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
