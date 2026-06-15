@@ -368,7 +368,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-13T20:48:21Z');
+    const DEPLOY_TS=new Date('2026-06-15T01:12:42Z');
 
     // ============================================================
     // makeDedPuzzle — the PURE Deduction puzzle generator (mode-untangle Step 4).
@@ -634,11 +634,16 @@ interface DedOpts {
       const isRunning=runPhase==="running";
       const isLocked=runPhase==="done"||runPhase==="failed";
       const inBack=state.backDepth>0;
-      // Allow-Mistakes-on Reveal / Show Codes reveal the answer + count a miss but DON'T advance (so
-      // you can SEE the answer / read the codes). The run then waits on a "Next" button to continue —
-      // the revealed/show-coded question is a resolved miss on the live edge. (A plain wrong answer
-      // sets countedWrong but NOT revealed, so it stays retryable — no Next.) (C2 Q4.)
-      const awaitingNext=isRunning&&!inBack&&state.revealed&&state.countedWrong;
+      // A live question RESOLVED AS A MISS (Allow Mistakes on): Reveal or Show Codes showed the answer
+      // + counted a played miss (a plain wrong answer sets countedWrong but NOT revealed, so it stays
+      // retryable — excluded). The grid is dimmed for it (the engine ignores answers on it).
+      const resolvedMiss=isRunning&&!inBack&&state.revealed&&state.countedWrong;
+      // Of those, which WAIT on a "Next" button vs auto-advance: SHOW CODES (calcPenaltyActive — set by
+      // SHOW_CODES, never by REVEAL) always pauses so you can read the codes; a One-By-One Reveal also
+      // pauses (One-By-One pauses between dates by design). A plain non-One-By-One Reveal does NOT wait
+      // — onReveal flashes the answer then auto-advances (owner's call, C2: a reveal doesn't need to
+      // pause when the run flows date-to-date on its own). (C2 Q4 + the reveal-flash refinement.)
+      const awaitingNext=resolvedMiss&&(state.calcPenaltyActive||oneByOne);
 
       // Per-config Best Average / Median (component-owned, like Blitz's Best Score). A run records
       // its Best on completion and keeps it RECONCILED while its stats move post-completion (a
@@ -651,6 +656,10 @@ interface DedOpts {
       const [bestNew,setBestNew]=useState<Record<string, { avg: boolean; med: boolean }>>({});
       const nextRunIdRef=useRef(1);
       const currentRunIdRef=useRef<number | null>(null);
+      // Pending auto-advance after a non-One-By-One Reveal (flash the answer for FLASH_MS, then advance).
+      // Held in a ref so reset / leaving the mode / unmount can cancel it before it fires.
+      const revealAdvanceRef=useRef<ReturnType<typeof setTimeout> | null>(null);
+      const cancelRevealAdvance=()=>{if(revealAdvanceRef.current){clearTimeout(revealAdvanceRef.current);revealAdvanceRef.current=null;}};
       // The PRE-run Best record {key,best,runId}, latched once when this run records (completion with
       // Save Stats on) — the floor every post-completion reconcile starts from (see the effect below).
       const prevBestSnapRef=useRef<{ key: string; best: AoxBest; runId: number } | null>(null);
@@ -706,8 +715,8 @@ interface DedOpts {
         });
       },[runPhase,doneCount,n,saveStats,S.good,S.times,setBests]);/* eslint-disable-line react-hooks/exhaustive-deps */
 
-      // Reset the run if the panel is hidden mid-run.
-      useEffect(()=>{if(!visible&&runPhase==="running"){eng.resetStats();setRunPhase("idle");setShown(false);}/* eslint-disable-line react-hooks/exhaustive-deps */},[visible]);
+      // Reset the run if the panel is hidden mid-run (also cancel any pending reveal auto-advance).
+      useEffect(()=>{if(!visible&&runPhase==="running"){cancelRevealAdvance();eng.resetStats();setRunPhase("idle");setShown(false);}/* eslint-disable-line react-hooks/exhaustive-deps */},[visible]);
 
       // Auto-reset/regen on a settings change. Running → reset the run; idle → regen the hidden
       // date on a content change (Julian-only keeps it); done/failed → leave the ended run alone.
@@ -733,23 +742,20 @@ interface DedOpts {
       const backDisabled=state.stack.length===0||runPhase==="idle"||runPhase==="running";
       const fwdDisabled=state.forwardStack.length===0||runPhase==="idle"||runPhase==="running";
       const last=state.stack[state.stack.length-1];
-      // Override availability uses the REAL `saveStats` (NOT effectiveSaveStats like the hook): AoX
-      // feeds the engine saveStats:true (above) so every run question IS scored (played always
-      // increments) → it can't hit the unscored-question 1/0 bug the hook guards (fix 2026-06-06),
-      // and the live toggle is what should gate the button here. Do NOT "consistency-fix" this to
-      // effectiveSaveStats — saveStatsThisQ is always true here, so that would wrongly show Override
-      // while Save Stats is off.
-      // EXCEPTION (C2 Q2-B): when a MISCLICK ended the run (Allow Mistakes off → a wrong answer locks
-      // it as failed), Override rescues the run — credit + continue — even in practice mode (Save
-      // Stats off). The engine already tracks (saveStats:true), so the credit stays integrity-safe;
-      // the off-gate just hid a recovery you'd want for a fat-finger. Only a wrong-answer end (a wrong
-      // button in the grid) qualifies — a deliberate Reveal / Show Codes end does not.
-      const failedMisclickRescue=runPhase==="failed"&&state.countedWrong&&Object.values(state.persistBtns).some(v=>typeof v==='string'&&v.startsWith('wrong'));
-      const overrideAvail=(saveStats||failedMisclickRescue)&&!state.overrideUsedThisQ&&(state.countedWrong||state.canOverrideCorrect||(state.pendingWrongOverride!=null&&!last?.overrideUsed)||eng.retroOverrideEligible);
+      // Override availability is NOT gated on the live `saveStats` — it's the SAME whether Save Stats
+      // is on or off (owner's call, C2: gating it on saveStats made Override more forgiving when ON
+      // than OFF, which is backwards). AoX feeds the engine saveStats:true (above), so every run
+      // question IS scored (played always increments) → crediting via Override can't hit the
+      // unscored-question 1/0 bug; the credit is simply invisible in practice mode (stats hidden, no
+      // Best recorded). So Override is available whenever there's something to override — a wrong, a
+      // Reveal, a Show Codes, a reversible correct, or a retro/pending target — regardless of Save
+      // Stats. (Do NOT switch this to effectiveSaveStats — saveStatsThisQ is always true here.)
+      const overrideAvail=!state.overrideUsedThisQ&&(state.countedWrong||state.canOverrideCorrect||(state.pendingWrongOverride!=null&&!last?.overrideUsed)||eng.retroOverrideEligible);
       const codesDisabled=runPhase==="idle"||(oneByOne&&!shown&&!inBack&&!isLocked);
-      // awaitingNext dims the grid too — the question is a revealed miss (the engine ignores answers),
-      // and "Next" is the way forward.
-      const optionsDisabled=isLocked||state.calcOpen||awaitingNext||(oneByOne&&!shown&&!inBack)||runPhase==="idle"||inBack;
+      // resolvedMiss dims the grid — a revealed/show-coded question the engine ignores answers on
+      // (covers the brief non-One-By-One reveal flash before it auto-advances, the Show-Codes pause,
+      // and the One-By-One reveal pause).
+      const optionsDisabled=isLocked||state.calcOpen||resolvedMiss||(oneByOne&&!shown&&!inBack)||runPhase==="idle"||inBack;
       const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
       const scoreDisplay=runPhase==="idle"?"0/0":`${doneCount}/${S.played}`;
       const accuracyDisplay=fmtAccuracyPct(doneCount,S.played);
@@ -767,19 +773,27 @@ interface DedOpts {
         if(i!==correct&&!allowMistakes){eng.lockReveal();setRunPhase("failed");} // wrong + no mistakes → reveal the answer + fail the run
         else if(willAdvance&&oneByOne)setShown(false);                           // One-By-One: hide the freshly-loaded next date until Continue
       };
-      // Allow Mistakes OFF: revealing the answer fails the run. Allow Mistakes ON: Reveal counts as a
-      // played miss and shows the answer, but does NOT advance — the primary button becomes "Next"
-      // (see `awaitingNext`) so you SEE the answer first, then continue. (Auto-advancing here would
-      // batch the reveal + the advance into one render, so the answer would never paint.) Before this
-      // a revealed question was a locked dead-end (AoX has no New button). (C2 Q4 — "miss + advance".)
-      const onReveal=()=>{eng.reveal();if(!allowMistakes)setRunPhase("failed");};
-      // Show Codes works the SAME way: opening it on a live question counts a miss + reveals the
-      // answer (Allow Mistakes on) — then "Next" advances when you're done reading. (Allow Mistakes
-      // off fails the run.) So Reveal and Show Codes are consistent: miss → see it → Next. (C2 Q4.)
+      // Reveal. Allow Mistakes OFF → fail the run. Allow Mistakes ON → count a played miss + show the
+      // answer; then continue the run. One-By-One pauses on a "Next" button (awaitingNext) so you see
+      // the answer before the next hidden date. Non-One-By-One FLOWS: flash the answer for FLASH_MS so
+      // it's visible (a same-render advance would batch the reveal away, painting nothing), then
+      // auto-advance — the next date streams in on its own, like a correct answer. (C2 Q4 + the
+      // reveal-flash refinement, owner 2026-06-13.)
+      const onReveal=()=>{
+        eng.reveal();
+        if(!allowMistakes){setRunPhase("failed");return;}
+        if(oneByOne)return; // One-By-One: pause on "Next" (awaitingNext) — see the answer, then Continue
+        setFlashWithTimeout({type:"good",idx:correct}); // flash the revealed answer
+        if(revealAdvanceRef.current)clearTimeout(revealAdvanceRef.current);
+        revealAdvanceRef.current=setTimeout(()=>{revealAdvanceRef.current=null;eng.doNew();},FLASH_MS);
+      };
+      // Show Codes (Allow Mistakes on) counts a miss + opens the panel; it always pauses on "Next"
+      // (you need time to read the codes — calcPenaltyActive keeps awaitingNext true). Allow Mistakes
+      // off fails the run. (C2 Q4 — Show Codes intentionally keeps the Next pause, unlike Reveal.)
       const onShowCodes=()=>{const open=!state.calcOpen;eng.showCodes(open);if(open&&!allowMistakes&&isRunning)setRunPhase("failed");};
-      // Advance past a revealed / show-coded miss (Allow Mistakes on) — the run continues. Closes the
-      // codes panel if open, loads the next date (the miss was already counted by Reveal / Show
-      // Codes), and One-By-One hides it until Continue. (C2 Q4.)
+      // Advance past a show-coded / One-By-One-revealed miss (Allow Mistakes on) — the run continues.
+      // Closes the codes panel if open, loads the next date (the miss was already counted), One-By-One
+      // hides it until Continue. (Non-One-By-One Reveal auto-advances instead — see onReveal.) (C2 Q4.)
       const onNext=()=>{if(state.calcOpen)eng.showCodes(false);eng.doNew();if(oneByOne)setShown(false);};
       const onOverride=()=>{
         const reverseCompleting=state.canOverrideCorrect&&!state.countedWrong&&!inBack;                 // Path 2: reverse the live completing solve
@@ -794,7 +808,9 @@ interface DedOpts {
         else if(crediting&&runPhase==="failed")setRunPhase("running");           // crediting the wrong that failed the run resumes it
         else if(reverseCompleting&&allowMistakes)setRunPhase("running");         // Allow Mistakes on: reversing the completing solve resumes the run
       };
-      const reset=()=>{eng.resetStats();setRunPhase("idle");setShown(false);setBestNew({});prevBestSnapRef.current=null;currentRunIdRef.current=null;};
+      const reset=()=>{cancelRevealAdvance();eng.resetStats();setRunPhase("idle");setShown(false);setBestNew({});prevBestSnapRef.current=null;currentRunIdRef.current=null;};
+      // Cancel a pending reveal auto-advance if the component unmounts mid-flash (Full Reset remount).
+      useEffect(()=>()=>{if(revealAdvanceRef.current)clearTimeout(revealAdvanceRef.current);},[]);
 
       const primaryBtn=runPhase==="idle"
         ?(<button type="button" data-key="N" className="col-span-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium" onClick={startOrContinue}>Begin</button>)
@@ -1141,16 +1157,20 @@ interface DedOpts {
       const S=state.stats;
       const {flash,setFlashWithTimeout}=useButtonFlash();   // green/red answer pulse
 
-      // A round a MISCLICK ended: the round is over (timerDone), the live question is a counted wrong,
-      // and the grid shows a wrong guess (NOT a deliberate Reveal / Show-Codes end, which leaves only
-      // the correct in green). Such a round is RESUMABLE via Override (Part A — credit + continue),
-      // and Override stays available to rescue it even when Save Stats is off (Part B). One source of
-      // truth for both the resume (onOverride) and the override-visibility gate.
-      const misclickEnded=timerDone&&state.countedWrong&&Object.values(state.persistBtns).some(v=>typeof v==='string'&&v.startsWith('wrong'));
-      // Save Stats off HIDES Override (the round's invisible) EXCEPT to rescue a misclick-ended round;
-      // Save Stats on shows it per the engine's own gating. (The engine always tracks, so the rescue
-      // credit is integrity-safe — see saveStats:true above.) (C2 Q2-B.)
-      const overrideAvail=(saveStats||misclickEnded)&&engOverrideAvail;
+      // A round ended by a player ACTION (not the clock) is RESUMABLE via Override — credit the
+      // resolved question + continue. countedWrong is set by a wrong answer, a Reveal, OR a Show Codes
+      // (all three end the round); a TIMER end (LOCK_REVEAL / TIMEOUT_MISS) does NOT set countedWrong,
+      // so the clock running out is correctly NOT resumable. So "reveal or show codes then override"
+      // continues the round, same as a misclick (owner's call, C2 — override is uniform). The resume
+      // reverts the interrupted round's provisionally-saved Best (see resumeRound). One source of truth
+      // for both the resume (onOverride) and any round-end-resumable check.
+      const resumableEnd=timerDone&&state.countedWrong;
+      // Override availability is uniform — NOT gated on the live `saveStats` (owner's call, C2: gating
+      // it made Override more forgiving when Save Stats is ON than OFF, which is backwards). Blitz
+      // always-tracks internally (saveStats:true above), so engOverrideAvail (which uses the frozen
+      // effective save-stats, always true here) is correct in both states; the credit is just
+      // invisible in practice mode (stats dimmed, no Best recorded).
+      const overrideAvail=engOverrideAvail;
 
       // Per-config Best silos (mirrors App's getBlitzBk / getSuddenBk keys exactly).
       const blitzBk=`${allowMistakes?'m':'n'}${blitzSec}|${randomFormat?'random':dateFormat}|${leapChance}|${janFebChance}|${julianChance}|${minY}-${maxY}|${useJulian}`;
@@ -1217,9 +1237,10 @@ interface DedOpts {
           if(perQ||!allowMistakes){eng.lockReveal();endRound();}
         }
       };
-      // Resume a round that an Override just RESCUED. A misclick ended the round (the clock stopped,
-      // the Best was provisionally saved by the timerDone effect) and crediting that wrong via
-      // Override continues the round instead of leaving it dead. Two halves: (1) revert the Best to
+      // Resume a round that an Override just RESCUED. A player action (a wrong answer, a Reveal, or a
+      // Show Codes) ended the round (the clock stopped, the Best was provisionally saved by the
+      // timerDone effect) and crediting that resolved question via Override continues the round
+      // instead of leaving it dead. Two halves: (1) revert the Best to
       // the pre-round records (it re-saves only when the round genuinely ends) + clear its ★; (2)
       // restart the clock — Per Round continues the countdown WHERE IT STOPPED
       // (blitzStart = now − elapsed, so the remaining time = blitzRemainRef), Per Question starts a
@@ -1245,15 +1266,16 @@ interface DedOpts {
       // Wrong→credit overrides (countedWrong / pendingWrongOverride) are corrections and never
       // end the round. Detect the to-wrong direction from the same fields the reducer reads.
       const onOverride=()=>{
-        // A misclick-ended round is RESUMABLE (see `misclickEnded` above): crediting that wrong via
-        // Override continues the round instead of leaving it dead. Captured BEFORE override mutates
-        // state. (C2 Q2-A.)
+        // A round ended by an action (wrong / Reveal / Show Codes — see `resumableEnd` above) is
+        // RESUMABLE: crediting the resolved question via Override continues the round instead of
+        // leaving it dead, and resumeRound reverts the interrupted round's provisional Best. Captured
+        // BEFORE override mutates state. (C2 Q2-A + the uniform-override extension.)
         let flipToWrong=false;
         if(state.canOverrideCorrect&&state.prevStatsSnapshot)flipToWrong=!state.prevStatsSnapshot.wasWrong;
         else if(eng.retroOverrideEligible){const last=state.stack[state.stack.length-1];flipToWrong=!!(last?.capsule?.snapshot&&!last.capsule.snapshot.wasWrong);}
         if(state.countedWrong)setFlashWithTimeout({type:"good",idx:correct});
-        eng.override(); // credit the wrong (Path 3); the round then resumes (rescue) or the timerDone effect reconciles
-        if(misclickEnded)resumeRound();
+        eng.override(); // credit (Path 3); the round then resumes (rescue) or the timerDone effect reconciles
+        if(resumableEnd)resumeRound();
         else if(active&&flipToWrong&&(perQ||!allowMistakes))endRound();
       };
       const onReveal=()=>{eng.reveal();endRound();};

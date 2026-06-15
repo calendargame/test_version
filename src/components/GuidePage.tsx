@@ -155,8 +155,13 @@ export default function GuidePage() {
           In Blitz, you can override past dates after the round ends to adjust your score and saved
           bests; and with Allow Mistakes off (or in Per Question), overriding a correct answer to
           wrong during a round ends the round, just like a wrong answer. In AoX without Allow
-          Mistakes, overriding a correct answer ends the run. Override is locked when Save Stats is
-          off.
+          Mistakes, overriding a correct answer ends the run. In the timed run modes (Blitz and
+          AoX), if a round or run ended because you answered wrong, revealed, or showed codes,
+          Override credits that question and the round/run continues — it picks up where it left off
+          instead of staying ended. Override is locked when Save Stats is off in the casual modes
+          (Classic, Flash, Deduction) — there's nothing to record there — but in Blitz and AoX it
+          works the same whether Save Stats is on or off (the run still tracks internally; it's just
+          not saved).
         </p>
         <p>
           <b>Show Codes</b> — reveals the calculation codes for the current date. Counts as a miss
@@ -490,8 +495,11 @@ export default function GuidePage() {
       <GuideSection id="savestats" title="Save Stats" openId={open} onToggle={toggle}>
         <p>
           Toggle via the ⚙ settings menu under Stats. On by default. When off, your answers don't
-          update stats or saved bests. The stats panel dims to indicate the off state. Override is
-          locked when Save Stats is off, across all modes. The toggle works differently per mode:
+          update stats or saved bests. The stats panel dims to indicate the off state. In the casual
+          modes (Classic, Deduction, Flash) Override is locked when Save Stats is off — there's
+          nothing to record. In the run modes (Blitz, AoX) Override works the same whether Save
+          Stats is on or off, so a misclick can never throw away a whole round or run even in
+          practice mode. The toggle works differently per mode:
         </p>
         <p className="mt-2">
           <b>Classic, Deduction, Flash</b> — per-question. The toggle's value is locked in at the
@@ -588,9 +596,12 @@ export default function GuidePage() {
         </p>
         <p>
           <b>Allow Mistakes</b> — wrong answers don't end the run but don't count toward your score.
-          With Allow Mistakes on, Reveal and Show Codes also count as a miss but keep the run going:
-          they show the answer (or the codes) so you can study it, then a <b>Next</b> button moves
-          you on to the next date. With Allow Mistakes off, Reveal or Show Codes ends the run.
+          With Allow Mistakes on, Reveal and Show Codes also count as a miss but keep the run going.
+          Reveal flashes the answer and then automatically moves on to the next date. Show Codes
+          opens the codes so you can study them, then a <b>Next</b> button moves you on (it waits,
+          since you need time to read). With One-By-One on, Reveal also waits on a Next button so
+          you can see the answer before the next hidden date. With Allow Mistakes off, Reveal or
+          Show Codes ends the run.
         </p>
         <p>
           <b>One-By-One</b> — hides the date between solves. Press Continue to reveal each new date.
@@ -608,10 +619,12 @@ export default function GuidePage() {
         <p>
           <b>Override</b> — after wrong: gives credit with time recorded, preserves streak. After
           correct: undoes the credit, resets streak, and either ends the run (Allow Mistakes off) or
-          advances to a new date (Allow Mistakes on). You can also override past dates while
-          browsing back with Back/Forward. If overriding on the last question with Allow Mistakes
-          on, a new date is generated to complete the average. One override per question. Override
-          is locked when Save Stats is off.
+          advances to a new date (Allow Mistakes on). If a run ended (a wrong answer, a Reveal, or a
+          Show Codes with Allow Mistakes off), Override credits that question and the run continues
+          where it left off. You can also override past dates while browsing back with Back/Forward.
+          If overriding on the last question with Allow Mistakes on, a new date is generated to
+          complete the average. One override per question. In AoX, Override works the same whether
+          Save Stats is on or off.
         </p>
         <p>
           Stats in AoX are always visible and always track. Best average and best median are tracked
@@ -750,10 +763,12 @@ export default function GuidePage() {
           are recorded. A round also ends if you give up on the current date with Reveal or Show
           Codes, or — with Allow Mistakes off (or in Per Question) — if you override a correct
           answer to wrong. You can then browse your round's history with Back/Forward and override
-          past dates to adjust your score and saved bests. Overriding the wrong answer that ended
-          the round resumes it — the countdown picks up where it left off (Per Round) or a fresh
-          question timer starts on the next date (Per Question), and the round's best isn't locked
-          in until the round ends for real.
+          past dates to adjust your score and saved bests. Overriding the question that ended the
+          round — whether it ended on a wrong answer, a Reveal, or a Show Codes — credits it and
+          resumes the round: the countdown picks up where it left off (Per Round) or a fresh
+          question timer starts on the next date (Per Question), and the round's bests aren't locked
+          in until the round ends for real (so a misclick you fix doesn't update your bests).
+          Override works the same whether Save Stats is on or off.
         </p>
         <p>
           Streak is hidden in Per Question since any wrong answer ends the round, making streak

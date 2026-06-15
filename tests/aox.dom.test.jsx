@@ -408,10 +408,10 @@ describe('AoX — characterization (batch 6: Reveal + Show Codes)', () => {
     expect(ctrl('Hide Codes')).toBeInTheDocument() // panel open
   })
 
-  // C2 Q4: Reveal with Allow Mistakes ON must count a miss and let the run CONTINUE — not lock the
-  // revealed question with no exit (before the fix the only ways forward were Override-to-credit or
-  // Reset). The answer is SHOWN, then a "Next" button advances (so you actually see it first).
-  it('Reveal (Allow Mistakes on) counts a miss, SHOWS the answer, and a Next button advances', () => {
+  // C2 Q4 + the reveal-flash refinement: Reveal with Allow Mistakes ON (and One-By-One OFF) counts a
+  // miss, FLASHES the answer briefly, then AUTO-ADVANCES — no pause/Next button (the run flows
+  // date-to-date on its own). Before the fix a revealed question was a locked dead-end.
+  it('Reveal (Allow Mistakes on, One-By-One off) counts a miss, flashes the answer, then auto-advances', () => {
     mountApp()
     switchToAox()
     click('Allow Mistakes')
@@ -419,17 +419,38 @@ describe('AoX — characterization (batch 6: Reveal + Show Codes)', () => {
     click('Begin')
     const d1 = readDate()
     click('Reveal')
-    expect(statValue('Score')).toBe('0/1') // the revealed question counts as a played miss
+    expect(statValue('Score')).toBe('0/1') // counted as a played miss
     expect(statValue('Streak')).toBe('0/0')
-    expect(dayState(correctName(d1))).toBe('correct') // the answer is SHOWN (not advanced past)
-    expect(readDate()).toEqual(d1) // still on the revealed date — did NOT auto-advance
-    expect(ctrl('Next')).toBeInTheDocument() // a Next button is offered to continue
-    click('Next')
-    const d2 = readDate() // now advanced to a fresh date — the run continues
-    expect(d2).not.toEqual(d1)
+    expect(dayState(correctName(d1))).toBe('correct') // the answer is shown during the flash
+    expect(readDate()).toEqual(d1) // still on the revealed date during the flash window
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull() // no pause — it auto-advances
+    act(() => {
+      vi.advanceTimersByTime(700)
+    }) // flash window elapses → auto-advance
+    const d2 = readDate()
+    expect(d2).not.toEqual(d1) // advanced to a fresh date — the run continues
     answerCorrect() // the grid is live again
     expect(statValue('Score')).toBe('1/2')
     expect(statValue('Streak')).toBe('1/1')
+  })
+
+  // One-By-One reveals DO pause (One-By-One pauses between dates by design) — a "Next" button, so you
+  // see the answer before the next hidden date.
+  it('Reveal (Allow Mistakes on, One-By-One on) pauses on a Next button', () => {
+    mountApp()
+    switchToAox()
+    click('Allow Mistakes')
+    click('One-By-One')
+    setN(3)
+    click('Begin')
+    const d1 = readDate()
+    click('Reveal')
+    expect(statValue('Score')).toBe('0/1')
+    expect(dayState(correctName(d1))).toBe('correct')
+    expect(readDate()).toEqual(d1) // stays — no auto-advance under One-By-One
+    expect(ctrl('Next')).toBeInTheDocument() // pauses on Next
+    click('Next') // advance → the next date is hidden (One-By-One), Continue offered
+    expect(ctrl('Continue')).toBeInTheDocument()
   })
 
   // Show Codes must function the SAME as Reveal under Allow Mistakes ON: count a miss, open the codes

@@ -454,6 +454,59 @@ describe('Blitz — C2 Q2-A (Override resumes a misclick-ended round)', () => {
   })
 })
 
+// ── C2 (uniform override): a round ended by a deliberate Reveal or Show Codes is ALSO resumable via
+// Override (not just a misclick) — owner's call that Override should behave the same everywhere. The
+// round continues and the interrupted round's provisional Best is reverted ("bests not updated").
+describe('Blitz — C2 (Reveal / Show Codes then Override resumes the round)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('Per Round (Allow Mistakes off): Reveal ends the round, Override resumes it, Best not kept', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Allow Mistakes') // off
+    begin()
+    click(correctName(readDate())) // 1/1
+    act(() => fireEvent.click(ctrl('Reveal'))) // reveal → round ends 1/2, Best provisionally saved at 1
+    expect(statValue('Score')).toBe('1/2')
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    act(() => fireEvent.click(ctrl('Override'))) // credit the revealed miss + RESUME
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText(/Best Score: —/)).toBeInTheDocument() // reverted — not kept (was: stayed 1, round dead)
+    click(correctName(readDate())) // live again (the bug left it dead → would stay 2/2)
+    expect(statValue('Score')).toBe('3/3')
+  })
+
+  it('Per Round (Allow Mistakes off): Show Codes ends the round, Override resumes it, Best not kept', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Allow Mistakes') // off
+    begin()
+    click(correctName(readDate())) // 1/1
+    act(() => fireEvent.click(ctrl('Show Codes'))) // show codes → round ends 1/2 (a miss)
+    expect(statValue('Score')).toBe('1/2')
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    act(() => fireEvent.click(ctrl('Override'))) // credit + resume (also closes the panel via advance)
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText(/Best Score: —/)).toBeInTheDocument()
+    click(correctName(readDate())) // live again
+    expect(statValue('Score')).toBe('3/3')
+  })
+})
+
 // ── C2 Q2-B: in PRACTICE MODE (Save Stats off) a misclick-ended round is STILL rescuable via
 // Override (the off-gate used to hide Override entirely). Blitz now always-tracks internally — Save
 // Stats off only dims the display + records no Best — so the rescue credit stays integrity-safe.
