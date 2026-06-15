@@ -368,7 +368,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-15T02:03:35Z');
+    const DEPLOY_TS=new Date('2026-06-15T02:18:03Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -2145,8 +2145,8 @@ interface DedOpts {
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text">dayoftheweekcalculation@gmail.com</a></div>
           <div className="flex items-center gap-2 flex-wrap">
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
-            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. */}
-            <button type="button" onClick={forceReloadLatest} className="underline text-purple-300/80 hover:text-purple-100 select-none">Check for updates</button>
+            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
+            <button type="button" onClick={forceReloadLatest} className="underline select-none">Check for updates</button>
           </div>
         </div>
       </div>);
