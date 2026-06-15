@@ -39,7 +39,10 @@ const TEST_BG = '#6b7280'
 // light gray (#cbd5e1) — same white→soft fade, no purple — keeping the line/dot distinction (a flat
 // solid-white trace looks like one blob through the white dots). The glyph DOTS stay pure white; only
 // the purple bg + glow are removed.
-const TEST_TRACE = '#cbd5e1' // light-gray analog of the live trace's lavender end (keeps line vs dot separation)
+// The live trace's lavender end is #c4b5fd; DESATURATED to a neutral gray at the SAME lightness
+// (HSL L≈85%) that's #d9d9d9 — i.e. the exact live fade with the purple hue removed, nothing else
+// changed. Same lightness → the line stays the same touch dimmer than the pure-white dots as on live.
+const TEST_TRACE = '#d9d9d9'
 const graySvg = lightSvg
   .replace('fill="url(#bg)"', `fill="${TEST_BG}"`)
   // recolor the TRACE gradient's soft end only (its stop has no stop-opacity, unlike the glow's #c4b5fd)

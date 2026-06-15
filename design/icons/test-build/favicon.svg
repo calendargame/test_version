@@ -10,7 +10,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Calendar Game">
   <defs>
     <linearGradient id="trace" x1="1" y1="0" x2="0" y2="0">
-      <stop offset="0" stop-color="#cbd5e1"/>
+      <stop offset="0" stop-color="#d9d9d9"/>
       <stop offset="1" stop-color="#ffffff"/>
     </linearGradient>
   </defs>
