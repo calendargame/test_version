@@ -32,18 +32,24 @@ const lightSvg = readFileSync(join(here, 'icon-piday-trace.svg'), 'utf8')
 // The TEST (staging) variant: swap the purple gradient bg for a flat medium gray and drop the
 // purple-tinted glow. The white glyph is untouched. (Owner's pick: #6b7280, 2026-06-13.)
 const TEST_BG = '#6b7280'
-// The TEST glyph is SOLID WHITE on the gray bg. The light master paints the trace stroke with the
-// `trace` gradient (white → #c4b5fd lavender) — fine on the purple bg, but the lavender end reads as
-// purple "bleed" on gray. So the gray variant strokes the trace solid white (matching the white dots)
-// and drops ALL three gradient defs (bg + glow + trace) so the asset has zero purple + no dead markup.
+// The TEST glyph KEEPS the master's trace TREATMENT, just gray-toned. The light master strokes the
+// trace with the `trace` gradient (white → #c4b5fd lavender): the soft non-white end makes the LINE
+// read as slightly dimmer than the pure-white DOTS, so it stays distinct where it passes through them.
+// On gray the lavender end reads as purple "bleed", so the gray variant recolors ONLY that end to a
+// light gray (#cbd5e1) — same white→soft fade, no purple — keeping the line/dot distinction (a flat
+// solid-white trace looks like one blob through the white dots). The glyph DOTS stay pure white; only
+// the purple bg + glow are removed.
+const TEST_TRACE = '#cbd5e1' // light-gray analog of the live trace's lavender end (keeps line vs dot separation)
 const graySvg = lightSvg
   .replace('fill="url(#bg)"', `fill="${TEST_BG}"`)
-  .replace('stroke="url(#trace)"', 'stroke="#ffffff"')
+  // recolor the TRACE gradient's soft end only (its stop has no stop-opacity, unlike the glow's #c4b5fd)
+  .replace(
+    '<stop offset="0" stop-color="#c4b5fd"/>',
+    `<stop offset="0" stop-color="${TEST_TRACE}"/>`,
+  )
   .replace('<rect width="512" height="512" fill="url(#glow)"/>', '')
   .replace(/\s*<linearGradient id="bg"[\s\S]*?<\/linearGradient>/, '')
   .replace(/\s*<radialGradient id="glow"[\s\S]*?<\/radialGradient>/, '')
-  .replace(/\s*<linearGradient id="trace"[\s\S]*?<\/linearGradient>/, '')
-  .replace(/\s*<defs>\s*<\/defs>/, '')
 // Dark home-screen icon is DISABLED — iOS doesn't reliably honor a dark-variant apple-touch-icon
 // (it often needs a remove + re-add, or ignores it entirely), so we ship the single light icon.
 // The dark master SVG is kept. To re-enable: uncomment the 3 dark lines here + re-run this script,

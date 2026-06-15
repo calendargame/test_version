@@ -8,6 +8,12 @@
      show most of the tile); build-icons.mjs re-renders the MASKABLE variant at a reduced scale so its
      glyph stays inside the 40% maskable safe circle (Android adaptive circle masks). -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Calendar Game">
+  <defs>
+    <linearGradient id="trace" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0" stop-color="#cbd5e1"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
   <rect width="512" height="512" rx="115" ry="115" fill="#6b7280"/>
   
   <g transform="translate(256 256) scale(2.2) translate(-256 -256)">
@@ -20,7 +26,7 @@
     </g>
     <!-- the trace: 2 -> 3 -> 6, one smooth flowing curve (shape W5) -->
     <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196"
-          fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+          fill="none" stroke="url(#trace)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
     <!-- on-path nodes 2, 3 — both on the right column (x=310), aligned -->
     <g fill="#ffffff">
       <circle cx="310" cy="256" r="10"/>
