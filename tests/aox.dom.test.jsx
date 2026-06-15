@@ -493,21 +493,53 @@ describe('AoX — bug fix (Override-completed run stays on the Nth question, C2)
     document.getElementById('root')?.remove()
   })
 
-  it('Ao2, Allow Mistakes off: Reveal+Override twice completes ON Q2 (not a phantom Q3)', () => {
+  // The completing-on-Nth fix must hold for EVERY way the final question becomes a counted wrong —
+  // a wrong answer, a Reveal, or a Show Codes (owner: "regardless of … pressed the wrong answer,
+  // revealed, or showed codes") — and with Save Stats on (the default `pin()` here). All three set
+  // countedWrong → Path 3 → the completing-credit hold. Ao2: finish Q1 to reach good=1, then complete
+  // Q2 the given way; the run must end ON Q2 (not Q3).
+  const completeQ1 = () => {
+    click('Reveal')
+    click('Override') // Q1 credited (good 1), advance to Q2
+    expect(statValue('Score')).toBe('1/1')
+  }
+  it('final question via WRONG ANSWER + Override completes on Q2', () => {
     mountApp()
     switchToAox()
-    setN(2) // Ao2, Allow Mistakes off (default)
+    setN(2)
     click('Begin')
-    click('Reveal') // Q1 miss → run fails
-    click('Override') // credit Q1 → resume, advance to Q2 (good 1)
-    expect(statValue('Score')).toBe('1/1')
-    click('Reveal') // Q2 miss → run fails
-    click('Override') // credit Q2 → good 2 = N → COMPLETES, must stay on Q2
+    completeQ1()
+    answerWrong() // Q2 wrong → run fails (good 1)
+    click('Override') // credit Q2 → good 2 = N → completes, stays on Q2
     expect(statValue('Score')).toBe('2/2')
-    expect(ctrl('Reset')).toBeInTheDocument() // run is done
-    expect(screen.getByText('Q2')).toBeInTheDocument() // completing question shown…
-    expect(screen.queryByText('Q3')).toBeNull() // …NOT advanced to a phantom Q3 (the bug)
+    expect(ctrl('Reset')).toBeInTheDocument()
+    expect(screen.getByText('Q2')).toBeInTheDocument()
+    expect(screen.queryByText('Q3')).toBeNull()
+  })
+  it('final question via REVEAL + Override completes on Q2', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    completeQ1()
+    click('Reveal') // Q2 miss → run fails
+    click('Override') // credit Q2 → completes, stays on Q2
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText('Q2')).toBeInTheDocument()
+    expect(screen.queryByText('Q3')).toBeNull()
     expect(isDisabled(ctrl('Reveal'))).toBe(true) // done → can't keep going
+  })
+  it('final question via SHOW CODES + Override completes on Q2', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    completeQ1()
+    click('Show Codes') // Q2 counted miss → run fails (panel open)
+    click('Override') // credit Q2 → completes, stays on Q2
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText('Q2')).toBeInTheDocument()
+    expect(screen.queryByText('Q3')).toBeNull()
   })
 })
 
