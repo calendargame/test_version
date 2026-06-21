@@ -73,13 +73,21 @@ const freshLive = (ded) => ({
   time: null, //      the credited solve-time contribution (null = none)
 })
 
-export function createRefModel(initialDed) {
+export function createRefModel(initialDed, priorHistory = [], priorTimes = []) {
   return {
     history: [], // advanced-past SCORED questions, in order
     live: freshLive(initialDed),
     cursor: 0, // 0 = live edge; k>0 = browsing history[length-k]
     pendingWrong: false, // Path-4 armed for the LAST history entry
     violations: [], // model-detected protocol breaks (driver/model disagreement)
+    // The hydrated prior-session baseline (the hydration net): a continuous mode (Classic/Flash/
+    // Deduction) loads lifetime stats but NOT the history behind them. priorHistory = the prior
+    // per-question credit flags (a prefix of the whole credit sequence); priorTimes = the prior
+    // credited solve times. Folded into the DERIVED stats (compareRefModel) but never browsed or
+    // overridden — the reducer's stack can't reach them either, so the cursor/flip logic ignores them.
+    // Cleared by RESET (the engine re-inits blank). Empty for a blank/timed start (identical to before).
+    priorHistory: priorHistory.slice(),
+    priorTimes: priorTimes.slice(),
   }
 }
 
@@ -228,6 +236,8 @@ export function applyRefModel(m, kind, action, ctx) {
       m.live = freshLive(ctx.liveDedAfter)
       m.cursor = 0
       m.pendingWrong = false
+      m.priorHistory = [] // a full Reset re-inits the engine blank — the hydrated baseline is gone too
+      m.priorTimes = []
       return
     }
     case 'REGEN': {
@@ -309,12 +319,15 @@ export function compareRefModel(m, state) {
   const v = [...m.violations]
   m.violations = []
   const liveScored = m.live.ssFrozen === true
-  const seq = m.history.map((e) => e.credited)
+  // Fold the hydrated prior-session baseline in as a prefix of the credit sequence + the times pool
+  // (the in-session ledger can't reconstruct it). Empty for a blank start → identical to before.
+  const seq = [...m.priorHistory, ...m.history.map((e) => e.credited)]
   if (liveScored) seq.push(m.live.credited)
 
-  const played = m.history.length + (liveScored ? 1 : 0)
+  const played = m.priorHistory.length + m.history.length + (liveScored ? 1 : 0)
   const good = seq.filter(Boolean).length
   const times = [
+    ...m.priorTimes,
     ...m.history.filter((e) => e.credited && e.time != null).map((e) => e.time),
     ...(m.live.credited && m.live.time != null ? [m.live.time] : []),
   ]

@@ -115,6 +115,7 @@ describe('fuzz / bug survey — engine invariants hold across random play (C1/C2
       expect(cov.override).toBeGreaterThan(0)
       expect(cov.overrideBrowsing).toBeGreaterThan(0)
       expect(cov.deduction).toBeGreaterThan(0)
+      expect(cov.hydrated).toBeGreaterThan(0) // actually exercised the hydrated-start (bestFloor/streakCarry) fold
     },
     T,
   )
@@ -153,6 +154,7 @@ describe('fuzz / bug survey — engine invariants hold across random play (C1/C2
       expect(cov.complete).toBeGreaterThan(0) // actually dispatched ANSWER.complete
       expect(cov.noAdvance).toBeGreaterThan(0) // actually reversed a completing solve (Path 2 noAdvance)
       expect(cov.heldComplete).toBeGreaterThan(0) // actually REACHED a held-credit live edge
+      expect(cov.overrideHeldComplete).toBeGreaterThan(0) // reached the OVERRIDE completing-hold specifically (not just ANSWER-complete)
       expect(cov.browsedHeld).toBeGreaterThan(0) // actually back-browsed AWAY from a held credit
       expect(cov.override).toBeGreaterThan(0)
     },
@@ -190,6 +192,7 @@ describe('fuzz / bug survey — engine invariants hold across random play (C1/C2
       expect(cov.overrideBrowsing).toBeGreaterThan(0)
       expect(cov.deduction).toBeGreaterThan(0)
       expect(cov.good).toBeGreaterThan(0)
+      expect(cov.hydrated).toBeGreaterThan(0) // the model matched the reducer on hydrated-start sequences too
     },
     T,
   )
@@ -202,6 +205,7 @@ describe('fuzz / bug survey — engine invariants hold across random play (C1/C2
       expect(cov.noAdvance).toBeGreaterThan(0) // actually reversed one (Path 2 noAdvance)
       expect(cov.timedTimeout).toBeGreaterThan(0) // actually fired the timeout actions
       expect(cov.override).toBeGreaterThan(0)
+      expect(cov.hydrated).toBeGreaterThan(0) // held-complete + timeout surface verified on hydrated starts too
     },
     T,
   )

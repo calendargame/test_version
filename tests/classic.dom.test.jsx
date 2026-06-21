@@ -686,3 +686,46 @@ describe('Classic — back-browse Override past a live miss (fix 2026-06-08)', (
     expect(statValue('Streak')).toBe('1/1') // was 2/2 before the fix (Best inflated by the bad streak)
   })
 })
+
+// ── Q2 (2026-06-21): a settings change regenerates the live date on the ⚙ popover CLOSE ────────────
+// The ⚙ settings only change while the popover is open, so the date regen (which bumps questionId and
+// thus restarts the solve timer) is deferred to one apply on close — no per-keystroke churn. While the
+// popover is open the live date stays put; closing after a change regenerates it into the new config.
+describe('Classic — Q2 (settings regen deferred to popover close)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Settings' })))
+
+  it('changing the year range defers the regen until the popover closes', () => {
+    mountApp() // Classic is the default mode
+    const d0 = readDate()
+    const newY = d0.y === 1600 ? 1601 : 1600 // a single-year range guaranteed != the current date
+    toggleSettings() // open → snapshot the settings
+    act(() => {
+      useSettings.getState().setMinY(newY)
+      useSettings.getState().setMaxY(newY)
+    })
+    expect(readDate().y).toBe(d0.y) // still on the old date while the popover is open (deferred)
+    toggleSettings() // close → regen fires once
+    expect(readDate().y).toBe(newY) // regenerated into the new range
+  })
+
+  it('opening + closing settings with NO change does not regenerate the date', () => {
+    mountApp()
+    const d0 = readDate()
+    toggleSettings()
+    toggleSettings() // no change → no regen
+    expect(readDate()).toEqual(d0) // exact same date (questionId/timer untouched)
+  })
+})

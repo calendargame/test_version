@@ -231,6 +231,7 @@ export const PROFILES = {
     seqs: 5000,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     weights: {
       ANSWER: 4,
       OVERRIDE: 4,
@@ -258,6 +259,7 @@ export const PROFILES = {
     seqs: 1500,
     steps: 600,
     strongOracle: true,
+    pHydrate: 0.5,
     weights: {
       ANSWER: 5,
       NEW: 4,
@@ -284,6 +286,7 @@ export const PROFILES = {
     seqs: 4500,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     weights: {
       ANSWER: 5,
       OVERRIDE: 4,
@@ -320,6 +323,7 @@ export const PROFILES = {
     seqs: 5000,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     weights: {
       ANSWER: 6,
       OVERRIDE: 4,
@@ -355,6 +359,7 @@ export const PROFILES = {
     seqs: 5000,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     weights: {
       ANSWER: 5,
       OVERRIDE: 3,
@@ -390,6 +395,7 @@ export const PROFILES = {
     seqs: 4000,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     referenceModel: true,
     weights: {
       ANSWER: 5,
@@ -419,6 +425,7 @@ export const PROFILES = {
     seqs: 4000,
     steps: 300,
     strongOracle: true,
+    pHydrate: 0.5,
     referenceModel: true,
     weights: {
       ANSWER: 5,
@@ -485,11 +492,15 @@ function liveCredit(live) {
   if (!answered || !ls || ls.saveStatsFrozen !== true) return null
   return computeHasCredit(btns) && !ls.revealed && !ls.countedWrong ? 'credit' : 'miss'
 }
-export function checkStrongScoreOracle(state) {
+export function checkStrongScoreOracle(state, priorHistory = []) {
   const v = []
   const s = state.stats
   const stackBools = state.stack.map((e) => !!e.hasCredit)
   const browsing = state.backDepth > 0
+  // The hydrated prior-session credit flags, prepended to the reconstruction (the in-session stack
+  // can't reach them). The oracle prepends the REAL prior history — independently re-deriving the
+  // reducer's bestFloor/streakCarry from it — so a wrong fold collapses good/best/streak and is caught
+  // here. Empty for a blank/timed start → byte-identical to before.
   let history
   if (browsing) {
     const fwdBools = state.forwardStack
@@ -499,12 +510,14 @@ export function checkStrongScoreOracle(state) {
       .map((e) => !!e.hasCredit)
     const lc = liveCredit(state.forwardStack.find((e) => e.isLive))
     const liveBool = lc === 'credit' ? [true] : lc === 'miss' ? [false] : []
-    history = [...stackBools, !!state.browseHasCredit, ...fwdBools, ...liveBool]
+    history = [...priorHistory, ...stackBools, !!state.browseHasCredit, ...fwdBools, ...liveBool]
   } else {
     // A held live credit (canOverrideCorrect at the edge) was counted in good only if Save Stats was
     // on for the question (saveStatsThisQ===true); a complete-while-off neither credits nor pushes.
     const heldLiveCredit = state.canOverrideCorrect && state.saveStatsThisQ === true
-    history = heldLiveCredit ? [...stackBools, true] : stackBools
+    history = heldLiveCredit
+      ? [...priorHistory, ...stackBools, true]
+      : [...priorHistory, ...stackBools]
   }
 
   const credits = history.filter(Boolean).length
@@ -536,20 +549,50 @@ export function freshCov() {
     maxStack: 0,
     maxTimes: 0,
     heldComplete: 0, // reached a HELD completing solve (locked + canOverrideCorrect at the live edge)
+    overrideHeldComplete: 0, // reached the OVERRIDE Path-3 completing-hold specifically (vs the ANSWER-complete hold)
     browsedHeld: 0, //  back-browsed AWAY from a held live credit (the oracle's isLive-fold corner)
     timedTimeout: 0, // fired a LOCK_REVEAL / TIMEOUT_MISS on the active live edge (timed surface)
     refChecks: 0, //   reference-model comparisons performed (referenceModel profiles)
+    hydrated: 0, //    sequences seeded with a prior-session baseline (the hydration net)
   }
 }
 
 export function runSequence(seed, steps, cov, profile) {
   const rnd = mulberry32(seed)
   const useJulian = chance(rnd, profile.pJulian)
-  let state = initEngine(randDate(rnd))
+  // Hydrated start (the hydration net): with prob pHydrate, seed initEngine with a prior-session
+  // baseline — lifetime stats the in-session stack CANNOT reconstruct (a continuous mode hydrates stats
+  // but not the history behind them). This is what exercises the override bestFloor/streakCarry fold —
+  // the blind spot that hid the owner-reported best/streak-collapse bug. priorHistory = the prior
+  // per-question credit flags; priorTimes = one solve time per prior credit (distinct >=10 range so it
+  // never value-collides with an in-session time in dropContributedTime). The derived baseline satisfies
+  // every invariant (good<=played, streak/best<=good, times.length<=good). RESET clears it (the engine
+  // re-inits blank), so the oracle's prepended prefix is dropped in lockstep.
+  let priorHistory = []
+  const priorTimes = []
+  let initialStats
+  if (profile.pHydrate && chance(rnd, profile.pHydrate)) {
+    const n = Math.floor(rnd() * 25)
+    for (let i = 0; i < n; i++) priorHistory.push(rnd() < 0.6)
+    for (const c of priorHistory) if (c) priorTimes.push(rnd() * 3 + 10)
+    const { curStreak, bestStreak } = computeStreaks(priorHistory)
+    initialStats = {
+      played: n,
+      good: priorHistory.filter(Boolean).length,
+      streak: curStreak,
+      best: bestStreak,
+      times: [...priorTimes],
+    }
+    cov.hydrated++
+  }
+  let state = initEngine(randDate(rnd), initialStats)
   // The independent reference model (C2 Part 3) — replays the same action stream and is compared
   // field-by-field after every action. Seeded with the only display facts it consumes: whether the
-  // initial question is a Deduction puzzle (and, per ANSWER, whether the click was correct).
-  const model = profile.referenceModel ? createRefModel(!!state.date.type) : null
+  // initial question is a Deduction puzzle (and, per ANSWER, whether the click was correct), plus the
+  // hydrated baseline above (folded into its derived stats, never browsed/overridden).
+  const model = profile.referenceModel
+    ? createRefModel(!!state.date.type, priorHistory, priorTimes)
+    : null
   const recent = []
 
   for (let i = 0; i < steps; i++) {
@@ -642,6 +685,11 @@ export function runSequence(seed, steps, cov, profile) {
     if (state.date.type) cov.deduction++
     const prev = state
     state = gameReducer(state, action)
+    // A full RESET re-inits the engine blank (bestFloor/streakCarry → 0), so the hydrated prefix is
+    // gone — drop it for the oracle in lockstep with the model's own RESET clear (referenceModel.js).
+    // (priorTimes feeds only createRefModel at seed time + the model clears its own copy, so the oracle
+    // side just needs priorHistory cleared here.)
+    if (action.type === 'RESET') priorHistory = []
     // Reference model: apply the same action with its exogenous DISPLAY facts — isCorrect from the
     // PRE-action question (the one the user acted on), and the on-screen question kind before/after
     // (nextDed for plain advances; liveDedAfter for the view-ruled RESET/REGEN keep-vs-replace).
@@ -662,6 +710,19 @@ export function runSequence(seed, steps, cov, profile) {
     // A HELD completing solve at the live edge (locked + reversible) — the AoX-complete corner the
     // extended strong oracle now covers; browsing away from one parks the credit as the isLive entry.
     if (state.backDepth === 0 && state.locked && state.canOverrideCorrect) cov.heldComplete++
+    // The OVERRIDE Path-3 completing-hold specifically (gameReducer ~L850: a countedWrong question
+    // credited via Override with noAdvance, on a scored edge, HELD at the live edge). cov.heldComplete
+    // alone conflates this with the ANSWER-complete hold (identical end state); this proves the override
+    // branch is actually reached, not just the answer one. (F7 coverage-gap fix.)
+    if (
+      action.type === 'OVERRIDE' &&
+      action.noAdvance &&
+      prev.countedWrong &&
+      prev.saveStatsThisQ === true &&
+      state.locked &&
+      state.canOverrideCorrect
+    )
+      cov.overrideHeldComplete++
     if (kind === 'BACK' && prev.backDepth === 0 && prev.locked && prev.canOverrideCorrect)
       cov.browsedHeld++
     const S = state.stats
@@ -671,7 +732,7 @@ export function runSequence(seed, steps, cov, profile) {
     if (recent.length > 20) recent.shift()
 
     const violations = checkGameInvariants(state, useJulian)
-    if (profile.strongOracle) violations.push(...checkStrongScoreOracle(state))
+    if (profile.strongOracle) violations.push(...checkStrongScoreOracle(state, priorHistory))
     if (model) violations.push(...compareRefModel(model, state))
     if (violations.length) {
       return {

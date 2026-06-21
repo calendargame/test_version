@@ -343,3 +343,59 @@ describe('score-integrity regressions (C2 Session-6 — the reference model’s 
     expect(after.stats).toEqual(s.stats)
   })
 })
+
+describe('hydration score integrity — Best/Streak survive Override after a load-from-prior-session (2026-06-20)', () => {
+  // The continuous modes (Classic/Flash/Deduction) HYDRATE lifetime stats on mount but NOT the history
+  // behind them, so the in-session stack is EMPTY while `best`/`streak` carry a prior-session record.
+  // Before the fix, all 5 OVERRIDE paths recomputed streak/best from the empty stack via
+  // streaksFromStacks and COLLAPSED both to the current in-session run — the owner-reported bug "best
+  // streak gets reset to match the current streak". `good`/`played`/`times` were always safe
+  // (incremental, never recomputed). The fix folds the hydrated baseline into the recompute:
+  // `bestFloor` (= hydrated best, a high-water floor the recompute can't drop below) + `streakCarry`
+  // (= hydrated trailing streak, prepended as leading credits so a corrected miss continues the prior
+  // run). These pin that a hydrated record survives every Override route; the hydrated-start fuzz
+  // dimension (fuzzHarness) is the broad net. A blank start (carry/floor 0) is unaffected — covered above.
+  const hydrate = () => initEngine(D1, { played: 50, good: 50, streak: 5, best: 50, times: [] })
+
+  it('Path 3 (credit a live wrong): best floor held at 50, streak carried to 6 (was 1/1)', () => {
+    let s = hydrate()
+    s = answerAt(s, wOf(D1), D2) // wrong → streak 0, played 51, good 50
+    s = override(s, D2) // Path 3: credit the corrected miss → it continues the prior run
+    expect(s.stats.best).toBe(50) // floor held (was collapsing to 1)
+    expect(s.stats.streak).toBe(6) // 5 prior + this corrected (was collapsing to 1)
+    expect(s.stats.good).toBe(51) // good was always safe (incremental)
+    expect(s.stats.played).toBe(51)
+  })
+
+  it('Path 4 (retro-credit the previous wrong): best 50, streak 6 (was 1/1)', () => {
+    let s = hydrate()
+    s = answerAt(s, wOf(D1), D2) // wrong (played 51, good 50, streak 0, countedWrong)
+    s = neu(s, D3) // advance → arms pendingWrongOverride; live D3 fresh
+    s = override(s, D3) // Path 4 (timingOff): credit the previous wrong, no advance
+    expect(s.stats.best).toBe(50)
+    expect(s.stats.streak).toBe(6)
+    expect(s.stats.good).toBe(51)
+    expect(s.stats.played).toBe(51)
+  })
+
+  it('Path 5 (retro-reverse a correct): best floor held at 50 even as the run breaks (was 0/0)', () => {
+    let s = hydrate()
+    s = answerAt(s, cOf(D1), D2) // correct → good 51, streak 6, best 50; advance, pushes the correct
+    s = override(s, D2) // Path 5: retro-flip the last correct to wrong
+    expect(s.stats.best).toBe(50) // the prior record survives (was collapsing to 0)
+    expect(s.stats.streak).toBe(0) // the latest is now wrong → trailing 0
+    expect(s.stats.good).toBe(50) // the in-session credit removed
+    expect(s.stats.played).toBe(51)
+  })
+
+  it('a blank start is unchanged — best/streak still recompute exactly from the in-session history', () => {
+    // Same Path-3 sequence with NO hydration: carry/floor are 0, so the recompute is byte-identical
+    // to before the fix (best == the in-session run). Guards against the fix altering blank behavior.
+    let s = initEngine(D1)
+    s = answerAt(s, wOf(D1), D2)
+    s = override(s, D2)
+    expect(s.stats.best).toBe(1)
+    expect(s.stats.streak).toBe(1)
+    expect(s.stats.good).toBe(1)
+  })
+})

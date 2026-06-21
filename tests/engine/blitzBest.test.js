@@ -125,4 +125,47 @@ describe('blitzBest — fuzz vs the independent max-round-good oracle', () => {
   it('sudden-death Best equals the max round good across 200 random sessions', () => {
     for (let seed = 1; seed <= 200; seed++) runSuddenSession(seed, 12)
   })
+
+  // The RESUME-REVERT composite (Session-7 Q2-A): a round can provisionally END (the timerDone effect
+  // reconciles a Best), then an Override credits the resolved question and RESUMES the round — BlitzMode's
+  // resumeRound REVERTS the Best to the pre-round snapshot (prevRoundBestRef), and the round plays on to a
+  // higher peak before it RE-ends and reconciles again. This models that exact sequence at the pure-fn
+  // level (the component state machine itself is pinned by blitz.dom:402-502) against the same independent
+  // oracle: Best == the max good of every round that has FULLY ended (a resumed round isn't ended, so its
+  // in-flight good doesn't count until it re-ends). reconcile uses cur = the post-revert (pre-round) Best
+  // and fallback = the pre-round floor — exactly what resumeRound + the timerDone effect pass. (E.)
+  function runResumeSession(seed, rounds) {
+    const rnd = mulberry32(seed)
+    let best = { score: 0, streak: 0, scoreRoundId: null, streakRoundId: null }
+    const endedGoods = [] // the FINAL good of each fully-ended round
+    let nextId = 1
+    let sawResume = false
+    for (let r = 0; r < rounds; r++) {
+      const roundId = nextId++
+      const preRound = { ...best } // snapshot at Begin — the revert target AND the reconcile floor
+      const fallback = { score: preRound.score, streak: preRound.streak }
+      let good = 0
+      let ended = false
+      while (!ended) {
+        good += Math.floor(rnd() * 5) // play a segment; a credit-resume keeps good (it only rises)
+        best = reconcileBlitzBest(best, good, good, roundId, fallback) // END this segment
+        if (good > 0 && rnd() < 0.5) {
+          best = { ...preRound } // RESUME → revert the Best to the pre-round snapshot; the round plays on
+          sawResume = true
+        } else {
+          ended = true
+        }
+      }
+      endedGoods.push(good)
+      const trueMax = Math.max(0, ...endedGoods)
+      expect(best.score, `resume seed ${seed} round ${r}: score`).toBe(trueMax)
+      expect(best.streak, `resume seed ${seed} round ${r}: streak`).toBe(trueMax)
+    }
+    return sawResume
+  }
+  it('Best survives end→override→resume→re-end cycles across 200 random sessions', () => {
+    let sawResume = false
+    for (let seed = 1; seed <= 200; seed++) sawResume = runResumeSession(seed, 10) || sawResume
+    expect(sawResume).toBe(true) // the runs actually exercised a resume-revert
+  })
 })

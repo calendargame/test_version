@@ -409,8 +409,11 @@ export default function GuidePage() {
           change a format setting in one mode, any unanswered dates in the other modes are also
           regenerated. If you've already made a wrong guess, revealed the answer, or shown codes on
           the displayed date, the change is deferred — the burned state is preserved and the new
-          format applies on the next generated date. In active Blitz rounds and AoX runs, any format
-          change ends the round.
+          format applies on the next generated date. Settings changes apply when you close the ⚙
+          menu, not on each adjustment — so changing several settings at once regenerates the date
+          just once (and never restarts your solve timer mid-adjustment). In Blitz rounds and AoX
+          runs — whether active or just ended — a settings change resets the round/run when you
+          close the ⚙ menu, so the round on screen always matches your current settings.
         </p>
         <p>
           In game modes' Show Codes, codes appear in the order the date is read (left to right),
@@ -434,8 +437,9 @@ export default function GuidePage() {
           your red guess and a green for the day that was correct under the calendar system in
           effect when the date was first generated. Each date snapshots its calendar system at
           generation, so revisiting an earlier question via Back shows the highlights and codes that
-          were correct under the system in effect when that date was generated. In active Blitz
-          rounds and AoX runs, any Julian toggle ends the round.
+          were correct under the system in effect when that date was generated. In Blitz rounds and
+          AoX runs (active or just ended), a Julian toggle resets the round/run when you close the ⚙
+          menu.
         </p>
         <p>
           <b>Julian Chance</b> (also under Calendar System) sets how often a generated date lands in
@@ -461,8 +465,8 @@ export default function GuidePage() {
           made a wrong guess on the current date, the change is deferred so the wrong-state is
           preserved; the new range applies to the next date. While browsing back, settings-driven
           regen always preserves your history: the date you were viewing and any forward entries are
-          pushed back to history before the live slot is regenerated. In active Blitz rounds and AoX
-          runs, any range change ends the round.
+          pushed back to history before the live slot is regenerated. In Blitz rounds and AoX runs
+          (active or just ended), a range change resets the round/run when you close the ⚙ menu.
         </p>
         <p>
           <b>Year sub-mode auto-disable:</b> Deduction's Year sub-mode requires either a year range
@@ -488,11 +492,12 @@ export default function GuidePage() {
           previously-selected value stays visually selected so it's restored when you change the
           range back to one with a leap year reachable. Jan/Feb Chance stays unlocked since the
           setting still applies on whatever leap years exist in the range. Changing any value in{' '}
-          <b>Leap Year Chance</b> or <b>Jan/Feb Chance on Leap Years</b> always regenerates the
-          displayed date so the new setting takes effect immediately. If you've already made a wrong
-          guess, revealed the answer, or shown codes on the current date, either change is deferred
-          so the burned state is preserved; the new setting applies to the next date. In active
-          Blitz rounds and AoX runs, any chance setting change ends the round.
+          <b>Leap Year Chance</b> or <b>Jan/Feb Chance on Leap Years</b> regenerates the displayed
+          date so the new setting takes effect when you close the ⚙ menu. If you've already made a
+          wrong guess, revealed the answer, or shown codes on the current date, either change is
+          deferred so the burned state is preserved; the new setting applies to the next date. In
+          Blitz rounds and AoX runs (active or just ended), a chance change resets the round/run
+          when you close the ⚙ menu.
         </p>
       </GuideSection>
       <GuideSection id="savestats" title="Save Stats" openId={open} onToggle={toggle}>
@@ -537,9 +542,10 @@ export default function GuidePage() {
       <GuideSection id="saved-progress" title="Saved Progress" openId={open} onToggle={toggle}>
         <p>
           The app saves the following on this device and restores them when you return — after
-          closing the app, refreshing, or revisiting later: your <b>⚙ Settings</b> (date format,
-          calendar system, year range, the leap / Jan-Feb / Julian chances, Save Stats, and theme);
-          your <b>per-mode setup</b> (Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
+          closing the app, refreshing, updating to a new version, or revisiting later (an app update
+          never resets your saved data): your <b>⚙ Settings</b> (date format, calendar system, year
+          range, the leap / Jan-Feb / Julian chances, Save Stats, and theme); your{' '}
+          <b>per-mode setup</b> (Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
           Per-Round vs Per-Question; AoX count, Allow Mistakes, and One-By-One; the Deduction
           sub-type; and each mode's show / hide stat toggles); your <b>stats</b> in the casual modes
           (Classic, Flash, Deduction); your <b>all-time bests</b> (Blitz score &amp; streak, Sudden
@@ -547,8 +553,9 @@ export default function GuidePage() {
           use a rolling window of your most recent 1000 solves.
         </p>
         <p>
-          <b>Not saved</b> — these reset each visit: any in-progress timed round or run and the
-          current question (a half-finished run is discarded by design); and the current tab — the
+          <b>Not saved</b> — these reset each visit: any timed round or run on screen — whether
+          still in progress OR ended but not yet Reset — and the current question (the round/run
+          itself is discarded; only a Best it already recorded persists); and the current tab — the
           app always opens to Classic. <b>Full Reset</b> (below) clears everything that is saved.
         </p>
       </GuideSection>

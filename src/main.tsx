@@ -55,6 +55,7 @@ interface ModeProps {
   leapChance: string
   janFebChance: string
   julianChance: string
+  settingsOpen?: boolean //  the ⚙ popover open state — modes defer their settings side-effects to its CLOSE
   onFreshChange?: (fresh: boolean) => void
 }
 interface DedOpts {
@@ -362,13 +363,37 @@ interface DedOpts {
       useEffect(()=>{if(firstRef.current){firstRef.current=false;return;}fnRef.current();},deps);   // eslint-disable-line react-hooks/exhaustive-deps
     }
 
+    // Like useChangeEffect, but DEFERRED to the settings-popover CLOSE: snapshots `deps` when the popover
+    // OPENS and runs fn ONCE on close IFF they changed (a change-then-revert is a no-op). The ⚙ settings
+    // only change while the popover is open, so this batches their side-effects — a date regen, a run/
+    // round reset — to a single apply on close instead of one per keystroke, and never resets the solve
+    // timer mid-adjustment. fn runs through a ref so the latest closure (current run/round state) fires.
+    // (Mode-LOCAL toggles that change outside the popover must keep useChangeEffect — they'd never see an
+    // open→close transition coincide with their change.)
+    function useSettingsCloseEffect(settingsOpen: boolean, deps: React.DependencyList, fn: () => void){
+      const fnRef=useRef(fn);
+      useEffect(()=>{fnRef.current=fn;});
+      const snapRef=useRef(deps);
+      const wasOpenRef=useRef(settingsOpen);
+      useEffect(()=>{
+        const wasOpen=wasOpenRef.current;
+        wasOpenRef.current=settingsOpen;
+        if(settingsOpen&&!wasOpen){snapRef.current=deps;return;}   // opened → snapshot the current values
+        if(!settingsOpen&&wasOpen){                                 // closed → fire once iff anything changed
+          const changed=deps.some((d,i)=>d!==snapRef.current[i]);
+          snapRef.current=deps;
+          if(changed)fnRef.current();
+        }
+      },[settingsOpen,...deps]);   // eslint-disable-line react-hooks/exhaustive-deps
+    }
+
     // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js, imported at top.
 
     // Expander → src/components/Expander.jsx, imported at top.
 
 
 
-    const DEPLOY_TS=new Date('2026-06-15T02:58:01Z');
+    const DEPLOY_TS=new Date('2026-06-21T07:55:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -628,7 +653,7 @@ interface DedOpts {
     // credited solves, played = attempts, times = solve times, streak/best. The fold needs only
     // two general engine flags: `complete` (the Nth solve credits without advancing) and
     // `noAdvance` (a failing override of that solve stays put). See gameReducer.
-    function AoxMode({minY,maxY,visible,fmtDate,useJulian=false,genDate=randomDate,leapChance='random',janFebChance='random',julianChance='random',randomFormat=false,dateFormat='written-mdy',saveStats=true,onFreshChange}: ModeProps & { fmtDate: FmtDate; genDate?: GenDate }){
+    function AoxMode({minY,maxY,visible,fmtDate,useJulian=false,genDate=randomDate,leapChance='random',janFebChance='random',julianChance='random',randomFormat=false,dateFormat='written-mdy',saveStats=true,settingsOpen,onFreshChange}: ModeProps & { fmtDate: FmtDate; genDate?: GenDate }){
       const aoxN=useModePrefs(s=>s.aoxN),setAoxN=useModePrefs(s=>s.setAoxN);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.aoxAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setAoxAllowMistakes);   // persisted (mode-prefs store)
       const oneByOne=useModePrefs(s=>s.aoxOneByOne),setOneByOne=useModePrefs(s=>s.setAoxOneByOne);   // persisted (mode-prefs store)
@@ -738,19 +763,8 @@ interface DedOpts {
       // Reset the run if the panel is hidden mid-run (also cancel any pending reveal auto-advance).
       useEffect(()=>{if(!visible&&runPhase==="running"){cancelRevealAdvance();eng.resetStats();setRunPhase("idle");setShown(false);}/* eslint-disable-line react-hooks/exhaustive-deps */},[visible]);
 
-      // Auto-reset/regen on a settings change. Running → reset the run; idle → regen the hidden
-      // date on a content change (Julian-only keeps it); done/failed → leave the ended run alone.
-      const prevAoxPopRef=useRef({randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance});
-      useEffect(()=>{
-        const prev=prevAoxPopRef.current;
-        const contentChanged=prev.dateFormat!==dateFormat||prev.randomFormat!==randomFormat||prev.leapChance!==leapChance||prev.janFebChance!==janFebChance||prev.julianChance!==julianChance||prev.minY!==minY||prev.maxY!==maxY;
-        const julianChanged=prev.useJulian!==useJulian;
-        prevAoxPopRef.current={randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance};
-        if(!contentChanged&&!julianChanged)return;
-        if(runPhase==="running"){eng.resetStats();setRunPhase("idle");setShown(false);return;}
-        if(runPhase!=="idle")return;
-        if(contentChanged)eng.regenDate();
-      },[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance,runPhase,eng]);
+      // Settings reconcile now fires on the ⚙ popover CLOSE (Q2) — the useSettingsCloseEffect is below,
+      // after reset() is defined (a RUNNING or ENDED run resets, an idle run regenerates its hidden date).
 
       // Freshness for App's isFullyReset (the random date is excluded).
       const aoxIsFreshLocal=aoxN==="10"&&allowMistakes===false&&oneByOne===false&&runPhase==="idle"&&shown===false&&S.played===0&&S.good===0&&S.streak===0&&S.best===0&&S.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&flash===null&&Object.keys(state.persistBtns).length===0&&state.calcOpen===false&&state.canOverrideCorrect===false&&Object.keys(bests).length===0&&Object.keys(bestNew).length===0&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.countedWrong===false;
@@ -816,6 +830,11 @@ interface DedOpts {
       // hides it until Continue. (Non-One-By-One Reveal auto-advances instead — see onReveal.) (C2 Q4.)
       const onNext=()=>{if(state.calcOpen)eng.showCodes(false);eng.doNew();if(oneByOne)setShown(false);};
       const onOverride=()=>{
+        // A credit / completion via Override DURING the reveal-flash window must kill the pending
+        // auto-advance — otherwise the stale doNew() fires ~FLASH_MS later and either SKIPS the
+        // freshly-advanced question or, at the final question, re-opens the phantom-Q(N+1) overshoot the
+        // completion hold closed. The other run-mutating handlers (reset, hidden, unmount) already cancel.
+        cancelRevealAdvance();
         const reverseCompleting=state.canOverrideCorrect&&!state.countedWrong&&!inBack;                 // Path 2: reverse the live completing solve
         const reverseToWrong=reverseCompleting&&state.prevStatsSnapshot&&!state.prevStatsSnapshot.wasWrong;
         const retroToWrong=eng.retroOverrideEligible&&last?.capsule?.snapshot&&!last.capsule.snapshot.wasWrong; // Path 5: retro-flip a correct entry to wrong
@@ -836,6 +855,15 @@ interface DedOpts {
       const reset=()=>{cancelRevealAdvance();eng.resetStats();setRunPhase("idle");setShown(false);setBestNew({});prevBestSnapRef.current=null;currentRunIdRef.current=null;};
       // Cancel a pending reveal auto-advance if the component unmounts mid-flash (Full Reset remount).
       useEffect(()=>()=>{if(revealAdvanceRef.current)clearTimeout(revealAdvanceRef.current);},[]);
+
+      // On the ⚙ popover CLOSE (Q2), reconcile AoX against the new settings: a RUNNING or ENDED
+      // (done/failed) run RESETS as if Reset was pressed — its recorded Best config is now stale, so the
+      // run on screen always matches the current settings — while an idle run regenerates its (hidden)
+      // next date. Deferred to close so adjusting several settings doesn't churn the run/date (and the
+      // solve timer) per keystroke. (Replaces the old immediate prevAoxPopRef effect.)
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance],()=>{
+        if(runPhase!=="idle")reset(); else eng.regenDate();
+      });
 
       const primaryBtn=runPhase==="idle"
         ?(<button type="button" data-key="N" className="col-span-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium" onClick={startOrContinue}>Begin</button>)
@@ -909,7 +937,7 @@ interface DedOpts {
     // and passes the settings down (like it does for AoxMode). This is the first mode
     // carved out of App's fused rendering; Flash/Blitz/Deduction follow onto the same engine.
     // ============================================================
-    function ClassicMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function ClassicMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const timingOff=useModePrefs(s=>s.classicTimingOff),setTimingOff=useModePrefs(s=>s.setClassicTimingOff);   // persisted; timing hidden by default (feeds the engine)
       const scoringOff=useModePrefs(s=>s.classicScoringOff),setScoringOff=useModePrefs(s=>s.setClassicScoringOff);   // persisted; scoring shown by default
       // Lifetime stats persist across reloads (Stage D1): hydrate from saved progress on mount,
@@ -939,7 +967,8 @@ interface DedOpts {
       // Julian-chance / year-range change regens an UNANSWERED live date; a useJulian toggle
       // keeps it (live useJulian flows through to the answer + codes). REGEN_DATE no-ops on a
       // burned or browsed date, so we just fire it on the relevant changes.
-      useChangeEffect([randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY],()=>eng.regenDate());
+      // Defer the live-date regen to the ⚙ popover CLOSE (Q2) — batched, no per-keystroke timer churn.
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY],()=>eng.regenDate());
       // Freshness — engine state at launch default + Classic's own toggle/flash fields. Reported up
       // via onFreshChange so App's isFullyReset (Full Reset dim/lock) accounts for Classic.
       const classicIsFresh=engineFresh(state)&&timingOff===true&&scoringOff===false&&timingArmed===false&&flash===null;
@@ -988,7 +1017,7 @@ interface DedOpts {
     // ClassicMode; that duplication gets factored into a shared shell in Step 6, once all
     // modes' variations are known.)
     // ============================================================
-    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const [active,setActive]=useState(false);
       const [flashPhase,setFlashPhase]=useState("dash");      // dash (idle) | show (revealing) | hide ("…")
       const [showTimerDate,setShowTimerDate]=useState(false); // keep the date visible after Reveal
@@ -1070,7 +1099,8 @@ interface DedOpts {
         onHide:()=>{if(active){setActive(false);stopFlash();}},
       });
 
-      useChangeEffect([randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY],()=>eng.regenDate());
+      // Defer the live-date regen to the ⚙ popover CLOSE (Q2) — batched, no per-keystroke timer churn.
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY],()=>eng.regenDate());
 
       // Freshness for App's isFullyReset (Flash owns its state now): engine fresh + Flash's own fields.
       const flashIsFresh=engineFresh(state)&&timingOff===false&&scoringOff===false&&timingArmed===false&&flash===null&&active===false&&flashPhase==="dash"&&showTimerDate===false&&flashMs===500&&flashRemainMs===500;
@@ -1140,7 +1170,7 @@ interface DedOpts {
     // per-Q wrong. Best is reconciled in an effect when a round ends (set to max, tagged with
     // the round id) and ROLLED BACK there too when an Override drops the round that set it.
     // ============================================================
-    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const perQ=useModePrefs(s=>s.blitzPerQ),setPerQ=useModePrefs(s=>s.setBlitzPerQ);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.blitzAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setBlitzAllowMistakes);   // persisted (mode-prefs store)
       const [active,setActive]=useState(false);
@@ -1203,7 +1233,18 @@ interface DedOpts {
 
       const resetTimerBars=()=>{if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";};
       const stopRound=()=>{blitzStartRef.current=null;blitzPausedAtRef.current=null;blitzPausedAccRef.current=0;qDeadlineRef.current=null;qPausedAtRef.current=null;qPausedAccRef.current=0;};
-      const endRound=()=>{setActive(false);setShowTimerDate(true);setTimerDone(true);stopRound();};
+      const endRound=()=>{
+        // Stamp the EXACT remaining time at this instant into blitzRemainRef BEFORE stopRound() nulls
+        // blitzStartRef, so a later Override-resume continues from the true remaining rather than the
+        // last rAF frame's value (up to a frame stale, always in the player's favor). Per-Round only —
+        // the per-Question resume starts a fresh qSec, so it carries nothing. On a clock-expiry end the
+        // remaining is already ~0, so this is a no-op there. (F: Blitz resume sub-frame timer drift.)
+        if(!perQ&&blitzStartRef.current!=null){
+          const t=(performance.now()-blitzStartRef.current-blitzPausedAccRef.current)/1000;
+          blitzRemainRef.current=Math.max(0,blitzSec-t);
+        }
+        setActive(false);setShowTimerDate(true);setTimerDone(true);stopRound();
+      };
 
       // Countdown loop (Per Round drains blitzRemain; Per Question drains qRemain). On 0 the
       // round ends — per-round timeout shows the answer with no stat (lockReveal); per-Q
@@ -1318,6 +1359,16 @@ interface DedOpts {
       // (timerDone) state DOES survive a detour, like AoX's done run. (C2 fix; pinned in blitz.dom.)
       useEffect(()=>{if(!visible&&active)resetRound();/* eslint-disable-line react-hooks/exhaustive-deps */},[visible]);
 
+      // On the ⚙ popover CLOSE (Q2), reconcile Blitz against the new settings: an ACTIVE round OR an
+      // ENDED round (timerDone) RESETS as if Reset was pressed — its config (and any recorded Best) is now
+      // stale. This RESTORES the documented "a settings change ends an active Blitz round" behavior the
+      // mode-untangle dropped (BlitzMode had no settings effect; AoX does this via its own close-effect)
+      // AND applies the ended-round reset so the round on screen always matches the current settings. Idle
+      // has no live round/date to reconcile. Deferred to close (batched, no per-keystroke churn).
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance],()=>{
+        if(active||timerDone)resetRound();
+      });
+
       // Reconcile Best when a round is over: set to max(S) tagged with the round id, and roll
       // back when an Override has dropped the score of the round that set the Best. Runs on
       // S changes while timerDone (covers both round-end and post-round override).
@@ -1424,7 +1475,7 @@ interface DedOpts {
     // scoring+timing toggles / freshness / settings-regen) mirrors ClassicMode and gets folded
     // into a shared shell in Step 6, once all modes' variations are known.
     // ============================================================
-    function DeductionMode({visible,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,onFreshChange}: ModeProps){
+    function DeductionMode({visible,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,settingsOpen,onFreshChange}: ModeProps){
       const dedType=useModePrefs(s=>s.dedType),setDedType=useModePrefs(s=>s.setDedType);   // persisted (mode-prefs store)
       const [abCrossOnly,setAbCrossOnly]=useState(false);
       const [julCrossOnly,setJulCrossOnly]=useState(false);
@@ -1491,7 +1542,9 @@ interface DedOpts {
       // Settings-change regen: regen ALL three engines' live puzzle (each no-ops on a burned or
       // browsed date), matching App's "regen the current + cleanse FRESH non-current" on a
       // format / random-format / leap / Jan-Feb / Julian-chance / range / calendar change.
-      useChangeEffect([randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY,useJulian],()=>{dayEng.regenDate();monthEng.regenDate();yearEng.regenDate();});
+      // Defer the global-settings regen to the ⚙ popover CLOSE (Q2). The cross-toggles below stay
+      // immediate — they're mode-LOCAL (toggled outside the popover), so they'd never see a close transition.
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY,useJulian],()=>{dayEng.regenDate();monthEng.regenDate();yearEng.regenDate();});
       // Toggle-change regen: a relevant Deduction toggle regens the ACTIVE engine's puzzle (the
       // toggles only render in their own sub-mode, so the active engine is always the right one).
       useChangeEffect([abCrossOnly,julCrossOnly,monthOnly1582],()=>eng.regenDate());
@@ -2211,19 +2264,19 @@ interface DedOpts {
               together (clearing any caught error AND resetting the component's state). The
               always-mounted modes pass `active` so a hidden mode's crash paints nothing. */}
           <ModeErrorBoundary key={"aox-"+aoxResetKey} mode="AoX" active={mode==="aox"}>
-            <AoxMode minY={minY} maxY={maxY} visible={mode==="aox"} fmtDate={fmtDate} useJulian={useJulian} genDate={genDate} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} randomFormat={randomFormat} dateFormat={dateFormat} saveStats={saveStats} onFreshChange={setAoxIsFresh}/>
+            <AoxMode minY={minY} maxY={maxY} visible={mode==="aox"} fmtDate={fmtDate} useJulian={useJulian} genDate={genDate} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} randomFormat={randomFormat} dateFormat={dateFormat} saveStats={saveStats} settingsOpen={settingsOpen} onFreshChange={setAoxIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"classic-"+classicResetKey} mode="Classic" active={mode==="classic"}>
-            <ClassicMode visible={mode==="classic"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} onFreshChange={setClassicIsFresh}/>
+            <ClassicMode visible={mode==="classic"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setClassicIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"flash-"+flashResetKey} mode="Flash" active={mode==="flash"}>
-            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} onFreshChange={setFlashIsFresh}/>
+            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setFlashIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"blitz-"+blitzResetKey} mode="Blitz" active={mode==="blitz"}>
-            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} onFreshChange={setBlitzIsFresh}/>
+            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setBlitzIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"deduction-"+deductionResetKey} mode="Deduction" active={mode==="deduction"}>
-            <DeductionMode visible={mode==="deduction"} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} onFreshChange={setDeductionIsFresh}/>
+            <DeductionMode visible={mode==="deduction"} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} settingsOpen={settingsOpen} onFreshChange={setDeductionIsFresh}/>
           </ModeErrorBoundary>
           {mode==="lookup"&&(<ModeErrorBoundary mode="Lookup" active={true}><div className="mt-5"><LookupCard history={lookupHistory} onAddHistory={pushLookupHistory} onMoveHistory={moveHistoryEntryToTop} onClearHistory={clearLookupHistory} inputValue={lookupInput} onInputChange={setLookupInput} outputValue={lookupOutput} onOutputChange={setLookupOutput} calcDate={lookupCalcDate} onCalcDateChange={setLookupCalcDate} selectedHistoryId={lookupSelectedHistoryId} onSelectedHistoryIdChange={setLookupSelectedHistoryId} calcOpen={lookupCalcOpen} onCalcOpenChange={setLookupCalcOpen} fmtDate={fmtDate} dateFormat={dateFormat} useJulian={useJulian}/></div></ModeErrorBoundary>)}
           {mode==="guide"&&(<ModeErrorBoundary mode="How to Play" active={true}><div className="mt-2.5"><GuidePage/></div></ModeErrorBoundary>)}

@@ -557,3 +557,61 @@ describe('Blitz — C2 Q2-B (Save Stats off: misclick rescue, no Best recorded)'
     expect(screen.getByText(/Best Score: —/)).toBeInTheDocument() // no Best in practice mode
   })
 })
+
+// ── Q2 (2026-06-21): a config setting changed on the ⚙ popover CLOSE resets the round ──────────────
+// Restores the documented "in active Blitz rounds, any settings change ends the round" behavior the
+// mode-untangle dropped (BlitzMode had no settings effect), AND extends it: an ENDED round (timerDone)
+// also resets, so the round on screen always matches the current settings. Deferred to popover CLOSE so
+// adjusting several settings doesn't churn the round per keystroke; an open→close with no change is a no-op.
+describe('Blitz — Q2 (a config change on popover close resets the round)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Settings' })))
+
+  it('an ACTIVE round resets to Begin when a config setting changes on close', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    expect(ctrl('Reset')).toBeInTheDocument() // active → Reset shown
+    toggleSettings() // open ⚙ → snapshot
+    act(() => useSettings.getState().setMinY(1700)) // change a config setting while open
+    expect(ctrl('Reset')).toBeInTheDocument() // still active while open (deferred)
+    toggleSettings() // close ⚙ → fire → resetRound
+    expect(ctrl('Begin')).toBeInTheDocument() // round reset to idle
+  })
+
+  it('an ENDED round (timerDone) resets to Begin when a config setting changes on close', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    clickText('Reveal') // ends the round → timerDone
+    expect(ctrl('Reset')).toBeInTheDocument()
+    toggleSettings()
+    act(() => useSettings.getState().setMinY(1700))
+    toggleSettings()
+    expect(ctrl('Begin')).toBeInTheDocument() // ended round reset on close
+  })
+
+  it('opening + closing settings with NO change leaves the round running', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    toggleSettings()
+    toggleSettings() // no change → no reset
+    expect(ctrl('Reset')).toBeInTheDocument() // still active
+  })
+})

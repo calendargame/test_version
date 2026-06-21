@@ -543,6 +543,61 @@ describe('AoX — bug fix (Override-completed run stays on the Nth question, C2)
   })
 })
 
+// ── Batch 6e: reveal-flash race — Override DURING the flash window cancels the pending auto-advance ──
+// onReveal (Allow Mistakes on, One-By-One off) flashes the answer then auto-advances ~FLASH_MS later
+// via a setTimeout (revealAdvanceRef). If the player credits the revealed miss via Override inside that
+// window, the stale timer must be cancelled — else it fires an extra doNew() that SKIPS a question, or
+// at the final question RE-OPENS the phantom-Q(N+1) overshoot the completion fix closed. (Found 2026-06-20.)
+describe('AoX — reveal-flash race (Override during the flash cancels the pending auto-advance)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('final question: Reveal then Override completes on Q2 — the stale flash timer does NOT overshoot to Q3', () => {
+    mountApp()
+    switchToAox()
+    click('Allow Mistakes')
+    setN(2)
+    click('Begin')
+    answerCorrect() // Q1 correct → good 1, advance to Q2
+    click('Reveal') // Q2 revealed miss → arms the FLASH_MS auto-advance timer; doneCount still 1 (=n-1)
+    click('Override') // completeViaOverride → HOLD, run completes ON Q2
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText('Q2')).toBeInTheDocument()
+    expect(screen.queryByText('Q3')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(700)
+    }) // the stale flash timer would fire doNew() here
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText('Q2')).toBeInTheDocument()
+    expect(screen.queryByText('Q3')).toBeNull() // NOT overshot to a phantom Q3
+  })
+
+  it('non-final question: Reveal then Override advances exactly once — the stale timer does NOT skip a question', () => {
+    mountApp()
+    switchToAox()
+    click('Allow Mistakes')
+    setN(3)
+    click('Begin')
+    click('Reveal') // Q1 revealed miss → arms the flash timer
+    click('Override') // Path 3 credit → advances to Q2 (good 1)
+    expect(statValue('Score')).toBe('1/1')
+    const q2 = readDate()
+    act(() => {
+      vi.advanceTimersByTime(700)
+    }) // the stale flash timer would fire doNew() → skip Q2
+    expect(readDate()).toEqual(q2) // still on Q2 — not skipped to Q3
+    expect(statValue('Score')).toBe('1/1')
+  })
+})
+
 // ── Batch 6b: C2 Q2-B — practice mode (Save Stats off) lets Override rescue a misclick-ended run ──
 // AoX already always-tracks internally, so the off-gate on Override was the only thing stopping a
 // fat-finger rescue in practice mode. Now Override is available specifically to continue a run a
@@ -732,7 +787,7 @@ describe('AoX — bug fix (post-completion Override reconciles the Best, C2)', (
     const oldKey = '2|false|numeric-ymd|random|random|random|1583-10000|true'
     expect(useProgress.getState().aoxBest[oldKey]?.avg).toEqual(expect.any(Number)) // recorded here
     act(() => {
-      useSettings.getState().setMinY(3000) // the panel's key moves; the done run is left alone
+      useSettings.getState().setMinY(3000) // DIRECT store change (NOT via the ⚙ popover) — isolates the reconcile-key path; a real popover-close change now resets the done run (see "AoX — Q2")
     })
     expect(isDisabled(ctrl('Override'))).toBe(false)
     click('Override') // reverse the completing solve at the live edge → the run no longer stands
@@ -789,5 +844,52 @@ describe('AoX — C2: mode switch mid-run resets, done state survives', () => {
     expect(statValue('Score')).toBe('2/2') // the finished run's summary is still there
     expect(bestVal('Average')).toBe(best)
     expect(ctrl('Reset')).toBeInTheDocument()
+  })
+})
+
+// ── Q2 (2026-06-21): a config change on the ⚙ popover CLOSE resets a running OR ended AoX run ───────
+// So the run on screen always matches the current settings (the recorded Best is config-keyed). Deferred
+// to popover close; an open→close with no change is a no-op. (The old "done run left alone" test above
+// uses a DIRECT store change to isolate the reconcile-key path — the real popover path resets, here.)
+describe('AoX — Q2 (a config change on popover close resets a done/failed run)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Settings' })))
+
+  it('a DONE run resets to Begin when a config setting changes on close', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    answerCorrect()
+    answerCorrect() // run done
+    expect(ctrl('Reset')).toBeInTheDocument() // done → Reset shown
+    toggleSettings() // open ⚙ → snapshot
+    act(() => useSettings.getState().setMinY(1700)) // change a config setting while open
+    expect(ctrl('Reset')).toBeInTheDocument() // still done while open (deferred)
+    toggleSettings() // close ⚙ → fire → reset()
+    expect(ctrl('Begin')).toBeInTheDocument() // done run reset to idle
+  })
+
+  it('opening + closing settings with NO change leaves a done run intact', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    answerCorrect()
+    answerCorrect() // run done
+    toggleSettings()
+    toggleSettings() // no change → no reset
+    expect(ctrl('Reset')).toBeInTheDocument() // still done
+    expect(statValue('Score')).toBe('2/2')
   })
 })

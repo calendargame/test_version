@@ -157,6 +157,19 @@ export interface GameState {
   prevStatsSnapshot: Snapshot | null //       pre-answer stats, for Override rollback
   wrongTime: number | null //                 solve time captured at a wrong answer (for retroactive credit)
   saveStatsThisQ: boolean | null //           frozen Save-Stats value for this question (null until first stat action)
+  // ── Hydration baseline (the prior-session record the in-session stack CANNOT reconstruct) ──
+  // A continuous mode (Classic/Flash/Deduction) HYDRATES lifetime stats on mount (initEngine's
+  // initialStats) but NOT the history behind them, so `best`/`streak` carry a prior-session record while
+  // `stack` starts empty. The OVERRIDE paths recompute streak/best from the stack via streaksFromStacks,
+  // which (without these) collapses the hydrated record down to the current in-session run on ANY
+  // Override (the owner-reported "best streak resets to match the current streak" bug; good/played/times
+  // are safe — incremental). `bestFloor` (= hydrated best) is a high-water mark the recompute can never
+  // drop below; `streakCarry` (= hydrated trailing streak) is prepended as leading credits so a corrected
+  // miss continues the prior run — making Override consistent with the ANSWER path, which already
+  // continues the hydrated streak. Both seed at initEngine (0 for a blank/timed start → no behavior
+  // change), survive every transition (spread), and re-zero on RESET (a fresh initEngine).
+  bestFloor: number
+  streakCarry: number
 }
 
 // ── The action set (discriminated union on `type`) ───────────────────────────
@@ -265,6 +278,9 @@ export const initEngine = (date: Question, initialStats?: Stats): GameState => (
   prevStatsSnapshot: null,
   wrongTime: null,
   saveStatsThisQ: null,
+  // The hydration baseline (see GameState): seed from the prior-session record, 0 for a blank start.
+  bestFloor: initialStats?.best ?? 0,
+  streakCarry: initialStats?.streak ?? 0,
 })
 
 // The per-question frozen Save-Stats value (frozen on first stat-affecting action),
@@ -398,8 +414,15 @@ const streaksFromStacks = (
   stack: StackEntry[],
   forwardStack: StackEntry[],
   middle?: boolean,
+  carry = 0,
+  floor = 0,
 ): { curStreak: number; bestStreak: number } => {
   const history = [
+    // The hydrated trailing streak (carry) prepended as leading credits, so a corrected miss continues
+    // the prior-session run — see GameState.streakCarry. carry is 0 for a blank/timed start, making this
+    // a no-op (history identical to before). computeStreaks naturally drops the prefix past any
+    // un-credited in-session miss, so the carry only extends a still-unbroken run.
+    ...Array.from({ length: carry }, () => true),
     ...stack.map((e) => !!e.hasCredit),
     ...(middle === undefined ? [] : [middle]),
     ...forwardStack
@@ -408,7 +431,11 @@ const streaksFromStacks = (
       .filter((e) => !e.isLive)
       .map((e) => !!e.hasCredit),
   ]
-  return computeStreaks(history)
+  const { curStreak, bestStreak } = computeStreaks(history)
+  // best is a high-water mark: never below the hydrated prior-session best (floor). floor is 0 for a
+  // blank start (no-op). Prepending `carry` trues already captures any run that joins the prior trailing
+  // streak with in-session credits; the floor covers a longer prior run not represented by the carry.
+  return { curStreak, bestStreak: Math.max(floor, bestStreak) }
 }
 
 // The live question's contribution to the credit history when browsing back (Path 1). The question
@@ -736,7 +763,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           stats = { ...state.stats, good: Math.max(0, state.stats.good - 1), times: cut }
           persistBtns = oneBtn(correct, 'override-wrong')
         }
-        const streaks = streaksFromStacks(state.stack, state.forwardStack, newHC)
+        const streaks = streaksFromStacks(
+          state.stack,
+          state.forwardStack,
+          newHC,
+          state.streakCarry,
+          state.bestFloor,
+        )
         let curStreak = streaks.curStreak
         let bestStreak = streaks.bestStreak
         // Fold in the live question we backed away from (excluded by streaksFromStacks): a scored
@@ -777,7 +810,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // fix, 2026-06-07 — the Path-2 twin of the Path-4 stale-snapshot clobber the override-/reveal-
         // heavy + deeper profiles surfaced.)
         const cut = dropContributedTime([...state.stats.times], u.contributedTime)
-        const { curStreak, bestStreak } = streaksFromStacks(state.stack, state.forwardStack, false)
+        const { curStreak, bestStreak } = streaksFromStacks(
+          state.stack,
+          state.forwardStack,
+          false,
+          state.streakCarry,
+          state.bestFloor,
+        )
         const stats: Stats = {
           ...state.stats,
           good: Math.max(0, state.stats.good - 1),
@@ -833,7 +872,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           calcPenaltyActive: false,
           calcOpen: false,
         }
-        const { curStreak, bestStreak } = streaksFromStacks(s.stack, s.forwardStack, true)
+        const { curStreak, bestStreak } = streaksFromStacks(
+          s.stack,
+          s.forwardStack,
+          true,
+          state.streakCarry,
+          state.bestFloor,
+        )
         s = { ...s, stats: { ...s.stats, streak: curStreak, best: bestStreak } }
         // `noAdvance` (AoX): when crediting this wrong is the run's COMPLETING solve (good reaches N),
         // HOLD it at the live edge — locked, correct shown, reversible (canOverrideCorrect) — instead
@@ -894,7 +939,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.stack.slice(0, -1),
           { ...last, btns: oneBtn(wd, 'correct'), overrideUsed: true, hasCredit: true },
         ]
-        const { curStreak, bestStreak } = streaksFromStacks(newStack, state.forwardStack)
+        const { curStreak, bestStreak } = streaksFromStacks(
+          newStack,
+          state.forwardStack,
+          undefined,
+          state.streakCarry,
+          state.bestFloor,
+        )
         let s: GameState = {
           ...s0,
           stats: { ...stats, streak: curStreak, best: bestStreak },
@@ -951,7 +1002,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           }
         }
         const newStack = [...state.stack.slice(0, -1), newLast]
-        const { curStreak, bestStreak } = streaksFromStacks(newStack, state.forwardStack)
+        const { curStreak, bestStreak } = streaksFromStacks(
+          newStack,
+          state.forwardStack,
+          undefined,
+          state.streakCarry,
+          state.bestFloor,
+        )
         return { ...s0, stats: { ...stats, streak: curStreak, best: bestStreak }, stack: newStack }
       }
 
