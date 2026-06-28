@@ -46,6 +46,7 @@ export default function CustomSelect({
   wrapperRef,
   showChevron = false,
   openUp = false,
+  pressDrag = false,
 }: {
   value: string
   onChange: (value: string) => void
@@ -56,6 +57,12 @@ export default function CustomSelect({
   wrapperRef?: RefObject<HTMLDivElement | null>
   showChevron?: boolean
   openUp?: boolean
+  // Q5: enable press-drag-select (the mode selector). The trigger toggles on POINTERDOWN (so a press can
+  // drag straight into the just-opened menu and release on an option to pick it — handled by the global
+  // pointer controller, lib/pointerGestures, via the data-select-trigger / data-select-group markers);
+  // its click is suppressed there to avoid a double-toggle. A quick tap still toggles; keyboard (the Tab
+  // shortcut's .click(), arrows, Enter) is unaffected — those clicks have no preceding pointer gesture.
+  pressDrag?: boolean
 }) {
   const [open, setOpen] = useState(false)
   // activeIdx tracks the keyboard-highlighted option (≠ selected value). -1 when nothing is
@@ -255,7 +262,9 @@ export default function CustomSelect({
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
+        onPointerDown={pressDrag ? handleToggle : undefined}
         onKeyDown={handleTriggerKeyDown}
+        data-select-trigger={pressDrag || undefined}
         className={className}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -288,6 +297,7 @@ export default function CustomSelect({
             ref={panelRef}
             id={listboxId}
             role="listbox"
+            data-select-group={pressDrag || undefined}
             aria-label={ariaLabel}
             className="rounded-2xl overflow-hidden"
             style={{

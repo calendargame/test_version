@@ -425,7 +425,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-28T00:52:00Z');
+    const DEPLOY_TS=new Date('2026-06-28T01:51:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -2281,7 +2281,7 @@ interface DedOpts {
                     wrapperRef={modeSelectRef} so the existing settings click-outside handler
                     keeps treating taps inside the mode dropdown the same way it treated taps
                     on the original <select>. showChevron renders the same ▲▼ indicator. */}
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{setMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{setMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
             </div>
             {settingsJsx}

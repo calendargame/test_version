@@ -104,7 +104,9 @@ export default function GuidePage() {
           your finger off before lifting, nothing happens — the tap is cancelled — so a misclick is
           easy to back out of. On the weekday answer grid you can also slide between options: press
           one, drag to the option you want (it highlights as you move), and release on it to choose
-          it. It works the same way with a mouse.
+          it. The mode selector at the top works this way too — press it and drag down to a mode,
+          then release to switch (or just tap it to open the menu and tap a mode, as before). It all
+          works the same way with a mouse.
         </p>
         <p>
           <b>New</b> — load a fresh date. In timer modes, only available after pressing Begin.
