@@ -92,14 +92,20 @@ export function installPointerGestures(): () => void {
     group = null
     triggerMode = false
   }
-  // Suppress the imminent native click on `el`, then drop the flag next tick — if no click arrives (a
-  // mouse drag-off fires none), a later real click on the same button mustn't be swallowed.
+  // Suppress the start button's native click. On touch that click fires the ORIGINAL button regardless
+  // of drift AND is DELAYED/async after release (a long press makes the browser "commit" to the pressed
+  // button, so it still fires that button's click even after you drag away). So the flag must OUTLAST the
+  // click delay: it persists until the click consumes it (onClick) or the next gesture clears it
+  // (onDown), with a generous fallback timer only for the no-click case (a mouse drag-off fires none) so
+  // a much-later real click on the same button isn't swallowed. (A 0ms tick lost this race — held-then-
+  // dragged taps and the mode-selector re-toggle leaked through. Q5 fix.)
   const armSuppress = (el: Element) => {
     suppressEl = el
+    if (clearTimer) clearTimeout(clearTimer)
     clearTimer = setTimeout(() => {
       suppressEl = null
       clearTimer = null
-    }, 0)
+    }, 1000)
   }
 
   const onDown = (e: PointerEvent) => {
@@ -154,6 +160,10 @@ export function installPointerGestures(): () => void {
       (e.target === suppressEl || (suppressEl as Element).contains(e.target as Node))
     ) {
       suppressEl = null
+      if (clearTimer) {
+        clearTimeout(clearTimer)
+        clearTimer = null
+      }
       e.preventDefault()
       e.stopImmediatePropagation()
     }
