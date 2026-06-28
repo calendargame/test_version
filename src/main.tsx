@@ -25,6 +25,7 @@ import { useBackButton } from './components/useBackButton.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { useSettings } from './store/settings.js'
+import type { InputStyle } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
 import { useProgress } from './store/progress.js'
 import type { AoxBest, BlitzBest, SuddenBest } from './store/progress.js'
@@ -53,6 +54,7 @@ interface ModeProps {
   saveStats: boolean
   dateFormat: FormatId
   randomFormat: boolean
+  inputStyle?: InputStyle // day-of-week answer layout (buttons | dots); weekday modes only — Deduction ignores it
   leapChance: string
   janFebChance: string
   julianChance: string
@@ -111,11 +113,66 @@ interface DedOpts {
       if(isFlashing)return(flashGood?"flash-good":"flash-bad")+' border-transparent';
       return idleClass;
     };
-    // AnswerButton wrapper was considered but not used: each grid has site-specific
-    // baseBtn/extra-class shaping (col-span, py-2 text-sm, centerLastOpt) so calling
-    // buttonStateClass directly in each render keeps the layout flexible while still
-    // sharing the state-class derivation. If a site ever needs the full wrapper,
-    // factor it back in here.
+    // BASE_BTN — the shared answer-button className (identical across all weekday + Deduction grids).
+    const BASE_BTN="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
+    // DOT_CELL — the logo's 7-position layout for the Dots input (Settings → Input). The array index is
+    // the weekday (0=Sun..6=Sat), so the dot buttons stay in DOM order Sun..Sat (the keyboard 0–9 path
+    // reads children[idx]); each entry is the CSS grid cell it's placed in, matching the app icon /
+    // W5Logo: Sun centre, Mon bottom-right, Tue mid-right, Wed top-right, Thu bottom-left, Fri mid-left,
+    // Sat top-left. Centre-top (r1,c2) + centre-bottom (r3,c2) stay empty. (r,c are 1-indexed.)
+    const DOT_CELL: ReadonlyArray<{r:number;c:number}>=[
+      {r:2,c:2}, // 0 Sunday    — centre
+      {r:3,c:3}, // 1 Monday    — bottom-right
+      {r:2,c:3}, // 2 Tuesday   — mid-right
+      {r:1,c:3}, // 3 Wednesday — top-right
+      {r:3,c:1}, // 4 Thursday  — bottom-left
+      {r:2,c:1}, // 5 Friday    — mid-left
+      {r:1,c:1}, // 6 Saturday  — top-left
+    ];
+    // WeekdayAnswer — the Sun..Sat answer grid shared by the four weekday modes (Classic/Flash/Blitz/
+    // AoX), in EITHER the classic labelled-button layout or the logo's 7-dot layout (Settings → Input;
+    // Deduction has its own puzzle grid, not a weekday answer). Both layouts share the per-option state
+    // derivation (persist colour / flash / lock / dim) and the same release-aware onClick (the global
+    // pointer controller makes every button press-drag-release + makes a data-answer-grid drag-to-select).
+    // DOM order is always Sun..Sat so the keyboard 0–9 path (children[idx]) works in both; the dot layout
+    // only repositions visually via DOT_CELL. idleClass is 'surface-button' for both (matches every
+    // weekday grid). The buttons branch matches the prior inline grids — Classic/Flash/Blitz verbatim,
+    // and AoX now also blurs the answer on touch like the others (harmless: just drops focus after a
+    // tap) — so behaviour, and the DOM tests that drive it, are unchanged. The dots are unlabelled
+    // circles (aria-label carries the accessible day name) sized + positioned by the .dot-box/
+    // .dot-cluster/.dot-btn CSS (index.css).
+    function WeekdayAnswer({inputStyle,persistBtns,flash,optionsDisabled,onPick}:{
+      inputStyle: InputStyle;
+      persistBtns: Record<string, ButtonState | undefined>;
+      flash: FlashState | null;
+      optionsDisabled: boolean;
+      onPick: (i: number)=>void;
+    }){
+      const opt=(i: number)=>{
+        const ps=persistBtns[i];
+        const isFlashing=!!(flash&&flash.idx===i);
+        const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",'surface-button');
+        const perLocked=!!ps;
+        const shouldDim=optionsDisabled&&!ps&&!isFlashing;
+        const disabled=perLocked||optionsDisabled;
+        const onClick=()=>{if(perLocked)return;onPick(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();};
+        return {bCls,disabled,shouldDim,onClick};
+      };
+      if(inputStyle==='dots'){
+        return(
+          <div className="mt-4 dot-box">
+            <div className="dot-cluster" data-answer-grid="true">
+              {DAY.map((nm,i)=>{const o=opt(i);return(<button key={nm} type="button" aria-label={nm} onClick={o.onClick} style={{gridRow:DOT_CELL[i].r,gridColumn:DOT_CELL[i].c}} className={`dot-btn ${o.bCls} ${o.disabled?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""}`}/>);})}
+            </div>
+          </div>
+        );
+      }
+      return(
+        <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
+          {DAY.map((nm,i)=>{const o=opt(i);const last=i===DAY.length-1?"col-span-2":"";return(<button key={nm} type="button" onClick={o.onClick} className={`${BASE_BTN} ${o.bCls} ${o.disabled?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""} ${last}`}>{nm}</button>);})}
+        </div>
+      );
+    }
     // MONTH / DAY name tables → src/lib/format.js, imported at top.
     // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
     // that replaced the native <select>). Order here = order shown in the dropdown.
@@ -425,7 +482,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-28T06:00:00Z');
+    const DEPLOY_TS=new Date('2026-06-28T07:33:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -685,7 +742,7 @@ interface DedOpts {
     // credited solves, played = attempts, times = solve times, streak/best. The fold needs only
     // two general engine flags: `complete` (the Nth solve credits without advancing) and
     // `noAdvance` (a failing override of that solve stays put). See gameReducer.
-    function AoxMode({minY,maxY,visible,fmtDate,useJulian=false,genDate=randomDate,leapChance='random',janFebChance='random',julianChance='random',randomFormat=false,dateFormat='written-mdy',saveStats=true,settingsOpen,onFreshChange}: ModeProps & { fmtDate: FmtDate; genDate?: GenDate }){
+    function AoxMode({minY,maxY,visible,fmtDate,useJulian=false,genDate=randomDate,leapChance='random',janFebChance='random',julianChance='random',randomFormat=false,dateFormat='written-mdy',inputStyle='buttons',saveStats=true,settingsOpen,onFreshChange}: ModeProps & { fmtDate: FmtDate; genDate?: GenDate }){
       const aoxN=useModePrefs(s=>s.aoxN),setAoxN=useModePrefs(s=>s.setAoxN);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.aoxAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setAoxAllowMistakes);   // persisted (mode-prefs store)
       const oneByOne=useModePrefs(s=>s.aoxOneByOne),setOneByOne=useModePrefs(s=>s.setAoxOneByOne);   // persisted (mode-prefs store)
@@ -822,7 +879,6 @@ interface DedOpts {
       // (covers the brief non-One-By-One reveal flash before it auto-advances, the Show-Codes pause,
       // and the One-By-One reveal pause).
       const optionsDisabled=isLocked||state.calcOpen||resolvedMiss||(oneByOne&&!shown&&!inBack)||runPhase==="idle"||inBack;
-      const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
       const scoreDisplay=runPhase==="idle"?"0/0":`${doneCount}/${S.played}`;
       const accuracyDisplay=fmtAccuracyPct(doneCount,S.played);
       const date=state.date;
@@ -938,9 +994,7 @@ interface DedOpts {
               {(inBack||isLocked)&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
               <div className="text-3xl font-bold">{dateVisible?fmtDate(date.y,date.m,date.d,date._fmt):"—"}</div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
-              {DAY.map((nm,i)=>{const lastCol=i===DAY.length-1?"col-span-2":"";const ps=state.persistBtns[i];const isFlashing=!!(flash&&flash.idx===i);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",'surface-button');const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={nm} type="button" onClick={()=>{if(perLocked)return;submitDoW(i);}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${lastCol}`}>{nm}</button>);})}
-            </div>
+            <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={submitDoW}/>
           </div>
           <div className="mt-4 rounded-2xl panel p-3 space-y-3">
             <div className="grid grid-cols-4 gap-2">
@@ -969,7 +1023,7 @@ interface DedOpts {
     // and passes the settings down (like it does for AoxMode). This is the first mode
     // carved out of App's fused rendering; Flash/Blitz/Deduction follow onto the same engine.
     // ============================================================
-    function ClassicMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function ClassicMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const timingOff=useModePrefs(s=>s.classicTimingOff),setTimingOff=useModePrefs(s=>s.setClassicTimingOff);   // persisted; timing hidden by default (feeds the engine)
       const scoringOff=useModePrefs(s=>s.classicScoringOff),setScoringOff=useModePrefs(s=>s.setClassicScoringOff);   // persisted; scoring shown by default
       // Lifetime stats persist across reloads (Stage D1): hydrate from saved progress on mount,
@@ -988,8 +1042,6 @@ interface DedOpts {
       const {timingArmed,statsArr,armedSpan,armedBtnRef}=useStatsHideToggles({eng,saveStats,visible,timingOff,setTimingOff,scoringOff,setScoringOff});
       const optionsDisabled=state.locked||state.calcOpen||state.calcPenaltyActive;
       const revealDisabled=(state.locked&&state.revealed)||state.calcOpen||state.calcPenaltyActive;
-      const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
-      const idleBtn="surface-button";
 
       const onAnswer=(i: number)=>{setFlashWithTimeout({type:i===correct?"good":"bad",idx:i});eng.answer(i);};
       // Override Path 3 (override-after-wrong) flashes green on the correct button, matching App.
@@ -1017,9 +1069,7 @@ interface DedOpts {
                 {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{fmtDate(date.y,date.m,date.d,date._fmt)}</div>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
-                {DAY.map((n,i)=>{const last=i===DAY.length-1?"col-span-2":"";const ps=state.persistBtns[i];const isFlashing=!!(flash&&flash.idx===i);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={n} type="button" onClick={()=>{if(perLocked)return;onAnswer(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{n}</button>);})}
-              </div>
+              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1050,7 +1100,7 @@ interface DedOpts {
     // ClassicMode; that duplication gets factored into a shared shell in Step 6, once all
     // modes' variations are known.)
     // ============================================================
-    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const [active,setActive]=useState(false);
       const [flashPhase,setFlashPhase]=useState("dash");      // dash (idle) | show (revealing) | hide ("…")
       const [showTimerDate,setShowTimerDate]=useState(false); // keep the date visible after Reveal
@@ -1154,8 +1204,6 @@ interface DedOpts {
       // Show Codes, which keys off shouldShowTimerDate). Was wrongly locked in the "show" phase
       // via `!showTimerDate&&!flashHiding`; `!shouldShowTimerDate` enables it — bug #5.
       const revealDisabled=(state.locked&&state.revealed)||state.calcOpen||state.calcPenaltyActive||(!shouldShowTimerDate&&!inBack);
-      const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
-      const idleBtn="surface-button";
       const onResetStats=()=>{eng.resetStats();if(active){setActive(false);stopFlash();}setShowTimerDate(false);};
       const {resetArmed,onResetTap,resetBtnRef}=useResetStatsArm(onResetStats,!engineFresh(state),visible);   // Q2 two-tap confirm (Flash reset also tears the live flash down)
       const date=state.date;
@@ -1172,9 +1220,7 @@ interface DedOpts {
                 {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{dateText}</div>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
-                {DAY.map((n,i)=>{const last=i===DAY.length-1?"col-span-2":"";const ps=state.persistBtns[i];const isFlashing=!!(flash&&flash.idx===i);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={n} type="button" onClick={()=>{if(perLocked)return;onAnswer(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{n}</button>);})}
-              </div>
+              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1204,7 +1250,7 @@ interface DedOpts {
     // per-Q wrong. Best is reconciled in an effect when a round ends (set to max, tagged with
     // the round id) and ROLLED BACK there too when an Override drops the round that set it.
     // ============================================================
-    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const perQ=useModePrefs(s=>s.blitzPerQ),setPerQ=useModePrefs(s=>s.setBlitzPerQ);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.blitzAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setBlitzAllowMistakes);   // persisted (mode-prefs store)
       const [active,setActive]=useState(false);
@@ -1329,7 +1375,6 @@ interface DedOpts {
         setFlashWithTimeout({type:i===correct?"good":"bad",idx:i});
         eng.answer(i);
         if(i===correct){
-          // eslint-disable-next-line react-hooks/purity -- performance.now() runs in the answer event handler (not render); the linter mis-flags handler-only impurity (begin() makes the same call un-flagged)
           if(perQ){const now=performance.now();qDeadlineRef.current=now+qSec*1000;qPausedAccRef.current=0;qPausedAtRef.current=null;setQRemain(qSec);}
           // per-round: round continues; engine already advanced to the next date
         }else{
@@ -1442,8 +1487,6 @@ interface DedOpts {
       const timerBlocksReveal=!shouldShowTimerDate;
       const revealDisabled=(state.locked&&state.revealed)||state.calcOpen||state.calcPenaltyActive||timerBlocksReveal||timerDone;
       const timerBusy=active;
-      const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
-      const idleBtn="surface-button";
       const showStreak=!perQ;
       const sOff=!saveStats;
       const statsArr=[
@@ -1475,9 +1518,7 @@ interface DedOpts {
                 {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{dateText}</div>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
-                {DAY.map((n,i)=>{const last=i===DAY.length-1?"col-span-2":"";const ps=state.persistBtns[i];const isFlashing=!!(flash&&flash.idx===i);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={n} type="button" onClick={()=>{if(perLocked)return;onAnswer(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{n}</button>);})}
-              </div>
+              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1555,7 +1596,7 @@ interface DedOpts {
 
       const optionsDisabled=state.locked||state.calcOpen||state.calcPenaltyActive;
       const revealDisabled=(state.locked&&state.revealed)||state.calcOpen||state.calcPenaltyActive;
-      const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
+      const baseBtn=BASE_BTN;
       const idleBtn="surface-button";
 
       const changeDedType=(t: string)=>{if(t===dedType)return;setFlash(null);setDedType(t);};   // each silo persists; just swap which shows
@@ -1687,6 +1728,7 @@ interface DedOpts {
       const saveStats=useSettings(s=>s.saveStats),setSaveStats=useSettings(s=>s.setSaveStats);
       const dateFormat=useSettings(s=>s.dateFormat),setDateFormat=useSettings(s=>s.setDateFormat);
       const randomFormat=useSettings(s=>s.randomFormat),setRandomFormat=useSettings(s=>s.setRandomFormat);
+      const inputStyle=useSettings(s=>s.inputStyle),setInputStyle=useSettings(s=>s.setInputStyle);
       const leapChance=useSettings(s=>s.leapChance),setLeapChance=useSettings(s=>s.setLeapChance);
       const janFebChance=useSettings(s=>s.janFebChance),setJanFebChance=useSettings(s=>s.setJanFebChance);
       const julianChance=useSettings(s=>s.julianChance),setJulianChance=useSettings(s=>s.setJulianChance);
@@ -2109,7 +2151,7 @@ interface DedOpts {
       // Drives Reset Settings dim-and-lock — same pattern as Reveal/Override/etc.
       // Includes year range *input text* values so a dirty (uncommitted) input keeps
       // the button active to clear it back to "1" / "10000".
-      const settingsAtDefaults=randomFormat===true&&dateFormat==='written-mdy'&&useJulian===true&&minY===1&&maxY===10000&&minInputVal==="1"&&maxInputVal==="10000"&&leapChance==='random'&&janFebChance==='random'&&julianChance==='random'&&saveStats===true&&useSystem===true&&darkTheme==='dusk'&&lightTheme==='light'&&manualTheme==='dusk';
+      const settingsAtDefaults=randomFormat===true&&dateFormat==='written-mdy'&&inputStyle==='buttons'&&useJulian===true&&minY===1&&maxY===10000&&minInputVal==="1"&&maxInputVal==="10000"&&leapChance==='random'&&janFebChance==='random'&&julianChance==='random'&&saveStats===true&&useSystem===true&&darkTheme==='dusk'&&lightTheme==='light'&&manualTheme==='dusk';
       // Every per-mode piece of state now lives in the always-mounted mode components, which
       // each report a comprehensive freshness flag (config + stats + history + UI toggles) up
       // via onFreshChange. So isFullyReset = the launch mode (classic) + settings-at-defaults +
@@ -2164,6 +2206,16 @@ interface DedOpts {
                 <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-2 py-1 text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid text-white":"text-purple-100/80"}`}>YMD</button>
               </div>
             </div>
+          </div>
+        </div>
+        <div className="space-y-2 pt-3 border-t border-purple-500/20">
+          <SectionLabel>Input</SectionLabel>
+          {/* Buttons / Dots — the day-of-week answer layout (the logo's 7-dot input as an alternate).
+              In Deduction the answers aren't weekdays, so the control LOCKS/DIMS (value preserved),
+              exactly like Julian/Leap-Year Chance when they don't apply to the current range. */}
+          <div className={`flex border surface-toggle rounded-xl overflow-hidden${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${inputStyle==='buttons'?"btn-solid text-white":"text-purple-100/80"}`}>Buttons</button>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium ${inputStyle==='dots'?"btn-solid text-white":"text-purple-100/80"}`}>Dots</button>
           </div>
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
@@ -2302,16 +2354,16 @@ interface DedOpts {
               together (clearing any caught error AND resetting the component's state). The
               always-mounted modes pass `active` so a hidden mode's crash paints nothing. */}
           <ModeErrorBoundary key={"aox-"+aoxResetKey} mode="AoX" active={mode==="aox"}>
-            <AoxMode minY={minY} maxY={maxY} visible={mode==="aox"} fmtDate={fmtDate} useJulian={useJulian} genDate={genDate} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} randomFormat={randomFormat} dateFormat={dateFormat} saveStats={saveStats} settingsOpen={settingsOpen} onFreshChange={setAoxIsFresh}/>
+            <AoxMode minY={minY} maxY={maxY} visible={mode==="aox"} fmtDate={fmtDate} useJulian={useJulian} genDate={genDate} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} randomFormat={randomFormat} inputStyle={inputStyle} dateFormat={dateFormat} saveStats={saveStats} settingsOpen={settingsOpen} onFreshChange={setAoxIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"classic-"+classicResetKey} mode="Classic" active={mode==="classic"}>
-            <ClassicMode visible={mode==="classic"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setClassicIsFresh}/>
+            <ClassicMode visible={mode==="classic"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setClassicIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"flash-"+flashResetKey} mode="Flash" active={mode==="flash"}>
-            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setFlashIsFresh}/>
+            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setFlashIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"blitz-"+blitzResetKey} mode="Blitz" active={mode==="blitz"}>
-            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setBlitzIsFresh}/>
+            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setBlitzIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"deduction-"+deductionResetKey} mode="Deduction" active={mode==="deduction"}>
             <DeductionMode visible={mode==="deduction"} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} settingsOpen={settingsOpen} onFreshChange={setDeductionIsFresh}/>

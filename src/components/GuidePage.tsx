@@ -106,7 +106,9 @@ export default function GuidePage() {
           one, drag to the option you want (it highlights as you move), and release on it to choose
           it. The mode selector at the top works this way too — press it and drag down to a mode,
           then release to switch (or just tap it to open the menu and tap a mode, as before). It all
-          works the same way with a mouse.
+          works the same way with a mouse. The weekday answer grid comes in two layouts — labelled
+          buttons (default) or the seven-dot logo layout — chosen under <b>Settings → Input</b>;
+          tapping and dragging work the same in either.
         </p>
         <p>
           <b>New</b> — load a fresh date. In timer modes, only available after pressing Begin.
@@ -395,6 +397,23 @@ export default function GuidePage() {
         </p>
       </GuideSection>
       <Divider label="Settings" />
+      <GuideSection id="input" title="Input" openId={open} onToggle={toggle}>
+        <p>
+          Set via the ⚙ settings menu. Chooses how you answer the day-of-week question in the
+          weekday modes (Classic, Flash, Blitz, AoX). <b>Buttons</b> (default) shows the seven
+          weekdays as labelled buttons. <b>Dots</b> shows them as seven unlabelled circles in the
+          same layout as the app's logo: Sunday in the centre, then around it — Monday bottom-right,
+          Tuesday middle-right, Wednesday top-right, Thursday bottom-left, Friday middle-left,
+          Saturday top-left. Tap a dot, or press and slide to the one you want and release, exactly
+          like the buttons.
+        </p>
+        <p>
+          The dots are deliberately unlabelled — their positions follow the day-of-week practice
+          movement, so choosing one is the same motion you trace when calculating. Deduction answers
+          aren't weekdays, so the setting is shown but locked there (it keeps whatever you last
+          chose and applies again in the weekday modes).
+        </p>
+      </GuideSection>
       <GuideSection id="dateformat" title="Date Format" openId={open} onToggle={toggle}>
         <p>
           Set via the ⚙ settings menu. Choose one of five real-world formats: <b>Written MDY</b>{' '}

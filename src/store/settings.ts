@@ -4,8 +4,9 @@ import type { FormatId } from '../lib/format.js'
 
 // settings.js — the ⚙ Settings store (Stage C, Steps 5a + 5b).
 //
-// Holds the 13 values that live in the Settings popover. Previously these were
-// 13 useState hooks inside App; centralizing them is the structural groundwork
+// Holds the 14 values that live in the Settings popover (13 at the Stage-C extraction; the Input
+// style was added Session 10). Originally these were useState hooks inside App; centralizing them
+// is the structural groundwork
 // for (a) saved-progress and (b) splitting the fused game modes apart later,
 // since the modes can read settings from here instead of receiving them all as
 // threaded props.
@@ -28,11 +29,16 @@ import type { FormatId } from '../lib/format.js'
 // transient text-input mirror strings, not persisted settings; they stay as
 // local useState in App.
 
-// The 13 settings values, then the full store (values + setters). Each setter takes a direct
+// The day-of-week answer input layout: the classic labelled buttons, or the logo's 7-dot grid
+// (Settings → Input). Stored as an enum (not a boolean) so more layouts can be added later.
+export type InputStyle = 'buttons' | 'dots'
+
+// The 14 settings values, then the full store (values + setters). Each setter takes a direct
 // value OR a React-style functional updater (prev => next), matching App's setX(v=>!v) call sites.
 export type SettingsValues = {
   randomFormat: boolean
   dateFormat: FormatId
+  inputStyle: InputStyle
   useJulian: boolean
   minY: number
   maxY: number
@@ -49,6 +55,7 @@ type Updater<T> = T | ((prev: T) => T)
 export type SettingsState = SettingsValues & {
   setRandomFormat: (v: Updater<boolean>) => void
   setDateFormat: (v: Updater<FormatId>) => void
+  setInputStyle: (v: Updater<InputStyle>) => void
   setUseJulian: (v: Updater<boolean>) => void
   setMinY: (v: Updater<number>) => void
   setMaxY: (v: Updater<number>) => void
@@ -67,6 +74,7 @@ export type SettingsState = SettingsValues & {
 export const SETTINGS_DEFAULTS: SettingsValues = {
   randomFormat: true,
   dateFormat: 'written-mdy',
+  inputStyle: 'buttons',
   useJulian: true,
   minY: 1,
   maxY: 10000,
@@ -93,6 +101,7 @@ export const useSettings = create<SettingsState>()(
       ...SETTINGS_DEFAULTS,
       setRandomFormat: (v) => set((s) => ({ randomFormat: resolve(v, s.randomFormat) })),
       setDateFormat: (v) => set((s) => ({ dateFormat: resolve(v, s.dateFormat) })),
+      setInputStyle: (v) => set((s) => ({ inputStyle: resolve(v, s.inputStyle) })),
       setUseJulian: (v) => set((s) => ({ useJulian: resolve(v, s.useJulian) })),
       setMinY: (v) => set((s) => ({ minY: resolve(v, s.minY) })),
       setMaxY: (v) => set((s) => ({ maxY: resolve(v, s.maxY) })),
