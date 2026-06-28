@@ -23,6 +23,7 @@ import { MethodExplanation, MethodBreakdownSection } from './components/MethodBr
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
+import { installPointerGestures } from './lib/pointerGestures.js'
 import { useSettings } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
 import { useProgress } from './store/progress.js'
@@ -90,6 +91,9 @@ interface DedOpts {
     const RESET_BTN_CLASS="px-3 py-2 rounded-xl bg-rose-600/90 text-white text-sm font-medium";
     // Compact Reset Stats button variant (smaller py + col-span fit for stats panel).
     const RESET_STATS_BTN_CLASS="w-full px-3 py-1.5 rounded-xl btn-solid border border-transparent text-sm font-medium";
+    // Reset Stats when ARMED (first tap of the two-tap confirm, Q2): rose/danger fill — the same danger
+    // colour as RESET_BTN_CLASS — so "tap again to confirm" reads as a warning, not a normal button.
+    const RESET_STATS_ARMED_CLASS="w-full px-3 py-1.5 rounded-xl bg-rose-600/90 text-white border border-transparent text-sm font-medium";
     // Presentational primitives (NewBestStar, SectionLabel, Kbd) + their class consts → src/components/primitives.jsx, imported at top.
     // buttonStateClass — picks the className for an answer-grid button based on its
     // persistent state (correct/wrong-latest/wrong-prev/override-wrong) and any active
@@ -352,6 +356,34 @@ interface DedOpts {
       // armedSpan data stays ref-free — see the note in StatPanel.tsx.
       return {timingArmed,statsArr,armedSpan,armedBtnRef:timingArmBtnRef};
     }
+
+    // Two-tap "Reset Stats?" confirm for the casual modes (Classic / Flash / Deduction) — mirrors the
+    // timing-arm above so the two destructive actions feel identical. A first tap ARMS (the button shows
+    // "Reset Stats?" in the danger colour, 3s); a second tap within 3s runs `resetFn` (Classic/Deduction
+    // = eng.resetStats; Flash passes its own reset that also tears the live flash down). Disarms on the
+    // 3s timeout, a click outside the button, or leaving the mode. Gated on `hasData`: a fully-fresh mode
+    // (engineFresh) has nothing to clear, so a tap is a harmless no-op (never arms). The `S` keyboard
+    // shortcut routes through the same onClick via .click() (see the keyboard effect), so it arms +
+    // confirms identically. (Q2.)
+    function useResetStatsArm(resetFn: () => void, hasData: boolean, visible: boolean){
+      const [resetArmed,setResetArmed]=useState(false);
+      const armedRef=useRef(false);
+      const timerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
+      const resetBtnRef=useRef<HTMLButtonElement | null>(null);
+      const disarm=()=>{if(timerRef.current){clearTimeout(timerRef.current);timerRef.current=null;}armedRef.current=false;setResetArmed(false);};
+      const onResetTap=()=>{
+        if(!hasData){disarm();return;}                     // nothing to clear → no-op (don't arm)
+        if(armedRef.current){disarm();resetFn();return;}   // second tap within 3s → confirm + reset
+        armedRef.current=true;setResetArmed(true);          // first tap → arm
+        if(timerRef.current)clearTimeout(timerRef.current);
+        timerRef.current=setTimeout(()=>{timerRef.current=null;armedRef.current=false;setResetArmed(false);},3000);
+      };
+      // Click anywhere but the button disarms (delayed one tick so the arming click itself doesn't disarm).
+      useEffect(()=>{if(!resetArmed)return;const h=(e: MouseEvent)=>{if(resetBtnRef.current&&resetBtnRef.current.contains(e.target as Node | null))return;disarm();};const t=setTimeout(()=>document.addEventListener('click',h),0);return()=>{clearTimeout(t);document.removeEventListener('click',h);};},[resetArmed]);
+      // Leaving the mode disarms (visible-only by design; disarm closes over only refs + stable setters).
+      useEffect(()=>{if(!visible&&armedRef.current)disarm();},[visible]);
+      return {resetArmed,onResetTap,resetBtnRef};
+    }
     // Run fn() whenever any value in `deps` changes — skipping the initial mount. The generic
     // "react to a settings/toggle change" effect the modes use to regen an unanswered live date
     // (the engine's regenDate no-ops on a burned/browsed date). fn is read through a ref so the
@@ -393,7 +425,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-21T07:55:00Z');
+    const DEPLOY_TS=new Date('2026-06-28T00:52:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -972,12 +1004,13 @@ interface DedOpts {
       // Freshness — engine state at launch default + Classic's own toggle/flash fields. Reported up
       // via onFreshChange so App's isFullyReset (Full Reset dim/lock) accounts for Classic.
       const classicIsFresh=engineFresh(state)&&timingOff===true&&scoringOff===false&&timingArmed===false&&flash===null;
+      const {resetArmed,onResetTap,resetBtnRef}=useResetStatsArm(eng.resetStats,!engineFresh(state),visible);   // Q2 two-tap confirm
       useEffect(()=>{onFreshChange?.(classicIsFresh);},[classicIsFresh,onFreshChange]);
       const date=state.date;
       return(
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
-          <div className="mt-3"><button type="button" data-key="S" className={RESET_STATS_BTN_CLASS} onClick={eng.resetStats}>Reset Stats</button></div>
+          <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
           <div className="mt-5">
             <div className="mt-4 rounded-2xl panel p-4">
               <div className="text-center relative">
@@ -1124,12 +1157,13 @@ interface DedOpts {
       const baseBtn="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
       const idleBtn="surface-button";
       const onResetStats=()=>{eng.resetStats();if(active){setActive(false);stopFlash();}setShowTimerDate(false);};
+      const {resetArmed,onResetTap,resetBtnRef}=useResetStatsArm(onResetStats,!engineFresh(state),visible);   // Q2 two-tap confirm (Flash reset also tears the live flash down)
       const date=state.date;
       const dateText=(shouldShowTimerDate||inBack)?(flashHiding?"…":fmtDate(date.y,date.m,date.d,date._fmt)):"—";
       return(
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
-          <div className="mt-3"><button type="button" data-key="S" className={RESET_STATS_BTN_CLASS} onClick={onResetStats}>Reset Stats</button></div>
+          <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
           <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="3000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/2900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><span className="tabular-nums text-xs w-10 shrink-0 text-right">{fmtFlashT(flashMs)}</span></div></div>
           <div className="mt-5">
             <div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1">{fmtFlashT(flashRemainMs)}</div><div className="bar"><span ref={flashBarRef} style={{width:"100%"}}></span></div></div>
@@ -1552,6 +1586,7 @@ interface DedOpts {
       // Freshness — all three silos' engine state fresh + Deduction's toggles/UI at launch default
       // (dates are random, so excluded). Reported up so App's isFullyReset accounts for Deduction.
       const deductionIsFresh=engineFresh(dayEng.state)&&engineFresh(monthEng.state)&&engineFresh(yearEng.state)&&dedType==="day"&&abCrossOnly===false&&julCrossOnly===false&&monthOnly1582===false&&timingOff===true&&scoringOff===false&&timingArmed===false&&flash===null;
+      const {resetArmed,onResetTap,resetBtnRef}=useResetStatsArm(eng.resetStats,!engineFresh(state),visible);   // Q2 two-tap confirm (resets the ACTIVE sub-type's silo)
       useEffect(()=>{onFreshChange?.(deductionIsFresh);},[deductionIsFresh,onFreshChange]);
       const date=state.date as DedPuzzle;
       // Codes-panel target mirrors App's deduction calcTarget: just the date fields (so
@@ -1572,7 +1607,7 @@ interface DedOpts {
       return(
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
-          <div className="mt-3"><button type="button" data-key="S" className={RESET_STATS_BTN_CLASS} onClick={eng.resetStats}>Reset Stats</button></div>
+          <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
           <div className="mt-5">
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
               <div className="flex justify-start">
@@ -1828,6 +1863,9 @@ interface DedOpts {
           return;
         }
       };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[]);
+      // Q4: install the global press-drag-release input controller (slide-off-to-cancel on every button
+      // + answer-grid drag-to-select). One set of document pointer listeners; cleanup on unmount.
+      useEffect(()=>installPointerGestures(),[]);
       function applyMinValue(val: number){if(val!==minY)setMinY(val);}
       function applyMaxValue(val: number){if(val!==maxY)setMaxY(val);}
       const commitMin=()=>{const p=parseInt(minInputVal);if(isNaN(p)){setMinInputVal(String(minY));return;}const v=Math.max(1,Math.min(maxY,p));applyMinValue(v);setMinInputVal(String(v));};

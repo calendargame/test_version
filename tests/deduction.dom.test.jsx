@@ -378,7 +378,8 @@ describe('Deduction — characterization (batch 4: Day Show Codes, streaks, Rese
     switchToDeduction()
     answerCorrect() // 1/1, history has one entry
     expect(isDisabled(ctrl('<'))).toBe(false)
-    clickCtrl('Reset Stats')
+    clickCtrl('Reset Stats') // Q2: first tap arms
+    clickCtrl('Reset Stats?') // second tap confirms + clears
     expect(statValue('Score')).toBe('0/0')
     expect(statValue('Streak')).toBe('0/0')
     expect(isDisabled(ctrl('<'))).toBe(true) // history cleared

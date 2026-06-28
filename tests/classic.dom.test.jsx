@@ -314,7 +314,8 @@ describe('Classic — characterization (batch 4: Show Codes, streaks, Reset Stat
     const d = pressNewAndRead()
     fireEvent.click(dayBtn(correctName(d))) // 1/1, history now has one entry
     expect(isDisabled(ctrl('<'))).toBe(false)
-    fireEvent.click(ctrl('Reset Stats'))
+    fireEvent.click(ctrl('Reset Stats')) // Q2: first tap arms
+    fireEvent.click(ctrl('Reset Stats?')) // second tap confirms + clears
     expect(statValue('Score')).toBe('0/0')
     expect(statValue('Streak')).toBe('0/0')
     expect(isDisabled(ctrl('<'))).toBe(true) // history cleared
@@ -727,5 +728,50 @@ describe('Classic — Q2 (settings regen deferred to popover close)', () => {
     toggleSettings()
     toggleSettings() // no change → no regen
     expect(readDate()).toEqual(d0) // exact same date (questionId/timer untouched)
+  })
+})
+
+// ── Q2: Reset Stats two-tap confirm ───────────────────────────────────────────
+// The Reset Stats button now arms on the first tap ("Reset Stats?", danger tint) and only clears on a
+// second tap within 3s — preventing an accidental wipe of lifetime stats (it's also the `S` shortcut).
+// The two-tap + has-data gate live in the shared useResetStatsArm hook, used identically by Flash +
+// Deduction, so pinning it on Classic covers all three.
+describe('Classic — Reset Stats two-tap confirm (Q2)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const answerCorrect = () => fireEvent.click(dayBtn(correctName(readDate())))
+
+  it('first tap arms without clearing; second tap clears', () => {
+    mountApp()
+    pressNewAndRead()
+    answerCorrect()
+    expect(statValue('Score')).toBe('1/1')
+    fireEvent.click(ctrl('Reset Stats')) // first tap → arm
+    expect(screen.getByRole('button', { name: 'Reset Stats?' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset Stats' })).toBeNull()
+    expect(statValue('Score')).toBe('1/1') // NOT cleared yet
+    fireEvent.click(ctrl('Reset Stats?')) // second tap → confirm
+    expect(statValue('Score')).toBe('0/0') // cleared
+    expect(screen.getByRole('button', { name: 'Reset Stats' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset Stats?' })).toBeNull()
+  })
+
+  it('on a fresh mode (nothing to lose), tapping Reset Stats is a no-op — it never arms', () => {
+    mountApp()
+    pressNewAndRead()
+    expect(statValue('Score')).toBe('0/0')
+    fireEvent.click(ctrl('Reset Stats'))
+    expect(screen.getByRole('button', { name: 'Reset Stats' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset Stats?' })).toBeNull()
   })
 })

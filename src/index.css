@@ -151,6 +151,12 @@ button:focus,select:focus{outline:none}
 .btn-wrong-persist{background:rgba(185,28,28,.95)}
 .btn-wrong-dim{background:rgba(185,28,28,.32)}
 .btn-correct-persist{background:rgba(21,128,61,.95)}
+/* Q4 drag-to-select: answer grids are "selection groups" — touch-action:none so a drag across the grid
+   selects the option under your finger instead of scrolling the page. .drag-target is toggled (by the
+   pointer controller, lib/pointerGestures) on the option currently under your finger during a drag — a
+   lavender ring + slight lift so it reads as the pending choice before you release. */
+[data-answer-grid]{touch-action:none}
+.drag-target{outline:2px solid rgba(196,181,253,.9);outline-offset:-2px;filter:brightness(1.12)}
 /* Diagonal-split background for stack entries that have been retroactively
    overridden right→wrong (e.g., user got it correct, later flipped via Override on
    a subsequent live unanswered question). Green-upper-left/red-lower-right tells the

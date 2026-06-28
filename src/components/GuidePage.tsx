@@ -100,6 +100,13 @@ export default function GuidePage() {
       <Divider label="Interface" />
       <GuideSection id="buttons" title="Buttons" openId={open} onToggle={toggle}>
         <p>
+          <b>Tapping &amp; dragging.</b> Tap any button to use it. If you press a button but slide
+          your finger off before lifting, nothing happens — the tap is cancelled — so a misclick is
+          easy to back out of. On the weekday answer grid you can also slide between options: press
+          one, drag to the option you want (it highlights as you move), and release on it to choose
+          it. It works the same way with a mouse.
+        </p>
+        <p>
           <b>New</b> — load a fresh date. In timer modes, only available after pressing Begin.
         </p>
         <p>
@@ -115,10 +122,12 @@ export default function GuidePage() {
         <p>
           <b>Reset Stats</b> — casual modes only (Classic, Flash, Deduction). Clears your stats and
           question history for the current mode (Deduction only resets the current sub-type's
-          stats). Generates a new date when timing stats are visible, or when you've burned the
-          current date (answered wrong, revealed, or shown codes); otherwise the current date is
-          kept. In Flash, mid-question Reset Stats always generates a new date and returns to the
-          dash state. Does not affect timer-mode bests.
+          stats). To prevent an accidental wipe, it takes two taps: the first arms it (it turns red
+          and reads "Reset Stats?"), and a second tap within 3 seconds confirms — tapping anywhere
+          else or waiting cancels. Generates a new date when timing stats are visible, or when
+          you've burned the current date (answered wrong, revealed, or shown codes); otherwise the
+          current date is kept. In Flash, mid-question Reset Stats always generates a new date and
+          returns to the dash state. Does not affect timer-mode bests.
         </p>
         <p>
           <b>Back (&lt;)</b> — return to the previous date. The answer is shown and the card is
