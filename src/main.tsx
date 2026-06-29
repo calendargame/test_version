@@ -485,7 +485,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-29T03:18:00Z');
+    const DEPLOY_TS=new Date('2026-06-29T04:05:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -507,30 +507,33 @@ interface DedOpts {
       window.location.reload();
     };
 
-    // UpdatingOverlay (Q3) — the full-screen "Updating…" screen shown while a new version is applied.
-    // Today it's shown by the Settings "Check for updates" button (App's onCheckUpdates) for ~0.9s before
-    // the cache-clear + reload; the auto-update-on-open service-worker mechanism that will also show it is
-    // a later on-device round. The brand mark with the trace flowing (erase-from-2 / redraw-from-2, soft
-    // both-ends trail via a blurred mask, sped through the complete moment) + "Updating" with a sequential
-    // three-dot pulse. Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on the light themes).
-    // The glyph is the W5 logo, kept in sync with index.html's boot splash + src/components/W5Logo.tsx.
-    function UpdatingOverlay(){
+    // BootOverlay (Q3) — the full-screen boot screen, for BOTH states:
+    //   • LOADING (updating omitted): a static logo + glow, shown at startup for at least ~0.5s (App's
+    //     `booting` + a min-timer) so a fast cache load doesn't flash by looking like a glitch.
+    //   • UPDATING (updating): the trace flows (erase-from-2 / redraw-from-2, soft both-ends trail via a
+    //     blurred mask, sped through the complete moment) + "Updating" with a sequential three-dot pulse;
+    //     shown by the Settings "Check for updates" button today (the auto-update-on-open SW mechanism that
+    //     will also show it is a later on-device round).
+    // Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on light). The glyph is the W5 logo,
+    // kept in sync with index.html's pre-React boot splash + src/components/W5Logo.tsx. Logo scaled up
+    // (174×188) for both screens (owner 2026-06-28).
+    function BootOverlay({updating=false}:{updating?:boolean}){
       return(
         <div className="boot-overlay">
           <div className="boot-mark">
             <div className="boot-glow"/>
-            <svg width="116" height="126" viewBox="178 173 146 158" fill="none" aria-hidden="true" style={{position:'relative'}}>
-              <defs>
+            <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style={{position:'relative'}}>
+              {updating&&(<defs>
                 <filter id="bootSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
                 <mask id="bootMask"><path className="boot-flow" d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="#fff" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeDasharray="174" filter="url(#bootSoft)"/></mask>
-              </defs>
+              </defs>)}
               <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
-              <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask="url(#bootMask)"/>
+              <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask={updating?"url(#bootMask)":undefined}/>
               <g fill="currentColor"><circle cx="310" cy="256" r="10"/><circle cx="310" cy="196" r="10"/></g>
               <circle cx="202" cy="196" r="9" fill="currentColor"/><circle cx="202" cy="196" r="19" fill="none" stroke="currentColor" strokeWidth="5"/>
             </svg>
           </div>
-          <div className="boot-updating">Updating<span className="boot-d boot-d1">.</span><span className="boot-d boot-d2">.</span><span className="boot-d boot-d3">.</span></div>
+          {updating&&<div className="boot-updating">Updating<span className="boot-d boot-d1">.</span><span className="boot-d boot-d2">.</span><span className="boot-d boot-d3">.</span></div>}
         </div>
       );
     }
@@ -1884,6 +1887,12 @@ interface DedOpts {
       // clears on reload. (The auto-update-on-open SW mechanism that will ALSO trigger it is a later round.)
       const [updating,setUpdating]=useState(false);
       const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,900);},[]);
+      // Q3 Loading screen: keep the boot splash up for at LEAST ~0.5s from page-load start (performance.now()
+      // ≈ ms since navigation), so a fast cache load doesn't flash it for a single frame (which read like a
+      // glitch). On a slow load it's already been up the whole time → remaining clamps to 0 and it clears at
+      // once. The pre-React #boot splash in index.html covers the gap before this React BootOverlay mounts.
+      const [booting,setBooting]=useState(true);
+      useEffect(()=>{const remaining=Math.max(500-performance.now(),0);const id=window.setTimeout(()=>setBooting(false),remaining);return ()=>window.clearTimeout(id);},[]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
         // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
@@ -2261,19 +2270,19 @@ interface DedOpts {
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Dates</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
+          <div className="text-xs text-purple-200/80">Year Range</div>
+          <div className="flex items-center gap-2">
+            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
+            <span className="text-purple-300/60 text-sm shrink-0">→</span>
+            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
+          </div>
+          <div className="flex items-center justify-between pt-1"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
           {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
               minY<=1582<=maxY). Year 1582 itself spans both calendars. When locked, the selected value
               stays visually selected so it's restored when the range becomes mixed again. */}
           <div className="text-xs text-purple-200/80 pt-1">Julian Chance</div>
           <div className="flex gap-1.5">
             {(() => { const julianMixed=useJulian&&minY<=1582&&maxY>=1582; return ['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!julianMixed)return;setJulianChance(v);}} aria-disabled={!julianMixed} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${julianChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${!julianMixed?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
-          </div>
-          <div className="text-xs text-purple-200/80 pt-1">Year Range</div>
-          <div className="flex items-center gap-2">
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
-            <span className="text-purple-300/60 text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
           </div>
           {/* Leap Year Chance: locked when the active range/calendar has no leap years; the selected value
               is preserved + restored when a leap year becomes reachable again. */}
@@ -2310,7 +2319,8 @@ interface DedOpts {
       </div>);
       return(
         <>
-          {updating&&<UpdatingOverlay/>}
+          {booting&&<BootOverlay/>}
+          {updating&&<BootOverlay updating/>}
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
             it as chrome UI and live-samples its bg-(--bg1) (theme-aware) for the

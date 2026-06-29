@@ -183,7 +183,7 @@ button:focus,select:focus{outline:none}
 .boot-overlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg1);color:#c4b5fd}
 [data-theme="parchment"] .boot-overlay,[data-theme="light"] .boot-overlay{color:#7c3aed}
 .boot-mark{position:relative;display:flex;align-items:center;justify-content:center}
-.boot-glow{position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(196,181,253,.2) 0%,rgba(196,181,253,0) 66%)}
+.boot-glow{position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(196,181,253,.2) 0%,rgba(196,181,253,0) 66%)}
 [data-theme="parchment"] .boot-glow,[data-theme="light"] .boot-glow{background:radial-gradient(circle,rgba(124,58,237,.16) 0%,rgba(124,58,237,0) 66%)}
 .boot-updating{font-size:0.9375rem;color:var(--sec-color)}
 .boot-d{animation:bootPulse 1.4s infinite}
