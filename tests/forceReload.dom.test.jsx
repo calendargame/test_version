@@ -63,7 +63,9 @@ describe('Check for updates (force reload to latest)', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
     })
-    await waitFor(() => expect(reload).toHaveBeenCalled())
+    // "Check for updates" (onCheckUpdates) shows the Updating overlay for ~0.9s before reloading (Q3),
+    // so give waitFor more than its 1000ms default — the reload fires at ~900ms + the async SW/cache chain.
+    await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 5000 })
     expect(getRegistrations).toHaveBeenCalled()
     expect(unregister).toHaveBeenCalledTimes(2) // both registrations unregistered
     expect(cacheKeys).toHaveBeenCalled()

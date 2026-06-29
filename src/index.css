@@ -174,6 +174,23 @@ button:focus,select:focus{outline:none}
 .dot-cluster{--dot-frac:72%;inline-size:min(var(--ans-h),100%);aspect-ratio:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);place-items:center}
 .dot-btn{inline-size:var(--dot-frac);aspect-ratio:1;border-radius:50%;border-width:1px;border-style:solid}
 .dot-btn.drag-target{outline:none;box-shadow:0 0 0 3px rgba(196,181,253,.9)}
+/* Q3 boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
+   today; the auto-update-on-open service-worker mechanism that also shows it is a later on-device round).
+   Theme-aware bg (--bg1); logo lavender on dark themes, brand-purple on the light themes for contrast. The
+   trace flows via a dash sweep through a STATIC blurred mask (soft both-ends trail), eased through the
+   complete moment (erase ease-out + draw ease-in) so it doesn't dwell there; "Updating" has a sequential
+   three-dot pulse. Mirrors the approved mockup + index.html's static boot (Loading) splash. */
+.boot-overlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg1);color:#c4b5fd}
+[data-theme="parchment"] .boot-overlay,[data-theme="light"] .boot-overlay{color:#7c3aed}
+.boot-mark{position:relative;display:flex;align-items:center;justify-content:center}
+.boot-glow{position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(196,181,253,.2) 0%,rgba(196,181,253,0) 66%)}
+[data-theme="parchment"] .boot-glow,[data-theme="light"] .boot-glow{background:radial-gradient(circle,rgba(124,58,237,.16) 0%,rgba(124,58,237,0) 66%)}
+.boot-updating{font-size:0.9375rem;color:var(--sec-color)}
+.boot-d{animation:bootPulse 1.4s infinite}
+.boot-d2{animation-delay:.18s}.boot-d3{animation-delay:.36s}
+@keyframes bootPulse{0%,70%,100%{opacity:.3}35%{opacity:1}}
+.boot-flow{stroke-dasharray:174;animation:bootFlow 2.6s infinite}
+@keyframes bootFlow{0%{stroke-dashoffset:0;animation-timing-function:ease-out}50%{stroke-dashoffset:-174;animation-timing-function:ease-in}100%{stroke-dashoffset:-348}}
 /* Diagonal-split background for stack entries that have been retroactively
    overridden right→wrong (e.g., user got it correct, later flipped via Override on
    a subsequent live unanswered question). Green-upper-left/red-lower-right tells the

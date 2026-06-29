@@ -154,22 +154,25 @@ interface DedOpts {
         const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",'surface-button');
         const perLocked=!!ps;
         const shouldDim=optionsDisabled&&!ps&&!isFlashing;
-        const disabled=perLocked||optionsDisabled;
+        // pointer-events-none ONLY when the whole grid is inert (codes open / browsing back / inactive). A
+        // perLocked (already-answered) button stays hit-testable so it still highlights as you drag over it
+        // (Q4) — the onClick guard below blocks any re-answer, so it can't be re-selected.
+        const inert=optionsDisabled;
         const onClick=()=>{if(perLocked)return;onPick(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();};
-        return {bCls,disabled,shouldDim,onClick};
+        return {bCls,inert,shouldDim,onClick};
       };
       if(inputStyle==='dots'){
         return(
           <div className="mt-4 dot-box">
             <div className="dot-cluster" data-answer-grid="true">
-              {DAY.map((nm,i)=>{const o=opt(i);return(<button key={nm} type="button" aria-label={nm} onClick={o.onClick} style={{gridRow:DOT_CELL[i].r,gridColumn:DOT_CELL[i].c}} className={`dot-btn ${o.bCls} ${o.disabled?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""}`}/>);})}
+              {DAY.map((nm,i)=>{const o=opt(i);return(<button key={nm} type="button" aria-label={nm} onClick={o.onClick} style={{gridRow:DOT_CELL[i].r,gridColumn:DOT_CELL[i].c}} className={`dot-btn ${o.bCls} ${o.inert?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""}`}/>);})}
             </div>
           </div>
         );
       }
       return(
         <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
-          {DAY.map((nm,i)=>{const o=opt(i);const last=i===DAY.length-1?"col-span-2":"";return(<button key={nm} type="button" onClick={o.onClick} className={`${BASE_BTN} ${o.bCls} ${o.disabled?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""} ${last}`}>{nm}</button>);})}
+          {DAY.map((nm,i)=>{const o=opt(i);const last=i===DAY.length-1?"col-span-2":"";return(<button key={nm} type="button" onClick={o.onClick} className={`${BASE_BTN} ${o.bCls} ${o.inert?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""} ${last}`}>{nm}</button>);})}
         </div>
       );
     }
@@ -482,7 +485,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-28T07:33:00Z');
+    const DEPLOY_TS=new Date('2026-06-29T03:18:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -503,6 +506,34 @@ interface DedOpts {
       }catch{/* best-effort — reload regardless */}
       window.location.reload();
     };
+
+    // UpdatingOverlay (Q3) — the full-screen "Updating…" screen shown while a new version is applied.
+    // Today it's shown by the Settings "Check for updates" button (App's onCheckUpdates) for ~0.9s before
+    // the cache-clear + reload; the auto-update-on-open service-worker mechanism that will also show it is
+    // a later on-device round. The brand mark with the trace flowing (erase-from-2 / redraw-from-2, soft
+    // both-ends trail via a blurred mask, sped through the complete moment) + "Updating" with a sequential
+    // three-dot pulse. Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on the light themes).
+    // The glyph is the W5 logo, kept in sync with index.html's boot splash + src/components/W5Logo.tsx.
+    function UpdatingOverlay(){
+      return(
+        <div className="boot-overlay">
+          <div className="boot-mark">
+            <div className="boot-glow"/>
+            <svg width="116" height="126" viewBox="178 173 146 158" fill="none" aria-hidden="true" style={{position:'relative'}}>
+              <defs>
+                <filter id="bootSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
+                <mask id="bootMask"><path className="boot-flow" d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="#fff" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeDasharray="174" filter="url(#bootSoft)"/></mask>
+              </defs>
+              <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
+              <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask="url(#bootMask)"/>
+              <g fill="currentColor"><circle cx="310" cy="256" r="10"/><circle cx="310" cy="196" r="10"/></g>
+              <circle cx="202" cy="196" r="9" fill="currentColor"/><circle cx="202" cy="196" r="19" fill="none" stroke="currentColor" strokeWidth="5"/>
+            </svg>
+          </div>
+          <div className="boot-updating">Updating<span className="boot-d boot-d1">.</span><span className="boot-d boot-d2">.</span><span className="boot-d boot-d3">.</span></div>
+        </div>
+      );
+    }
 
     // ============================================================
     // makeDedPuzzle — the PURE Deduction puzzle generator (mode-untangle Step 4).
@@ -1848,6 +1879,11 @@ interface DedOpts {
       // settingsOpen is declared here — above the keyboard effect that toggles it (G key) — so it's
       // not read before its declaration (the compiler flags accessing a binding before it's declared).
       const [settingsOpen,setSettingsOpen]=useState(false);
+      // Q3: the "Updating…" overlay (UpdatingOverlay). The Settings "Check for updates" button shows it for
+      // ~0.9s (so the screen registers) then runs forceReloadLatest (clear caches + reload); the overlay
+      // clears on reload. (The auto-update-on-open SW mechanism that will ALSO trigger it is a later round.)
+      const [updating,setUpdating]=useState(false);
+      const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,900);},[]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
         // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
@@ -2187,8 +2223,13 @@ interface DedOpts {
       // arbitrary value: underscores become spaces, so calc() emits the whitespace CSS requires.)
       const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
         <div ref={popoverInnerScrollRef} className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
+        {/* SETTINGS regrouped into 3 categories (Q2): Display (how it's shown + how you answer + theme),
+            Dates (which dates get generated), Stats. Each category is a SectionLabel header; the former
+            per-setting headings are now muted sub-labels (the Leap-Year header+sub-label pattern). Every
+            control + its behaviour is unchanged — purely a regroup. */}
         <div className="space-y-2">
-          <SectionLabel>Date Format</SectionLabel>
+          <SectionLabel>Display</SectionLabel>
+          <div className="text-xs text-purple-200/80">Date Format</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
           <div className={`flex gap-2 ${randomFormat?"opacity-60 pointer-events-none":""}`}>
             <div className="flex-1 space-y-1.5">
@@ -2207,63 +2248,42 @@ interface DedOpts {
               </div>
             </div>
           </div>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
-          <SectionLabel>Input</SectionLabel>
-          {/* Buttons / Dots — the day-of-week answer layout (the logo's 7-dot input as an alternate).
-              In Deduction the answers aren't weekdays, so the control LOCKS/DIMS (value preserved),
-              exactly like Julian/Leap-Year Chance when they don't apply to the current range. */}
+          {/* Input — Buttons / Dots (the logo's 7-dot answer layout). Locks/dims in Deduction (answers
+              aren't weekdays; value preserved), like Julian/Leap-Year Chance when they don't apply. */}
+          <div className="text-xs text-purple-200/80 pt-1">Input</div>
           <div className={`flex border surface-toggle rounded-xl overflow-hidden${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
             <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${inputStyle==='buttons'?"btn-solid text-white":"text-purple-100/80"}`}>Buttons</button>
             <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium ${inputStyle==='dots'?"btn-solid text-white":"text-purple-100/80"}`}>Dots</button>
           </div>
+          <div className="text-xs text-purple-200/80 pt-1">Theme</div>
+          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
+          {useSystem?(<><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} openUp ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} openUp ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} openUp ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
-          <SectionLabel>Calendar System</SectionLabel>
+          <SectionLabel>Dates</SectionLabel>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
-          {/* Julian Chance row: locked when useJulian is off (no Julian dates possible) OR when
-              the year range is entirely Gregorian (minY>=1583) or entirely Julian (maxY<=1581).
-              Year 1582 itself contains BOTH Julian (Jan-Sep + Oct 1-4) and Gregorian (Oct 15+ + Nov + Dec)
-              dates, so a range that includes year 1582 always counts as mixed and the row stays
-              unlocked. When locked, the selected value stays visually selected so it's restored
-              when the lock condition clears (matches Leap Year Chance locking behavior). */}
+          {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
+              minY<=1582<=maxY). Year 1582 itself spans both calendars. When locked, the selected value
+              stays visually selected so it's restored when the range becomes mixed again. */}
+          <div className="text-xs text-purple-200/80 pt-1">Julian Chance</div>
           <div className="flex gap-1.5">
             {(() => { const julianMixed=useJulian&&minY<=1582&&maxY>=1582; return ['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!julianMixed)return;setJulianChance(v);}} aria-disabled={!julianMixed} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${julianChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${!julianMixed?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
           </div>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
-          <SectionLabel>Year Range</SectionLabel>
+          <div className="text-xs text-purple-200/80 pt-1">Year Range</div>
           <div className="flex items-center gap-2">
             <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
             <span className="text-purple-300/60 text-sm shrink-0">→</span>
             <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
           </div>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
-          <SectionLabel>Leap Year</SectionLabel>
-          {/* Umbrella "Leap Year" SectionLabel covers both chance rows below. Each row
-              keeps its own descriptive sub-label (muted text-purple-200/80, NOT the
-              uppercase tracking-widest SectionLabel style) so the hierarchy reads
-              top-down: section heading → sub-label → buttons. The two rows live in
-              one divider-bounded section because they're tightly related — both
-              control leap-year date generation behavior. */}
-          <div className="text-xs text-purple-200/80">Leap Year Chance</div>
+          {/* Leap Year Chance: locked when the active range/calendar has no leap years; the selected value
+              is preserved + restored when a leap year becomes reachable again. */}
+          <div className="text-xs text-purple-200/80 pt-1">Leap Year Chance</div>
           <div className="flex gap-1.5">
-            {/* When the active year range contains no leap years (per active calendar), lock the four
-                buttons. The currently-selected value stays visually selected so it's restored when the
-                range changes back to one with a leap year. Jan/Feb Chance stays unlocked — that row
-                doesn't imply leap-year reachability (a setting kept while unreachable just doesn't fire). */}
             {(() => { const leapReachable=rangeHasLeapYear(minY,maxY,useJulian); return ['random','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!leapReachable)return;setLeapChance(v);}} aria-disabled={!leapReachable} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${leapChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${!leapReachable?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
           </div>
-          <div className="text-xs text-purple-200/80">Jan/Feb Chance on Leap Years</div>
-          {/* Jan/Feb Chance: 5-button chance row. Option A semantics — the listed % is the
-              exact final probability that a leap-year date lands on Jan/Feb. Random means
-              no biasing (natural ~17% on uniform months). The row stays unlocked even when
-              leap years aren't reachable in the current range — the setting is preserved
-              and applies once a leap year becomes reachable again. px-1.5 (slightly tighter
-              than the default px-2) so 5 buttons with "Random" label fit cleanly on iPhone
-              SE width at text-xs without wrapping. Leap Year Chance above uses the same
-              padding for visual consistency. */}
+          {/* Jan/Feb Chance: the listed % is the exact probability a leap-year date lands on Jan/Feb
+              (Random = natural ~17%). Stays unlocked even when leap years aren't currently reachable. */}
+          <div className="text-xs text-purple-200/80 pt-1">Jan/Feb Chance on Leap Years</div>
           <div className="flex gap-1.5">
             {['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>setJanFebChance(v)} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${janFebChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{v==='random'?'Random':v+'%'}</button>))}
           </div>
@@ -2271,11 +2291,6 @@ interface DedOpts {
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Stats</SectionLabel>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{saveStats?"On":"Off"}</button></div>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
-          <SectionLabel>Theme</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
-          {useSystem?(<><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} openUp ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} openUp ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} openUp ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         </div>
         <div className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
@@ -2289,12 +2304,13 @@ interface DedOpts {
           <div className="flex items-center gap-2 flex-wrap">
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
             {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
-            <button type="button" onClick={forceReloadLatest} className="underline select-none">Check for updates</button>
+            <button type="button" onClick={onCheckUpdates} className="underline select-none">Check for updates</button>
           </div>
         </div>
       </div>);
       return(
         <>
+          {updating&&<UpdatingOverlay/>}
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
             it as chrome UI and live-samples its bg-(--bg1) (theme-aware) for the
