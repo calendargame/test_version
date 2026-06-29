@@ -146,15 +146,19 @@ export default defineConfig(({ command, mode }) => ({
     babel({ presets: [reactCompilerPreset()] }),
     // PWA (Stage D3): installable + fully offline. vite-plugin-pwa generates the web app
     // manifest + a Workbox service worker that precaches the whole build (so the app runs
-    // with no network). registerType 'autoUpdate' + injectRegister 'auto' silently swap in a
-    // new service worker on the next visit after a deploy — no update prompt for a solo tool.
+    // with no network). registerType 'prompt' + injectRegister null (Q3): a newly-deployed SW
+    // INSTALLS but WAITS — it does NOT silently activate + reload mid-session. We register the SW
+    // ourselves (src/sw.ts via virtual:pwa-register) and apply a waiting update on the NEXT launch,
+    // behind the "Updating…" screen (App's boot effect calls updateSW(true) when a waiting worker
+    // exists). This makes updates land cleanly + visibly on open instead of a silent reload, and a
+    // background registration.update() fetches the next version so it's ready to apply next launch.
     // start_url/scope are derived from Vite `base`, so this is correct for both the live root (/)
     // and the staging project base (/<repo>/). Icons live in public/ (generated
     // from the W5 master by design/icons/build-icons.mjs); apple-touch + favicon are precached
     // via includeAssets and linked (incl. the dark variant) in index.html.
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'favicon-32x32.png'],
       manifest: {
         name: 'Calendar Game',

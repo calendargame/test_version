@@ -7,8 +7,10 @@ import { Kbd } from './primitives.jsx'
 // behavior on the site. GuideSection is the reusable open/close row; GuidePage
 // lays them out with Divider separators. Pure content + local open/close state.
 //
-// Extracted from main.jsx in Stage C, Step 4e (verbatim prose). GuideSection is
-// exported named; GuidePage is the default export.
+// Extracted from main.jsx in Stage C, Step 4e. Rewritten for scannability — every
+// section now leads with a one-line summary, then tight chunks / bulleted lists;
+// no documented behavior was dropped. GuideSection is exported named; GuidePage is
+// the default export.
 export function GuideSection({
   id,
   title,
@@ -62,35 +64,110 @@ function Divider({ label }: { label: string }) {
     </div>
   )
 }
+// Lead — a one-line summary at the top of a GuideSection, so the section's gist is
+// scannable before the details. Slightly brighter than body text.
+function Lead({ children }: { children: ReactNode }) {
+  return <p className="text-purple-50/95">{children}</p>
+}
+// Subhead — a small uppercase sub-label inside a section (the keyboard-group style),
+// used to break a long section into scannable blocks.
+function Subhead({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1 mt-1">
+      {children}
+    </div>
+  )
+}
+// Bulleted list helpers — simple, theme-legible bullets for scannable detail.
+function UL({ children }: { children: ReactNode }) {
+  return <ul className="list-disc pl-5 space-y-1 marker:text-purple-400/70">{children}</ul>
+}
+// DotDiagram — a small inline SVG of the 7-dot answer layout (Settings → Display →
+// Input → Dots), each dot labelled with its weekday. Mirrors the app logo / the
+// DOT_CELL grid in main.tsx: Sun centre, Mon bottom-right, Tue mid-right, Wed
+// top-right, Thu bottom-left, Fri mid-left, Sat top-left (centre-top + centre-bottom
+// empty). Drawn entirely in currentColor so it's legible on every theme.
+function DotDiagram() {
+  // 3x3 grid; only 7 of 9 cells are filled. Each cell: column x, row y, day label.
+  const dots: { x: number; y: number; day: string }[] = [
+    { x: 30, y: 28, day: 'Sat' }, // top-left
+    { x: 150, y: 28, day: 'Wed' }, // top-right
+    { x: 30, y: 90, day: 'Fri' }, // mid-left
+    { x: 90, y: 90, day: 'Sun' }, // centre
+    { x: 150, y: 90, day: 'Tue' }, // mid-right
+    { x: 30, y: 152, day: 'Thu' }, // bottom-left
+    { x: 150, y: 152, day: 'Mon' }, // bottom-right
+  ]
+  return (
+    <svg
+      viewBox="0 0 180 192"
+      width="156"
+      role="img"
+      aria-label="Dots layout: Saturday top-left, Wednesday top-right, Friday middle-left, Sunday centre, Tuesday middle-right, Thursday bottom-left, Monday bottom-right."
+      className="my-1 text-purple-100/90"
+    >
+      {dots.map((d) => (
+        <g key={d.day}>
+          <circle cx={d.x} cy={d.y} r="11" fill="currentColor" />
+          <text
+            x={d.x}
+            y={d.y + 27}
+            textAnchor="middle"
+            fontSize="13"
+            fill="currentColor"
+            opacity="0.9"
+          >
+            {d.day}
+          </text>
+        </g>
+      ))}
+    </svg>
+  )
+}
 export default function GuidePage() {
   const [open, setOpen] = useState<string | null>(null)
   const toggle = useCallback((id: string) => setOpen((o) => (o === id ? null : id)), [])
   return (
     <div className="space-y-2">
       <GuideSection id="overview" title="What Is Calendar Game?" openId={open} onToggle={toggle}>
+        <Lead>A training tool for working out the day of the week of any date, in your head.</Lead>
         <p>
-          Calendar Game is a training tool for mental calculation of the day of the week. You're
-          given a date and must identify which weekday it falls on — as quickly and accurately as
-          possible. Dates use the proleptic Gregorian calendar by default. The Julian calendar is
-          supported as an opt-in setting for dates on or before October 4, 1582 (the day before the
-          Gregorian reform took effect).
+          You're given a date and must identify which weekday it falls on — as quickly and
+          accurately as possible. Dates use the proleptic Gregorian calendar by default. The Julian
+          calendar is supported as an opt-in setting for dates on or before October 4, 1582 (the day
+          before the Gregorian reform took effect).
         </p>
-        <p className="mt-2">
-          It runs entirely in your browser and saves your progress on this device. You can add it to
-          your home screen and use it like an app — on iPhone via Safari's Share button → Add to
-          Home Screen, on Android via Chrome's Install app / Add to Home screen — and once it has
-          loaded it works fully offline, with no connection needed to practice. New versions load
-          automatically on your next visit; if you ever want to force the latest right now, the
+        <Subhead>Install &amp; offline</Subhead>
+        <p>
+          It runs entirely in your browser and saves your progress on this device. Add it to your
+          home screen to use it like an app:
+        </p>
+        <UL>
+          <li>
+            <b>iPhone</b> — Safari's Share button → Add to Home Screen.
+          </li>
+          <li>
+            <b>Android</b> — Chrome's Install app / Add to Home screen.
+          </li>
+        </UL>
+        <p>
+          Once it has loaded it works fully offline, with no connection needed to practice. A brief{' '}
+          <b>loading screen</b> (the app logo) shows while it starts up.
+        </p>
+        <Subhead>Updates</Subhead>
+        <p>
+          New versions load automatically on your next visit. To force the latest right now, the
           Settings (⚙) panel has a <b>Check for updates</b> link that reloads the newest version
-          (your saved progress is kept).
+          (your saved progress is kept) — a short <b>updating screen</b> appears while the new
+          version is applied.
         </p>
-        <p className="mt-2">
+        <Subhead>The book &amp; contact</Subhead>
+        <p>
           It pairs with the book{' '}
           <i>Day-of-the-Week Calculation: A Highly Optimized Mental Method</i>.
         </p>
-        <p className="mt-2">
-          If you have any questions, ideas, or recommendations, or have noticed any bugs or mistakes
-          — whether about the site or the book — please feel free to reach out:{' '}
+        <p>
+          Questions, ideas, bugs, or mistakes — about the site or the book — are welcome:{' '}
           <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all">
             dayoftheweekcalculation@gmail.com
           </a>
@@ -99,152 +176,226 @@ export default function GuidePage() {
       </GuideSection>
       <Divider label="Interface" />
       <GuideSection id="buttons" title="Buttons" openId={open} onToggle={toggle}>
+        <Lead>How tapping, dragging, and each on-screen button work.</Lead>
+        <Subhead>Tapping &amp; dragging</Subhead>
+        <UL>
+          <li>Tap any button to use it.</li>
+          <li>
+            Press a button but slide your finger off before lifting and nothing happens — the tap is
+            cancelled — so a misclick is easy to back out of.
+          </li>
+          <li>
+            On the weekday answer grid you can slide between options: press one, drag to the option
+            you want (it highlights as you move, including over an already-answered option), and
+            release on it to choose it.
+          </li>
+          <li>
+            The mode selector at the top works this way too — press it and drag down to a mode, then
+            release to switch (or just tap to open the menu and tap a mode, as before).
+          </li>
+        </UL>
         <p>
-          <b>Tapping &amp; dragging.</b> Tap any button to use it. If you press a button but slide
-          your finger off before lifting, nothing happens — the tap is cancelled — so a misclick is
-          easy to back out of. On the weekday answer grid you can also slide between options: press
-          one, drag to the option you want (it highlights as you move), and release on it to choose
-          it. The mode selector at the top works this way too — press it and drag down to a mode,
-          then release to switch (or just tap it to open the menu and tap a mode, as before). It all
-          works the same way with a mouse. The weekday answer grid comes in two layouts — labelled
-          buttons (default) or the seven-dot logo layout — chosen under <b>Settings → Input</b>;
-          tapping and dragging work the same in either.
+          It all works the same way with a mouse. The weekday answer grid comes in two layouts —
+          labelled buttons (default) or the seven-dot logo layout — chosen under{' '}
+          <b>Settings → Display → Input</b>; tapping and dragging work the same in either.
         </p>
+        <Subhead>Loading dates</Subhead>
+        <UL>
+          <li>
+            <b>New</b> — load a fresh date. In timer modes, only available after pressing Begin.
+          </li>
+          <li>
+            <b>Begin</b> — timer modes only (Blitz, Flash, AoX). Starts a round or run; the timer
+            starts and the date is shown (Flash hides it after the configured duration; AoX hides it
+            between solves only when One-By-One is on).
+          </li>
+          <li>
+            <b>Reset</b> — timer modes only. In Blitz, ends the current round and unlocks settings;
+            in AoX, ends the current run. Saved bests are preserved either way. Press Reset then
+            Begin to start a fresh round/run.
+          </li>
+          <li>
+            <b>Reset Stats</b> — casual modes only (Classic, Flash, Deduction). See below.
+          </li>
+        </UL>
+        <Subhead>Reset Stats (casual modes)</Subhead>
         <p>
-          <b>New</b> — load a fresh date. In timer modes, only available after pressing Begin.
+          Clears your stats and question history for the current mode (Deduction only resets the
+          current sub-type's stats). Details:
         </p>
-        <p>
-          <b>Begin</b> — timer modes only (Blitz, Flash, AoX). Starts a round or run. After pressing
-          Begin, the timer starts and the date is shown (Flash hides it after the configured
-          duration; AoX hides it between solves only when One-By-One is on).
-        </p>
-        <p>
-          <b>Reset</b> — timer modes only. In Blitz, ends the current round and unlocks settings;
-          saved bests for the round are preserved. In AoX, ends the current run; saved bests are
-          preserved. Press Reset and then Begin to start a fresh round/run.
-        </p>
-        <p>
-          <b>Reset Stats</b> — casual modes only (Classic, Flash, Deduction). Clears your stats and
-          question history for the current mode (Deduction only resets the current sub-type's
-          stats). To prevent an accidental wipe, it takes two taps: the first arms it (it turns red
-          and reads "Reset Stats?"), and a second tap within 3 seconds confirms — tapping anywhere
-          else or waiting cancels. Generates a new date when timing stats are visible, or when
-          you've burned the current date (answered wrong, revealed, or shown codes); otherwise the
-          current date is kept. In Flash, mid-question Reset Stats always generates a new date and
-          returns to the dash state. Does not affect timer-mode bests.
-        </p>
-        <p>
-          <b>Back (&lt;)</b> — return to the previous date. The answer is shown and the card is
-          locked. No stat penalty. You can go back through your entire history in Classic, Flash,
-          and Deduction; in Blitz and AoX, you can browse the current round or run. Every entry in
-          your history shows the correct answer in green; if you got it wrong, your wrong guess(es)
-          appear as dimmed red alongside the green. While browsing back, a small <b>Q#</b> label
-          appears at the top-right of the date card showing your position in history (e.g. Q3 means
-          you're on the third question viewed).
-        </p>
-        <p>
-          <b>Forward (&gt;)</b> — move forward through dates you've browsed past with Back. The
-          forward history clears whenever you answer a new question, press New/Begin/Reset, or take
-          any action that advances the date. Overriding while browsing back does not clear the
-          forward history. Each entry remembers its date format and calendar system, so a
-          back-then-forward round trip never alters how a date was originally shown.
-        </p>
+        <UL>
+          <li>
+            <b>Two taps to confirm</b> — the first arms it (it turns red and reads "Reset Stats?");
+            a second tap within 3 seconds confirms. Tapping anywhere else or waiting cancels.
+          </li>
+          <li>
+            Generates a new date when timing stats are visible, or when you've burned the current
+            date (answered wrong, revealed, or shown codes); otherwise the current date is kept.
+          </li>
+          <li>
+            In Flash, a mid-question Reset Stats always generates a new date and returns to dash.
+          </li>
+          <li>Does not affect timer-mode bests.</li>
+        </UL>
+        <Subhead>Browsing history — Back / Forward</Subhead>
+        <UL>
+          <li>
+            <b>Back (&lt;)</b> — return to the previous date. The answer is shown and the card is
+            locked; no stat penalty. You can go back through your entire history in Classic, Flash,
+            and Deduction; in Blitz and AoX, through the current round or run.
+          </li>
+          <li>
+            Every history entry shows the correct answer in green; a wrong guess appears as dimmed
+            red alongside the green.
+          </li>
+          <li>
+            While browsing back, a small <b>Q#</b> label at the top-right of the date card shows
+            your position in history (e.g. Q3 = the third question viewed).
+          </li>
+          <li>
+            <b>Forward (&gt;)</b> — move forward through dates you browsed past with Back. Forward
+            history clears whenever you answer a new question, press New/Begin/Reset, or take any
+            action that advances the date. Overriding while browsing back does <i>not</i> clear it.
+          </li>
+          <li>
+            Each entry remembers its date format and calendar system, so a back-then-forward round
+            trip never alters how a date was originally shown.
+          </li>
+        </UL>
+        <Subhead>Reveal, Override &amp; Show Codes</Subhead>
         <p>
           <b>Reveal</b> — show the correct answer without guessing. Counts as a wrong attempt. No
           penalty on unanswered dates while browsing back.
         </p>
         <p>
-          <b>Override</b> — fix a mistake. You can override any date in your history by browsing to
-          it with Back/Forward. After a wrong answer: gives you credit with time recorded and
-          adjusts your score. After a correct answer: undoes the credit and adjusts your score.
+          <b>Override</b> — fix a mistake. Override any date in your history by browsing to it with
+          Back/Forward:
         </p>
-        <p>
-          You can also override the most recent past date directly from a fresh, untouched live
-          question (in any mode) — Override is enabled when the live date hasn't been answered yet,
-          and tapping it flips your previous date's right/wrong status. A previously correct date
-          that's been retroactively flipped to wrong shows up with a green-and-red diagonal split:
-          green-upper-left (originally correct) and red-lower-right (now counted wrong). You can
-          only override each date once. Overriding a wrong answer (regardless of how) clears any
-          wrong highlights; only the correct answer is shown.
-        </p>
-        <p>
-          In Blitz, you can override past dates after the round ends to adjust your score and saved
-          bests; and with Allow Mistakes off (or in Per Question), overriding a correct answer to
-          wrong during a round ends the round, just like a wrong answer. In AoX without Allow
-          Mistakes, overriding a correct answer ends the run. In the timed run modes (Blitz and
-          AoX), if a round or run ended because you answered wrong, revealed, or showed codes,
-          Override credits that question and the round/run continues — it picks up where it left off
-          instead of staying ended. Override is locked when Save Stats is off in the casual modes
-          (Classic, Flash, Deduction) — there's nothing to record there — but in Blitz and AoX it
-          works the same whether Save Stats is on or off (the run still tracks internally; it's just
-          not saved).
-        </p>
+        <UL>
+          <li>After a wrong answer: gives you credit with time recorded and adjusts your score.</li>
+          <li>After a correct answer: undoes the credit and adjusts your score.</li>
+          <li>
+            You can also override the most recent past date directly from a fresh, untouched live
+            question (any mode) — Override is enabled when the live date hasn't been answered yet,
+            and tapping it flips your previous date's right/wrong status.
+          </li>
+          <li>
+            A previously correct date flipped to wrong shows a green-and-red diagonal split:
+            green-upper-left (originally correct), red-lower-right (now counted wrong).
+          </li>
+          <li>You can only override each date once.</li>
+          <li>
+            Overriding a wrong answer (however you do it) clears any wrong highlights; only the
+            correct answer is shown.
+          </li>
+        </UL>
+        <p>Override in the run modes:</p>
+        <UL>
+          <li>
+            <b>Blitz</b> — override past dates after the round ends to adjust your score and saved
+            bests. With Allow Mistakes off (or in Per Question), overriding a correct answer to
+            wrong during a round ends the round, just like a wrong answer.
+          </li>
+          <li>
+            <b>AoX</b> — without Allow Mistakes, overriding a correct answer ends the run.
+          </li>
+          <li>
+            In both run modes, if a round/run ended because you answered wrong, revealed, or showed
+            codes, Override credits that question and it continues — picking up where it left off
+            instead of staying ended.
+          </li>
+          <li>
+            Override is <b>locked</b> when Save Stats is off in the casual modes (Classic, Flash,
+            Deduction) — there's nothing to record. In Blitz and AoX it works the same whether Save
+            Stats is on or off (the run still tracks internally; it's just not saved).
+          </li>
+        </UL>
         <p>
           <b>Show Codes</b> — reveals the calculation codes for the current date. Counts as a miss
           only while the date is still unresolved; once you've answered it (right or wrong),
           revealed it, or are browsing back, opening the codes is just a review and changes nothing.
-          In Blitz, opening Show Codes during a round ends the round and records your bests; in
-          Flash it freezes the countdown so the date stays on screen while you study the codes. In
-          AoX without Allow Mistakes, opening Show Codes ends the run.
+          Per mode:
         </p>
+        <UL>
+          <li>
+            <b>Blitz</b> — opening Show Codes during a round ends the round and records your bests.
+          </li>
+          <li>
+            <b>Flash</b> — freezes the countdown so the date stays on screen while you study.
+          </li>
+          <li>
+            <b>AoX</b> — without Allow Mistakes, opening Show Codes ends the run.
+          </li>
+        </UL>
       </GuideSection>
       <GuideSection id="stats" title="Stats" openId={open} onToggle={toggle}>
-        <p>
-          <b>Score</b> — correct first-try answers out of total attempts. In Blitz, only the current
-          round is shown. In AoX, shows correct answers out of total attempts; the run ends once
-          correct answers reach the set number.
-        </p>
-        <p>
-          <b>Accuracy</b> — percentage of questions answered correctly on the first try. Shows —
-          until your first attempt.
-        </p>
-        <p>
-          <b>Streak</b> — your current consecutive correct streak / your best in this session.
-        </p>
-        <p>
-          <b>Last / Avg / Med</b> — timing stats, calculated using correct answers only. Last is
-          your most recent correct time; Avg is the average across all correct answers; Med is the
-          median, which is less skewed by outliers. Any time of 60 seconds or more — whether an
-          individual solve, a computed average or median, or any Best — displays as "—". Times are
-          still tracked internally and contribute to averages, medians, and best-tracking; only the
-          display is capped. Your saved solve times keep a rolling window of the most recent 1000
-          (older times roll off so saved progress stays small on your device), so after a lot of
-          practice Avg and Med reflect your recent 1000 rather than all-time; within a single visit,
-          every solve still counts.
-        </p>
-        <p>
-          Time formatting follows the WCA speedcubing convention: individual single times (Last) are{' '}
-          <i>truncated</i> to hundredths — the third decimal is dropped, never rounded. Averages,
-          medians, and bests are <i>rounded</i> to the nearest hundredth. Truncating singles
-          prevents fortunate rounding boundaries on individual attempts; rounding aggregates avoids
-          systematic downward bias.
-        </p>
-        <p>
-          One question = one attempt. Getting a question wrong then right still counts as one
-          attempt, marked correct.
-        </p>
-        <p>When you set a new best, a small ★ appears next to the value to flag it.</p>
+        <Lead>What each stat means, how times are measured, and hiding stats.</Lead>
+        <Subhead>The stats</Subhead>
+        <UL>
+          <li>
+            <b>Score</b> — correct first-try answers out of total attempts. In Blitz, only the
+            current round. In AoX, correct answers out of total attempts; the run ends once correct
+            answers reach the set number.
+          </li>
+          <li>
+            <b>Accuracy</b> — percentage answered correctly on the first try. Shows "—" until your
+            first attempt.
+          </li>
+          <li>
+            <b>Streak</b> — your current consecutive correct streak / your best this session.
+          </li>
+          <li>
+            <b>Last / Avg / Med</b> — timing stats from correct answers only. Last = most recent
+            correct time; Avg = average across all correct answers; Med = median (less skewed by
+            outliers).
+          </li>
+        </UL>
+        <Subhead>How times are counted</Subhead>
+        <UL>
+          <li>
+            Any time of 60 seconds or more — a single solve, a computed average/median, or any Best
+            — displays as "—". Times are still tracked internally and contribute to averages,
+            medians, and best-tracking; only the display is capped.
+          </li>
+          <li>
+            Saved solve times keep a rolling window of the most recent 1000 (older ones roll off so
+            saved progress stays small), so after a lot of practice Avg and Med reflect your recent
+            1000 rather than all-time. Within a single visit, every solve still counts.
+          </li>
+          <li>
+            <b>Formatting (WCA speedcubing convention)</b> — single times (Last) are{' '}
+            <i>truncated</i> to hundredths (the third decimal is dropped, never rounded); averages,
+            medians, and bests are <i>rounded</i> to the nearest hundredth. Truncating singles
+            prevents fortunate rounding boundaries; rounding aggregates avoids systematic downward
+            bias.
+          </li>
+          <li>
+            One question = one attempt. Getting a question wrong then right still counts as one
+            attempt, marked correct.
+          </li>
+          <li>When you set a new best, a small ★ appears next to the value to flag it.</li>
+        </UL>
+        <Subhead>Hiding stats (Classic, Deduction, Flash)</Subhead>
         <p className="text-purple-300/70 text-[12px]">
-          In modes designed for casual practice (Classic, Deduction, Flash), you can tap any stat to
-          hide it. Tapping Score, Accuracy, or Streak hides all three; tapping any timing stat hides
-          all three. Score, Accuracy, and Streak continue tracking in the background while hidden —
-          re-enabling them brings the same numbers back.
+          These casual modes let you tap any stat to hide it. Tapping Score, Accuracy, or Streak
+          hides all three; tapping any timing stat hides all three. Score, Accuracy, and Streak keep
+          tracking in the background while hidden — re-enabling brings the same numbers back.
         </p>
         <p className="text-purple-300/70 text-[12px]">
           Timing stats behave differently: timing pauses entirely while hidden — no times are
-          recorded. When you turn timing back on, the current date is regenerated if it's still
-          unanswered; if you've already answered wrong, revealed the answer, or shown codes, the
-          date stays until you advance yourself. If any questions were answered while timing was
-          hidden, a desync would arise on re-enable, so the three timing stat boxes merge into a
-          single "Enable and Reset Stats?" confirmation — tap it again within 3 seconds to confirm
-          (turn on and full reset), or tap anywhere else to cancel.
+          recorded. When you turn timing back on, the current date is regenerated if still
+          unanswered; if you've already answered wrong, revealed, or shown codes, the date stays
+          until you advance. If any questions were answered while timing was hidden, a desync would
+          arise on re-enable, so the three timing boxes merge into a single "Enable and Reset
+          Stats?" confirmation — tap again within 3 seconds to confirm (turn on and full reset), or
+          tap anywhere else to cancel.
         </p>
         <p className="text-purple-300/70 text-[12px]">
-          When Save Stats is off, all stat boxes site-wide (across every mode, including AoX) show
-          '—' with strikethrough labels, dim, and become non-interactive — toggling timing or
-          scoring is disabled until Save Stats is turned back on, which prevents accidentally
-          creating stat desyncs. Turning Save Stats on while timing is also on regenerates an
-          unanswered date for a clean fresh start.
+          When Save Stats is off, all stat boxes site-wide (every mode, including AoX) show "—" with
+          strikethrough labels, dim, and become non-interactive — toggling timing or scoring is
+          disabled until Save Stats is turned back on, which prevents accidental stat desyncs.
+          Turning Save Stats on while timing is also on regenerates an unanswered date for a clean
+          start.
         </p>
         <p className="text-purple-300/70 text-[12px]">
           When timing stats are off, leaving and returning to a mode preserves the current question
@@ -253,10 +404,12 @@ export default function GuidePage() {
         </p>
       </GuideSection>
       <GuideSection id="keyboard" title="Keyboard Input" openId={open} onToggle={toggle}>
+        <Lead>
+          On any device with a hardware keyboard (typically desktop), press keys instead of tapping.
+        </Lead>
         <p>
-          On any device with a hardware keyboard (typically desktop), you can press keys to operate
-          the site without tapping. The on-screen layout is identical to mobile — keyboard input is
-          the only desktop-specific addition.
+          The on-screen layout is identical to mobile — keyboard input is the only desktop-specific
+          addition.
         </p>
         <div className="mt-3 space-y-3">
           <div>
@@ -294,8 +447,9 @@ export default function GuidePage() {
               </div>
             </div>
             <p className="mt-2 text-xs italic">
-              In Deduction Month and Year, the same keys map positionally to the boxes or year
-              options on screen.
+              The same keys work whether the answer grid shows labelled buttons or the seven dots.
+              In Deduction Month and Year, the keys map positionally to the boxes or year options on
+              screen.
             </p>
           </div>
           <div>
@@ -384,209 +538,370 @@ export default function GuidePage() {
             </div>
           </div>
         </div>
-        <p className="mt-3">
-          Letter keys are case-insensitive. Letter and number keys are ignored when you're typing in
-          an input field or when a modifier key (Ctrl/Cmd/Alt/Shift) is held. <Kbd>Tab</Kbd> is the
-          exception: it toggles the mode selector even from inputs (use Esc or Enter to leave an
-          input first if you'd rather), and Tab combined with any modifier (Ctrl+Tab,
-          Ctrl+Shift+Tab, etc.) passes through to the browser. Locked or already-pressed buttons are
-          skipped, just like a click would be. Reset Stats (S) only applies to the casual modes
-          (Classic, Deduction, Flash); pressing it in Blitz, AoX, or Lookup is a no-op since those
-          modes don't have a separate Reset Stats button (their round/run Reset clears
-          in-round/in-run stats; persistent bests update only when set).
-        </p>
+        <Subhead>Notes</Subhead>
+        <UL>
+          <li>Letter keys are case-insensitive.</li>
+          <li>
+            Letter and number keys are ignored while you're typing in an input field or when a
+            modifier (Ctrl/Cmd/Alt/Shift) is held.
+          </li>
+          <li>
+            <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use Esc
+            or Enter to leave an input first if you'd rather). Tab plus any modifier (Ctrl+Tab,
+            Ctrl+Shift+Tab, etc.) passes through to the browser.
+          </li>
+          <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
+          <li>
+            Reset Stats (<Kbd>S</Kbd>) only applies to the casual modes (Classic, Deduction, Flash);
+            pressing it in Blitz, AoX, or Lookup is a no-op, since those modes have no separate
+            Reset Stats button (their round/run Reset clears in-round/in-run stats; persistent bests
+            update only when set).
+          </li>
+        </UL>
       </GuideSection>
       <Divider label="Settings" />
-      <GuideSection id="input" title="Input" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="settings-overview"
+        title="Settings Overview"
+        openId={open}
+        onToggle={toggle}
+      >
+        <Lead>
+          The ⚙ menu groups every setting into three categories, with Reset buttons at the bottom.
+        </Lead>
+        <UL>
+          <li>
+            <b>Display</b> — how dates are shown and how you answer: Date Format (incl. Random
+            Format), Input (Buttons / Dots), and Theme.
+          </li>
+          <li>
+            <b>Dates</b> — which dates get generated: Year Range, Julian Calendar (+ Julian Chance),
+            Leap Year Chance, and Jan/Feb Chance on Leap Years.
+          </li>
+          <li>
+            <b>Stats</b> — Save Stats.
+          </li>
+        </UL>
         <p>
-          Set via the ⚙ settings menu. Chooses how you answer the day-of-week question in the
-          weekday modes (Classic, Flash, Blitz, AoX). <b>Buttons</b> (default) shows the seven
-          weekdays as labelled buttons. <b>Dots</b> shows them as seven unlabelled circles in the
-          same layout as the app's logo: Sunday in the centre, then around it — Monday bottom-right,
-          Tuesday middle-right, Wednesday top-right, Thursday bottom-left, Friday middle-left,
-          Saturday top-left. Tap a dot, or press and slide to the one you want and release, exactly
-          like the buttons.
+          At the foot of the menu: <b>Reset Settings</b> and <b>Full Reset</b> (see the Data
+          section), your Contact email, the Last Updated timestamp, and the <b>Check for updates</b>{' '}
+          link.
         </p>
-        <p>
-          The dots are deliberately unlabelled — their positions follow the day-of-week practice
-          movement, so choosing one is the same motion you trace when calculating. Deduction answers
-          aren't weekdays, so the setting is shown but locked there (it keeps whatever you last
-          chose and applies again in the weekday modes).
+        <p className="text-purple-300/70 text-[12px]">
+          Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
+          changing several at once regenerates the date just once (and never restarts your solve
+          timer mid-adjustment). The sections below cover each setting and exactly when a change
+          regenerates a date or resets a round/run.
         </p>
       </GuideSection>
-      <GuideSection id="dateformat" title="Date Format" openId={open} onToggle={toggle}>
+      <GuideSection id="dateformat" title="Display — Date Format" openId={open} onToggle={toggle}>
+        <Lead>Choose how dates are written, or roll a random format each time.</Lead>
+        <p>Five real-world formats:</p>
+        <UL>
+          <li>
+            <b>Written MDY</b> — April 27, 1828
+          </li>
+          <li>
+            <b>Written DMY</b> — 27 April 1828
+          </li>
+          <li>
+            <b>Numeric MDY</b> — 4/27/1828 (separator "/")
+          </li>
+          <li>
+            <b>Numeric DMY</b> — 27.4.1828 (separator ".")
+          </li>
+          <li>
+            <b>Numeric YMD</b> — 1828-4-27 (separator "-")
+          </li>
+        </UL>
         <p>
-          Set via the ⚙ settings menu. Choose one of five real-world formats: <b>Written MDY</b>{' '}
-          (April 27, 1828), <b>Written DMY</b> (27 April 1828), <b>Numeric MDY</b> (4/27/1828),{' '}
-          <b>Numeric DMY</b> (27.4.1828), or <b>Numeric YMD</b> (1828-4-27). Numeric formats use a
-          fixed separator convention: MDY uses '/', DMY uses '.', YMD uses '-'. Years always show in
-          full, never abbreviated.
+          Years always show in full, never abbreviated. Only DMY, MDY, and YMD orderings are offered
+          — they're the only orderings used in real life (orderings like YDM aren't standard
+          anywhere).
         </p>
+        <Subhead>Random Format</Subhead>
         <p>
-          Only DMY, MDY, and YMD orderings are offered because those are the only orderings actually
-          used in real life — orderings like YDM aren't standard anywhere.
+          When on, it rolls one of the five formats per date in game modes only — your selected
+          format is preserved underneath (the panels just lock visually). Lookup and the Last
+          Updated timestamp ignore Random and always use the selected format; the timestamp uses the
+          numeric version of whichever format you've selected.
         </p>
-        <p>
-          <b>Random Format</b>, when on, rolls one of the five formats per date in game modes only —
-          your selected format is preserved underneath (the panels just lock visually). Lookup and
-          the Last Updated timestamp ignore Random and always use the selected format. The Last
-          Updated timestamp uses the numeric version of whichever format you've selected.
-        </p>
-        <p>
-          In Classic, Deduction, Flash, and AoX (idle), any format setting change — Random Format
-          toggle or Date Format dropdown — regenerates an unanswered date so you don't return to a
-          previously-seen date in a now-mismatched format. This applies across all modes: if you
-          change a format setting in one mode, any unanswered dates in the other modes are also
-          regenerated. If you've already made a wrong guess, revealed the answer, or shown codes on
-          the displayed date, the change is deferred — the burned state is preserved and the new
-          format applies on the next generated date. Settings changes apply when you close the ⚙
-          menu, not on each adjustment — so changing several settings at once regenerates the date
-          just once (and never restarts your solve timer mid-adjustment). In Blitz rounds and AoX
-          runs — whether active or just ended — a settings change resets the round/run when you
-          close the ⚙ menu, so the round on screen always matches your current settings.
-        </p>
+        <Subhead>When a format change regenerates the date</Subhead>
+        <UL>
+          <li>
+            In Classic, Deduction, Flash, and AoX (idle), any format change — the Random Format
+            toggle or the Date Format pick — regenerates an unanswered date so you don't return to a
+            previously-seen date in a now-mismatched format. This applies across all modes at once.
+          </li>
+          <li>
+            If you've already wrong-guessed, revealed, or shown codes on the displayed date, the
+            change is deferred — the burned state is preserved and the new format applies on the
+            next date.
+          </li>
+          <li>
+            In Blitz rounds and AoX runs — active or just ended — a format change resets the
+            round/run when you close the ⚙ menu, so the round on screen always matches your
+            settings.
+          </li>
+        </UL>
         <p>
           In game modes' Show Codes, codes appear in the order the date is read (left to right),
           with Leap shown once you've seen both the year and month.
         </p>
       </GuideSection>
-      <GuideSection id="julian" title="Julian Calendar" openId={open} onToggle={toggle}>
+      <GuideSection id="input" title="Display — Input" openId={open} onToggle={toggle}>
+        <Lead>Answer with labelled weekday buttons, or with the seven-dot logo layout.</Lead>
+        <UL>
+          <li>
+            <b>Buttons</b> (default) — the seven weekdays as labelled buttons.
+          </li>
+          <li>
+            <b>Dots</b> — seven unlabelled circles in the same layout as the app's logo (see below).
+          </li>
+        </UL>
         <p>
-          Toggle via the ⚙ settings menu under Calendar System. On by default. When on, dates on or
-          before October 4, 1582 are treated as Julian calendar dates, which have different leap
-          year rules — every year divisible by 4 is a leap year, with no century exception. This
-          affects weekday calculation and the codes shown in Show Codes. October 5–14, 1582 are
+          Tap a dot, or press and slide to the one you want and release — exactly like the buttons.
+          The setting applies to the weekday modes (Classic, Flash, Blitz, AoX). In Deduction the
+          answers aren't weekdays, so the setting is shown but locked there (it keeps whatever you
+          last chose and applies again in the weekday modes).
+        </p>
+        <Subhead>Which dot is which</Subhead>
+        <div className="flex justify-center">
+          <DotDiagram />
+        </div>
+        <p className="text-purple-300/70 text-[12px] text-center">
+          Sunday sits in the centre. The dots are deliberately unlabelled — their positions follow
+          the day-of-week practice movement, so choosing one is the same motion you trace when
+          calculating.
+        </p>
+      </GuideSection>
+      <GuideSection id="theme" title="Display — Theme" openId={open} onToggle={toggle}>
+        <Lead>Five themes, with an option to follow your device's light/dark mode.</Lead>
+        <UL>
+          <li>
+            <b>Dusk</b> — default dark navy
+          </li>
+          <li>
+            <b>Midnight</b> — true black with purple
+          </li>
+          <li>
+            <b>Nebula</b> — deep purple
+          </li>
+          <li>
+            <b>Light</b> — clean white
+          </li>
+          <li>
+            <b>Parchment</b> — warm cream
+          </li>
+        </UL>
+        <p>
+          Accessible from the ⚙ menu in any tab. Enable <b>Use System Settings</b> to match your
+          device's light/dark mode automatically, with separate theme choices for each (a Dark pick
+          and a Light pick). Disable it to pick one theme manually.
+        </p>
+      </GuideSection>
+      <GuideSection id="range" title="Dates — Year Range" openId={open} onToggle={toggle}>
+        <Lead>Controls which years dates are drawn from. Defaults to 1–10000 AD.</Lead>
+        <UL>
+          <li>
+            Changing the range always regenerates the current date — but if you've already
+            wrong-guessed on the current date, the change is deferred so the wrong-state is
+            preserved; the new range applies to the next date.
+          </li>
+          <li>
+            While browsing back, settings-driven regen always preserves your history: the date you
+            were viewing and any forward entries are pushed back to history before the live slot is
+            regenerated.
+          </li>
+          <li>
+            In Blitz rounds and AoX runs (active or just ended), a range change resets the round/run
+            when you close the ⚙ menu.
+          </li>
+        </UL>
+        <Subhead>Year sub-mode auto-disable</Subhead>
+        <p>
+          Deduction's Year sub-mode requires either a range of at least 5 years (so a 5-year window
+          can be built) or, with Julian on, a range that contains October 15, 1582 (so a 2-year Jul
+          Cross window can be built). When neither holds, the Year sub-type button greys out, and if
+          you were already in Year mode when the range changed, you're auto-switched to Day mode.
+          Day and Month sub-modes work for any valid range.
+        </p>
+      </GuideSection>
+      <GuideSection id="julian" title="Dates — Julian Calendar" openId={open} onToggle={toggle}>
+        <Lead>
+          Treats early dates as Julian; on by default. Includes the Julian Chance frequency control.
+        </Lead>
+        <p>
+          When on, dates on or before October 4, 1582 are treated as Julian, which has different
+          leap year rules — every year divisible by 4 is a leap year, with no century exception.
+          This affects weekday calculation and the codes shown in Show Codes. October 5–14, 1582 are
           always excluded since those dates never existed; the Gregorian calendar skipped them to
-          correct accumulated calendar drift.
+          correct accumulated drift.
         </p>
+        <Subhead>Toggling Julian</Subhead>
+        <UL>
+          <li>For dates after October 4, 1582, Julian has no effect.</li>
+          <li>
+            For Julian-eligible dates (October 4, 1582 or earlier), the date stays if you haven't
+            wrong-guessed yet — the answer and codes simply update.
+          </li>
+          <li>
+            If you've already wrong-guessed, the date regenerates and is added to your history with
+            both your red guess and a green for the day that was correct under the calendar system
+            in effect when it was first generated.
+          </li>
+          <li>
+            Each date snapshots its calendar system at generation, so revisiting an earlier question
+            via Back shows the highlights and codes correct under the system in effect when that
+            date was generated.
+          </li>
+          <li>
+            In Blitz rounds and AoX runs (active or just ended), a Julian toggle resets the
+            round/run when you close the ⚙ menu.
+          </li>
+        </UL>
+        <Subhead>Julian Chance</Subhead>
         <p>
-          Toggling Julian doesn't necessarily regenerate the current date. For dates after October
-          4, 1582, Julian has no effect. For Julian-eligible dates (October 4, 1582 or earlier), the
-          date stays if you haven't made a wrong guess yet — the answer and codes simply update. If
-          you've already wrong-guessed, the date regenerates and is added to your history with both
-          your red guess and a green for the day that was correct under the calendar system in
-          effect when the date was first generated. Each date snapshots its calendar system at
-          generation, so revisiting an earlier question via Back shows the highlights and codes that
-          were correct under the system in effect when that date was generated. In Blitz rounds and
-          AoX runs (active or just ended), a Julian toggle resets the round/run when you close the ⚙
-          menu.
-        </p>
-        <p>
-          <b>Julian Chance</b> (also under Calendar System) sets how often a generated date lands in
-          the Julian calendar period (pre-Oct 15, 1582) — Random uses the natural rate (which
-          depends on your year range, ~16% on the default 1–10000 range); 25%, 50%, 75%, and 100%
-          force higher rates. The listed percentage is the exact final rate of Julian dates, not a
-          force probability. The five buttons are locked and faded in three cases: when the Julian
-          Calendar toggle above is off (no Julian dates can be generated regardless), when your year
-          range is entirely post-Gregorian (minimum year is 1583 or later, so no Julian dates exist
-          in range), or when your year range is entirely pre-Gregorian (maximum year is 1581 or
-          earlier, so every date is already Julian and the setting has nothing to do). Year 1582
-          itself contains both Julian (Jan-Sep + Oct 1-4) and Gregorian (Oct 15+ + Nov + Dec) dates,
-          so any range that includes 1582 counts as mixed and the row stays unlocked. The
-          previously-selected value stays visually selected while locked so it's restored when the
-          lock condition clears. Changing the chance value always regenerates an unanswered date;
-          burned dates defer like every other setting.
-        </p>
-      </GuideSection>
-      <GuideSection id="range" title="Year Range" openId={open} onToggle={toggle}>
-        <p>
-          Set via the ⚙ settings menu. Controls which years dates are drawn from. Defaults to
-          1–10000 AD. Changing the range always regenerates the current date — but if you've already
-          made a wrong guess on the current date, the change is deferred so the wrong-state is
-          preserved; the new range applies to the next date. While browsing back, settings-driven
-          regen always preserves your history: the date you were viewing and any forward entries are
-          pushed back to history before the live slot is regenerated. In Blitz rounds and AoX runs
-          (active or just ended), a range change resets the round/run when you close the ⚙ menu.
-        </p>
-        <p>
-          <b>Year sub-mode auto-disable:</b> Deduction's Year sub-mode requires either a year range
-          of at least 5 years (so a 5-year window can be built) or, with Julian on, a range that
-          contains October 15, 1582 (so a 2-year Jul Cross window can be built). When neither
-          condition holds, the Year sub-type button greys out, and if you were already in Year mode
-          when the range changed, you're auto-switched to Day mode. Day and Month sub-modes work for
-          any valid range.
-        </p>
-      </GuideSection>
-      <GuideSection id="leap" title="Leap Year Settings" openId={open} onToggle={toggle}>
-        <p>
-          Two settings in the ⚙ menu control how often leap years appear and what months they're
-          paired with. <b>Leap Year Chance</b> sets how often a generated date lands on a leap year
-          — Random uses the natural rate (~24%); 50%, 75%, and 100% force higher rates.{' '}
-          <b>Jan/Feb Chance on Leap Years</b> sets how often a leap-year date lands on January or
-          February — Random uses the natural rate (~17%, since 2 of 12 months are Jan/Feb); 25%,
+          Sets how often a generated date lands in the Julian period (pre-Oct 15, 1582). Random uses
+          the natural rate (depends on your year range, ~16% on the default 1–10000 range); 25%,
           50%, 75%, and 100% force higher rates. The listed percentage is the exact final rate of
-          Jan/Feb on leap-year dates, not just a "force probability" — under 50%, exactly half of
-          leap-year dates are Jan/Feb. These settings apply to all game modes' date generation;
-          Lookup is unaffected. If your year range happens to contain no leap years (under the
-          active calendar), the four Leap Year Chance buttons are locked and faded; the
-          previously-selected value stays visually selected so it's restored when you change the
-          range back to one with a leap year reachable. Jan/Feb Chance stays unlocked since the
-          setting still applies on whatever leap years exist in the range. Changing any value in{' '}
-          <b>Leap Year Chance</b> or <b>Jan/Feb Chance on Leap Years</b> regenerates the displayed
-          date so the new setting takes effect when you close the ⚙ menu. If you've already made a
-          wrong guess, revealed the answer, or shown codes on the current date, either change is
-          deferred so the burned state is preserved; the new setting applies to the next date. In
-          Blitz rounds and AoX runs (active or just ended), a chance change resets the round/run
-          when you close the ⚙ menu.
+          Julian dates, not a force probability. Changing the value always regenerates an unanswered
+          date; burned dates defer like every other setting.
+        </p>
+        <p>The five buttons lock and fade in three cases:</p>
+        <UL>
+          <li>The Julian Calendar toggle above is off (no Julian dates can be generated).</li>
+          <li>
+            Your range is entirely post-Gregorian (minimum year 1583+), so no Julian dates exist in
+            range.
+          </li>
+          <li>
+            Your range is entirely pre-Gregorian (maximum year 1581 or earlier), so every date is
+            already Julian and the setting has nothing to do.
+          </li>
+        </UL>
+        <p>
+          Year 1582 itself contains both Julian (Jan–Sep + Oct 1–4) and Gregorian (Oct 15+ + Nov +
+          Dec) dates, so any range that includes 1582 counts as mixed and the row stays unlocked.
+          The previously-selected value stays visually selected while locked, so it's restored when
+          the lock condition clears.
         </p>
       </GuideSection>
-      <GuideSection id="savestats" title="Save Stats" openId={open} onToggle={toggle}>
+      <GuideSection id="leap" title="Dates — Leap Year Settings" openId={open} onToggle={toggle}>
+        <Lead>
+          Two controls for how often leap years appear and which months they're paired with.
+        </Lead>
+        <UL>
+          <li>
+            <b>Leap Year Chance</b> — how often a generated date lands on a leap year. Random uses
+            the natural rate (~24%); 50%, 75%, and 100% force higher rates.
+          </li>
+          <li>
+            <b>Jan/Feb Chance on Leap Years</b> — how often a leap-year date lands on January or
+            February. Random uses the natural rate (~17%, since 2 of 12 months are Jan/Feb); 25%,
+            50%, 75%, and 100% force higher rates. The listed percentage is the exact final rate of
+            Jan/Feb on leap-year dates, not just a force probability — under 50%, exactly half of
+            leap-year dates are Jan/Feb.
+          </li>
+        </UL>
         <p>
-          Toggle via the ⚙ settings menu under Stats. On by default. When off, your answers don't
-          update stats or saved bests. The stats panel dims to indicate the off state. In the casual
-          modes (Classic, Deduction, Flash) Override is locked when Save Stats is off — there's
-          nothing to record. In the run modes (Blitz, AoX) Override works the same whether Save
-          Stats is on or off, so a misclick can never throw away a whole round or run even in
-          practice mode. The toggle works differently per mode:
+          Both apply to all game modes' date generation; Lookup is unaffected. Changing any value
+          regenerates the displayed date so the new setting takes effect when you close the ⚙ menu.
+          If you've already wrong-guessed, revealed, or shown codes on the current date, the change
+          is deferred and applies to the next date. In Blitz rounds and AoX runs (active or just
+          ended), a chance change resets the round/run when you close the ⚙ menu.
         </p>
-        <p className="mt-2">
-          <b>Classic, Deduction, Flash</b> — per-question. The toggle's value is locked in at the
-          moment of your first stat-affecting action (your first wrong guess on the question, or
-          your correct answer if you got it right on the first try). Toggling afterward doesn't
-          change that question's outcome, but does apply to the next question. If you've already
-          made a wrong guess on the current question, toggling Save Stats does not regenerate the
-          date — the toggle's frozen value sticks for the question. When off, the question doesn't
-          update stats and isn't pushed to history (Back can't browse to it).
-        </p>
-        <p className="mt-2">
-          <b>Blitz</b> — round-level. In-round score, accuracy, streak, and Back/Forward navigation
-          through round questions all work normally regardless of the toggle. Whatever the toggle is
-          set to when the round ends determines whether the round's Best Score and Best Streak
-          update.
-        </p>
-        <p className="mt-2">
-          <b>AoX</b> — run-level. In-run score, streak, times, and Back/Forward navigation all work
-          normally regardless of the toggle. Whatever the toggle is set to when the run ends
-          determines whether Best Average, Best Median, and Best Streak update.
-        </p>
+        <Subhead>Locking</Subhead>
+        <UL>
+          <li>
+            If your year range contains no leap years (under the active calendar), the four Leap
+            Year Chance buttons lock and fade; the previously-selected value stays visually selected
+            so it's restored when you change the range back to one with a leap year reachable.
+          </li>
+          <li>
+            Jan/Feb Chance stays unlocked, since the setting still applies on whatever leap years
+            exist in the range.
+          </li>
+        </UL>
       </GuideSection>
-      <GuideSection id="theme" title="Theme" openId={open} onToggle={toggle}>
-        <p>
-          Five themes: Dusk (default dark navy), Midnight (true black with purple), Nebula (deep
-          purple), Light (clean white), and Parchment (warm cream). Accessible from the ⚙ settings
-          menu in any tab. Enable Use System Settings to match your device's light/dark mode
-          automatically, with separate theme choices for each. Disable to pick one manually.
-        </p>
+      <GuideSection id="savestats" title="Stats — Save Stats" openId={open} onToggle={toggle}>
+        <Lead>
+          On by default. When off, your answers don't update stats or saved bests, and the stats
+          panel dims.
+        </Lead>
+        <UL>
+          <li>
+            In the casual modes (Classic, Deduction, Flash), Override is locked when Save Stats is
+            off — there's nothing to record.
+          </li>
+          <li>
+            In the run modes (Blitz, AoX), Override works the same whether Save Stats is on or off,
+            so a misclick can never throw away a whole round or run even in practice mode.
+          </li>
+        </UL>
+        <p>The toggle works differently per mode:</p>
+        <UL>
+          <li>
+            <b>Classic, Deduction, Flash (per-question)</b> — the value is locked in at your first
+            stat-affecting action on the question (your first wrong guess, or your correct answer if
+            you got it on the first try). Toggling afterward doesn't change that question's outcome
+            but applies to the next. If you've already wrong-guessed, toggling does not regenerate
+            the date — the frozen value sticks for the question. When off, the question doesn't
+            update stats and isn't pushed to history (Back can't browse to it).
+          </li>
+          <li>
+            <b>Blitz (round-level)</b> — in-round score, accuracy, streak, and Back/Forward all work
+            normally regardless of the toggle. Whatever the toggle is when the round ends determines
+            whether the round's Best Score and Best Streak update.
+          </li>
+          <li>
+            <b>AoX (run-level)</b> — in-run score, streak, times, and Back/Forward all work normally
+            regardless of the toggle. Whatever the toggle is when the run ends determines whether
+            Best Average, Best Median, and Best Streak update.
+          </li>
+        </UL>
       </GuideSection>
       <Divider label="Data" />
       <GuideSection id="saved-progress" title="Saved Progress" openId={open} onToggle={toggle}>
+        <Lead>What persists on this device between visits — and what resets each time.</Lead>
         <p>
           The app saves the following on this device and restores them when you return — after
           closing the app, refreshing, updating to a new version, or revisiting later (an app update
-          never resets your saved data): your <b>⚙ Settings</b> (date format, calendar system, year
-          range, the leap / Jan-Feb / Julian chances, Save Stats, and theme); your{' '}
-          <b>per-mode setup</b> (Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
-          Per-Round vs Per-Question; AoX count, Allow Mistakes, and One-By-One; the Deduction
-          sub-type; and each mode's show / hide stat toggles); your <b>stats</b> in the casual modes
-          (Classic, Flash, Deduction); your <b>all-time bests</b> (Blitz score &amp; streak, Sudden
-          score, AoX average &amp; median); and your <b>Lookup history</b>. Saved Average and Median
-          use a rolling window of your most recent 1000 solves.
+          never resets your saved data):
         </p>
+        <UL>
+          <li>
+            <b>⚙ Settings</b> — date format, calendar system, year range, the leap / Jan-Feb /
+            Julian chances, Save Stats, and theme.
+          </li>
+          <li>
+            <b>Per-mode setup</b> — Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
+            Per-Round vs Per-Question; AoX count, Allow Mistakes, and One-By-One; the Deduction
+            sub-type; and each mode's show / hide stat toggles.
+          </li>
+          <li>
+            <b>Stats</b> in the casual modes (Classic, Flash, Deduction).
+          </li>
+          <li>
+            <b>All-time bests</b> — Blitz score &amp; streak, Sudden score, AoX average &amp;
+            median.
+          </li>
+          <li>
+            <b>Lookup history.</b>
+          </li>
+        </UL>
+        <p>Saved Average and Median use a rolling window of your most recent 1000 solves.</p>
+        <Subhead>Not saved (resets each visit)</Subhead>
+        <UL>
+          <li>
+            Any timed round or run on screen — whether still in progress OR ended but not yet Reset
+            — and the current question. The round/run itself is discarded; only a Best it already
+            recorded persists.
+          </li>
+          <li>The current tab — the app always opens to Classic.</li>
+        </UL>
         <p>
-          <b>Not saved</b> — these reset each visit: any timed round or run on screen — whether
-          still in progress OR ended but not yet Reset — and the current question (the round/run
-          itself is discarded; only a Best it already recorded persists); and the current tab — the
-          app always opens to Classic. <b>Full Reset</b> (below) clears everything that is saved.
+          <b>Full Reset</b> (below) clears everything that is saved.
         </p>
       </GuideSection>
       <GuideSection
@@ -595,89 +910,120 @@ export default function GuidePage() {
         openId={open}
         onToggle={toggle}
       >
+        <Lead>Two reset buttons at the bottom of the ⚙ menu — one narrow, one total.</Lead>
+        <Subhead>Reset Settings (bottom-left)</Subhead>
+        <p>Restores everything in the menu to its defaults:</p>
+        <UL>
+          <li>Random Format on, Written MDY</li>
+          <li>Julian on, Julian Chance Random</li>
+          <li>Year range 1–10000</li>
+          <li>Leap Year Chance Random, Jan/Feb Chance Random</li>
+          <li>Save Stats on</li>
+          <li>Theme back to Use System Settings with Dusk (dark) and Light (light)</li>
+        </UL>
         <p>
-          <b>Reset Settings</b> — at the bottom-left of the ⚙ menu, restores everything in the menu
-          to its defaults: Random Format on, Written MDY, Julian on, Julian Chance Random, year
-          range 1–10000, Leap Year Chance Random, Jan/Feb Chance Random, Save Stats on, and theme
-          back to Use System Settings with Dusk (dark) and Light (light). It does not touch
-          mode-specific config outside the menu (AoX N, timer durations, Deduction sub-types and
-          toggles) or your stats and history. No confirmation prompt — tap to apply. When every
-          setting in the menu is already at its default, this button dims and locks since tapping it
-          would have no effect.
+          It does <b>not</b> touch mode-specific config outside the menu (AoX N, timer durations,
+          Deduction sub-types and toggles) or your stats and history. No confirmation prompt — tap
+          to apply. When every menu setting is already at its default, the button dims and locks
+          since tapping it would have no effect.
         </p>
+        <Subhead>Full Reset (bottom-right)</Subhead>
+        <p>Restores the entire site to its initial launch state:</p>
+        <UL>
+          <li>
+            Wipes all stats, all-time bests (Blitz, Sudden, AoX), Lookup history, and in-progress
+            rounds and runs. Your stats, all-time bests, and Lookup history are saved on this
+            device, so Full Reset clears that saved copy permanently.
+          </li>
+          <li>
+            Resets every setting and toggle across all modes — both the ⚙ menu and the per-mode
+            toggles (AoX N, timer durations, Deduction sub-types and toggles, Allow Mistakes, Save
+            Stats, Stop Codes, etc.).
+          </li>
+          <li>
+            Closes any open overlay (How to Play, ⚙ menu, codes, method breakdown) and switches to
+            Classic.
+          </li>
+        </UL>
         <p>
-          <b>Full Reset</b> — at the bottom-right of the ⚙ menu, restores the entire site to its
-          initial launch state. Wipes all stats, all-time bests (Blitz, Sudden, AoX), Lookup
-          history, and in-progress rounds and runs. Your stats, all-time bests, and Lookup history
-          are saved on this device and restored on your next visit, so Full Reset clears that saved
-          copy permanently. Resets every setting and toggle across all modes — both the ⚙ menu and
-          the per-mode toggles (AoX N, timer durations, Deduction sub-types and toggles, Allow
-          Mistakes, Save Stats, Stop Codes, etc.). Closes any open overlay (How to Play, ⚙ menu,
-          codes, method breakdown) and switches to Classic. Requires two taps to confirm: tap once
-          and the button changes to "Confirm?"; tap again to fire. Auto-cancels after a few seconds,
-          when you close ⚙, or if you tap any other control. When every setting, toggle, stat, best,
-          history entry, and live state across the entire site is already at its launch value, this
-          button dims and locks since tapping it would have no effect.
+          Requires two taps to confirm: tap once and the button changes to "Confirm?"; tap again to
+          fire. Auto-cancels after a few seconds, when you close ⚙, or if you tap any other control.
+          When every setting, toggle, stat, best, history entry, and live state across the entire
+          site is already at its launch value, the button dims and locks since tapping it would have
+          no effect.
         </p>
       </GuideSection>
       <Divider label="Modes" />
       <GuideSection id="classic" title="Classic" openId={open} onToggle={toggle}>
-        <p>
-          The main practice mode with no time pressure. Answer at your own pace. Override works
-          after both wrong and correct answers. Reset Stats clears your stats and question history;
-          when timing stats are hidden and you haven't burned the current date, the date is kept.
-        </p>
+        <Lead>The main practice mode — no time pressure, answer at your own pace.</Lead>
+        <UL>
+          <li>Override works after both wrong and correct answers.</li>
+          <li>
+            Reset Stats clears your stats and question history; when timing stats are hidden and you
+            haven't burned the current date, the date is kept.
+          </li>
+        </UL>
       </GuideSection>
       <GuideSection id="aox" title="AoX" openId={open} onToggle={toggle}>
+        <Lead>Average your times over a set number of correct solves (2–1000).</Lead>
         <p>
-          Average your times over a set number of correct solves (2–1000). The score shows correct
-          answers out of total attempts; the run ends when correct answers reach your target. Press
-          Begin to start a run.
+          The score shows correct answers out of total attempts; the run ends when correct answers
+          reach your target. Press Begin to start a run.
         </p>
-        <p>
-          <b>Allow Mistakes</b> — wrong answers don't end the run but don't count toward your score.
-          With Allow Mistakes on, Reveal and Show Codes also count as a miss but keep the run going.
-          Reveal flashes the answer and then automatically moves on to the next date. Show Codes
-          opens the codes so you can study them, then a <b>Next</b> button moves you on (it waits,
-          since you need time to read). With One-By-One on, Reveal also waits on a Next button so
-          you can see the answer before the next hidden date. With Allow Mistakes off, Reveal or
-          Show Codes ends the run.
-        </p>
-        <p>
-          <b>One-By-One</b> — hides the date between solves. Press Continue to reveal each new date.
-        </p>
-        <p>
-          <b>Last / Avg / Med</b> — tap any of these to show or hide all three time stats.
-        </p>
-        <p>
-          <b>Back/Forward</b> — browse previous dates from the current run without affecting it.
-          Press Continue to resume; the date you were viewing and any forward entries are pushed
-          back to your run history before a fresh date is generated, so nothing is lost. After a run
-          completes, Back and Forward let you browse all dates from that run; press Reset to start
-          fresh.
-        </p>
-        <p>
-          <b>Override</b> — after wrong: gives credit with time recorded, preserves streak. After
-          correct: undoes the credit, resets streak, and either ends the run (Allow Mistakes off) or
-          advances to a new date (Allow Mistakes on). If a run ended (a wrong answer, a Reveal, or a
-          Show Codes with Allow Mistakes off), Override credits that question and the run continues
-          where it left off. You can also override past dates while browsing back with Back/Forward.
-          If overriding on the last question with Allow Mistakes on, a new date is generated to
-          complete the average. One override per question. In AoX, Override works the same whether
-          Save Stats is on or off.
-        </p>
+        <Subhead>Run options</Subhead>
+        <UL>
+          <li>
+            <b>Allow Mistakes</b> — wrong answers don't end the run but don't count toward your
+            score. With it on, Reveal and Show Codes also count as a miss but keep the run going:
+            Reveal flashes the answer then automatically moves on; Show Codes opens the codes so you
+            can study, then a <b>Next</b> button moves you on (it waits, since you need time to
+            read). With One-By-One on, Reveal also waits on a Next button so you can see the answer
+            before the next hidden date. With Allow Mistakes off, Reveal or Show Codes ends the run.
+          </li>
+          <li>
+            <b>One-By-One</b> — hides the date between solves. Press Continue to reveal each new
+            date.
+          </li>
+          <li>
+            <b>Last / Avg / Med</b> — tap any of these to show or hide all three time stats.
+          </li>
+        </UL>
+        <Subhead>Back / Forward &amp; Override</Subhead>
+        <UL>
+          <li>
+            <b>Back / Forward</b> — browse previous dates from the current run without affecting it.
+            Press Continue to resume; the date you were viewing and any forward entries are pushed
+            back to your run history before a fresh date is generated, so nothing is lost. After a
+            run completes, Back and Forward browse all dates from that run; press Reset to start
+            fresh.
+          </li>
+          <li>
+            <b>Override</b> — after wrong: gives credit with time recorded, preserves streak. After
+            correct: undoes the credit, resets streak, and either ends the run (Allow Mistakes off)
+            or advances to a new date (Allow Mistakes on). If a run ended (a wrong answer, a Reveal,
+            or a Show Codes with Allow Mistakes off), Override credits that question and the run
+            continues where it left off. You can also override past dates while browsing back. If
+            overriding on the last question with Allow Mistakes on, a new date is generated to
+            complete the average. One override per question. Override works the same whether Save
+            Stats is on or off.
+          </li>
+        </UL>
+        <Subhead>Stats &amp; bests</Subhead>
         <p>
           Stats in AoX are always visible and always track. Best average and best median are tracked
           independently — they can come from different runs. Beneath each best, the companion metric
           from the run that set it is also shown (e.g. the median from the run that set your best
           average). A <i>Same Round</i> or <i>Different Rounds</i> tag tells you whether your best
           average and best median came from the same exceptional run, or from two different strong
-          ones. Bests stay honest under Override: a finished run's record follows its corrected
-          stats — overriding away one of its credited solves (on the last question or while browsing
-          back) restores the best that stood before the run, and a correction that changes the run's
+          ones.
+        </p>
+        <p>
+          Bests stay honest under Override: a finished run's record follows its corrected stats —
+          overriding away one of its credited solves (on the last question or while browsing back)
+          restores the best that stood before the run, and a correction that changes the run's
           average or median updates its record to match. The score display freezes when a run ends
-          and only resets after pressing Reset. Leaving AoX in the middle of a run resets it; a
-          finished run's summary is preserved when you return.
+          and only resets after pressing Reset. Leaving AoX mid-run resets it; a finished run's
+          summary is preserved when you return.
         </p>
         <p>
           Bests are tracked per exact configuration: AoX size (n), Allow Mistakes, Date Format (or
@@ -688,157 +1034,197 @@ export default function GuidePage() {
         </p>
         <p>
           The small <b>Q#</b> label at the top-right of the date card appears not only while
-          back-browsing but also at run end (done/failed) so you can identify which question of the
+          back-browsing but also at run end (done/failed), so you can identify which question of the
           run you're viewing in the summary.
         </p>
       </GuideSection>
       <GuideSection id="deduction" title="Deduction" openId={open} onToggle={toggle}>
+        <Lead>Identify the missing piece of a date given the rest plus the weekday.</Lead>
         <p>
-          Identify the missing piece of a date given the rest plus the weekday. Choose Day, Month,
-          or Year mode. The displayed date follows your selected Date Format (or random format
-          snapshot, if Random Format is on), with a fixed-width underscore placeholder where the
-          missing piece would normally appear.
+          Choose Day, Month, or Year mode. The displayed date follows your selected Date Format (or
+          random format snapshot, if Random Format is on), with a fixed-width underscore placeholder
+          where the missing piece would normally appear.
         </p>
-        <p className="mt-2">
-          <b>Day</b> — seven consecutive days are shown, each with a unique day code. The correct
-          day can appear in any position. <i>October 1582 with Julian on:</i> days 5–14 don't exist
-          (the Gregorian transition skipped them), so the valid days are 1–4 and 15–31. When the
-          window can't fit seven days on one side of the gap, it shrinks to four — codes 1, 2, 3, 4
-          repeat at days 15, 16, 17, 18, so a five-day window crossing the gap would have a
-          duplicate code.
+        <Subhead>Day</Subhead>
+        <p>
+          Seven consecutive days are shown, each with a unique day code. The correct day can appear
+          in any position. <i>October 1582 with Julian on:</i> days 5–14 don't exist (the Gregorian
+          transition skipped them), so the valid days are 1–4 and 15–31. When the window can't fit
+          seven days on one side of the gap, it shrinks to four — codes 1, 2, 3, 4 repeat at days
+          15, 16, 17, 18, so a five-day window crossing the gap would have a duplicate code.
         </p>
-        <p className="mt-2">
-          <b>Month</b> — seven fixed boxes group months that share the same month code, so tapping
-          any month within a box gives the same weekday for that date. Tap the box containing the
-          correct month. The boxes are always in the same position. In leap years, January shifts
-          into the Apr/Jul box (becoming Jan/Apr/Jul) and February shifts into the Aug box (becoming
-          Feb/Aug); the other boxes are unchanged. <i>Year 1582 with Julian on:</i> a special layout
-          applies because the Julian/Gregorian transition splits the year — January through
-          September and October 1–4 use Julian (year code +1), while October 15+ and
-          November/December use Gregorian (year code −2). October's box position depends on the day:
-          for days 1–4 it joins Jan and Nov ("Jan/Oct/Nov"); for days 15–31 it joins Jun
-          ("Jun/Oct"); for days 5–14 it's excluded since those dates don't exist. The other six
-          boxes are arranged differently from the standard layout — practice carefully.
+        <Subhead>Month</Subhead>
+        <p>
+          Seven fixed boxes group months that share the same month code, so tapping any month within
+          a box gives the same weekday for that date. Tap the box containing the correct month. The
+          boxes are always in the same position. In leap years, January shifts into the Apr/Jul box
+          (becoming Jan/Apr/Jul) and February shifts into the Aug box (becoming Feb/Aug); the other
+          boxes are unchanged.
         </p>
-        <p className="mt-2">
-          <b>Year</b> — five consecutive year options. Each option has a unique year code, so only
-          the correct year matches the displayed weekday. The correct year can appear in any
-          position. <i>With Julian on:</i> when the five-year window would cross October 15, 1582
-          (the Julian/Gregorian boundary), it shrinks to two years — the calendar's 10-day jump
-          produces a +5 weekday shift across that boundary that breaks distinctness for any longer
-          window. <i>February 29:</i> only allowed when the window contains at least one leap year
+        <p>
+          <i>Year 1582 with Julian on:</i> a special layout applies because the Julian/Gregorian
+          transition splits the year — January through September and October 1–4 use Julian (year
+          code +1), while October 15+ and November/December use Gregorian (year code −2). October's
+          box position depends on the day: for days 1–4 it joins Jan and Nov ("Jan/Oct/Nov"); for
+          days 15–31 it joins Jun ("Jun/Oct"); for days 5–14 it's excluded since those dates don't
+          exist. The other six boxes are arranged differently from the standard layout — practice
+          carefully.
+        </p>
+        <Subhead>Year</Subhead>
+        <p>
+          Five consecutive year options. Each has a unique year code, so only the correct year
+          matches the displayed weekday. The correct year can appear in any position.{' '}
+          <i>With Julian on:</i> when the five-year window would cross October 15, 1582 (the
+          Julian/Gregorian boundary), it shrinks to two years — the calendar's 10-day jump produces
+          a +5 weekday shift across that boundary that breaks distinctness for any longer window.{' '}
+          <i>February 29:</i> only allowed when the window contains at least one leap year
           (Gregorian or Julian as appropriate). Non-leap years still appear as options but trivially
           can't be the answer, since Feb 29 doesn't exist in those years.
         </p>
-        <p className="mt-2">
-          <b>Per-mode toggles</b> — Year mode adds <i>ab</i> Cross (left of Day/Month/Year) and Jul
-          Cross (right of Day/Month/Year). Month mode adds 1582 Only (right of Day/Month/Year).
+        <Subhead>Per-mode toggles</Subhead>
+        <p>
           These are mode-specific, not in the ⚙ Settings menu, since they only apply to one
-          Deduction sub-mode.
+          Deduction sub-mode. Year mode adds <i>ab</i> Cross (left of Day/Month/Year) and Jul Cross
+          (right); Month mode adds 1582 Only (right).
         </p>
-        <p className="mt-2">
-          <b>
-            <i>ab</i> Cross
-          </b>{' '}
-          (Year mode) — when on, the five-year window must cross a year ending in 00 (any 100-year
-          boundary, both leap and non-leap centuries). Practice the <i>ab</i> code change
-          mid-window. Disabled when your year range doesn't span any 100-year boundary.
-        </p>
-        <p className="mt-2">
-          <b>Jul Cross</b> (Year mode) — when on, the two-year window must cross October 15, 1582
-          (the Julian/Gregorian transition). N=2 always. Disabled when the Julian setting is off, or
-          when your year range doesn't contain 1582 plus at least one of its neighbors (1581 or
-          1583).
-        </p>
-        <p className="mt-2">
-          <b>Both Year toggles on</b> — each puzzle randomly picks (50/50) which constraint to
-          enforce. The two can't both be true for the same window.
-        </p>
-        <p className="mt-2">
-          <b>1582 Only</b> (Month mode) — when on, every puzzle uses year 1582, forcing the special
-          split layout described above. Disabled when the Julian setting is off or your year range
-          excludes 1582. When the answer's cell groups months from both calendars, Show Codes uses
-          slash notation (e.g., 1/-3, Julian/Gregorian) for any value that differs across the cell's
-          months; values that are the same across all months collapse to a single value.
-        </p>
-        <p className="mt-2">
-          Switch subtypes anytime — progress in each is preserved, including question history. Stats
-          are tracked separately for each subtype, and Back/Forward only walks the current subtype's
-          entries. Reset Stats clears the current subtype's stats and history only; the other
-          subtypes' stats and history are untouched. When timing stats are hidden and you haven't
-          burned the current question, the question is kept.
+        <UL>
+          <li>
+            <b>
+              <i>ab</i> Cross
+            </b>{' '}
+            (Year mode) — when on, the five-year window must cross a year ending in 00 (any 100-year
+            boundary, both leap and non-leap centuries). Practice the <i>ab</i> code change
+            mid-window. Disabled when your year range doesn't span any 100-year boundary.
+          </li>
+          <li>
+            <b>Jul Cross</b> (Year mode) — when on, the two-year window must cross October 15, 1582
+            (the Julian/Gregorian transition). N=2 always. Disabled when the Julian setting is off,
+            or when your year range doesn't contain 1582 plus at least one of its neighbors (1581 or
+            1583).
+          </li>
+          <li>
+            <b>Both Year toggles on</b> — each puzzle randomly picks (50/50) which constraint to
+            enforce. The two can't both be true for the same window.
+          </li>
+          <li>
+            <b>1582 Only</b> (Month mode) — when on, every puzzle uses year 1582, forcing the
+            special split layout described above. Disabled when the Julian setting is off or your
+            year range excludes 1582. When the answer's cell groups months from both calendars, Show
+            Codes uses slash notation (e.g., 1/-3, Julian/Gregorian) for any value that differs
+            across the cell's months; values that are the same across all months collapse to a
+            single value.
+          </li>
+        </UL>
+        <Subhead>Sub-types &amp; stats</Subhead>
+        <p>
+          Switch sub-types anytime — progress in each is preserved, including question history.
+          Stats are tracked separately for each sub-type, and Back/Forward only walks the current
+          sub-type's entries. Reset Stats clears the current sub-type's stats and history only; the
+          others are untouched. When timing stats are hidden and you haven't burned the current
+          question, the question is kept.
         </p>
       </GuideSection>
       <GuideSection id="flash" title="Flash" openId={open} onToggle={toggle}>
+        <Lead>The date is shown briefly, then hidden — answer from memory.</Lead>
+        <UL>
+          <li>
+            The date is revealed for 0.1s–3.0s (default 0.5s, adjustable via the slider) then
+            hidden.
+          </li>
+          <li>
+            Reset Stats clears your stats and question history. Mid-question, Reset Stats always
+            generates a new date and returns to the dash state.
+          </li>
+        </UL>
+        <Subhead>While the date is showing</Subhead>
         <p>
-          The date is briefly revealed (0.1s–3.0s, default 0.5s, adjustable via the slider) then
-          hidden. Answer from memory. Reset Stats clears your stats and question history.
-          Mid-question, Reset Stats always generates a new date and returns to the dash state.
-        </p>
-        <p>
-          While the date is showing you can also press Reveal or Show Codes — both freeze the
-          countdown (the timer bar and the number stop together) and keep the date on screen. Reveal
-          shows the answer and counts a miss; Show Codes does the same and also opens the
-          calculation breakdown.
+          You can press Reveal or Show Codes — both freeze the countdown (the timer bar and the
+          number stop together) and keep the date on screen. Reveal shows the answer and counts a
+          miss; Show Codes does the same and also opens the calculation breakdown.
         </p>
       </GuideSection>
       <GuideSection id="blitz" title="Blitz" openId={open} onToggle={toggle}>
-        <p>
-          Answer as many dates as possible before time runs out. Score shows correct answers for the
-          current round only.
-        </p>
-        <p>
-          <b>Allow Mistakes</b> — when on, wrong answers count against accuracy but don't end the
-          round. When off, a wrong answer ends the round immediately.
-        </p>
-        <p>
-          <b>Per Round / Per Question</b> — tap to switch. Per Round uses a single countdown for the
-          whole round (10s–3m, default 60s). Per Question gives each question its own countdown
-          (1s–20s, default 5s); running out of time ends the round. Per Question always enforces no
-          mistakes: tapping Per Question auto-disables Allow Mistakes, and tapping Allow Mistakes on
-          while in Per Question auto-switches back to Per Round.
-        </p>
+        <Lead>Answer as many dates as possible before time runs out.</Lead>
+        <p>Score shows correct answers for the current round only.</p>
+        <Subhead>Round options</Subhead>
+        <UL>
+          <li>
+            <b>Allow Mistakes</b> — when on, wrong answers count against accuracy but don't end the
+            round. When off, a wrong answer ends the round immediately.
+          </li>
+          <li>
+            <b>Per Round / Per Question</b> — tap to switch. Per Round uses a single countdown for
+            the whole round (10s–3m, default 60s). Per Question gives each question its own
+            countdown (1s–20s, default 5s); running out of time ends the round. Per Question always
+            enforces no mistakes: tapping Per Question auto-disables Allow Mistakes, and tapping
+            Allow Mistakes on while in Per Question auto-switches back to Per Round.
+          </li>
+        </UL>
+        <Subhead>Ending a round &amp; Override</Subhead>
         <p>
           When the round ends, the correct answer for the current date is highlighted and your bests
           are recorded. A round also ends if you give up on the current date with Reveal or Show
           Codes, or — with Allow Mistakes off (or in Per Question) — if you override a correct
-          answer to wrong. You can then browse your round's history with Back/Forward and override
-          past dates to adjust your score and saved bests. Overriding the question that ended the
-          round — whether it ended on a wrong answer, a Reveal, or a Show Codes — credits it and
-          resumes the round: the countdown picks up where it left off (Per Round) or a fresh
-          question timer starts on the next date (Per Question), and the round's bests aren't locked
-          in until the round ends for real (so a misclick you fix doesn't update your bests).
-          Override works the same whether Save Stats is on or off.
+          answer to wrong.
         </p>
         <p>
-          Streak is hidden in Per Question since any wrong answer ends the round, making streak
-          equal to score.
+          You can then browse your round's history with Back/Forward and override past dates to
+          adjust your score and saved bests. Overriding the question that ended the round — whether
+          it ended on a wrong answer, a Reveal, or a Show Codes — credits it and resumes the round:
+          the countdown picks up where it left off (Per Round) or a fresh question timer starts on
+          the next date (Per Question), and the round's bests aren't locked in until the round ends
+          for real (so a misclick you fix doesn't update your bests). Override works the same
+          whether Save Stats is on or off.
         </p>
+        <Subhead>Streak &amp; bests</Subhead>
+        <UL>
+          <li>
+            Streak is hidden in Per Question, since any wrong answer ends the round, making streak
+            equal to score.
+          </li>
+          <li>
+            Best scores are tracked per exact configuration: timer duration, Allow Mistakes, Per
+            Round/Per Question, Date Format (or Random Format as its own bucket), Leap Year Chance,
+            Jan/Feb Chance on Leap Years, Julian Chance, year range, and Calendar System (Julian
+            on/off). Changing any of these creates a separate bucket — your previous bests remain
+            stored and reappear when you switch back.
+          </li>
+          <li>
+            Best score and best streak are tracked independently in Per Round; a <i>Same Round</i>{' '}
+            or <i>Different Rounds</i> tag tells you whether they came from the same exceptional
+            round or two different strong ones.
+          </li>
+        </UL>
+        <Subhead>Leaving &amp; resetting</Subhead>
         <p>
-          Best scores are tracked per exact configuration: timer duration, Allow Mistakes, Per
-          Round/Per Question, Date Format (or Random Format as its own bucket), Leap Year Chance,
-          Jan/Feb Chance on Leap Years, Julian Chance, year range, and Calendar System (Julian
-          on/off). Changing any of these creates a separate bucket — your previous bests remain
-          stored and reappear when you switch back. Best score and best streak are tracked
-          independently in Per Round; a <i>Same Round</i> or <i>Different Rounds</i> tag tells you
-          whether your best score and best streak came from the same exceptional round, or from two
-          different strong ones. Leaving Blitz in the middle of a round abandons it — you return to
-          a fresh, idle Blitz (no hidden countdown keeps running while you're away). If you leave
-          after a round ends without pressing Reset, the round state (bests, history, final date) is
-          preserved when you return. Press Reset to clear your current round, unlock the settings,
-          and start fresh. Changing settings while idle resets the current round.
+          Leaving Blitz mid-round abandons it — you return to a fresh, idle Blitz (no hidden
+          countdown keeps running while you're away). If you leave after a round ends without
+          pressing Reset, the round state (bests, history, final date) is preserved when you return.
+          Press Reset to clear your current round, unlock the settings, and start fresh. Changing
+          settings while idle resets the current round.
         </p>
       </GuideSection>
       <GuideSection id="lookup" title="Lookup" openId={open} onToggle={toggle}>
-        <p>
-          Enter any AD date to instantly see its weekday. Lookup input is always numeric and follows
-          your selected Date Format (m/d/y, d.m.y, or y-m-d). Lookup ignores Random Format and
-          always uses the selected format directly. Changing the Date Format clears the input box.
-          Supports years 1–10000. Show Codes is available for all results and stays open as you
-          browse your history. The history panel shows up to 10 entries before scrolling and
-          re-renders live when you change the Date Format. October 5–14, 1582 never existed and will
-          appear in history as "Does Not Exist" with Show Codes unavailable.
-        </p>
+        <Lead>Enter any AD date to instantly see its weekday.</Lead>
+        <UL>
+          <li>
+            Lookup input is always numeric and follows your selected Date Format (m/d/y, d.m.y, or
+            y-m-d). It ignores Random Format and always uses the selected format directly. Changing
+            the Date Format clears the input box.
+          </li>
+          <li>Supports years 1–10000.</li>
+          <li>
+            Show Codes is available for all results and stays open as you browse your history.
+          </li>
+          <li>
+            The history panel shows up to 10 entries before scrolling and re-renders live when you
+            change the Date Format.
+          </li>
+          <li>
+            October 5–14, 1582 never existed and will appear in history as "Does Not Exist" with
+            Show Codes unavailable.
+          </li>
+        </UL>
       </GuideSection>
     </div>
   )

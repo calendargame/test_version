@@ -14,11 +14,14 @@
 //     the right one. Outside a group, dragging onto another button never activates it — the gesture
 //     belongs to the button you pressed.
 //
-//   • PRESS-DRAG MENU (Q5): a press on a [data-select-trigger] (e.g. the mode selector) whose own
-//     pointerdown opens a menu — you can drag straight into the menu ([data-select-group]) that appears
-//     and release on an option to pick it, in one gesture. Because the trigger toggles on pointerdown,
-//     its click is ALWAYS suppressed (else it would double-toggle); a quick tap with no menu-open still
-//     toggles via pointerdown.
+//   • PRESS-DRAG MENU (Q5 + C2): a press on a [data-select-trigger] (the mode selector, or the ⚙ Settings
+//     button) whose own pointerdown opens a menu — you can drag straight into the menu and release on an
+//     option to pick it, in one gesture. The menu is a [data-select-group] (mode menu) OR a
+//     [data-select-menu] (the tall scrollable Settings panel — menu-only, NOT a drag-select group, so a
+//     drag that STARTS inside the panel still scrolls natively instead of selecting). For a tall menu,
+//     dragging near its top/bottom edge AUTO-SCROLLS it so you can reach options below the fold in the one
+//     gesture (autoScroll, below). Because the trigger toggles on pointerdown, its click is ALWAYS
+//     suppressed (else it would double-toggle); a quick tap with no menu-open still toggles via pointerdown.
 //
 // HOW: one set of document capture-phase Pointer-Event listeners (unifying mouse + touch + pen). On
 // `pointerup` we read the button under the release point (elementFromPoint) and decide. To override the
@@ -35,7 +38,7 @@
 
 const HILITE = 'drag-target' // the live "this will be selected" class toggled during a drag (index.css)
 const GROUP_SELECTOR = '[data-answer-grid],[data-select-group]'
-const MENU_SELECTOR = '[data-select-group]' // the open menu a press-drag trigger opens
+const MENU_SELECTOR = '[data-select-group],[data-select-menu]' // the menu a press-drag trigger opens — a mode-style group OR the scrollable Settings panel (menu-only, NOT a drag-select group)
 
 // Pure decision: given where the press STARTED, the <button> under the RELEASE point (or null), and the
 // selection group the press began inside (or null), decide whether to suppress the native click on the
@@ -68,6 +71,9 @@ export function installPointerGestures(): () => void {
   let suppressEl: Element | null = null
   let hilited: Element | null = null
   let clearTimer: ReturnType<typeof setTimeout> | null = null
+  let lastX = 0 // latest pointer position, kept current for the edge auto-scroll loop
+  let lastY = 0
+  let rafId: number | null = null
 
   const btnAt = (x: number, y: number): HTMLElement | null =>
     (document.elementFromPoint(x, y)?.closest('button') as HTMLElement | null) ?? null
@@ -76,17 +82,59 @@ export function installPointerGestures(): () => void {
     const b = btnAt(x, y)
     return b && g.contains(b) ? b : null
   }
+  // The menu a press-drag trigger opened. Several menus can be in the DOM at once — the Settings panel can
+  // stay open while the mode selector is pressed (the settings click-outside ignores the mode selector). A
+  // plain querySelector returns the FIRST in document order, which would wrongly pick the inline Settings
+  // panel over a later-appended portal menu (the mode dropdown) — so take the LAST match: portal menus
+  // append late, and when only one menu is open it's still that one.
+  const triggerMenu = (): Element | null => {
+    const all = document.querySelectorAll(MENU_SELECTOR)
+    return all.length ? all[all.length - 1] : null
+  }
   // The live selection group for the current gesture: a direct group, or — for a trigger gesture — the
   // menu it has since opened (it isn't in the DOM at pointerdown, so it's queried live).
-  const liveGroup = (): Element | null =>
-    group ?? (triggerMode ? document.querySelector(MENU_SELECTOR) : null)
+  const liveGroup = (): Element | null => group ?? (triggerMode ? triggerMenu() : null)
   const setHilite = (el: Element | null) => {
     if (hilited === el) return
     if (hilited) hilited.classList.remove(HILITE)
     if (el) el.classList.add(HILITE)
     hilited = el
   }
+  // EDGE AUTO-SCROLL (C2): while dragging a press-drag-trigger menu that's TALLER than its viewport (the
+  // Settings panel), scroll it when the finger nears its top/bottom edge so options below the fold are
+  // reachable in the one gesture; re-highlight the option now under the finger as it scrolls. No-op for
+  // non-scrollable menus (the mode menu) and for non-trigger drags (answer grids). rAF-driven; verified
+  // on-device (jsdom has no layout, and no real pointer drag fires there, so this never runs in tests).
+  const EDGE = 56 // px from the menu's top/bottom edge where auto-scroll engages
+  const MAX_SCROLL = 14 // px/frame at the very edge (ramps with proximity)
+  const autoScroll = () => {
+    rafId = null
+    if (!startEl) return
+    const g = liveGroup() as HTMLElement | null
+    if (g && g.scrollHeight > g.clientHeight + 1) {
+      const r = g.getBoundingClientRect()
+      let dy = 0
+      if (lastY < r.top + EDGE) dy = -MAX_SCROLL * Math.min(1, (r.top + EDGE - lastY) / EDGE)
+      else if (lastY > r.bottom - EDGE)
+        dy = MAX_SCROLL * Math.min(1, (lastY - (r.bottom - EDGE)) / EDGE)
+      if (dy !== 0) {
+        g.scrollTop += dy
+        setHilite(memberAt(g, lastX, lastY)) // content moved under the finger
+      }
+    }
+    rafId = requestAnimationFrame(autoScroll)
+  }
+  const startAutoScroll = () => {
+    if (rafId == null) rafId = requestAnimationFrame(autoScroll)
+  }
+  const stopAutoScroll = () => {
+    if (rafId != null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+  }
   const endGesture = () => {
+    stopAutoScroll()
     setHilite(null)
     startEl = null
     group = null
@@ -126,10 +174,15 @@ export function installPointerGestures(): () => void {
     startEl = el
     group = el.closest(GROUP_SELECTOR)
     triggerMode = !group && !!el.closest('[data-select-trigger]')
+    lastX = e.clientX
+    lastY = e.clientY
     if (group) setHilite(memberAt(group, e.clientX, e.clientY) ?? el)
+    if (triggerMode) startAutoScroll() // edge auto-scroll only for press-drag trigger menus (the tall Settings panel); answer-grid/mode drags don't need it
   }
   const onMove = (e: PointerEvent) => {
     if (!startEl) return
+    lastX = e.clientX
+    lastY = e.clientY
     const g = liveGroup()
     if (!g) return
     setHilite(memberAt(g, e.clientX, e.clientY))
@@ -141,7 +194,7 @@ export function installPointerGestures(): () => void {
     if (triggerMode) {
       // The trigger's own pointerdown already toggled its menu; ALWAYS suppress its click (else it
       // double-toggles). If the release landed on a menu option, activate it (pick that mode).
-      const menu = document.querySelector(MENU_SELECTOR)
+      const menu = triggerMenu()
       const member = menu && relBtn && menu.contains(relBtn) ? relBtn : null
       endGesture()
       armSuppress(start)
@@ -176,6 +229,7 @@ export function installPointerGestures(): () => void {
   document.addEventListener('click', onClick, true)
   return () => {
     if (clearTimer) clearTimeout(clearTimer)
+    stopAutoScroll()
     setHilite(null)
     document.removeEventListener('pointerdown', onDown, true)
     document.removeEventListener('pointermove', onMove, true)

@@ -485,7 +485,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-29T04:05:00Z');
+    const DEPLOY_TS=new Date('2026-06-29T05:52:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
     // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
@@ -1893,6 +1893,28 @@ interface DedOpts {
       // once. The pre-React #boot splash in index.html covers the gap before this React BootOverlay mounts.
       const [booting,setBooting]=useState(true);
       useEffect(()=>{const remaining=Math.max(500-performance.now(),0);const id=window.setTimeout(()=>setBooting(false),remaining);return ()=>window.clearTimeout(id);},[]);
+      // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so the
+      // virtual:pwa-register module never loads in dev/tests) and, if a new version that installed on a
+      // previous visit is WAITING, show the Updating screen + apply it (updateSW(true) = skipWaiting +
+      // reload). Cold-open only — NO resume/focus re-check (owner's call). All SW behaviour is on-device.
+      useEffect(()=>{
+        if(!import.meta.env.PROD||typeof navigator==='undefined'||!('serviceWorker' in navigator))return;
+        let cancelled=false;
+        import('./sw.js').then(({updateSW})=>{
+          navigator.serviceWorker.getRegistration().then(reg=>{
+            if(!cancelled&&reg&&reg.waiting){
+              setUpdating(true);
+              updateSW(true);
+              // Safety net: updateSW(true) reloads once the new SW takes control (controllerchange). If
+              // activation never fires that (skipWaiting failed / workbox-window absent), don't leave the
+              // Updating screen stuck — force the update the hard way after a few seconds (forceReloadLatest
+              // always reloads). On a normal apply the reload happens first + this timer dies with the page.
+              window.setTimeout(()=>{if(!cancelled)forceReloadLatest();},4000);
+            }
+          }).catch(()=>{});
+        }).catch(()=>{});
+        return ()=>{cancelled=true;};
+      },[]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
         // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
@@ -2231,7 +2253,7 @@ interface DedOpts {
       // iOS (no viewport-fit=cover in index.html) — it only matters on edge-to-edge Android. (Tailwind
       // arbitrary value: underscores become spaces, so calc() emits the whitespace CSS requires.)
       const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
-        <div ref={popoverInnerScrollRef} className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
+        <div ref={popoverInnerScrollRef} data-select-menu className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
         {/* SETTINGS regrouped into 3 categories (Q2): Display (how it's shown + how you answer + theme),
             Dates (which dates get generated), Stats. Each category is a SectionLabel header; the former
             per-setting headings are now muted sub-labels (the Leap-Year header+sub-label pattern). Every
@@ -2319,8 +2341,7 @@ interface DedOpts {
       </div>);
       return(
         <>
-          {booting&&<BootOverlay/>}
-          {updating&&<BootOverlay updating/>}
+          {updating?<BootOverlay updating/>:booting?<BootOverlay/>:null}
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
             it as chrome UI and live-samples its bg-(--bg1) (theme-aware) for the
@@ -2350,7 +2371,10 @@ interface DedOpts {
               <div className="flex items-center gap-2 shrink-0">
                 {/* gear settings button */}
                 <div className="relative" ref={settingsRef}>
-                  <button type="button" onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":"panel text-purple-100/80"}`} aria-label="Settings">⚙</button>
+                  {/* C2: the ⚙ is a press-drag trigger — pointerdown OPENS the panel so you can drag straight
+                      into it + release on a control. onClick is kept for keyboard/tests; the controller
+                      suppresses the trigger's click on a real press so it doesn't double-toggle. */}
+                  <button type="button" data-select-trigger onPointerDown={()=>setSettingsOpen(v=>!v)} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":"panel text-purple-100/80"}`} aria-label="Settings">⚙</button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the
