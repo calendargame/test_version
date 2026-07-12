@@ -58,7 +58,9 @@ describe('Check for updates (force reload to latest)', () => {
     document.body.appendChild(root)
     render(<App />)
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+      // /^Settings/ — the gear's accessible name is "Settings (modified)" when settings
+      // diverge from the effective defaults (the Q8 indicator); match both states.
+      fireEvent.click(screen.getByRole('button', { name: /^Settings/ }))
     })
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))

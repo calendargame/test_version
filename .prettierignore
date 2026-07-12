@@ -12,6 +12,8 @@ src/main.tsx
 
 # Generated / vendored
 package-lock.json
+# Local design-hook cache (git-ignored via .git/info/exclude; regenerated on every scan)
+.impeccable/
 
 # Hand-tuned / non-JS files we don't want Prettier churning:
 # - index.css: dense, deliberately-compact theme CSS (5 palettes on single lines)

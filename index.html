@@ -51,8 +51,10 @@
        wrong-theme / dark-toolbar flash on first paint (Q2). Mirrors the store's resolution
        (useSystem ? OS-dark?darkTheme:lightTheme : manualTheme) from localStorage 'cg-settings-v1';
        falls back to the OS light/dark default (= SETTINGS_DEFAULTS) when nothing is saved. The color
-       map is each theme's --tc in src/index.css — keep in sync if those change. Also blocks the iOS
-       pinch-zoom gesture (the deliberate locked zoom; see the viewport meta above). -->
+       map is each theme's --tc in src/index.css — keep in sync if those change. The map is also
+       stamped as <html>'s background so any frame painted before the external stylesheet applies is
+       theme-colored, never white (App's theme effect re-stamps it on runtime theme switches). Also
+       blocks the iOS pinch-zoom gesture (the deliberate locked zoom; see the viewport meta above). -->
   <script>(function(){
     var d=window.matchMedia('(prefers-color-scheme: dark)').matches,t;
     try{var s=JSON.parse(localStorage.getItem('cg-settings-v1')).state;t=s.useSystem?(d?s.darkTheme:s.lightTheme):s.manualTheme;}catch(e){}
@@ -60,17 +62,23 @@
     document.documentElement.setAttribute('data-theme',t);
     var c={dusk:'#0d1117',midnight:'#000',nebula:'#0b0714',parchment:'#f0e8d5',light:'#f2f2f7'},m=document.querySelector("meta[name='theme-color']");
     if(m&&c[t])m.content=c[t];
+    document.documentElement.style.background=c[t]||'#0d1117';
     document.addEventListener('gesturestart',function(e){e.preventDefault();});
   })();</script>
-  <!-- Pre-React BOOT SPLASH (Q3 Loading screen): shown inside #root until the app mounts (React replaces
-       #root's content on first render). Styled inline here because index.css isn't loaded until the JS
-       module runs — on a cold/non-cached load this replaces the old "Loading…" text with the brand mark,
-       so there's a real screen instead of a blank flash. Theme-aware bg (the boot script set data-theme
-       above); the logo is lavender on dark themes, brand-purple on the light themes for contrast. Static —
-       no text/animation (it's often only on screen for a frame). The SVG is the W5 logo glyph (kept in
-       sync with src/components/W5Logo.tsx + the Updating overlay in src/main.tsx). -->
+  <!-- Pre-React BOOT SPLASH (Q3 Loading screen): a BODY-LEVEL sibling of #root (NOT inside it), so
+       React's first commit can't wipe it. Styled inline here because the built stylesheet is swapped to a
+       non-blocking preload (vite.config.js bootCssPreload) — that makes this splash the page's FIRST
+       PAINT, covering the whole load (CSS + JS fetch/parse + React mount) instead of a white flash. App
+       owns its removal (dismissBootSplash in src/main.tsx): after it's been VISIBLE ≥0.5s (the rAF stamp
+       after the markup below) AND the real stylesheet has applied (window.__cssReady / 'app-css-ready');
+       the auto-update path removes it the moment the Updating screen takes over. z-index:100 keeps it
+       covering the app React mounts beneath it. Theme-aware bg (the boot script set data-theme above);
+       the logo is lavender on dark themes, brand-purple on the light themes for contrast. Static — no
+       text/animation (the animated screen is the Updating overlay in src/main.tsx). The SVG is the W5
+       logo glyph (kept in sync with src/components/W5Logo.tsx + that overlay). -->
   <style>
-    #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0d1117}
+    html{background:#0d1117}
+    #boot{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:#0d1117}
     [data-theme="midnight"] #boot{background:#000}
     [data-theme="nebula"] #boot{background:#0b0714}
     [data-theme="parchment"] #boot{background:#f0e8d5}
@@ -82,14 +90,19 @@
   </style>
 </head>
 <body class="text-purple-50">
-  <div id="root" class="min-h-screen"><div id="boot"><div class="bw"><div class="bg"></div>
+  <div id="root" class="min-h-screen"></div>
+  <div id="boot"><div class="bw"><div class="bg"></div>
     <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style="position:relative">
       <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
       <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
       <g fill="currentColor"><circle cx="310" cy="256" r="10"/><circle cx="310" cy="196" r="10"/></g>
       <circle cx="202" cy="196" r="9" fill="currentColor"/><circle cx="202" cy="196" r="19" fill="none" stroke="currentColor" stroke-width="5"/>
     </svg>
-  </div></div></div>
+  </div></div>
+  <!-- Stamp WHEN the splash actually became visible (the first rendering opportunity ≈ its first
+       paint). App's boot hold counts 0.5s of VISIBLE time from this — not from navigation start,
+       which runs long before first paint on a real network / service-worker cold boot. -->
+  <script>requestAnimationFrame(function(){window.__bootShownAt=performance.now()});</script>
   <!-- Warm the home-screen icon into the browser cache on first load. Without this, tapping iOS's
        "Add to Home Screen" before the icon has downloaded makes iOS fall back to a generic snapshot
        (the icon must already be cached when that preview sheet renders). A real hidden <img> fetches

@@ -1,0 +1,95 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { SETTINGS_DEFAULTS } from './settings.js'
+import type { SettingsValues } from './settings.js'
+import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
+
+// userDefaults.ts — the user's saved PERSONAL DEFAULTS (Session 11, Q7 "Save Defaults").
+//
+// The ⚙ footer's Save Defaults button snapshots the full 14-value settings panel PLUS the four
+// capturable mode-screen prefs (Flash reveal speed, both Blitz timer lengths, AoX run length N —
+// deliberately NOT Blitz Per-Round/Per-Question, Deduction sub-type, Allow Mistakes, One-By-One,
+// or the show/hide stat toggles). From then on those saved values — not the factory constants —
+// are what "default" means everywhere: Reset Settings restores the saved panel values, Full Reset
+// restores the saved panel values AND pushes the four prefs back over its factory modePrefs reset,
+// and the gear's "modified" bar lights when live state diverges from them.
+//
+// A THIRD store (not a settings-store v2) because the capture spans two stores — it belongs to
+// neither — and because surviving Full Reset must be an explicit property: Full Reset deliberately
+// does NOT clear this store (restoring "your" defaults requires them to outlive it); the only way
+// back to factory is a "Clear saved defaults" link (clearDefaults) — one in the Save Defaults popup
+// and one in the ⚙ footer (the footer link is the always-available path: at steady state, live ==
+// saved dims + locks the Save Defaults button, making the popup's link unreachable).
+//
+// `saved` is null until the user saves (null = factory semantics everywhere, via the effective*
+// helpers below). Same persist pattern as the other stores (localStorage 'cg-userdefaults-v1',
+// versioned, partialize strips the actions).
+
+// The four capturable mode-screen prefs. aoxN stays a STRING like the modePrefs field it mirrors;
+// it is normalized (normalizeAoxN) at save time, and every comparison re-normalizes defensively —
+// the live store can hold transient unclamped strings ('', '007') mid-typing.
+export type PrefDefaults = {
+  flashMs: number
+  blitzSec: number
+  blitzQSec: number
+  aoxN: string
+}
+export type SavedDefaults = { settings: SettingsValues; prefs: PrefDefaults }
+export type UserDefaultsState = {
+  saved: SavedDefaults | null
+  saveDefaults: (snapshot: SavedDefaults) => void
+  clearDefaults: () => void
+}
+
+// The factory values of the four capturable prefs, in PrefDefaults shape (module constant — the
+// effective helpers below return it for the null case and forward-merge under it otherwise).
+const FACTORY_PREF_DEFAULTS: PrefDefaults = {
+  flashMs: MODE_PREFS_DEFAULTS.flashMs,
+  blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
+  blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
+  aoxN: MODE_PREFS_DEFAULTS.aoxN,
+}
+
+// The EFFECTIVE defaults — what "default" currently means: the saved personal values when they
+// exist, the factory launch constants otherwise. Pure; App and the mode freshness checks compose
+// these with the live stores. A saved snapshot is FORWARD-MERGED over the factory constants: a
+// snapshot persisted before a release that adds a new settings/prefs field would otherwise yield
+// `undefined` for it — permanently failing every at-defaults comparison (gear stuck on "modified")
+// and writing `undefined` into the live store on Reset/Full Reset. Fields the saver never saw
+// simply mean factory.
+export const effectiveSettingsDefaults = (saved: SavedDefaults | null): SettingsValues =>
+  saved ? { ...SETTINGS_DEFAULTS, ...saved.settings } : SETTINGS_DEFAULTS
+export const effectivePrefDefaults = (saved: SavedDefaults | null): PrefDefaults =>
+  saved ? { ...FACTORY_PREF_DEFAULTS, ...saved.prefs } : FACTORY_PREF_DEFAULTS
+
+// The AoX-N clamp — the SAME rule as the AoX input's blur/Enter commit (main.tsx): 2–1000,
+// non-numeric → 10.
+export const normalizeAoxN = (s: string): string =>
+  String(Math.max(2, Math.min(1000, parseInt(s) || 10)))
+
+// Do the live values of the four capturable prefs match the (effective) defaults? aoxN is
+// normalized on BOTH sides so a transient unclamped string never reads as a divergence its
+// committed value doesn't have.
+export const prefsMatchDefaults = (live: PrefDefaults, def: PrefDefaults): boolean =>
+  live.flashMs === def.flashMs &&
+  live.blitzSec === def.blitzSec &&
+  live.blitzQSec === def.blitzQSec &&
+  normalizeAoxN(live.aoxN) === normalizeAoxN(def.aoxN)
+
+export const useUserDefaults = create<UserDefaultsState>()(
+  persist(
+    (set) => ({
+      saved: null,
+      // Shallow-copy the snapshot so no live object is shared into the persisted store.
+      saveDefaults: (snapshot) =>
+        set({ saved: { settings: { ...snapshot.settings }, prefs: { ...snapshot.prefs } } }),
+      clearDefaults: () => set({ saved: null }),
+    }),
+    {
+      name: 'cg-userdefaults-v1', // localStorage key (versioned for future migrations)
+      version: 1,
+      // Persist only the snapshot, never the action functions.
+      partialize: (state) => ({ saved: state.saved }),
+    },
+  ),
+)

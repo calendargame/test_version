@@ -15,8 +15,10 @@ import type { ReactNode } from 'react'
 
 // ★ "new best" star className — appears next to a stat value when a new best was set.
 const NEW_BEST_STAR_CLASS = 'text-purple-400 font-bold ml-0.5 text-[8px]'
-// Settings popover section label className (small uppercase tracking-widest).
-const SECTION_LABEL_CLASS = 'text-[10px] uppercase tracking-widest text-purple-300/60'
+// Settings popover section label className (small uppercase tracking-widest). Exported for the one
+// place that needs the raw class on a non-div element (GuidePage's Divider <span>); everything else
+// should use the SectionLabel component.
+export const SECTION_LABEL_CLASS = 'text-[10px] uppercase tracking-widest text-purple-300/60'
 // <kbd> styling used by the keyboard shortcut rows in HtP.
 const KBD_CLASS =
   'inline-block panel rounded-sm px-1.5 py-0.5 text-[11px] font-mono min-w-6 text-center shrink-0'

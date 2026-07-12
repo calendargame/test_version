@@ -68,6 +68,7 @@ export type SettingsState = SettingsValues & {
   setLightTheme: (v: Updater<string>) => void
   setManualTheme: (v: Updater<string>) => void
   resetSettings: () => void
+  applySettings: (values: SettingsValues) => void
 }
 
 // The launch defaults — single source of truth, reused by resetSettings().
@@ -117,6 +118,10 @@ export const useSettings = create<SettingsState>()(
       // also resets minInputVal/maxInputVal, which live outside this store.) Because
       // the store is persisted, this also overwrites the saved copy back to defaults.
       resetSettings: () => set(() => ({ ...SETTINGS_DEFAULTS })),
+      // Apply a full 14-value snapshot in one shot — App's Reset Settings restoring the user's
+      // SAVED personal defaults (store/userDefaults; the factory SETTINGS_DEFAULTS when none are
+      // saved). Persisted like any set, so the applied values become the stored copy.
+      applySettings: (values) => set(() => ({ ...values })),
     }),
     {
       name: 'cg-settings-v1', // localStorage key (versioned for future migrations)

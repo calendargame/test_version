@@ -37,14 +37,17 @@ function checkWeekday(q, lo, hi) {
   if (!(Number.isInteger(q.m) && q.m >= 1 && q.m <= 12)) v.push(`m out of 1-12 (${q.m})`)
   else if (!(Number.isInteger(q.d) && q.d >= 1 && q.d <= dim(q.y, q.m, jul)))
     v.push(`d ${q.d} not in 1-${dim(q.y, q.m, jul)} for ${q.y}-${q.m} (jul=${jul})`)
-  else if (!jul && isGapDate(q.y, q.m, q.d)) v.push(`Gregorian gap day ${q.y}-${q.m}-${q.d}`)
+  // Gap days (Oct 5-14, 1582) never existed under EITHER calendar state — the app-wide contract
+  // (Lookup's "Does Not Exist", the How-to-Play guide) is unconditional, so the oracle is too.
+  else if (isGapDate(q.y, q.m, q.d)) v.push(`gap day ${q.y}-${q.m}-${q.d} (never existed)`)
   const wd = correctIndexOf(q, jul)
   if (!(Number.isInteger(wd) && wd >= 0 && wd <= 6)) v.push(`weekday index ${wd} not 0-6`)
   return v
 }
 
-// A generated Deduction puzzle (or null = couldn't build, which the component handles) must be real,
-// have a correct shown weekday, distinct options, and an answer actually among the options.
+// A generated Deduction puzzle (or null = couldn't build, which the component handles) must be real
+// (never a 1582 gap date — as answer or as a Day option — in either calendar state), have a correct
+// shown weekday, distinct options, and an answer actually among the options.
 function checkPuzzle(p) {
   if (p == null) return [] // null is a legitimate "no valid puzzle for this range/config"
   const v = []
@@ -52,6 +55,14 @@ function checkPuzzle(p) {
   if (!(Number.isInteger(p.m) && p.m >= 1 && p.m <= 12)) v.push(`m out of 1-12 (${p.m})`)
   else if (!(Number.isInteger(p.d) && p.d >= 1 && p.d <= dim(p.y, p.m, jul)))
     v.push(`d ${p.d} not valid for ${p.y}-${p.m}`)
+  else if (isGapDate(p.y, p.m, p.d)) v.push(`gap day ${p.y}-${p.m}-${p.d} (never existed)`)
+  if (
+    p.type === 'day' &&
+    p.y === 1582 &&
+    p.m === 10 &&
+    !p.options.every((o) => !isGapDate(1582, 10, o))
+  )
+    v.push(`day options include gap days (${p.options})`)
   const rw = realWday(p.y, p.m, p.d, jul)
   if (p.w !== rw) v.push(`shown weekday ${p.w} != actual ${rw}`)
   const idx = correctIndexOf(p, jul)
@@ -155,6 +166,46 @@ describe('date-generation fuzz — every setting yields a real, answerable quest
       expect(built.day).toBeGreaterThan(0)
       expect(built.month).toBeGreaterThan(0)
       expect(built.year).toBeGreaterThan(0)
+    } finally {
+      Math.random = realRandom
+    }
+  })
+
+  // Targeted regression for the Oct 5-14 1582 gap-date leak: with useJulian OFF and the range
+  // pinned to 1582, Deduction Day and Month must never produce a gap date as the answer, and Day's
+  // October option windows must never include one. (Before the fix, both sub-modes' generic paths
+  // could: Day drew d from an unrestricted window, Month drew d=rint(1,31).)
+  it('Deduction Day/Month on [1582,1582] with Julian OFF never yields a gap date (answer or option)', () => {
+    const dateRng = mulberry32(97531)
+    const realRandom = Math.random
+    Math.random = () => dateRng()
+    try {
+      const opts = {
+        useJulian: false,
+        leapChance: 'random',
+        janFebChance: 'random',
+        randomFormat: false,
+        dateFormat: 'numeric-ymd',
+        abCrossOnly: false,
+        julCrossOnly: false,
+        monthOnly1582: false,
+      }
+      const violations = []
+      let oct1582Days = 0
+      for (const type of ['day', 'month']) {
+        for (let i = 0; i < 5000; i++) {
+          const p = makeDedPuzzle(type, 1582, 1582, opts)
+          if (p == null) continue
+          if (p.type === 'day' && p.m === 10) oct1582Days++
+          if (isGapDate(p.y, p.m, p.d)) violations.push(`${type} answer ${p.y}-${p.m}-${p.d}`)
+          if (p.type === 'day' && p.m === 10 && p.options.some((o) => isGapDate(1582, 10, o)))
+            violations.push(`day options ${p.options}`)
+          if (violations.length >= 5) break
+        }
+      }
+      expect(violations, violations.slice(0, 5).join('\n')).toEqual([])
+      // Prove the loop actually reached October 1582 Day puzzles (not vacuously green).
+      expect(oct1582Days).toBeGreaterThan(0)
     } finally {
       Math.random = realRandom
     }

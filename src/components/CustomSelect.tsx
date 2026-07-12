@@ -59,7 +59,8 @@ export default function CustomSelect({
   openUp?: boolean
   // Q5: enable press-drag-select (the mode selector). The trigger toggles on POINTERDOWN (so a press can
   // drag straight into the just-opened menu and release on an option to pick it — handled by the global
-  // pointer controller, lib/pointerGestures, via the data-select-trigger / data-select-group markers);
+  // pointer controller, lib/pointerGestures: the data-select-trigger marker starts the gesture and the
+  // trigger's aria-controls={listboxId} pairs it with the portaled listbox, resolved live by id);
   // its click is suppressed there to avoid a double-toggle. A quick tap still toggles; keyboard (the Tab
   // shortcut's .click(), arrows, Enter) is unaffected — those clicks have no preceding pointer gesture.
   pressDrag?: boolean
@@ -262,7 +263,17 @@ export default function CustomSelect({
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        onPointerDown={pressDrag ? handleToggle : undefined}
+        onPointerDown={
+          pressDrag
+            ? (e) => {
+                // Mirror the pointer controller's latch (Q5 rework): only the primary pointer's
+                // left/first contact toggles — a second finger or a right-click must not flip the
+                // menu mid-gesture.
+                if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
+                handleToggle()
+              }
+            : undefined
+        }
         onKeyDown={handleTriggerKeyDown}
         data-select-trigger={pressDrag || undefined}
         className={className}

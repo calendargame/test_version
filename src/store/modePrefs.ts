@@ -65,6 +65,7 @@ export type ModePrefsState = ModePrefsValues & {
   setClassicTimingOff: (v: Updater<boolean>) => void
   setClassicScoringOff: (v: Updater<boolean>) => void
   resetModePrefs: () => void
+  applyPrefs: (partial: Partial<ModePrefsValues>) => void
 }
 
 // The launch defaults — single source of truth (match the components' old useState defaults),
@@ -120,6 +121,10 @@ export const useModePrefs = create<ModePrefsState>()(
       // Reset every mode pref to its launch default in one shot. Because the store is
       // persisted, this also overwrites the saved copy back to defaults (Full Reset).
       resetModePrefs: () => set(() => ({ ...MODE_PREFS_DEFAULTS })),
+      // Apply a partial value snapshot over the current state — App's Full Reset pushing the four
+      // SAVED personal defaults (Flash speed, both Blitz timers, AoX N — store/userDefaults) back
+      // over the factory resetModePrefs() it just ran; keys not in the partial keep their values.
+      applyPrefs: (partial) => set(() => ({ ...partial })),
     }),
     {
       name: 'cg-modeprefs-v1', // localStorage key (versioned for future migrations)

@@ -705,8 +705,10 @@ describe('Classic — Q2 (settings regen deferred to popover close)', () => {
     cleanup()
     document.getElementById('root')?.remove()
   })
+  // /^Settings/ — the gear's accessible name flips to "Settings (modified)" once any
+  // setting diverges from the effective defaults (the Q8 indicator), which these tests do.
   const toggleSettings = () =>
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'Settings' })))
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
 
   it('changing the year range defers the regen until the popover closes', () => {
     mountApp() // Classic is the default mode

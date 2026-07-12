@@ -51,4 +51,16 @@ describe('modePrefs store', () => {
     expect(r.dedType).toBe(MODE_PREFS_DEFAULTS.dedType)
     expect(r.classicTimingOff).toBe(MODE_PREFS_DEFAULTS.classicTimingOff)
   })
+
+  it('applyPrefs overlays only the given keys, leaving the rest untouched (Q7 — Full Reset → saved defaults)', () => {
+    useModePrefs.getState().setBlitzPerQ(true) // a non-capturable value that must survive
+    useModePrefs.getState().applyPrefs({ flashMs: 800, blitzSec: 90, blitzQSec: 10, aoxN: '25' })
+    const s = useModePrefs.getState()
+    expect(s.flashMs).toBe(800)
+    expect(s.blitzSec).toBe(90)
+    expect(s.blitzQSec).toBe(10)
+    expect(s.aoxN).toBe('25')
+    expect(s.blitzPerQ).toBe(true) // not in the partial → untouched
+    expect(s.dedType).toBe(MODE_PREFS_DEFAULTS.dedType) // not in the partial → untouched
+  })
 })

@@ -23,10 +23,13 @@ import { MethodExplanation, MethodBreakdownSection } from './components/MethodBr
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
+import { DOT_CELL } from './lib/dotLayout.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
-import { useSettings } from './store/settings.js'
-import type { InputStyle } from './store/settings.js'
+import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
+import type { InputStyle, SettingsValues } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
+import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, normalizeAoxN, prefsMatchDefaults } from './store/userDefaults.js'
+import type { PrefDefaults } from './store/userDefaults.js'
 import { useProgress } from './store/progress.js'
 import type { AoxBest, BlitzBest, SuddenBest } from './store/progress.js'
 import { calcAvg, calcLast, calcMed } from './engine/stats.js'
@@ -73,7 +76,7 @@ interface DedOpts {
 }
 // AoxBest / BlitzBest / SuddenBest moved to store/progress.ts (the persisted store owns them); imported above.
 
-    const {useEffect,useRef,useState,useCallback} = React;
+    const {useEffect,useLayoutEffect,useRef,useState,useCallback,useMemo} = React;
     // ─────────────────────────────────────────────────────────────────────────
     // Date snapshot fields. Every generated date object carries these stamps
     // so that back-browse and codes display always reflect the system that was
@@ -115,20 +118,8 @@ interface DedOpts {
     };
     // BASE_BTN — the shared answer-button className (identical across all weekday + Deduction grids).
     const BASE_BTN="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
-    // DOT_CELL — the logo's 7-position layout for the Dots input (Settings → Input). The array index is
-    // the weekday (0=Sun..6=Sat), so the dot buttons stay in DOM order Sun..Sat (the keyboard 0–9 path
-    // reads children[idx]); each entry is the CSS grid cell it's placed in, matching the app icon /
-    // W5Logo: Sun centre, Mon bottom-right, Tue mid-right, Wed top-right, Thu bottom-left, Fri mid-left,
-    // Sat top-left. Centre-top (r1,c2) + centre-bottom (r3,c2) stay empty. (r,c are 1-indexed.)
-    const DOT_CELL: ReadonlyArray<{r:number;c:number}>=[
-      {r:2,c:2}, // 0 Sunday    — centre
-      {r:3,c:3}, // 1 Monday    — bottom-right
-      {r:2,c:3}, // 2 Tuesday   — mid-right
-      {r:1,c:3}, // 3 Wednesday — top-right
-      {r:3,c:1}, // 4 Thursday  — bottom-left
-      {r:2,c:1}, // 5 Friday    — mid-left
-      {r:1,c:1}, // 6 Saturday  — top-left
-    ];
+    // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts (shared with
+    // HtP's DotDiagram, which derives its diagram from the same array), imported at top.
     // WeekdayAnswer — the Sun..Sat answer grid shared by the four weekday modes (Classic/Flash/Blitz/
     // AoX), in EITHER the classic labelled-button layout or the logo's 7-dot layout (Settings → Input;
     // Deduction has its own puzzle grid, not a weekday answer). Both layouts share the per-option state
@@ -485,14 +476,19 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-06-29T05:52:00Z');
+    const DEPLOY_TS=new Date('2026-07-12T18:21:00Z');
 
-    // Force the very latest deployed version, bypassing the service-worker cache. The PWA already
-    // auto-updates on the next visit, but a cached old service worker / icon can linger (and on a
-    // phone you can't easily hard-refresh or clear the cache). This unregisters the service worker(s)
-    // and deletes the Cache-API caches (the precached app shell + assets), then reloads — so the next
-    // load fetches everything fresh from the server. It does NOT touch localStorage, so saved stats,
-    // settings, bests, and Lookup history are all preserved (only the app code/asset cache is cleared).
+    // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
+    // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
+    // a newly-deployed SW installs + WAITS in the background, and App's auto-update boot effect
+    // applies it on the next cold open behind the Updating screen.) This button covers what that
+    // path can't — a stuck/ancient SW or cached icon you can't shake on a phone with no hard-refresh:
+    // it unregisters the service worker(s) and deletes the Cache-API caches (the precached app shell
+    // + assets), then reloads — so the next load fetches everything fresh from the server. NEVER use
+    // it on the automatic path: with the caches wiped, an offline launch has nothing to serve (the
+    // auto path's safety fallback is a plain reload instead). It does NOT touch localStorage, so
+    // saved stats, settings, bests, and Lookup history are all preserved (only the app code/asset
+    // cache is cleared).
     const forceReloadLatest=async()=>{
       try{
         if('serviceWorker' in navigator){
@@ -507,16 +503,58 @@ interface DedOpts {
       window.location.reload();
     };
 
-    // BootOverlay (Q3) — the full-screen boot screen, for BOTH states:
-    //   • LOADING (updating omitted): a static logo + glow, shown at startup for at least ~0.5s (App's
-    //     `booting` + a min-timer) so a fast cache load doesn't flash by looking like a glitch.
-    //   • UPDATING (updating): the trace flows (erase-from-2 / redraw-from-2, soft both-ends trail via a
-    //     blurred mask, sped through the complete moment) + "Updating" with a sequential three-dot pulse;
-    //     shown by the Settings "Check for updates" button today (the auto-update-on-open SW mechanism that
-    //     will also show it is a later on-device round).
-    // Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on light). The glyph is the W5 logo,
-    // kept in sync with index.html's pre-React boot splash + src/components/W5Logo.tsx. Logo scaled up
-    // (174×188) for both screens (owner 2026-06-28).
+    // index.html's inline boot scripts stamp these: __bootShownAt = the requestAnimationFrame
+    // timestamp of the #boot splash's first rendering opportunity (≈ its first paint); __cssReady =
+    // set (with a window 'app-css-ready' event) by the preload-swapped stylesheet link's
+    // onload/onerror — see vite.config.js bootCssPreload.
+    declare global{interface Window{__bootShownAt?:number;__cssReady?:boolean}}
+
+    // The page's LOADING splash is #boot in index.html — a body-level sibling of #root (so React's
+    // first commit can't wipe it), inline-styled so it paints before any external resource. App owns
+    // its removal, from exactly two places: the boot-hold effect (normal launch — after ≥0.5s visible
+    // AND the real stylesheet has applied) and the auto-update path (the Updating overlay replaces
+    // it). Optional-chained: tests don't create #boot, and a repeat call is a no-op.
+    const dismissBootSplash=()=>{document.getElementById('boot')?.remove();};
+
+    // The boot effects' shared "has the real stylesheet applied?" check: true once the preload-swapped
+    // CSS link (vite.config.js bootCssPreload) has stamped __cssReady, or when no preload link exists
+    // at all (dev/tests — the CSS arrives through the JS module graph before mount). Both boot paths —
+    // the normal splash dismissal AND the auto-update Updating handoff — gate on it, so neither can
+    // ever reveal an unstyled frame.
+    const appCssApplied=()=>window.__cssReady===true||!document.querySelector('link[rel="preload"][as="style"]');
+
+    // Q3 auto-update loop breaker: the count of consecutive auto-update attempts, persisted in
+    // sessionStorage (it survives same-tab reloads — exactly the shape of the failure loop — but not a
+    // fresh open). Counted up when the boot check engages the Updating flow, cleared on success
+    // (controllerchange) and on any boot that finds no waiting worker; after 2 failed attempts the
+    // boot check STOPS re-entering the flow (see the auto-update effect), so a persistently-failing
+    // SKIP_WAITING / broken waiting worker can never trap the user in an Updating→reload loop — the
+    // app always renders (on the old version) and the manual Check-for-updates hammer stays reachable.
+    // try/catch throughout: sessionStorage can throw (privacy modes) and a broken counter must never
+    // break boot.
+    const UPDATE_ATTEMPTS_KEY='cg-update-attempts';
+    const readUpdateAttempts=()=>{try{return parseInt(sessionStorage.getItem(UPDATE_ATTEMPTS_KEY)||'0',10)||0;}catch{return 0;}};
+    const writeUpdateAttempts=(n: number)=>{try{sessionStorage.setItem(UPDATE_ATTEMPTS_KEY,String(n));}catch{/* best-effort */}};
+    const clearUpdateAttempts=()=>{try{sessionStorage.removeItem(UPDATE_ATTEMPTS_KEY);}catch{/* best-effort */}};
+
+    // Pure (exported for tests): how much longer #boot must stay up. The splash needs ≥500ms of
+    // VISIBLE time or a fast cached load flashes it for a frame, which reads as a glitch — and
+    // visible time starts at the __bootShownAt stamp, NOT at navigation start (the old bug:
+    // `500 - performance.now()` clamps to 0 whenever React mounts >500ms after navigation — i.e. on
+    // every real network / SW cold boot — so the splash flashed exactly where it mattered). A
+    // missing stamp (inline script failed/stripped) holds the full 500ms from now: the safe direction.
+    const bootHoldRemaining=(shownAt:number|undefined,now:number)=>shownAt===undefined?500:Math.max(500-(now-shownAt),0);
+
+    // BootOverlay (Q3) — the full-screen UPDATING screen: the trace flows (erase-from-2 / redraw-from-2,
+    // soft both-ends trail via a blurred mask, sped through the complete moment) + "Updating" with a
+    // sequential three-dot pulse. Shown by the Settings "Check for updates" button AND by the
+    // auto-update-on-open SW effect in App (when a freshly-deployed version is waiting at launch).
+    // The LOADING splash is no longer rendered here — it's index.html's body-level #boot, which App
+    // removes via dismissBootSplash; only the `updating` variant is ever mounted (the prop's loading
+    // form is kept so the component matches the approved mockup pair, pending the deferred animation
+    // pass). Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on light). The glyph is the
+    // W5 logo, kept in sync with index.html's pre-React boot splash + src/components/W5Logo.tsx. Logo
+    // scaled up (174×188) for both screens (owner 2026-06-28).
     function BootOverlay({updating=false}:{updating?:boolean}){
       return(
         <div className="boot-overlay">
@@ -725,7 +763,14 @@ interface DedOpts {
         if(wantJanFeb===true&&isLeapY){const allowed=box.months.filter(mm=>mm===1||mm===2);m=allowed.length>0?allowed[rint(0,allowed.length-1)]:box.months[rint(0,box.months.length-1)];}
         else if(wantJanFeb===false&&isLeapY){const allowed=box.months.filter(mm=>mm!==1&&mm!==2);m=allowed.length>0?allowed[rint(0,allowed.length-1)]:box.months[rint(0,box.months.length-1)];}
         else m=box.months[rint(0,box.months.length-1)];
-        const D=dimFn(yc,m),d=rint(1,D),w=aw(yc,m,d);
+        // Oct 1582 via this generic path (only reachable with useJulian OFF — is1582Special above
+        // handles ON): the gap days 5-14 never existed, so draw uniformly from the 21 real days
+        // (v 1-4 → d=v; v 5-21 → d=v+10 = 15-31). The standard boxes stay correct here — with
+        // Julian off, all of 1582 is proleptic Gregorian (the 1582 special boxes encode the
+        // Julian/Gregorian split, wrong for this state).
+        const D=dimFn(yc,m);
+        let d;if(yc===1582&&m===10){const v=rint(1,21);d=v<=4?v:v+10;}else d=rint(1,D);
+        const w=aw(yc,m,d);
         return attachFmt({type:"month",y:yc,d,w,m,options:boxes.map(b=>b.label),boxes:boxes.map(b=>({...b,months:[...b.months]})),_m1582:monthOnly1582});
       }
       if(type==="day"){
@@ -734,7 +779,13 @@ interface DedOpts {
         if(yc==null){for(let t=0;t<600;t++){const c=rint(lo,hi);if(c!==0){yc=c;break;}}if(yc==null)yc=lo>0?lo:1;}
         const isLeapY=isLeapForY(yc);
         const m=pickMonth(isLeapY),D=dimFn(yc,m);
-        const isOct1582Special=yc===1582&&m===10&&useJulian;
+        // Oct 1582 special windows — UNCONDITIONAL (both calendar states): the gap days 5-14 never
+        // existed (the app-wide contract — Lookup's "Does Not Exist", the guide's "always excluded"),
+        // so the only valid Day layouts are {1-4} or a 7-window inside 15-31. Both are contiguous
+        // real-day runs ≤7 wide, so weekday-distinctness holds under Gregorian math too (aw above
+        // already keys the weekday off useJulian); a window straddling the gap would collide under
+        // BOTH systems (Gregorian's +4 shift across the gap lands day 15 on day 1's weekday).
+        const isOct1582Special=yc===1582&&m===10;
         if(isOct1582Special){
           const useLeft=Math.random()<4/21;
           if(useLeft){
@@ -889,8 +940,12 @@ interface DedOpts {
       // Settings reconcile now fires on the ⚙ popover CLOSE (Q2) — the useSettingsCloseEffect is below,
       // after reset() is defined (a RUNNING or ENDED run resets, an idle run regenerates its hidden date).
 
-      // Freshness for App's isFullyReset (the random date is excluded).
-      const aoxIsFreshLocal=aoxN==="10"&&allowMistakes===false&&oneByOne===false&&runPhase==="idle"&&shown===false&&S.played===0&&S.good===0&&S.streak===0&&S.best===0&&S.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&flash===null&&Object.keys(state.persistBtns).length===0&&state.calcOpen===false&&state.canOverrideCorrect===false&&Object.keys(bests).length===0&&Object.keys(bestNew).length===0&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.countedWrong===false;
+      // Freshness for App's isFullyReset (the random date is excluded). aoxN compares NORMALIZED
+      // against its EFFECTIVE default — the saved personal default when one exists (Q7,
+      // store/userDefaults) — so a Full Reset restoring a personal N still reads fresh; the other
+      // config fields stay factory-fixed (they aren't capturable).
+      const defAoxN=useUserDefaults(s=>effectivePrefDefaults(s.saved).aoxN);
+      const aoxIsFreshLocal=normalizeAoxN(aoxN)===normalizeAoxN(defAoxN)&&allowMistakes===false&&oneByOne===false&&runPhase==="idle"&&shown===false&&S.played===0&&S.good===0&&S.streak===0&&S.best===0&&S.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&flash===null&&Object.keys(state.persistBtns).length===0&&state.calcOpen===false&&state.canOverrideCorrect===false&&Object.keys(bests).length===0&&Object.keys(bestNew).length===0&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.countedWrong===false;
       useEffect(()=>{onFreshChange?.(aoxIsFreshLocal);},[aoxIsFreshLocal,onFreshChange]);
 
       // Derived UI state.
@@ -1139,7 +1194,10 @@ interface DedOpts {
       const [flashPhase,setFlashPhase]=useState("dash");      // dash (idle) | show (revealing) | hide ("…")
       const [showTimerDate,setShowTimerDate]=useState(false); // keep the date visible after Reveal
       const flashMs=useModePrefs(s=>s.flashMs),setFlashMs=useModePrefs(s=>s.setFlashMs);   // persisted (mode-prefs store)
-      const [flashRemainMs,setFlashRemainMs]=useState(500);
+      // Idle countdown label starts at the persisted speed, not a hardcoded 500 (which showed a
+      // stale "0.5s" after a reload with a saved speed, and would break flashIsFresh below when a
+      // Full Reset remount lands on a personal default speed).
+      const [flashRemainMs,setFlashRemainMs]=useState(flashMs);
       const flashTimerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
       const flashDeadlineRef=useRef<number | null>(null);
       const flashBarRef=useRef<HTMLSpanElement | null>(null);
@@ -1219,8 +1277,11 @@ interface DedOpts {
       // Defer the live-date regen to the ⚙ popover CLOSE (Q2) — batched, no per-keystroke timer churn.
       useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,leapChance,janFebChance,julianChance,minY,maxY],()=>eng.regenDate());
 
-      // Freshness for App's isFullyReset (Flash owns its state now): engine fresh + Flash's own fields.
-      const flashIsFresh=engineFresh(state)&&timingOff===false&&scoringOff===false&&timingArmed===false&&flash===null&&active===false&&flashPhase==="dash"&&showTimerDate===false&&flashMs===500&&flashRemainMs===500;
+      // Freshness for App's isFullyReset (Flash owns its state now): engine fresh + Flash's own
+      // fields. flashMs (and the idle countdown mirror) compare against the EFFECTIVE default —
+      // the saved personal default when one exists (Q7, store/userDefaults).
+      const defFlashMs=useUserDefaults(s=>effectivePrefDefaults(s.saved).flashMs);
+      const flashIsFresh=engineFresh(state)&&timingOff===false&&scoringOff===false&&timingArmed===false&&flash===null&&active===false&&flashPhase==="dash"&&showTimerDate===false&&flashMs===defFlashMs&&flashRemainMs===defFlashMs;
       useEffect(()=>{onFreshChange?.(flashIsFresh);},[flashIsFresh,onFreshChange]);
 
       const shouldShowTimerDate=active||showTimerDate;
@@ -1513,7 +1574,12 @@ interface DedOpts {
       const togglePerQ=()=>{if(active||timerDone)return;setPerQ(v=>{const n=!v;if(n&&allowMistakes)setAllowMistakes(false);return n;});};
       const toggleAllowMistakes=()=>{if(active||timerDone)return;setAllowMistakes(v=>!v);};
 
-      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&blitzSec===60&&qSec===5&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&flash===null;
+      // Freshness for App's isFullyReset. The two timer lengths compare against their EFFECTIVE
+      // defaults — the saved personal defaults when they exist (Q7, store/userDefaults); the
+      // excluded config (perQ, allowMistakes) stays factory-fixed (not capturable).
+      const defBlitzSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzSec);
+      const defBlitzQSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzQSec);
+      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&blitzSec===defBlitzSec&&qSec===defBlitzQSec&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&flash===null;
       useEffect(()=>{onFreshChange?.(blitzIsFresh);},[blitzIsFresh,onFreshChange]);
 
       const shouldShowTimerDate=active||showTimerDate;
@@ -1766,7 +1832,21 @@ interface DedOpts {
       const leapChance=useSettings(s=>s.leapChance),setLeapChance=useSettings(s=>s.setLeapChance);
       const janFebChance=useSettings(s=>s.janFebChance),setJanFebChance=useSettings(s=>s.setJanFebChance);
       const julianChance=useSettings(s=>s.julianChance),setJulianChance=useSettings(s=>s.setJulianChance);
-      const resetSettingsStore=useSettings(s=>s.resetSettings);
+      const applySettingsStore=useSettings(s=>s.applySettings);
+      // Personal defaults (Q7 Save Defaults): `saved` is the user's snapshot (null = none). The
+      // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsAtDefaults,
+      // and the gear's "modified" indicator; the mode components read their own slices for their
+      // freshness checks. Survives Full Reset by design (see store/userDefaults).
+      const savedDefaults=useUserDefaults(s=>s.saved);
+      const saveUserDefaults=useUserDefaults(s=>s.saveDefaults);
+      const clearUserDefaults=useUserDefaults(s=>s.clearDefaults);
+      const defSettings=useMemo(()=>effectiveSettingsDefaults(savedDefaults),[savedDefaults]);
+      const defPrefs=useMemo(()=>effectivePrefDefaults(savedDefaults),[savedDefaults]);
+      // prefsAtDefaults: do the four capturable mode-screen prefs match their effective defaults?
+      // A BOOLEAN zustand selector, so App re-renders only when the answer FLIPS — a slider drag
+      // in Flash/Blitz never re-renders App per tick.
+      const prefsAtDefaults=useModePrefs(s=>prefsMatchDefaults(s,defPrefs));
+      const applyModePrefs=useModePrefs(s=>s.applyPrefs);
 
       const activeTheme=useSystem?(systemIsDark?darkTheme:lightTheme):manualTheme;
       useEffect(()=>{const mq=window.matchMedia("(prefers-color-scheme: dark)");const h=(e: MediaQueryListEvent)=>setSystemIsDark(e.matches);mq.addEventListener("change",h);return()=>mq.removeEventListener("change",h);},[]);
@@ -1775,6 +1855,11 @@ interface DedOpts {
         const tc=getComputedStyle(document.documentElement).getPropertyValue("--tc").trim();
         const meta=document.querySelector("meta[name='theme-color']");
         if(meta&&tc)(meta as HTMLMetaElement).content=tc;
+        // Keep <html>'s background in step too: index.html's boot script stamped the saved theme's
+        // color on it so no pre-stylesheet frame ever paints white — without a re-stamp a runtime
+        // theme switch would leave the document canvas (what iOS shows on overscroll) at the stale
+        // boot color. tc is '' before the stylesheet applies (tests/dev first pass) → keep the stamp.
+        if(tc)document.documentElement.style.background=tc;
       },[activeTheme]);
       // Save Stats toggle. Flips the global ⚙ setting; each always-mounted mode component
       // reads the new saveStats prop itself (display dimming + Best-recording gate). Save Stats
@@ -1818,19 +1903,58 @@ interface DedOpts {
         ro.observe(el);
         return()=>ro.disconnect();
       },[]);
-      // App-wide scroll-state tracking on the confined scroll container (appScrollRef).
-      // Container scrolls when content overflows the viewport-below-bar (always in HtP,
-      // and in any mode where content can't fit at the current viewport size).
-      //   appScrolledFromTop → bar's elev-shadow-down + container's fade-scroll-top
-      //   appAtBottom         → container's fade-scroll-bottom
+      // Q3 document scroll — HtP ONLY. iOS's tap-the-status-bar-to-scroll-to-top targets the
+      // ROOT scroller exclusively; an inner overflow-y div can never receive it (no JS event
+      // exists to intercept the tap), so it was a no-op on every page. In guide mode — the one
+      // true reading page — <html data-doc-scroll> releases the app's three scroll clamps
+      // (html/body overflow:hidden + the fixed 100dvh #root box; the release rules live next
+      // to those clamps in index.css) so the DOCUMENT becomes the scroller and the native
+      // affordance works. All other modes keep the locked fit-to-screen architecture, and the
+      // bar stays position:fixed throughout (the iOS status-bar tint sampling depends on it).
+      // useLayoutEffect because the ORDER on leave matters: zero the window scroll FIRST, then
+      // remove the attribute (= re-clamp) — otherwise a residual document scrollTop would
+      // permanently offset the re-clamped fixed layout.
+      const docScroll=mode==="guide";
+      useLayoutEffect(()=>{
+        if(!docScroll)return;
+        document.documentElement.setAttribute('data-doc-scroll','');
+        return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
+      },[docScroll]);
+      // App-wide scroll-state tracking. Two states drive the shared edge indicators —
+      //   appScrolledFromTop → bar's elev-shadow-down + the top fade
+      //   appAtBottom         → the bottom fade
+      // — sourced from ONE of two scrollers, branched on docScroll:
+      //   • clamped modes: the confined scroll container (appScrollRef) via its own scroll
+      //     listener + ResizeObserver; the fades are the fade-scroll-* masks ON the container.
+      //     Container scrolls when content overflows the viewport-below-bar (any mode where
+      //     content can't fit at the current viewport size).
+      //   • guide mode: the DOCUMENT (data-doc-scroll) via window scroll/resize, reading
+      //     document.scrollingElement against window.innerHeight (the container is a plain
+      //     flow block there — window resize stands in for the container ResizeObserver);
+      //     the fades are the fixed doc-fade-* strips rendered after the container.
       // Defaults: appAtBottom true / appScrolledFromTop false (no indicators on first
       // paint before scroll state is evaluated). The listener runs on every mode change
-      // so it picks up the container ref and re-evaluates against new content. Inner
+      // so it picks up the right scroller and re-evaluates against new content. Inner
       // scrollables (popover, lookup) track their own scroll state independently.
       const appScrollRef=useRef<HTMLDivElement | null>(null);
       const [appAtBottom,setAppAtBottom]=useState(true);
       const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
       useEffect(()=>{
+        if(docScroll){
+          const evaluate=()=>{
+            const se=document.scrollingElement;if(!se)return;
+            const scrollTop=se.scrollTop;
+            const scrollHeight=se.scrollHeight;
+            const clientHeight=window.innerHeight;
+            const noOverflow=scrollHeight<=clientHeight+1;
+            setAppAtBottom(noOverflow||scrollTop+clientHeight>=scrollHeight-4);
+            setAppScrolledFromTop(!noOverflow&&scrollTop>0);
+          };
+          evaluate();
+          window.addEventListener('scroll',evaluate,{passive:true});
+          window.addEventListener('resize',evaluate);
+          return()=>{window.removeEventListener('scroll',evaluate);window.removeEventListener('resize',evaluate);};
+        }
         const el=appScrollRef.current;if(!el)return;
         const evaluate=()=>{
           const scrollTop=el.scrollTop;
@@ -1845,12 +1969,14 @@ interface DedOpts {
         const ro=new ResizeObserver(evaluate);
         ro.observe(el);
         return()=>{el.removeEventListener('scroll',evaluate);ro.disconnect();};
-      },[mode]);
-      // Mode-change effect: reset the scroll container to top on every mode switch.
-      // Without this, switching from HtP (where the user scrolled) into a game mode
-      // would leave the container at its previous scrollTop, hiding the top of the
-      // mode's content. Runs after evaluate() above to ensure a clean visual transition.
-      useEffect(()=>{const el=appScrollRef.current;if(el)el.scrollTop=0;},[mode]);
+      },[mode,docScroll]);
+      // Mode-change effect: reset BOTH scrollers to top on every mode switch. Without this,
+      // switching from HtP (where the user scrolled) into a game mode would leave the
+      // container at its previous scrollTop, hiding the top of the mode's content. The window
+      // reset is belt-and-braces alongside the docScroll layout-effect cleanup (which already
+      // zeroes the window BEFORE re-clamping); in the clamped modes the document can't scroll,
+      // so it's a no-op. Runs after evaluate() above to ensure a clean visual transition.
+      useEffect(()=>{const el=appScrollRef.current;if(el)el.scrollTop=0;window.scrollTo(0,0);},[mode]);
       // BFCache scroll reset (defense-in-depth alongside position:fixed #root).
       // Multiple events + deferred resets cover edge cases where pageshow alone isn't reliable
       // on iOS Safari. visibilitychange catches tab-foreground transitions; rAF + setTimeout
@@ -1882,39 +2008,111 @@ interface DedOpts {
       // settingsOpen is declared here — above the keyboard effect that toggles it (G key) — so it's
       // not read before its declaration (the compiler flags accessing a binding before it's declared).
       const [settingsOpen,setSettingsOpen]=useState(false);
-      // Q3: the "Updating…" overlay (UpdatingOverlay). The Settings "Check for updates" button shows it for
-      // ~0.9s (so the screen registers) then runs forceReloadLatest (clear caches + reload); the overlay
-      // clears on reload. (The auto-update-on-open SW mechanism that will ALSO trigger it is a later round.)
+      // Q3: the "Updating…" overlay (BootOverlay updating) — two triggers, each cleared by its reload:
+      // the Settings "Check for updates" button shows it for ~0.9s (so the screen registers) then runs
+      // forceReloadLatest (clear caches + reload), and the auto-update-on-open effect below shows it
+      // while a WAITING new version activates.
       const [updating,setUpdating]=useState(false);
       const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,900);},[]);
-      // Q3 Loading screen: keep the boot splash up for at LEAST ~0.5s from page-load start (performance.now()
-      // ≈ ms since navigation), so a fast cache load doesn't flash it for a single frame (which read like a
-      // glitch). On a slow load it's already been up the whole time → remaining clamps to 0 and it clears at
-      // once. The pre-React #boot splash in index.html covers the gap before this React BootOverlay mounts.
-      const [booting,setBooting]=useState(true);
-      useEffect(()=>{const remaining=Math.max(500-performance.now(),0);const id=window.setTimeout(()=>setBooting(false),remaining);return ()=>window.clearTimeout(id);},[]);
-      // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so the
-      // virtual:pwa-register module never loads in dev/tests) and, if a new version that installed on a
-      // previous visit is WAITING, show the Updating screen + apply it (updateSW(true) = skipWaiting +
-      // reload). Cold-open only — NO resume/focus re-check (owner's call). All SW behaviour is on-device.
+      // Q3 Loading screen: remove index.html's #boot splash once BOTH are true —
+      //   • it has been VISIBLE ≥0.5s (bootHoldRemaining, anchored to the __bootShownAt rAF stamp — not
+      //     navigation start), so a fast cached load doesn't flash it for a single frame (which read
+      //     like a glitch); on a slow load it has already served its time → the hold clamps to 0;
+      //   • the real stylesheet has APPLIED — the build swaps the render-blocking CSS <link> into a
+      //     preload (vite.config.js bootCssPreload) so the splash can be the page's first paint, and
+      //     the swap stamps window.__cssReady + fires 'app-css-ready'. Removing #boot before then would
+      //     reveal an unstyled app: the module script is NOT CSSOM-blocked (it precedes the link), so on
+      //     a SW-cached load React commits before the CSS lands. In dev/tests no preload link exists
+      //     (CSS arrives through the JS module graph before mount) → the querySelector check is ready.
+      // When the auto-update path below has claimed the handoff (updateEngagedRef), finish leaves #boot
+      // alone — the Updating overlay replaces it (the updating effect), never a frame with neither.
+      const updateEngagedRef=useRef(false);
+      useEffect(()=>{
+        let disposed=false;
+        let cssFallbackId: number | undefined;
+        const finish=()=>{if(!disposed&&!updateEngagedRef.current)dismissBootSplash();};
+        const id=window.setTimeout(()=>{
+          if(disposed)return;
+          if(appCssApplied())finish();
+          else{
+            window.addEventListener('app-css-ready',finish,{once:true});
+            // Escape hatch (the css twin of the SW path's safety timeout): if the preload link fires
+            // neither onload nor onerror — rel=preload unsupported, or an extension stripped the inline
+            // handlers — nothing would EVER signal readiness and the splash would sit up forever. After
+            // 4s, do exactly what the link's own onload does: swap it to a live stylesheet, stamp
+            // __cssReady, fire 'app-css-ready' (which runs finish above and also unblocks the
+            // auto-update path's css gate).
+            cssFallbackId=window.setTimeout(()=>{
+              if(disposed||appCssApplied())return;
+              const link=document.querySelector('link[rel="preload"][as="style"]') as HTMLLinkElement | null;
+              if(link)link.rel='stylesheet';
+              window.__cssReady=true;
+              window.dispatchEvent(new Event('app-css-ready'));
+            },4000);
+          }
+        },bootHoldRemaining(window.__bootShownAt,performance.now()));
+        return ()=>{disposed=true;window.clearTimeout(id);if(cssFallbackId!==undefined)window.clearTimeout(cssFallbackId);window.removeEventListener('app-css-ready',finish);};
+      },[]);
+      // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so
+      // the virtual:pwa-register module never loads in dev/tests; registering also kicks off src/sw.ts's
+      // background registration.update() prefetch) and — IN PARALLEL, since this check needs only the
+      // browser's registration, never that module — look for a new version that installed on a previous
+      // visit and is WAITING. If one is: claim the #boot handoff, wait for the css-ready gate the normal
+      // boot path enforces (the Updating overlay is styled by the real stylesheet — entering sooner would
+      // paint it unstyled), show the Updating screen (the updating effect below removes #boot AFTER the
+      // overlay commits), message the waiting worker DIRECTLY ({type:'SKIP_WAITING'} — a handler the
+      // generateSW worker ships natively, so unlike registerSW's returned updateSW(true) this cannot race
+      // the register module's own registration and no-op), and reload exactly ONCE when it takes control
+      // (controllerchange + the reloaded guard — controllerchange can also fire for unrelated SW
+      // handoffs). Cold-open only — NO resume/focus re-check (owner's call). All SW behaviour is
+      // on-device. The whole flow is wrapped in the sessionStorage attempt counter (the loop breaker —
+      // see readUpdateAttempts): after 2 straight failed attempts the flow is SKIPPED, the counter
+      // cleared, and the app renders on the old version instead of looping Updating→reload forever.
       useEffect(()=>{
         if(!import.meta.env.PROD||typeof navigator==='undefined'||!('serviceWorker' in navigator))return;
         let cancelled=false;
-        import('./sw.js').then(({updateSW})=>{
-          navigator.serviceWorker.getRegistration().then(reg=>{
-            if(!cancelled&&reg&&reg.waiting){
-              setUpdating(true);
-              updateSW(true);
-              // Safety net: updateSW(true) reloads once the new SW takes control (controllerchange). If
-              // activation never fires that (skipWaiting failed / workbox-window absent), don't leave the
-              // Updating screen stuck — force the update the hard way after a few seconds (forceReloadLatest
-              // always reloads). On a normal apply the reload happens first + this timer dies with the page.
-              window.setTimeout(()=>{if(!cancelled)forceReloadLatest();},4000);
-            }
-          }).catch(()=>{});
+        let engageOnCss: (()=>void) | null=null;
+        import('./sw.js').catch(()=>{});
+        navigator.serviceWorker.getRegistration().then(reg=>{
+          if(cancelled)return;
+          const waiting=reg?.waiting;
+          if(!waiting){clearUpdateAttempts();return;} // nothing waiting — a healthy boot resets the loop breaker
+          const attempts=readUpdateAttempts();
+          if(attempts>=2){
+            // Loop breaker tripped: two consecutive attempts already failed (SKIP_WAITING is broken /
+            // the waiting worker can't take control). Do NOT re-enter the Updating flow — clear the
+            // counter and boot normally on the OLD version (sw.ts's background update() may still
+            // repair the waiting worker for a later launch, and Check for updates stays reachable).
+            clearUpdateAttempts();
+            return;
+          }
+          updateEngagedRef.current=true; // claim the #boot handoff NOW, before the css gate — the normal boot effect must not remove the splash while the overlay is still pending
+          const engage=()=>{
+            if(cancelled)return;
+            writeUpdateAttempts(attempts+1);
+            setUpdating(true); // #boot comes down only after this commits (the updating effect below)
+            let reloaded=false;
+            const reloadOnce=()=>{if(reloaded)return;reloaded=true;window.location.reload();};
+            navigator.serviceWorker.addEventListener('controllerchange',()=>{clearUpdateAttempts();reloadOnce();}); // success — reset the loop breaker, then the one reload
+            waiting.postMessage({type:'SKIP_WAITING'});
+            // Safety net: if activation never fires controllerchange (skipWaiting failed), don't leave the
+            // Updating screen stuck — a PLAIN reload after a few seconds (the old worker serves the old app
+            // again; the update retries next launch). NEVER forceReloadLatest here: it wipes every cache,
+            // and offline that bricks the app — the manual Check-for-updates button keeps that big hammer.
+            // The attempt counter deliberately SURVIVES this reload (sessionStorage) — that's what limits
+            // the retry to two rounds via the >=2 check above.
+            window.setTimeout(()=>{if(!cancelled)reloadOnce();},4000);
+          };
+          if(appCssApplied())engage();
+          else{engageOnCss=engage;window.addEventListener('app-css-ready',engage,{once:true});}
         }).catch(()=>{});
-        return ()=>{cancelled=true;};
+        return ()=>{cancelled=true;if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
       },[]);
+      // The update path's #boot handoff (paired with updateEngagedRef above): remove the splash only
+      // AFTER the Updating overlay has COMMITTED — effects run post-commit, so by now the overlay is in
+      // the DOM and there is never a frame with neither splash nor overlay. A no-op for the manual
+      // Check-for-updates trigger (#boot is long gone by then; dismissBootSplash is idempotent).
+      useEffect(()=>{if(updating)dismissBootSplash();},[updating]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
         // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
@@ -1924,6 +2122,10 @@ interface DedOpts {
         // arrow-nav handler (handleTriggerKeyDown on the trigger) sees subsequent keys.
         if(e.key==='Tab'){
           if(e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
+          // The Save Defaults MODAL owns Tab while it's up (its scrim's focus trap) — opening the mode
+          // dropdown behind an aria-modal dialog would break the modal contract. The trap already
+          // stopPropagation()s presses inside its tree; this covers presses that start outside it.
+          if(document.querySelector('[data-save-defaults]'))return;
           if(modeSelectRef.current){
             const trigger=modeSelectRef.current.querySelector('button');
             if(trigger){e.preventDefault();trigger.focus();trigger.click();}
@@ -2025,6 +2227,14 @@ interface DedOpts {
       const [fullResetArmed,setFullResetArmed]=useState(false);
       const fullResetBtnRef=useRef<HTMLButtonElement | null>(null);
       const fullResetTimerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
+      // Save Defaults (Q7) confirmation popup state. pendSettings snapshots the full 14-value
+      // panel at OPEN (the popup doesn't edit panel values); pendPrefs seeds the four editable
+      // mode-screen rows from the live modePrefs store at open. Edits touch ONLY this pending
+      // snapshot — Cancel/scrim/Back/settings-close discard it; Save commits it (aoxN normalized).
+      const [saveDefaultsOpen,setSaveDefaultsOpen]=useState(false);
+      const saveDefaultsCardRef=useRef<HTMLDivElement | null>(null); // the dialog card — focused on open (the modal a11y contract below)
+      const pendSettingsRef=useRef<SettingsValues | null>(null);
+      const [pendPrefs,setPendPrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
       // aoxIsFresh — reported up from AoxMode via the onFreshChange prop. AoxMode's ~24
       // internal state fields are otherwise opaque to the App, so we mirror their combined
       // freshness state here to use in isFullyReset (the Full Reset dim/lock check below).
@@ -2091,7 +2301,11 @@ interface DedOpts {
         // Treat that as "inside" so picking a theme/mode doesn't slam the settings popover shut
         // before the selection registers.
         const inListbox=!!(target&&target.closest&&target.closest('[role="listbox"]'));
-        if(!inBtn&&!inPop&&!inSel&&!inListbox){
+        // The Save Defaults popup (Q7) portals to #root with a full-screen scrim — clicks on it
+        // (scrim included) are "inside": a scrim tap cancels only the POPUP (its own onClick
+        // handler), never the settings panel beneath it.
+        const inSaveDefaults=!!(target&&target.closest&&target.closest('[data-save-defaults]'));
+        if(!inBtn&&!inPop&&!inSel&&!inListbox&&!inSaveDefaults){
           // Year-range inputs (and any future input in the popover) commit on blur. When closing
           // settings via click-outside on a non-focusable element, the input keeps focus until
           // the popover unmounts — and React's synthetic onBlur doesn't reliably fire on unmount,
@@ -2102,28 +2316,74 @@ interface DedOpts {
           if(ae&&ae.tagName==='INPUT'&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(ae))ae.blur();
           setSettingsOpen(false);
         }};document.addEventListener('mousedown',h);document.addEventListener('touchstart',h);return()=>{document.removeEventListener('mousedown',h);document.removeEventListener('touchstart',h);};},[settingsOpen]);
-      // Escape closes the settings popover. Doesn't fire when an input has focus that already
-      // handles Escape (year-range inputs revert their value on Escape) — those handlers call
-      // stopPropagation isn't used, so this listener still receives the event after the input's
-      // handler runs. To avoid double-handling, we check the active element type.
-      useEffect(()=>{if(!settingsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement;if(ae&&ae.tagName==="INPUT")return;e.preventDefault();setSettingsOpen(false);};document.addEventListener('keydown',h);return()=>document.removeEventListener('keydown',h);},[settingsOpen]);
+      // Escape closes the settings popover. Doesn't fire when a TEXT-ENTRY input has focus — those
+      // have their own Escape handling (the year-range inputs revert their value) and stopPropagation
+      // isn't used, so this listener would double-handle the same press. The guard is deliberately
+      // NOT "any INPUT": range sliders keep focus after an adjust and have no Escape semantics of
+      // their own — bailing on them would leave Escape dead until something else got focus.
+      useEffect(()=>{if(!settingsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();setSettingsOpen(false);};document.addEventListener('keydown',h);return()=>document.removeEventListener('keydown',h);},[settingsOpen]);
+      // Close-on-drag-activate (Q5 rework): the pointer controller dispatches a bubbling "drag-dismiss"
+      // CustomEvent from a drag-clicked member of a data-drag-dismiss menu (lib/pointerGestures) — the
+      // settings popover card is the only such menu. Closing here is exactly a normal close, so the
+      // settings apply-on-close pass (useSettingsCloseEffect) fires naturally. Installed once; the ref
+      // check scopes it to the popover, and it's a no-op while settings is already closed (no popover DOM).
+      useEffect(()=>{const h=(e: Event)=>{const t=e.target as Element | null;if(t&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(t))setSettingsOpen(false);};document.addEventListener('drag-dismiss',h);return()=>document.removeEventListener('drag-dismiss',h);},[]);
+      // Save Defaults popup lifecycle (Q7): closing Settings by ANY path closes the popup too —
+      // it's a child flow of the panel (Cancel semantics; the pending snapshot is discarded).
+      useEffect(()=>{if(!settingsOpen)setSaveDefaultsOpen(false);},[settingsOpen]);
+      // Escape cancels the POPUP first — registered in the CAPTURE phase with stopPropagation so
+      // the settings Escape handler above (bubble phase) never sees the same press and the panel
+      // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field normalize-commits),
+      // mirroring the settings handler's guard — and like it, the guard excludes type="range": the
+      // popup's three sliders keep focus after an adjust and must not swallow the dismiss.
+      useEffect(()=>{if(!saveDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setSaveDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[saveDefaultsOpen]);
+      // The popup's modal a11y contract, part 1 of 2 (part 2 = the Tab trap on the scrim, below): on
+      // open, move focus INTO the dialog — the card is tabIndex={-1} with role="dialog" +
+      // aria-modal="true", so screen readers announce a modal and keyboard context starts inside it.
+      // Without this, focus stays on the Save Defaults button UNDER the scrim, and keyboard/AT input
+      // keeps operating the live settings panel while commitSaveDefaults would still save the snapshot
+      // captured at open — a silent divergence between what's on screen and what Save persists.
+      useEffect(()=>{if(saveDefaultsOpen)saveDefaultsCardRef.current?.focus();},[saveDefaultsOpen]);
       // Theme option arrays — keys match the CustomSelect API (value/label) so
       // they can be passed directly without per-render mapping.
       const DARK_THEMES=[{value:'dusk',label:'Dusk'},{value:'midnight',label:'Midnight'},{value:'nebula',label:'Nebula'}];
       const LIGHT_THEMES=[{value:'light',label:'Light'},{value:'parchment',label:'Parchment'}];
       const ALL_THEMES_LABELED=[{value:'dusk',label:'Dusk (dark)'},{value:'midnight',label:'Midnight (dark)'},{value:'nebula',label:'Nebula (dark)'},{value:'light',label:'Light (light)'},{value:'parchment',label:'Parchment (light)'}];
-      // Resets every setting in the ⚙ popover to its initial useState default.
-      // Does NOT touch mode-specific config outside the popover (AoX N, timer durations,
-      // Deduction sub-types/toggles) or stats/history (Reset Stats handles that).
+      // Resets every setting in the ⚙ popover to its EFFECTIVE default — the user's saved personal
+      // defaults when they exist (Q7, store/userDefaults), the factory launch values otherwise.
+      // Stays PANEL-ONLY by design: never touches mode-specific config outside the popover (AoX N,
+      // timer durations, Deduction sub-types/toggles) or stats/history (Reset Stats handles that) —
+      // Full Reset alone restores the four captured mode prefs.
       // Triggers the unified popover-settings effect, which will regenerate the current
       // date as appropriate (Random Format / Date Format / Leap Chance are always-regen).
       const resetSettings=()=>{
-        // Reset the 13 store-held settings in one shot (single source of truth in
-        // src/store/settings.js), then the 2 transient text mirrors that live locally.
-        resetSettingsStore();
-        setMinInputVal("1");setMaxInputVal("10000");
+        // Apply the effective defaults to the 14 store-held settings in one shot (store/settings
+        // applySettings), then the 2 transient text mirrors that live locally.
+        applySettingsStore(defSettings);
+        setMinInputVal(String(defSettings.minY));setMaxInputVal(String(defSettings.maxY));
       };
-      // Full Reset — back to the launch state. The five always-mounted mode components own ALL
+      // Save Defaults (Q7): open the confirmation popup, seeding the pending snapshot from the
+      // LIVE stores (panel captured whole; the four mode-screen prefs become editable rows).
+      const openSaveDefaults=()=>{
+        const s=useSettings.getState();
+        pendSettingsRef.current=Object.fromEntries(Object.keys(SETTINGS_DEFAULTS).map(k=>[k,s[k as keyof SettingsValues]])) as SettingsValues;
+        const p=useModePrefs.getState();
+        const seeded={flashMs:p.flashMs,blitzSec:p.blitzSec,blitzQSec:p.blitzQSec,aoxN:normalizeAoxN(p.aoxN)};
+        setPendPrefs(seeded);
+        setSaveDefaultsOpen(true);
+      };
+      const closeSaveDefaults=useCallback(()=>setSaveDefaultsOpen(false),[]);
+      // Save commits the EDITED pending snapshot (never the live stores — they stay untouched);
+      // from here on Reset Settings / Full Reset / the gear indicator mean THESE values by "default".
+      const commitSaveDefaults=()=>{
+        if(pendSettingsRef.current)saveUserDefaults({settings:pendSettingsRef.current,prefs:{...pendPrefs,aoxN:normalizeAoxN(pendPrefs.aoxN)}});
+        setSaveDefaultsOpen(false);
+      };
+      // Full Reset — back to the launch state, where "launch" honors the user's SAVED personal
+      // defaults (Q7): the ⚙ panel and the four captured mode prefs restore to the
+      // store/userDefaults snapshot when one exists, everything else to factory (and the snapshot
+      // itself survives — clearing it is the Save Defaults popup's job, never Full Reset's).
+      // The five always-mounted mode components own ALL
       // gameplay state (stats, history, run/round progress, config toggles, timers), so bumping
       // their *ResetKey props below remounts them and resets every per-mode value to its hook
       // default in the same render. App therefore only resets what IT owns: the current mode,
@@ -2136,7 +2396,8 @@ interface DedOpts {
         setSettingsOpen(false);
         setAppAtBottom(true);
         setAppScrolledFromTop(false);
-        // Settings popover → defaults (13 store values incl. theme + the 2 transient input mirrors).
+        // Settings popover → EFFECTIVE defaults (14 store values incl. theme + the 2 transient
+        // input mirrors — the user's saved personal defaults when present, Q7).
         resetSettings();
         // Saved gameplay progress → wiped (Stage D1): clears lifetime stats + all-time bests + Lookup
         // history in the persisted store, making Full Reset permanent. Runs BEFORE the remount-key bumps
@@ -2145,6 +2406,12 @@ interface DedOpts {
         // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, last mode) → launch
         // defaults. Runs BEFORE the remount-key bumps so the modes re-read the now-default prefs.
         resetModePrefs();
+        // …then push the four SAVED personal defaults (Flash speed, both Blitz timers, AoX N — Q7,
+        // store/userDefaults, which deliberately SURVIVES Full Reset) back over that factory reset,
+        // still before the remount-key bumps. Everything else in modePrefs (Per-Round/Question,
+        // Deduction sub-type, Allow Mistakes, One-By-One, show/hide toggles) stays factory. A no-op
+        // when nothing is saved (defPrefs = the factory values).
+        applyModePrefs(defPrefs);
         // Lookup input/output are transient local state (the history itself was cleared by resetProgress).
         setLookupInput("");setLookupOutput("");
         setLookupCalcDate(null);setLookupSelectedHistoryId(null);setLookupCalcOpen(false);
@@ -2188,6 +2455,7 @@ interface DedOpts {
       // (mirrors the H-key toggle). The mode menu + Show Codes register their own back entries from
       // CustomSelect / the mode components. See components/useBackButton.
       useBackButton(settingsOpen, ()=>setSettingsOpen(false), 'settings');
+      useBackButton(saveDefaultsOpen, closeSaveDefaults, 'save-defaults');   // opens after 'settings' → Back closes the popup first (LIFO)
       useBackButton(mode==='guide', ()=>setMode(prevNonGuideModeRef.current||'classic'), 'guide');
       // NOTE: the "disarm when state flips to fully-reset" safety-net effect was moved to just
       // after the isFullyReset declaration below — its dependency array reads isFullyReset, which
@@ -2214,11 +2482,19 @@ interface DedOpts {
       useEffect(()=>()=>{
         if(fullResetTimerRef.current)clearTimeout(fullResetTimerRef.current);
       },[]);
-      // True when every popover-controlled value matches its initial useState default.
-      // Drives Reset Settings dim-and-lock — same pattern as Reveal/Override/etc.
-      // Includes year range *input text* values so a dirty (uncommitted) input keeps
-      // the button active to clear it back to "1" / "10000".
-      const settingsAtDefaults=randomFormat===true&&dateFormat==='written-mdy'&&inputStyle==='buttons'&&useJulian===true&&minY===1&&maxY===10000&&minInputVal==="1"&&maxInputVal==="10000"&&leapChance==='random'&&janFebChance==='random'&&julianChance==='random'&&saveStats===true&&useSystem===true&&darkTheme==='dusk'&&lightTheme==='light'&&manualTheme==='dusk';
+      // True when every popover-controlled STORE value matches its EFFECTIVE default — the user's
+      // saved personal defaults when they exist (Q7, store/userDefaults), the factory launch
+      // values otherwise. STORE values only: uncommitted year-range typing must not light the
+      // gear's "modified" indicator below (it commits on blur/Enter).
+      const settingsStoreAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&darkTheme===defSettings.darkTheme&&lightTheme===defSettings.lightTheme&&manualTheme===defSettings.manualTheme;
+      // The Reset Settings dim-and-lock (same pattern as Reveal/Override/etc.) ADDS the two
+      // year-range *input text* mirrors, so a dirty (uncommitted) input keeps the button active
+      // to clear it back to the default text.
+      const settingsAtDefaults=settingsStoreAtDefaults&&minInputVal===String(defSettings.minY)&&maxInputVal===String(defSettings.maxY);
+      // The ⚙ gear "modified" indicator (Q8) + the Save Defaults dim: live state diverges from the
+      // effective defaults in EITHER store (any menu setting, or any of the four capturable
+      // mode-screen prefs). Its complement means "nothing new to save".
+      const settingsModified=!(settingsStoreAtDefaults&&prefsAtDefaults);
       // Every per-mode piece of state now lives in the always-mounted mode components, which
       // each report a comprehensive freshness flag (config + stats + history + UI toggles) up
       // via onFreshChange. So isFullyReset = the launch mode (classic) + settings-at-defaults +
@@ -2252,8 +2528,20 @@ interface DedOpts {
       // bar, installed-app home indicator, Android nav-bar/pill). env(safe-area-inset-bottom) is 0 on
       // iOS (no viewport-fit=cover in index.html) — it only matters on edge-to-edge Android. (Tailwind
       // arbitrary value: underscores become spaces, so calc() emits the whitespace CSS requires.)
-      const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
-        <div ref={popoverInnerScrollRef} data-select-menu className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
+      // Press-drag contract (Q5 rework, lib/pointerGestures): the CARD is the ⚙ trigger's menu —
+      // id="settings-popover" pairs it via the gear's aria-controls (the id IS the pairing; the card
+      // deliberately carries no [data-select-group], so a drag that STARTS inside it still scrolls
+      // natively instead of drag-selecting); the whole card is
+      // in drag scope, footer rows included. data-drag-dismiss opts it into close-on-drag-pick (App's
+      // drag-dismiss listener → the apply-on-close pass); data-drag-stay regions (the theme selects +
+      // BOTH footer rows) opt back out — the theme dropdowns must survive their open, Full Reset needs
+      // its Confirm? tap, Reset Settings should show controls snapping to defaults, and Save Defaults
+      // opens its confirmation popup (which portals OUT of this card, so a drag-release on popup
+      // content can never drag-dismiss the panel). The Year Range
+      // inputs are data-drag-focus (release = focus for typing, panel stays open). The inner scroll
+      // wrapper is data-drag-scroll — the controller's auto-scroll target + edge-band geometry.
+      const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} id="settings-popover" data-drag-dismiss style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
+        <div ref={popoverInnerScrollRef} data-drag-scroll className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
         {/* SETTINGS regrouped into 3 categories (Q2): Display (how it's shown + how you answer + theme),
             Dates (which dates get generated), Stats. Each category is a SectionLabel header; the former
             per-setting headings are now muted sub-labels (the Leap-Year header+sub-label pattern). Every
@@ -2288,15 +2576,15 @@ interface DedOpts {
           </div>
           <div className="text-xs text-purple-200/80 pt-1">Theme</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
-          {useSystem?(<><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} openUp ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} openUp ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} openUp ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
+          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} openUp ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} openUp ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} openUp ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Dates</SectionLabel>
           <div className="text-xs text-purple-200/80">Year Range</div>
           <div className="flex items-center gap-2">
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
+            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
             <span className="text-purple-300/60 text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
+            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
           </div>
           <div className="flex items-center justify-between pt-1"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
           {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
@@ -2324,29 +2612,111 @@ interface DedOpts {
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
-        <div className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
+        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
           <div className="flex gap-2">
+            {/* Save Defaults (Q7): constructive → btn-solid purple (the Begin-button language), keeping
+                rose exclusively for the two destructive neighbors. Dims when live state already equals
+                the saved defaults (factory when none saved) — nothing new to save. */}
+            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium${!settingsModified?" opacity-60 pointer-events-none":""}`}>Save Defaults</button>
             <button type="button" onClick={resetSettings} className={`flex-1 ${RESET_BTN_CLASS} ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}>Reset Settings</button>
             <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${RESET_BTN_CLASS}${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}>{fullResetArmed?"Confirm?":"Full Reset"}</button>
           </div>
         </div>
-        <div className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
+        <div data-drag-stay className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text">dayoftheweekcalculation@gmail.com</a></div>
           <div className="flex items-center gap-2 flex-wrap">
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
             {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
             <button type="button" onClick={onCheckUpdates} className="underline select-none">Check for updates</button>
           </div>
+          {/* The always-available way back to factory semantics (Q7). The Save Defaults popup carries a
+              matching link, but the popup sits behind the Save Defaults button, which dims + locks
+              exactly when live == saved — at steady state the popup link is unreachable, so this footer
+              link (the same muted tier as Check for updates above) is the guaranteed path. Shown only
+              while saved defaults exist. A plain immediate action, no arm/confirm step: it only forgets
+              the snapshot — live settings are untouched, and a re-save recreates it in two taps. It
+              inherits the footer's data-drag-stay, so the panel stays open and the link's own
+              disappearance is the visible feedback. */}
+          {savedDefaults!==null&&(<div><button type="button" onClick={clearUserDefaults} className="underline select-none">Clear saved defaults</button></div>)}
         </div>
       </div>);
+      // Save Defaults confirmation popup (Q7). PORTALED to #root — deliberately OUTSIDE the
+      // popover card (the ⚙ trigger's aria-controls menu), so its DOM is invisible to the press-drag controller
+      // (a drag-release on popup content can never drag-dismiss the panel) and it escapes the
+      // card's overflow/max-height context (a true centered modal — scrim + the popover's own
+      // card/shadow language). data-save-defaults marks the whole tree (scrim included) "inside"
+      // for the settings click-outside handler above; the scrim itself cancels the POPUP only
+      // (target===currentTarget, so card clicks never do), and Escape + Android Back + any
+      // settings close also cancel (the effects above). Edits touch ONLY the pending snapshot:
+      // the three sliders mirror the mode screens' (same ranges/steps/--rng-fill/readouts) and
+      // the N field mirrors the AoX input's validation trio — digits only while typing (stricter
+      // than the AoX field's raw writes: the pending snapshot never holds junk), and blur, Enter
+      // and Escape all normalize-commit with the AoX clamp (2–1000, fallback 10) — Escape on the
+      // AoX field likewise commits the clamped current value; the popup's real discard is Cancel.
+      const commitPendAoxN=()=>setPendPrefs(p=>({...p,aoxN:normalizeAoxN(p.aoxN)}));
+      // Modal a11y contract, part 2 of 2 (part 1 = the focus-on-open effect above): the card is a real
+      // role="dialog" aria-modal, and the scrim's Tab handler is the focus trap — plain Tab / Shift+Tab
+      // cycle the popup's own controls and WRAP at the ends (native traversal in between), never
+      // escaping to the settings panel under the scrim. stopPropagation keeps the press from the
+      // app-wide Tab shortcut (which would open the mode selector behind the modal); the shortcut's own
+      // handler also bails while the modal is mounted for presses that start outside the scrim's tree.
+      const trapSaveDefaultsTab=(e: React.KeyboardEvent<HTMLDivElement>)=>{
+        if(e.key!=='Tab')return;
+        e.stopPropagation();
+        const f=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button,input'));
+        if(f.length===0)return;
+        const first=f[0],last=f[f.length-1],ae=document.activeElement;
+        if(e.shiftKey){if(ae===first||!e.currentTarget.contains(ae)){e.preventDefault();last.focus();}}
+        else if(ae===last||!e.currentTarget.contains(ae)){e.preventDefault();first.focus();}
+      };
+      const saveDefaultsJsx=saveDefaultsOpen&&ReactDOM.createPortal(
+        (<div data-save-defaults role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setSaveDefaultsOpen(false);}} onKeyDown={trapSaveDefaultsTab}>
+          <div ref={saveDefaultsCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="save-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+            <div id="save-defaults-title" className="text-sm font-semibold text-purple-50">Save current settings as your defaults?</div>
+            <div className="text-xs text-purple-200/80">Also saved from the mode screens:</div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-purple-200/80 shrink-0">AoX run length (N)</span>
+              {/* The Escape branch STOPS PROPAGATION: it blurs the field, and without the stop the
+                  same native event would reach the document-level settings Escape handler AFTER the
+                  blur — its input-has-focus skip no longer applies, and it would slam the whole
+                  panel (and this popup) shut on what the user meant as a keyboard dismiss. */}
+              <input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length (N)" value={pendPrefs.aoxN} onChange={e=>{const v=e.target.value;if(v===''||/^\d*$/.test(v))setPendPrefs(p=>({...p,aoxN:v}));}} onBlur={commitPendAoxN} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitPendAoxN();e.currentTarget.blur();}else if(e.key==="Escape"){e.stopPropagation();commitPendAoxN();e.currentTarget.blur();}}} className="panel rounded-xl px-2 py-1 w-14 text-center tabular-nums text-sm focus:outline-hidden focus-ring shrink-0"/>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-purple-200/80">Flash speed</div>
+              <div className="flex items-center gap-2"><input type="range" min="100" max="3000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/2900*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-10 shrink-0 text-right">{fmtFlashT(pendPrefs.flashMs)}</span></div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-purple-200/80">Blitz round timer</div>
+              <div className="flex items-center gap-2"><input type="range" min="10" max="180" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/170*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-14 shrink-0 text-right">{fmtBlitzT(pendPrefs.blitzSec)}</span></div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-purple-200/80">Blitz question timer</div>
+              <div className="flex items-center gap-2"><input type="range" min="1" max="20" step="1" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/19*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-8 shrink-0 text-right">{pendPrefs.blitzQSec}s</span></div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-purple-100/80">Cancel</button>
+              <button type="button" onClick={commitSaveDefaults} className="flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium">Save</button>
+            </div>
+            {/* Escape hatch back to factory semantics — clears the snapshot (Full Reset deliberately
+                never does; the ⚙ footer's "Clear saved defaults" link is the same action, reachable
+                even when the dimmed Save Defaults button makes this popup unopenable). Shown only
+                while saved defaults exist; the popup stays open (the pending values remain saveable). */}
+            {savedDefaults!==null&&(<div className="text-center"><button type="button" onClick={clearUserDefaults} className="text-[11px] text-purple-300/60 underline select-none">Clear saved defaults (back to factory)</button></div>)}
+          </div>
+        </div>),
+        document.getElementById('root')!
+      );
       return(
         <>
-          {updating?<BootOverlay updating/>:booting?<BootOverlay/>:null}
+          {updating?<BootOverlay updating/>:null}
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
             it as chrome UI and live-samples its bg-(--bg1) (theme-aware) for the
-            status bar color. Sibling appScrollRef container is position:absolute
-            below, with padding-top:var(--bar-h) so its content starts below the bar.
+            status bar color. Sibling appScrollRef container sits below with
+            padding-top:var(--bar-h) so its content starts below the bar
+            (position:absolute in the clamped modes; a plain flow block in guide mode,
+            where the document scrolls — see docScroll).
             ResizeObserver elsewhere in App writes the bar's offsetHeight to --bar-h.
             Full width (no max-w) so theme bg + elevation shadow span edge-to-edge on
             screens wider than 480px; inner max-w-[30rem] wrapper holds the title row.
@@ -2372,9 +2742,16 @@ interface DedOpts {
                 {/* gear settings button */}
                 <div className="relative" ref={settingsRef}>
                   {/* C2: the ⚙ is a press-drag trigger — pointerdown OPENS the panel so you can drag straight
-                      into it + release on a control. onClick is kept for keyboard/tests; the controller
-                      suppresses the trigger's click on a real press so it doesn't double-toggle. */}
-                  <button type="button" data-select-trigger onPointerDown={()=>setSettingsOpen(v=>!v)} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":"panel text-purple-100/80"}`} aria-label="Settings">⚙</button>
+                      into it + release on a control. aria-controls names its menu (the popover card,
+                      id="settings-popover") so the pointer controller pairs the gesture with THIS panel,
+                      resolved live by id (a press that CLOSES the panel pairs with nothing → inert). The
+                      isPrimary/button guard mirrors the controller's pointer latch: a second finger or a
+                      right-click must not toggle. onClick is kept for keyboard/tests; the controller
+                      suppresses the trigger's click on a real press so it doesn't double-toggle.
+                      gear-modified (Q8, the inside-bottom violet bar — index.css) marks live state ≠
+                      the saved defaults while the panel is CLOSED (the open gear is solid purple, no
+                      bar); the aria-label mirrors the same boolean in both states. */}
+                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-purple-100/80${settingsModified?" gear-modified":""}`}`} aria-label={settingsModified?"Settings (modified)":"Settings"}>⚙</button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the
@@ -2387,13 +2764,20 @@ interface DedOpts {
               </div>
             </div>
             {settingsJsx}
+            {saveDefaultsJsx}
           </div>
         </div>
-        {/* Scroll container: position:absolute inset:0 with padding-top:var(--bar-h)
-            so content starts immediately below the bar. overscroll-contain keeps
-            rubber-band bounce LOCAL to this container (bar is unaffected). */}
-        <div ref={appScrollRef} style={{paddingTop:'var(--bar-h)'}} className={`absolute inset-0 overflow-y-auto overscroll-contain${appScrolledFromTop&&!appAtBottom?" fade-scroll-both":appScrolledFromTop?" fade-scroll-top":!appAtBottom?" fade-scroll-bottom":""}`}>
-        <div className="mx-auto px-4 pb-3 w-full max-w-[30rem]">
+        {/* Scroll container. Clamped modes (everything but HtP): position:absolute inset:0
+            with padding-top:var(--bar-h) so content starts immediately below the bar;
+            overscroll-contain keeps rubber-band bounce LOCAL to this container (bar is
+            unaffected); the fade-scroll-* masks mark overflowing edges. Guide mode
+            (docScroll): the DOCUMENT scrolls instead — same div, same ref, same padding-top,
+            but a plain classless flow block (no clamp/overflow/mask classes; the doc-fade
+            strips below replace the masks), and the inner wrapper trades pb-3 for the same
+            0.75rem plus the safe-area inset — in document flow the 100dvh #root clamp no
+            longer keeps the last panel above the iPhone home indicator. */}
+        <div ref={appScrollRef} style={{paddingTop:'var(--bar-h)'}} className={docScroll?undefined:`absolute inset-0 overflow-y-auto overscroll-contain${appScrolledFromTop&&!appAtBottom?" fade-scroll-both":appScrolledFromTop?" fade-scroll-top":!appAtBottom?" fade-scroll-bottom":""}`}>
+        <div className={`mx-auto px-4 w-full max-w-[30rem]${docScroll?" pb-[calc(0.75rem_+_env(safe-area-inset-bottom))]":" pb-3"}`}>
           {/* key={aoxResetKey} forces remount on Full Reset since AoxMode is always-mounted
               (display:none toggle on visible prop, not conditional rendering) and its internal
               state would otherwise persist across resets. See aoxResetKey declaration upstream
@@ -2422,6 +2806,16 @@ interface DedOpts {
           {mode==="guide"&&(<ModeErrorBoundary mode="How to Play" active={true}><div className="mt-2.5"><GuidePage/></div></ModeErrorBoundary>)}
         </div>
         </div>
+        {/* Doc-scroll edge fades (guide mode only): the fade-scroll-* masks live ON the scroll
+            container and fade its CONTENT box — meaningless once the document scrolls (the
+            mask's bottom edge would sit at the end of the whole document, off-screen). These
+            fixed, untouchable strips paint the same 24px feather over the VIEWPORT edges
+            instead (see index.css), driven by the same two scroll states as the masks.
+            position:fixed is correct here — this is the real app viewport, not a transformed
+            portal; the top strip tucks under the fixed bar at --bar-h, the bottom strip hugs
+            the viewport floor. */}
+        {docScroll&&appScrolledFromTop?<div aria-hidden="true" className="doc-fade-top"/>:null}
+        {docScroll&&!appAtBottom?<div aria-hidden="true" className="doc-fade-bottom"/>:null}
         </>
       );
     }
@@ -2468,5 +2862,6 @@ interface DedOpts {
     // Exported for the Step-6 characterization tests (the mode-untangle safety net). randomDate +
     // makeDedPuzzle are the real date/puzzle generators — exported for the C2 date-generation fuzz
     // (tests/dateGen.dom), which drives them across every settings combination to prove no setting can
-    // produce a malformed or unanswerable question.
-    export { App, randomDate, makeDedPuzzle };
+    // produce a malformed or unanswerable question. bootHoldRemaining is the pure boot-splash hold
+    // calculation (tests/bootSplash.dom).
+    export { App, randomDate, makeDedPuzzle, bootHoldRemaining };

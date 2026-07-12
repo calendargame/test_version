@@ -44,6 +44,33 @@ const cfWebAnalytics = () => ({
     ),
 })
 
+// Boot-splash first-paint unblock (the boot-splash fix, batch item h). Vite injects the bundled
+// stylesheet into index.html as a classic render-blocking <link rel="stylesheet">, and a pending head
+// stylesheet blocks FIRST PAINT of the entire document — including the fully-inline-styled #boot
+// splash that exists precisely to cover that wait. This transform rewrites the injected link (matched
+// by PATTERN — the hashed filename is never hardcoded; every attribute, incl. crossorigin and the
+// base-prefixed href, is preserved, so it's correct for both the live '/' and staging '/<repo>/'
+// bases) into the standard preload-swap: first paint is unblocked, and once the CSS file has loaded
+// the link swaps itself into a real stylesheet and signals the app (window.__cssReady + a window
+// 'app-css-ready' event). App's boot effect waits for that signal before removing #boot — the module
+// script precedes the link so it is NOT CSSOM-blocked, meaning on a service-worker-cached load React
+// can commit before the CSS applies (an unstyled flash if #boot left early). onerror signals too: if
+// the stylesheet genuinely fails, an unstyled app beats an eternal splash. A <noscript> copy of the
+// original blocking link keeps no-JS rendering styled. Runs in DEFAULT (non-post) transform order so
+// VitePWA's Workbox precaches the TRANSFORMED index.html. Build-only (dev serves CSS through the JS
+// module graph — there's no stylesheet link to swap). Exported for tests/bootCssPreload.test.js.
+export const swapBlockingStylesheet = (html) =>
+  html.replace(
+    /<link rel="stylesheet"([^>]*)>/,
+    (link, attrs) =>
+      `<link rel="preload" as="style"${attrs} onload="this.onload=null;this.rel='stylesheet';window.__cssReady=true;window.dispatchEvent(new Event('app-css-ready'))" onerror="window.__cssReady=true;window.dispatchEvent(new Event('app-css-ready'))"><noscript>${link}</noscript>`,
+  )
+const bootCssPreload = () => ({
+  name: 'boot-css-preload',
+  apply: 'build',
+  transformIndexHtml: swapBlockingStylesheet,
+})
+
 // Test/staging gets a GRAY visual variant (the live site stays purple) so the two are distinguishable
 // at a glance — the installed-app + browser-tab icons, AND the link-preview (OG) card. The gray assets
 // are pre-generated + committed in design/icons/test-build/ (by build-icons.mjs + build-og.mjs) — NOT
@@ -149,9 +176,10 @@ export default defineConfig(({ command, mode }) => ({
     // with no network). registerType 'prompt' + injectRegister null (Q3): a newly-deployed SW
     // INSTALLS but WAITS — it does NOT silently activate + reload mid-session. We register the SW
     // ourselves (src/sw.ts via virtual:pwa-register) and apply a waiting update on the NEXT launch,
-    // behind the "Updating…" screen (App's boot effect calls updateSW(true) when a waiting worker
-    // exists). This makes updates land cleanly + visibly on open instead of a silent reload, and a
-    // background registration.update() fetches the next version so it's ready to apply next launch.
+    // behind the "Updating…" screen (App's boot effect messages the waiting worker directly with
+    // {type:'SKIP_WAITING'} — a handler generateSW ships natively — and reloads once on
+    // controllerchange). This makes updates land cleanly + visibly on open instead of a silent reload,
+    // and a background registration.update() fetches the next version so it's ready to apply next launch.
     // start_url/scope are derived from Vite `base`, so this is correct for both the live root (/)
     // and the staging project base (/<repo>/). Icons live in public/ (generated
     // from the W5 master by design/icons/build-icons.mjs); apple-touch + favicon are precached
@@ -183,6 +211,10 @@ export default defineConfig(({ command, mode }) => ({
       // build via `vite preview`.
       devOptions: { enabled: false },
     }),
+    // Boot-splash first-paint unblock (see swapBlockingStylesheet above): swap the injected
+    // render-blocking stylesheet link to a self-applying preload that signals the app when the CSS
+    // is in. Build-only via apply:'build'; all builds (live + staging + local) get it.
+    bootCssPreload(),
     // Gray test/staging visual variant — non-live builds only (staging + local); the live build keeps
     // the purple public/ assets. testIconVariant (enforce:'post', after VitePWA so sw.js exists) swaps
     // the gray icons + OG card into the output + fixes their precache revisions; testOgMeta points the

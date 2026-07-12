@@ -1,6 +1,8 @@
 import { useState, useCallback, type ReactNode } from 'react'
 import Expander from './Expander.jsx'
-import { Kbd } from './primitives.jsx'
+import { Kbd, SectionLabel, SECTION_LABEL_CLASS } from './primitives.jsx'
+import { DAY } from '../lib/format.js'
+import { DOT_CELL } from '../lib/dotLayout.js'
 
 // GuidePage / GuideSection — the How-to-Play tab: an accordion of documentation
 // sections (each a GuideSection wrapping an Expander) covering every observable
@@ -59,65 +61,72 @@ function Divider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 px-1 pt-1">
       <div className="flex-1 h-px bg-purple-500/20"></div>
-      <span className="text-[10px] uppercase tracking-widest text-purple-300/60">{label}</span>
+      <span className={SECTION_LABEL_CLASS}>{label}</span>
       <div className="flex-1 h-px bg-purple-500/20"></div>
     </div>
   )
 }
 // Lead — a one-line summary at the top of a GuideSection, so the section's gist is
-// scannable before the details. Slightly brighter than body text.
+// scannable before the details. Slightly brighter than body text — the bare
+// text-purple-50 the section titles use, which the light-theme override block in
+// index.css remaps (an alpha variant like /95 would escape that block and turn
+// near-invisible on light/parchment).
 function Lead({ children }: { children: ReactNode }) {
-  return <p className="text-purple-50/95">{children}</p>
+  return <p className="text-purple-50">{children}</p>
 }
 // Subhead — a small uppercase sub-label inside a section (the keyboard-group style),
-// used to break a long section into scannable blocks.
+// used to break a long section into scannable blocks. SectionLabel (primitives) owns
+// the label styling; this only adds the in-section spacing.
 function Subhead({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1 mt-1">
-      {children}
-    </div>
-  )
+  return <SectionLabel className="mb-1 mt-1">{children}</SectionLabel>
 }
-// Bulleted list helpers — simple, theme-legible bullets for scannable detail.
+// Bulleted list helper — scannable detail with theme-legible bullets: the markers use
+// the per-theme --mut-color var directly (Tailwind v4 var shorthand), so they stay
+// visible on every theme with no override-block entry.
 function UL({ children }: { children: ReactNode }) {
-  return <ul className="list-disc pl-5 space-y-1 marker:text-purple-400/70">{children}</ul>
+  return <ul className="list-disc pl-5 space-y-1 marker:text-(--mut-color)">{children}</ul>
 }
 // DotDiagram — a small inline SVG of the 7-dot answer layout (Settings → Display →
-// Input → Dots), each dot labelled with its weekday. Mirrors the app logo / the
-// DOT_CELL grid in main.tsx: Sun centre, Mon bottom-right, Tue mid-right, Wed
-// top-right, Thu bottom-left, Fri mid-left, Sat top-left (centre-top + centre-bottom
-// empty). Drawn entirely in currentColor so it's legible on every theme.
+// Input → Dots), each dot labelled with its weekday. Everything is DERIVED from the
+// shared DOT_CELL grid (lib/dotLayout — the same array that positions the real Dots
+// input) + the DAY names (lib/format): grid cell (r,c) → SVG centre
+// (x = 30+(c-1)*60, y = 28+(r-1)*62), the label is the day's first three letters,
+// and the aria-label sentence reads the filled cells in row order — no hand-kept
+// copy of the layout exists here to drift. Drawn entirely in currentColor so it's
+// legible on every theme.
 function DotDiagram() {
-  // 3x3 grid; only 7 of 9 cells are filled. Each cell: column x, row y, day label.
-  const dots: { x: number; y: number; day: string }[] = [
-    { x: 30, y: 28, day: 'Sat' }, // top-left
-    { x: 150, y: 28, day: 'Wed' }, // top-right
-    { x: 30, y: 90, day: 'Fri' }, // mid-left
-    { x: 90, y: 90, day: 'Sun' }, // centre
-    { x: 150, y: 90, day: 'Tue' }, // mid-right
-    { x: 30, y: 152, day: 'Thu' }, // bottom-left
-    { x: 150, y: 152, day: 'Mon' }, // bottom-right
-  ]
+  const dotX = (cell: { r: number; c: number }) => 30 + (cell.c - 1) * 60
+  const dotY = (cell: { r: number; c: number }) => 28 + (cell.r - 1) * 62
+  // The cell's position in words: the centre cell reads "centre"; every other filled
+  // cell is edge-row-edge-column, so "row-column" ("top-left", "middle-right", …).
+  const posName = (cell: { r: number; c: number }) =>
+    cell.r === 2 && cell.c === 2
+      ? 'centre'
+      : `${['top', 'middle', 'bottom'][cell.r - 1]}-${['left', 'centre', 'right'][cell.c - 1]}`
+  const ariaLabel = `Dots layout: ${DAY.map((day, i) => ({ day, cell: DOT_CELL[i] }))
+    .sort((a, b) => a.cell.r - b.cell.r || a.cell.c - b.cell.c)
+    .map(({ day, cell }) => `${day} ${posName(cell)}`)
+    .join(', ')}.`
   return (
     <svg
       viewBox="0 0 180 192"
       width="156"
       role="img"
-      aria-label="Dots layout: Saturday top-left, Wednesday top-right, Friday middle-left, Sunday centre, Tuesday middle-right, Thursday bottom-left, Monday bottom-right."
+      aria-label={ariaLabel}
       className="my-1 text-purple-100/90"
     >
-      {dots.map((d) => (
-        <g key={d.day}>
-          <circle cx={d.x} cy={d.y} r="11" fill="currentColor" />
+      {DAY.map((day, i) => (
+        <g key={day}>
+          <circle cx={dotX(DOT_CELL[i])} cy={dotY(DOT_CELL[i])} r="11" fill="currentColor" />
           <text
-            x={d.x}
-            y={d.y + 27}
+            x={dotX(DOT_CELL[i])}
+            y={dotY(DOT_CELL[i]) + 27}
             textAnchor="middle"
             fontSize="13"
             fill="currentColor"
             opacity="0.9"
           >
-            {d.day}
+            {day.slice(0, 3)}
           </text>
         </g>
       ))}
@@ -133,9 +142,9 @@ export default function GuidePage() {
         <Lead>A training tool for working out the day of the week of any date, in your head.</Lead>
         <p>
           You're given a date and must identify which weekday it falls on — as quickly and
-          accurately as possible. Dates use the proleptic Gregorian calendar by default. The Julian
-          calendar is supported as an opt-in setting for dates on or before October 4, 1582 (the day
-          before the Gregorian reform took effect).
+          accurately as possible. Dates on or before October 4, 1582 (the day before the Gregorian
+          reform took effect) are treated as Julian, matching history — the Julian Calendar setting,
+          on by default, controls this. Every later date is Gregorian.
         </p>
         <Subhead>Install &amp; offline</Subhead>
         <p>
@@ -156,10 +165,12 @@ export default function GuidePage() {
         </p>
         <Subhead>Updates</Subhead>
         <p>
-          New versions load automatically on your next visit. To force the latest right now, the
-          Settings (⚙) panel has a <b>Check for updates</b> link that reloads the newest version
-          (your saved progress is kept) — a short <b>updating screen</b> appears while the new
-          version is applied.
+          Updates take care of themselves: while you use the app, any new version quietly downloads
+          in the background, and it's applied — behind a short <b>updating screen</b> — the next
+          time you open the app fresh. Switching back from another app never triggers it; the update
+          waits for a fresh open. To force the latest right now instead, the Settings (⚙) panel has
+          a <b>Check for updates</b> link that reloads the newest version on the spot (your saved
+          progress is kept), behind the same updating screen.
         </p>
         <Subhead>The book &amp; contact</Subhead>
         <p>
@@ -192,6 +203,13 @@ export default function GuidePage() {
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
             release to switch (or just tap to open the menu and tap a mode, as before).
+          </li>
+          <li>
+            So does the Settings gear (⚙): press it and drag straight into the panel — it
+            auto-scrolls when you drag near its top or bottom edge — then release on a setting to
+            change it; the panel closes and the change applies. Releasing on a Year Range field
+            opens the keyboard to type instead, and the theme pickers and the buttons at the foot of
+            the panel keep the panel open.
           </li>
         </UL>
         <p>
@@ -376,12 +394,12 @@ export default function GuidePage() {
           <li>When you set a new best, a small ★ appears next to the value to flag it.</li>
         </UL>
         <Subhead>Hiding stats (Classic, Deduction, Flash)</Subhead>
-        <p className="text-purple-300/70 text-[12px]">
+        <p>
           These casual modes let you tap any stat to hide it. Tapping Score, Accuracy, or Streak
           hides all three; tapping any timing stat hides all three. Score, Accuracy, and Streak keep
           tracking in the background while hidden — re-enabling brings the same numbers back.
         </p>
-        <p className="text-purple-300/70 text-[12px]">
+        <p>
           Timing stats behave differently: timing pauses entirely while hidden — no times are
           recorded. When you turn timing back on, the current date is regenerated if still
           unanswered; if you've already answered wrong, revealed, or shown codes, the date stays
@@ -390,14 +408,14 @@ export default function GuidePage() {
           Stats?" confirmation — tap again within 3 seconds to confirm (turn on and full reset), or
           tap anywhere else to cancel.
         </p>
-        <p className="text-purple-300/70 text-[12px]">
+        <p>
           When Save Stats is off, all stat boxes site-wide (every mode, including AoX) show "—" with
           strikethrough labels, dim, and become non-interactive — toggling timing or scoring is
           disabled until Save Stats is turned back on, which prevents accidental stat desyncs.
           Turning Save Stats on while timing is also on regenerates an unanswered date for a clean
           start.
         </p>
-        <p className="text-purple-300/70 text-[12px]">
+        <p>
           When timing stats are off, leaving and returning to a mode preserves the current question
           exactly as you left it — same date, same answers, codes panel in the same state. In all
           other modes, stats are always visible.
@@ -413,9 +431,7 @@ export default function GuidePage() {
         </p>
         <div className="mt-3 space-y-3">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1.5">
-              Answer Grid
-            </div>
+            <SectionLabel className="mb-1.5">Answer Grid</SectionLabel>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <Kbd>0</Kbd>
@@ -453,9 +469,7 @@ export default function GuidePage() {
             </p>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1.5">
-              Game Actions
-            </div>
+            <SectionLabel className="mb-1.5">Game Actions</SectionLabel>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <Kbd>N</Kbd>
@@ -488,9 +502,7 @@ export default function GuidePage() {
             </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1.5">
-              Overlays
-            </div>
+            <SectionLabel className="mb-1.5">Overlays</SectionLabel>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <Kbd>H</Kbd>
@@ -507,9 +519,7 @@ export default function GuidePage() {
             </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-purple-300/60 mb-1.5">
-              Mode Switching
-            </div>
+            <SectionLabel className="mb-1.5">Mode Switching</SectionLabel>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <Kbd>K</Kbd>
@@ -567,7 +577,8 @@ export default function GuidePage() {
         onToggle={toggle}
       >
         <Lead>
-          The ⚙ menu groups every setting into three categories, with Reset buttons at the bottom.
+          The ⚙ menu groups every setting into three categories, with the Save Defaults and Reset
+          buttons at the bottom.
         </Lead>
         <UL>
           <li>
@@ -583,9 +594,10 @@ export default function GuidePage() {
           </li>
         </UL>
         <p>
-          At the foot of the menu: <b>Reset Settings</b> and <b>Full Reset</b> (see the Data
-          section), your Contact email, the Last Updated timestamp, and the <b>Check for updates</b>{' '}
-          link.
+          At the foot of the menu: <b>Save Defaults</b>, <b>Reset Settings</b> and <b>Full Reset</b>{' '}
+          (see the Data section), your Contact email, the Last Updated timestamp, the{' '}
+          <b>Check for updates</b> link — and, once you've saved your own defaults, a{' '}
+          <b>Clear saved defaults</b> link.
         </p>
         <p className="text-purple-300/70 text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
@@ -871,8 +883,12 @@ export default function GuidePage() {
         </p>
         <UL>
           <li>
-            <b>⚙ Settings</b> — date format, calendar system, year range, the leap / Jan-Feb /
-            Julian chances, Save Stats, and theme.
+            <b>⚙ Settings</b> — date format, answer input (Buttons / Dots), calendar system, year
+            range, the leap / Jan-Feb / Julian chances, Save Stats, and theme.
+          </li>
+          <li>
+            <b>Your saved defaults</b> — the Save Defaults snapshot (next section), which even
+            survives Full Reset.
           </li>
           <li>
             <b>Per-mode setup</b> — Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
@@ -901,20 +917,67 @@ export default function GuidePage() {
           <li>The current tab — the app always opens to Classic.</li>
         </UL>
         <p>
-          <b>Full Reset</b> (below) clears everything that is saved.
+          <b>Full Reset</b> (below) clears everything that is saved — except your saved defaults,
+          which it restores rather than clears.
         </p>
       </GuideSection>
       <GuideSection
         id="reset-settings"
-        title="Reset Settings &amp; Full Reset"
+        title="Save Defaults, Reset Settings &amp; Full Reset"
         openId={open}
         onToggle={toggle}
       >
-        <Lead>Two reset buttons at the bottom of the ⚙ menu — one narrow, one total.</Lead>
-        <Subhead>Reset Settings (bottom-left)</Subhead>
-        <p>Restores everything in the menu to its defaults:</p>
+        <Lead>
+          Three buttons at the foot of the ⚙ menu — save your own defaults, restore the menu, or
+          reset the whole site.
+        </Lead>
+        <Subhead>Save Defaults (left)</Subhead>
+        <p>
+          Makes the current setup <i>your</i> defaults — from then on, the two Reset buttons restore
+          these values instead of the launch ones. One snapshot captures:
+        </p>
+        <UL>
+          <li>Every setting in the ⚙ menu (all of Display — Input included — Dates, and Stats).</li>
+          <li>
+            Four values from the mode screens: AoX run length (N), Flash speed, and both Blitz
+            timers (Per Round and Per Question).
+          </li>
+        </UL>
+        <p>
+          Nothing else from the mode screens is captured — Blitz's Per Round vs Per Question, the
+          Deduction sub-type, Allow Mistakes, One-By-One, and the show/hide stat toggles always
+          reset to their launch values.
+        </p>
+        <UL>
+          <li>
+            Tapping the button opens a confirmation popup where the four mode-screen values can be
+            edited before saving — so you can make, say, a different Flash speed your default
+            without changing the live one. The menu settings are captured exactly as they are.
+            Cancel discards any edits.
+          </li>
+          <li>
+            While anything the snapshot covers differs from your defaults, the closed gear (⚙) shows
+            a small violet bar along its bottom edge, and the Save Defaults button is active; once
+            everything already matches your defaults, the bar disappears and the button dims —
+            nothing new to save.
+          </li>
+          <li>
+            Your saved defaults survive Full Reset — that's the point: Full Reset restores{' '}
+            <i>them</i>. The way back to the launch defaults is the <b>Clear saved defaults</b>{' '}
+            link, shown only while you have saved defaults: it always sits at the foot of the ⚙ menu
+            (below the reset buttons), and the confirmation popup carries the same link. The footer
+            one matters because the Save Defaults button — and with it the popup — dims whenever
+            everything already matches your defaults.
+          </li>
+        </UL>
+        <Subhead>Reset Settings (middle)</Subhead>
+        <p>
+          Restores everything in the menu to your saved defaults — or, if you haven't saved any, to
+          the launch defaults:
+        </p>
         <UL>
           <li>Random Format on, Written MDY</li>
+          <li>Input on Buttons</li>
           <li>Julian on, Julian Chance Random</li>
           <li>Year range 1–10000</li>
           <li>Leap Year Chance Random, Jan/Feb Chance Random</li>
@@ -924,11 +987,11 @@ export default function GuidePage() {
         <p>
           It does <b>not</b> touch mode-specific config outside the menu (AoX N, timer durations,
           Deduction sub-types and toggles) or your stats and history. No confirmation prompt — tap
-          to apply. When every menu setting is already at its default, the button dims and locks
+          to apply. When every menu setting is already at your defaults, the button dims and locks
           since tapping it would have no effect.
         </p>
-        <Subhead>Full Reset (bottom-right)</Subhead>
-        <p>Restores the entire site to its initial launch state:</p>
+        <Subhead>Full Reset (right)</Subhead>
+        <p>Restores the entire site to its launch state:</p>
         <UL>
           <li>
             Wipes all stats, all-time bests (Blitz, Sudden, AoX), Lookup history, and in-progress
@@ -937,8 +1000,10 @@ export default function GuidePage() {
           </li>
           <li>
             Resets every setting and toggle across all modes — both the ⚙ menu and the per-mode
-            toggles (AoX N, timer durations, Deduction sub-types and toggles, Allow Mistakes, Save
-            Stats, Stop Codes, etc.).
+            toggles. The menu settings and the four Save Defaults values (AoX N, Flash speed, both
+            Blitz timers) restore to <i>your</i> saved defaults; everything else (Per Round / Per
+            Question, Deduction sub-types and toggles, Allow Mistakes, One-By-One, the show/hide
+            stat toggles) returns to its launch value. The saved defaults themselves survive.
           </li>
           <li>
             Closes any open overlay (How to Play, ⚙ menu, codes, method breakdown) and switches to
@@ -949,8 +1014,8 @@ export default function GuidePage() {
           Requires two taps to confirm: tap once and the button changes to "Confirm?"; tap again to
           fire. Auto-cancels after a few seconds, when you close ⚙, or if you tap any other control.
           When every setting, toggle, stat, best, history entry, and live state across the entire
-          site is already at its launch value, the button dims and locks since tapping it would have
-          no effect.
+          site is already where Full Reset would put it, the button dims and locks since tapping it
+          would have no effect.
         </p>
       </GuideSection>
       <Divider label="Modes" />
@@ -1048,10 +1113,10 @@ export default function GuidePage() {
         <Subhead>Day</Subhead>
         <p>
           Seven consecutive days are shown, each with a unique day code. The correct day can appear
-          in any position. <i>October 1582 with Julian on:</i> days 5–14 don't exist (the Gregorian
-          transition skipped them), so the valid days are 1–4 and 15–31. When the window can't fit
-          seven days on one side of the gap, it shrinks to four — codes 1, 2, 3, 4 repeat at days
-          15, 16, 17, 18, so a five-day window crossing the gap would have a duplicate code.
+          in any position. <i>October 1582:</i> days 5–14 don't exist (the Gregorian transition
+          skipped them), so the valid days are 1–4 and 15–31. When the window can't fit seven days
+          on one side of the gap, it shrinks to four — codes 1, 2, 3, 4 repeat at days 15, 16, 17,
+          18, so a five-day window crossing the gap would have a duplicate code.
         </p>
         <Subhead>Month</Subhead>
         <p>
