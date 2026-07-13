@@ -73,7 +73,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     const p = useModePrefs.getState()
     p.setFlashMs(800)
     p.setBlitzSec(90)
-    p.setBlitzQSec(10)
+    p.setBlitzQSec(15) // every captured value diverges from factory (blitzQSec launches at 10)
     p.setAoxN('25')
     p.setBlitzPerQ(true) // non-capturable — must reset to factory
     p.setDedType('month') // non-capturable — must reset to factory
@@ -91,7 +91,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     const r = useModePrefs.getState()
     expect(r.flashMs).toBe(800)
     expect(r.blitzSec).toBe(90)
-    expect(r.blitzQSec).toBe(10)
+    expect(r.blitzQSec).toBe(15)
     expect(r.aoxN).toBe('25')
     expect(r.blitzPerQ).toBe(MODE_PREFS_DEFAULTS.blitzPerQ) // factory, not captured
     expect(r.dedType).toBe(MODE_PREFS_DEFAULTS.dedType) // factory, not captured
@@ -128,9 +128,9 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     act(() => fireEvent.change(nField(), { target: { value: '25' } }))
     act(() => fireEvent.click(btn('Cancel')))
     expect(useUserDefaults.getState().saved).toBeNull() // nothing saved
-    expect(useModePrefs.getState().flashMs).toBe(500) // live store never touched
+    expect(useModePrefs.getState().flashMs).toBe(2000) // live store never touched (factory default)
     openPopup() // re-seeded fresh from the live stores — the cancelled edits are gone
-    expect(flashSlider().value).toBe('500')
+    expect(flashSlider().value).toBe('2000')
     expect(nField().value).toBe('10')
     act(() => fireEvent.change(flashSlider(), { target: { value: '1200' } }))
     act(() => fireEvent.change(nField(), { target: { value: '25' } }))
@@ -138,13 +138,29 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(useUserDefaults.getState().saved.prefs).toEqual({
       flashMs: 1200,
       blitzSec: 60,
-      blitzQSec: 5,
+      blitzQSec: 10,
       aoxN: '25',
     })
     expect(useUserDefaults.getState().saved.settings).toEqual(
       expect.objectContaining({ minY: 1, maxY: 10000 }), // panel captured as-is at open
     )
-    expect(useModePrefs.getState().flashMs).toBe(500) // saving defaults never edits live prefs
+    expect(useModePrefs.getState().flashMs).toBe(2000) // saving defaults never edits live prefs
+  })
+
+  it('the popup sliders seed UNCLAMPED from live prefs beyond the pre-Round-2 maxes (ranges stay in lockstep with the mode screens)', () => {
+    // The popup seeds from the LIVE stores, so its mirrors must accept every value the widened
+    // mode-screen ranges can commit — a 4000ms Flash fed into a max=3000 mirror would clamp on
+    // the first drag and silently corrupt the pending snapshot.
+    const p = useModePrefs.getState()
+    p.setFlashMs(4000) // > the old 3000 cap
+    p.setBlitzSec(300) // > the old 180 cap
+    p.setBlitzQSec(25) // > the old 20 cap
+    mountApp()
+    openSettings()
+    openPopup()
+    expect(flashSlider().value).toBe('4000')
+    expect(screen.getByRole('slider', { name: 'Blitz round timer' }).value).toBe('300')
+    expect(screen.getByRole('slider', { name: 'Blitz question timer' }).value).toBe('25')
   })
 
   it("the popup's N field applies the AoX validation trio (digits only, clamp on commit, Escape revert)", () => {
@@ -195,7 +211,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(isDimmed(btn('Save Defaults'))).toBe(true)
     // The subtle case: live returns to FACTORY but saved says 900 — that IS a divergence from
     // the effective defaults, so the button stays live (re-saving factory is meaningful).
-    act(() => useModePrefs.getState().setFlashMs(500))
+    act(() => useModePrefs.getState().setFlashMs(2000))
     expect(isDimmed(btn('Save Defaults'))).toBe(false)
     act(() => fireEvent.click(gear())) // close the panel → the indicator bar shows again
     expect(gear().className).toContain('gear-modified')
@@ -288,9 +304,23 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     // Flush jsdom's queued history traversals first: earlier tests' UI closes each ran
     // popOverlay's guarded history.back(), whose to-be-ignored popstate fires on a LATER task —
-    // unflushed, a stale ignorePop would swallow the first synthetic Back below.
+    // unflushed, a stale ignorePop would swallow the first synthetic Back below. A single
+    // setTimeout(0) tick is NOT enough under full-suite CPU load (a flushed popstate can queue
+    // another traversal), so flush until QUIESCENT: two consecutive ticks with zero popstate
+    // events (bounded at 20 ticks).
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 0))
+      let quiet = 0
+      let seen = 0
+      const count = () => {
+        seen++
+      }
+      window.addEventListener('popstate', count)
+      for (let i = 0; i < 20 && quiet < 2; i++) {
+        seen = 0
+        await new Promise((r) => setTimeout(r, 0))
+        quiet = seen === 0 ? quiet + 1 : 0
+      }
+      window.removeEventListener('popstate', count)
     })
     openSettings()
     openPopup()

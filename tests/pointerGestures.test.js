@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 //
 // pointerGestures (Q4 + Q5) — the pure decisions + latch/suppression contracts behind press-drag-release
-// input. resolveRelease / resolveTriggerRelease / menuFor / bandDirection / scrollDelta are pure (or
-// layout-free DOM reads) and tested directly; the controller's pointer latch + click suppression are
-// tested by installing it and dispatching synthetic pointer events with a stubbed elementFromPoint. The
-// full wiring (real pointer drags, hit-testing, edge auto-scroll feel) is verified on-device — jsdom has
-// no layout engine, so elementFromPoint/getBoundingClientRect don't work there.
+// input. resolveRelease / resolveTriggerRelease / nextHilite / menuFor / bandDirection / scrollDelta are
+// pure (or layout-free DOM reads) and tested directly; the controller's pointer latch, click suppression
+// and group-drag hilite are tested by installing it and dispatching synthetic pointer events with a
+// stubbed elementFromPoint. The full wiring (real pointer drags, hit-testing, edge auto-scroll feel) is
+// verified on-device — jsdom has no layout engine, so elementFromPoint/getBoundingClientRect don't work
+// there.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   resolveRelease,
   resolveTriggerRelease,
+  nextHilite,
   menuFor,
   bandDirection,
   scrollDelta,
@@ -64,6 +66,26 @@ describe('pointerGestures.resolveRelease — drag-to-select (answer-grid group)'
       suppressStart: true,
       activate: null,
     })
+  })
+})
+
+describe('pointerGestures.nextHilite — the group ring appears only after leaving the pressed option', () => {
+  it('still on the start option (never left) → no hilite: a plain tap never flashes the ring', () => {
+    const start = el()
+    expect(nextHilite(start, start, false)).toEqual({ hasLeft: false, show: null })
+  })
+  it('over ANOTHER option → left the start + hilite the member under the pointer', () => {
+    const start = el()
+    const other = el()
+    expect(nextHilite(other, start, false)).toEqual({ hasLeft: true, show: other })
+  })
+  it('off-grid (member null) COUNTS as leaving — armed, but nothing to hilite yet', () => {
+    const start = el()
+    expect(nextHilite(null, start, false)).toEqual({ hasLeft: true, show: null })
+  })
+  it('returning to the start AFTER leaving hilites it (a deliberate re-selection)', () => {
+    const start = el()
+    expect(nextHilite(start, start, true)).toEqual({ hasLeft: true, show: start })
   })
 })
 
@@ -342,6 +364,26 @@ describe('pointerGestures controller — pointer latch + click suppression', () 
     document.body.dispatchEvent(ptr('pointerdown', { pointerType: 'mouse' })) // a normal next press clears
     a.click()
     expect(aClicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('group drag hilite: nothing on press or while resting on the pressed option; appears after leaving and follows the finger back', () => {
+    const grid = domEl('div', { 'data-answer-grid': '' }, document.body)
+    const a = domEl('button', {}, grid)
+    const b = domEl('button', {}, grid)
+    hit = a
+    a.dispatchEvent(ptr('pointerdown'))
+    expect(a.classList.contains('drag-target')).toBe(false) // no ring flash on press
+    document.dispatchEvent(ptr('pointermove'))
+    expect(a.classList.contains('drag-target')).toBe(false) // resting on the start: still none
+    hit = b
+    document.dispatchEvent(ptr('pointermove'))
+    expect(b.classList.contains('drag-target')).toBe(true) // left the start → the member under the finger
+    hit = a
+    document.dispatchEvent(ptr('pointermove'))
+    expect(a.classList.contains('drag-target')).toBe(true) // returning to the start AFTER leaving hilites it
+    expect(b.classList.contains('drag-target')).toBe(false)
+    document.dispatchEvent(ptr('pointerup'))
+    expect(a.classList.contains('drag-target')).toBe(false) // release always clears the ring
   })
 
   it('trigger flow: aria-controls pairs the menu; drag-release clicks the member and drag-dismiss bubbles from it', () => {

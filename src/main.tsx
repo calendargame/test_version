@@ -15,6 +15,7 @@ import {
 import { DAY, fmtYear, fmt, fmtPartial, numericFormatOf } from './lib/format.js'
 import Expander from './components/Expander.jsx'
 import StatPanel from './components/StatPanel.jsx'
+import SliderValueEditor from './components/SliderValueEditor.jsx'
 import { NewBestStar, SectionLabel } from './components/primitives.jsx'
 import CustomSelect from './components/CustomSelect.jsx'
 import GuidePage from './components/GuidePage.jsx'
@@ -24,6 +25,7 @@ import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
 import { DOT_CELL } from './lib/dotLayout.js'
+import { sharedFitScale } from './lib/statFit.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
 import type { InputStyle, SettingsValues } from './store/settings.js'
@@ -476,7 +478,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-12T18:21:00Z');
+    const DEPLOY_TS=new Date('2026-07-13T22:20:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
     // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
@@ -1307,7 +1309,7 @@ interface DedOpts {
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
           <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
-          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="3000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/2900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><span className="tabular-nums text-xs w-10 shrink-0 text-right">{fmtFlashT(flashMs)}</span></div></div>
+          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={flashMs} min={100} max={5000} snap={100} disabled={active} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-10" onCommit={v=>{setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}}/></div></div>
           <div className="mt-5">
             <div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1">{fmtFlashT(flashRemainMs)}</div><div className="bar"><span ref={flashBarRef} style={{width:"100%"}}></span></div></div>
             <div className="mt-4 rounded-2xl panel p-4">
@@ -1609,7 +1611,7 @@ interface DedOpts {
             <button type="button" onClick={toggleAllowMistakes} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
             <button type="button" onClick={togglePerQ} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border btn-solid border-transparent${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>{perQ?"Per Question":"Per Round"}</button>
           </div>
-          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="180" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/170*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><span className="tabular-nums text-xs w-14 shrink-0 text-right">{fmtBlitzT(blitzSec)}</span></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="20" step="1" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/19*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><span className="tabular-nums text-xs w-8 shrink-0 text-right">{qSec}s</span></div>)}</div>
+          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-14" onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-8" onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
           <div className="mt-5">
             {!perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={blitzTimeRef}>{fmtBlitzT(blitzSec)}</span></div><div className="bar"><span ref={blitzBarRef} style={{width:"100%"}}></span></div></div>)}
             {perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={suddenTimeRef}>{qSec}s</span></div><div className="bar"><span ref={suddenBarRef} style={{width:"100%"}}></span></div></div>)}
@@ -2284,6 +2286,47 @@ interface DedOpts {
         ro.observe(el);
         return()=>{el.removeEventListener('scroll',evaluate);ro.disconnect();};
       },[settingsOpen]);
+      // Footer-button caption auto-fit (Round-2) — the StatPanel value-fit pattern applied to the
+      // Save Defaults / Reset Settings / Full Reset trio: on a narrow phone the three flex-1 buttons
+      // can get too tight for their captions, so ONE shared font-size (never per-button — unequal
+      // caption sizes across a matched row read as a glitch) shrinks all three together. Naturals
+      // come from hidden STATIC twins of the widest caption set ("Save Defaults" / "Reset Settings" /
+      // "Full Reset"), never the live captions — the Full Reset → "Confirm?" swap would otherwise
+      // shrink the measurement and jiggle the whole row's size while arming. The math is
+      // lib/statFit's sharedFitScale (min ratio, capped at 1); an 11px floor keeps the captions
+      // legible over cosmetic fit, and overflow-hidden on the buttons (below) contains the extreme
+      // remainder. In jsdom every width is 0 → scale 1 → no-op (the statFit convention).
+      const footerFitRef=useRef<HTMLDivElement | null>(null);
+      const fitFooterBtns=()=>{
+        const row=footerFitRef.current;if(!row)return;
+        const labels=Array.from(row.querySelectorAll<HTMLElement>('[data-fitlabel]'));
+        const twins=Array.from(row.querySelectorAll<HTMLElement>('[data-fittwin]'));
+        if(labels.length===0||twins.length===0)return;
+        const naturals=twins.map(t=>t.scrollWidth);
+        const avails=labels.map(l=>{const btn=l.parentElement;if(!btn)return 0;const cs=getComputedStyle(btn);return btn.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);});
+        const scale=sharedFitScale(naturals,avails);
+        // Base font off a STATIC twin, never a live caption: the captions carry the inline
+        // fontSize the PREVIOUS pass set, so reading them would compound the shrink on every
+        // re-run of the dep-less effect (14·s, 14·s², … → pinned at the floor). Same feedback
+        // loop StatPanel guards against by resetting before measuring (StatPanel.tsx fitAll);
+        // here the twin — same text classes, never inline-sized — is the clean base.
+        const base=parseFloat(getComputedStyle(twins[0]).fontSize)||0;
+        const px=scale<1&&base>0?Math.max(11,base*scale)+"px":"";
+        labels.forEach(l=>{l.style.fontSize=px;});
+      };
+      // Dep-less like StatPanel's: cheap (3 spans), and the trio row only exists while settings is
+      // open (fitFooterBtns bails on the null ref otherwise). Re-observe on open/close; a web-font
+      // swap changes the natural widths, so document.fonts.ready refits too.
+      useLayoutEffect(()=>{fitFooterBtns();});
+      useEffect(()=>{
+        const row=footerFitRef.current;
+        if(!row||typeof ResizeObserver==='undefined')return;
+        const ro=new ResizeObserver(()=>fitFooterBtns());
+        ro.observe(row);
+        let cancelled=false;
+        if(typeof document!=='undefined'&&document.fonts?.ready)document.fonts.ready.then(()=>{if(!cancelled)fitFooterBtns();});
+        return()=>{cancelled=true;ro.disconnect();};
+      },[settingsOpen]);
       // Settings popover click-outside handler. Closes settings when the user taps
       // anywhere outside three regions: the gear button itself (settingsRef), the
       // popover content (settingsPopoverRef), and the mode CustomSelect wrapper
@@ -2550,33 +2593,37 @@ interface DedOpts {
           <SectionLabel>Display</SectionLabel>
           <div className="text-xs text-purple-200/80">Date Format</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
+          {/* The Written/Numeric format pickers + the Input picker below use the chance-row pattern
+              (individually rounded gap-separated buttons, selected = btn-solid) rather than a fused
+              segmented control: a fused group's overflow-hidden clipped the press-drag ring square on
+              the inner buttons, while each button's own rounded-xl lets the ring follow every corner. */}
           <div className={`flex gap-2 ${randomFormat?"opacity-60 pointer-events-none":""}`}>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
-              <div className="flex border surface-toggle rounded-xl overflow-hidden">
-                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${dateFormat==='written-mdy'?"btn-solid text-white":"text-purple-100/80"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-2 py-1 text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid text-white":"text-purple-100/80"}`}>DMY</button>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='written-mdy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='written-dmy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>DMY</button>
               </div>
             </div>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
-              <div className="flex border surface-toggle rounded-xl overflow-hidden">
-                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${dateFormat==='numeric-mdy'?"btn-solid text-white":"text-purple-100/80"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${dateFormat==='numeric-dmy'?"btn-solid text-white":"text-purple-100/80"}`}>DMY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-2 py-1 text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid text-white":"text-purple-100/80"}`}>YMD</button>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-mdy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-dmy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>DMY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-ymd'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>YMD</button>
               </div>
             </div>
           </div>
           {/* Input — Buttons / Dots (the logo's 7-dot answer layout). Locks/dims in Deduction (answers
               aren't weekdays; value preserved), like Julian/Leap-Year Chance when they don't apply. */}
           <div className="text-xs text-purple-200/80 pt-1">Input</div>
-          <div className={`flex border surface-toggle rounded-xl overflow-hidden${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
-            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium border-r border-(--sbtn-bd) ${inputStyle==='buttons'?"btn-solid text-white":"text-purple-100/80"}`}>Buttons</button>
-            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-2 py-1 text-xs font-medium ${inputStyle==='dots'?"btn-solid text-white":"text-purple-100/80"}`}>Dots</button>
+          <div className={`flex gap-1.5${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='buttons'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>Buttons</button>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>Dots</button>
           </div>
           <div className="text-xs text-purple-200/80 pt-1">Theme</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
-          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} openUp ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} openUp ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} openUp ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
+          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Dates</SectionLabel>
@@ -2613,31 +2660,45 @@ interface DedOpts {
         </div>
         </div>
         <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
-          <div className="flex gap-2">
+          <div ref={footerFitRef} className="flex gap-2">
+            {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
+                full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
+                absolute keeps them out of the flex row; same text classes as the buttons. */}
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Save Defaults</span>
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Reset Settings</span>
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Full Reset</span>
             {/* Save Defaults (Q7): constructive → btn-solid purple (the Begin-button language), keeping
                 rose exclusively for the two destructive neighbors. Dims when live state already equals
-                the saved defaults (factory when none saved) — nothing new to save. */}
-            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium${!settingsModified?" opacity-60 pointer-events-none":""}`}>Save Defaults</button>
-            <button type="button" onClick={resetSettings} className={`flex-1 ${RESET_BTN_CLASS} ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}>Reset Settings</button>
-            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${RESET_BTN_CLASS}${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}>{fullResetArmed?"Confirm?":"Full Reset"}</button>
+                the saved defaults (factory when none saved) — nothing new to save. Each caption sits in
+                a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
+                wrapping; overflow-hidden on the button contains the pre-fit paint). */}
+            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
+            <button type="button" onClick={resetSettings} className={`flex-1 ${RESET_BTN_CLASS} overflow-hidden ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
+            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>
         <div data-drag-stay className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
-          <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text">dayoftheweekcalculation@gmail.com</a></div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
-            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
-            <button type="button" onClick={onCheckUpdates} className="underline select-none">Check for updates</button>
-          </div>
+          {/* All three footer text links carry rounded-md px-1 -mx-1: the padding gives the press-drag
+              ring breathing room around the text and the radius rounds its corners (vs a square outline
+              hugging the glyphs); the negative margin cancels the padding so the text keeps its exact
+              flow position. */}
           {/* The always-available way back to factory semantics (Q7). The Save Defaults popup carries a
               matching link, but the popup sits behind the Save Defaults button, which dims + locks
               exactly when live == saved — at steady state the popup link is unreachable, so this footer
-              link (the same muted tier as Check for updates above) is the guaranteed path. Shown only
-              while saved defaults exist. A plain immediate action, no arm/confirm step: it only forgets
-              the snapshot — live settings are untouched, and a re-save recreates it in two taps. It
-              inherits the footer's data-drag-stay, so the panel stays open and the link's own
-              disappearance is the visible feedback. */}
-          {savedDefaults!==null&&(<div><button type="button" onClick={clearUserDefaults} className="underline select-none">Clear saved defaults</button></div>)}
+              link (the same muted tier as Check for updates below) is the guaranteed path. FIRST link
+              row, directly under the button trio (Round-2): it's the only actionable setting in this
+              block, and it belongs to the trio's story — below it the footer decays into contact info
+              and metadata. Shown only while saved defaults exist. A plain immediate action, no
+              arm/confirm step: it only forgets the snapshot — live settings are untouched, and a
+              re-save recreates it in two taps. It inherits the footer's data-drag-stay, so the panel
+              stays open and the link's own disappearance is the visible feedback. */}
+          {savedDefaults!==null&&(<div><button type="button" onClick={clearUserDefaults} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button></div>)}
+          <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
+            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
+            <button type="button" onClick={onCheckUpdates} className="underline select-none rounded-md px-1 -mx-1">Check for updates</button>
+          </div>
         </div>
       </div>);
       // Save Defaults confirmation popup (Q7). PORTALED to #root — deliberately OUTSIDE the
@@ -2648,7 +2709,9 @@ interface DedOpts {
       // for the settings click-outside handler above; the scrim itself cancels the POPUP only
       // (target===currentTarget, so card clicks never do), and Escape + Android Back + any
       // settings close also cancel (the effects above). Edits touch ONLY the pending snapshot:
-      // the three sliders mirror the mode screens' (same ranges/steps/--rng-fill/readouts) and
+      // the three sliders mirror the mode screens' (same ranges/steps/--rng-fill, and the same
+      // tap-to-type SliderValueEditor readouts — the popup seeds from the LIVE prefs, so its
+      // ranges must stay a superset of every committable value) and
       // the N field mirrors the AoX input's validation trio — digits only while typing (stricter
       // than the AoX field's raw writes: the pending snapshot never holds junk), and blur, Enter
       // and Escape all normalize-commit with the AoX clamp (2–1000, fallback 10) — Escape on the
@@ -2684,15 +2747,15 @@ interface DedOpts {
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Flash speed</div>
-              <div className="flex items-center gap-2"><input type="range" min="100" max="3000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/2900*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-10 shrink-0 text-right">{fmtFlashT(pendPrefs.flashMs)}</span></div>
+              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-10" onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Blitz round timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="10" max="180" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/170*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-14 shrink-0 text-right">{fmtBlitzT(pendPrefs.blitzSec)}</span></div>
+              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-14" onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Blitz question timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="1" max="20" step="1" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/19*100)+"%"} as React.CSSProperties} className="flex-1"/><span className="tabular-nums text-xs w-8 shrink-0 text-right">{pendPrefs.blitzQSec}s</span></div>
+              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-8" onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
             </div>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-purple-100/80">Cancel</button>

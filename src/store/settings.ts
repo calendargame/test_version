@@ -72,8 +72,10 @@ export type SettingsState = SettingsValues & {
 }
 
 // The launch defaults — single source of truth, reused by resetSettings().
+// randomFormat launches OFF (Round-2, 2026-07-12, owner-ratified): a newcomer sees one
+// consistent format (Written MDY) instead of five rotating ones; Random stays one tap away.
 export const SETTINGS_DEFAULTS: SettingsValues = {
-  randomFormat: true,
+  randomFormat: false,
   dateFormat: 'written-mdy',
   inputStyle: 'buttons',
   useJulian: true,

@@ -81,13 +81,17 @@ body{background:var(--bg1);color:var(--body-color)}
 #root{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;overflow:hidden}
 /* Q3 document scroll — HtP only. While <html> carries data-doc-scroll (App sets it in guide
    mode, nowhere else) the three clamps above are released and the DOCUMENT becomes the
-   scroller: html scrolls vertically (overflow-x stays hidden from the shorthand above;
-   overscroll-behavior:none is kept — it stops pull-to-refresh chaining without blocking the
-   status-bar tap), body unhides, and #root returns to normal flow so its content height
-   drives the document scroll range. Every other mode keeps the locked app-like architecture
-   untouched. */
+   scroller: html scrolls vertically (overflow-x stays hidden from the shorthand above), body
+   unhides, and #root returns to normal flow so its content height drives the document scroll
+   range. VERTICAL overscroll flips none → contain: `none` doesn't just block pull-to-refresh —
+   since iOS 16.4 it also kills the rubber-band bounce itself, leaving the page dead-stopped at
+   its edges. `contain` restores the native bounce-back while still blocking refresh/scroll
+   chaining (pull-to-refresh can never fire — the owner's hard constraint; `auto` would allow
+   it). -y ONLY: the horizontal axis keeps the shorthand's none. Neither value blocks the
+   status-bar tap. Every other mode keeps the locked app-like architecture untouched. */
 html[data-doc-scroll]{overflow-y:auto}
 html[data-doc-scroll] body{overflow:visible}
+html[data-doc-scroll],html[data-doc-scroll] body{overscroll-behavior-y:contain}
 html[data-doc-scroll] #root{position:static;height:auto;overflow:visible}
 /* Disable text selection globally to prevent accidental selection during rapid
    practice taps (long-press-and-drag, double-tap, etc.). Two specific opt-ins:
@@ -177,7 +181,8 @@ button:focus,select:focus{outline:none}
 .btn-correct-persist{background:rgba(21,128,61,.95)}
 /* Q4 drag-to-select: answer grids are "selection groups" — touch-action:none so a drag across the grid
    selects the option under your finger instead of scrolling the page. .drag-target is toggled (by the
-   pointer controller, lib/pointerGestures) on the option currently under your finger during a drag — a
+   pointer controller, lib/pointerGestures) on the option currently under your finger during a drag —
+   only once you've dragged OFF the pressed option (a plain tap never flashes it; nextHilite) — a
    subtle theme-tinted ring (--drag-ring, defined per theme in the variable blocks above; no brightness
    lift — it read too loud, and inverted on the light themes where brightening a light button makes it
    LESS visible) so it reads as the pending choice before you release. */
@@ -194,6 +199,11 @@ button:focus,select:focus{outline:none}
    surface with dark text (CustomSelect's portaled listbox), so the per-theme ring tuned for the app
    surfaces would vanish on it — pin its ring to the fixed dark brand accent in every theme. */
 [role="listbox"][data-select-group]{--drag-ring:rgba(120,53,175,.5)}
+/* Selected/answered buttons carry theme-INVARIANT solid fills (brand purple / persist green / persist
+   red) that swallow the theme-tinted ring — on those the ring flips to near-white so the pending choice
+   still reads on every theme (same inset outline, only the color changes; the .dot-btn box-shadow
+   variant below reads the same var, so dots are covered too). */
+.btn-solid.drag-target,.btn-correct-persist.drag-target,.btn-wrong-persist.drag-target{--drag-ring:rgba(255,255,255,.85)}
 /* 7-dot day-of-week input (Settings → Input → Dots) — the logo's 7-position layout as an alternate
    answer grid for the weekday modes (Classic/Flash/Blitz/AoX). .dot-box keeps the SAME height as the
    4-row labelled-button grid so switching layouts never shrinks the answer panel; the square 3×3

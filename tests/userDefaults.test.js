@@ -18,7 +18,9 @@ import { MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 // tests/saveDefaults.dom.test.jsx.
 
 const CUSTOM_SETTINGS = { ...SETTINGS_DEFAULTS, leapChance: '75', minY: 1600, useJulian: false }
-const CUSTOM_PREFS = { flashMs: 800, blitzSec: 90, blitzQSec: 10, aoxN: '25' }
+// Every CUSTOM value diverges from MODE_PREFS_DEFAULTS (blitzQSec 15 ≠ the factory 10) so each
+// comparison below genuinely proves saved-vs-factory, not an accidental equality.
+const CUSTOM_PREFS = { flashMs: 800, blitzSec: 90, blitzQSec: 15, aoxN: '25' }
 const FACTORY_PREFS = {
   flashMs: MODE_PREFS_DEFAULTS.flashMs,
   blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
@@ -103,7 +105,7 @@ describe('userDefaults pure helpers', () => {
     // Each field diverging alone flips the answer.
     expect(prefsMatchDefaults({ ...FACTORY_PREFS, flashMs: 800 }, FACTORY_PREFS)).toBe(false)
     expect(prefsMatchDefaults({ ...FACTORY_PREFS, blitzSec: 90 }, FACTORY_PREFS)).toBe(false)
-    expect(prefsMatchDefaults({ ...FACTORY_PREFS, blitzQSec: 10 }, FACTORY_PREFS)).toBe(false)
+    expect(prefsMatchDefaults({ ...FACTORY_PREFS, blitzQSec: 15 }, FACTORY_PREFS)).toBe(false)
     expect(prefsMatchDefaults({ ...FACTORY_PREFS, aoxN: '25' }, FACTORY_PREFS)).toBe(false)
   })
 })

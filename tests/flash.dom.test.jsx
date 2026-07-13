@@ -128,7 +128,7 @@ describe('Flash — characterization (batch 1: the brief-reveal flow)', () => {
       fireEvent.click(ctrl('Begin'))
     })
     act(() => {
-      vi.advanceTimersByTime(600) // past the default 500ms reveal
+      vi.advanceTimersByTime(2100) // past the default 2000ms reveal
     })
     expect(dateDisplayText()).toBe('…')
   })
@@ -294,7 +294,7 @@ describe('Flash — bug fixes (Reveal availability + Show Codes freeze)', () => 
       fireEvent.click(ctrl('Show Codes'))
     })
     const frozenCountdown = flashCountdownText()
-    // Advance WELL past the 500ms reveal window. A still-pending hide-timer would fire here:
+    // Advance WELL past the 2000ms reveal window. A still-pending hide-timer would fire here:
     // flip the phase to "hide", set the countdown to 0, and glitch the main date to "…".
     act(() => {
       vi.advanceTimersByTime(5000)

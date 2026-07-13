@@ -19,7 +19,7 @@ describe('settings store', () => {
     const s = useSettings.getState()
     expect(s.dateFormat).toBe('written-mdy')
     expect(s.inputStyle).toBe('buttons')
-    expect(s.randomFormat).toBe(true)
+    expect(s.randomFormat).toBe(false) // launches OFF (Round-2): newcomers see ONE consistent format
     expect(s.useJulian).toBe(true)
     expect(s.julianChance).toBe('random')
     expect(s.minY).toBe(1)

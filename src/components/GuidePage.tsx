@@ -211,6 +211,10 @@ export default function GuidePage() {
             opens the keyboard to type instead, and the theme pickers and the buttons at the foot of
             the panel keep the panel open.
           </li>
+          <li>
+            Timer sliders (Flash speed and both Blitz timers) — tap the value beside the slider to
+            type an exact number of seconds instead of dragging.
+          </li>
         </UL>
         <p>
           It all works the same way with a mouse. The weekday answer grid comes in two layouts —
@@ -595,9 +599,9 @@ export default function GuidePage() {
         </UL>
         <p>
           At the foot of the menu: <b>Save Defaults</b>, <b>Reset Settings</b> and <b>Full Reset</b>{' '}
-          (see the Data section), your Contact email, the Last Updated timestamp, the{' '}
-          <b>Check for updates</b> link — and, once you've saved your own defaults, a{' '}
-          <b>Clear saved defaults</b> link.
+          (see the Data section); directly under them — once you've saved your own defaults — a{' '}
+          <b>Clear saved defaults</b> link; then your Contact email, the Last Updated timestamp, and
+          the <b>Check for updates</b> link.
         </p>
         <p className="text-purple-300/70 text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
@@ -976,7 +980,7 @@ export default function GuidePage() {
           the launch defaults:
         </p>
         <UL>
-          <li>Random Format on, Written MDY</li>
+          <li>Random Format off, Written MDY</li>
           <li>Input on Buttons</li>
           <li>Julian on, Julian Chance Random</li>
           <li>Year range 1–10000</li>
@@ -1193,8 +1197,8 @@ export default function GuidePage() {
         <Lead>The date is shown briefly, then hidden — answer from memory.</Lead>
         <UL>
           <li>
-            The date is revealed for 0.1s–3.0s (default 0.5s, adjustable via the slider) then
-            hidden.
+            The date is revealed for 0.1s–5.0s (default 2.0s; drag the slider or tap its value to
+            type) then hidden.
           </li>
           <li>
             Reset Stats clears your stats and question history. Mid-question, Reset Stats always
@@ -1219,10 +1223,11 @@ export default function GuidePage() {
           </li>
           <li>
             <b>Per Round / Per Question</b> — tap to switch. Per Round uses a single countdown for
-            the whole round (10s–3m, default 60s). Per Question gives each question its own
-            countdown (1s–20s, default 5s); running out of time ends the round. Per Question always
-            enforces no mistakes: tapping Per Question auto-disables Allow Mistakes, and tapping
-            Allow Mistakes on while in Per Question auto-switches back to Per Round.
+            the whole round (10s–5m, default 60s). Per Question gives each question its own
+            countdown (1s–30s, in half-seconds, default 10s); running out of time ends the round.
+            Adjust either with its slider or tap the value to type. Per Question always enforces no
+            mistakes: tapping Per Question auto-disables Allow Mistakes, and tapping Allow Mistakes
+            on while in Per Question auto-switches back to Per Round.
           </li>
         </UL>
         <Subhead>Ending a round &amp; Override</Subhead>

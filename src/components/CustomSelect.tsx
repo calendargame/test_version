@@ -12,7 +12,7 @@ import { useBackButton } from './useBackButton.js'
 // as "inside".
 //
 // ⚠ STABILITY NOTE: the portal positioning (measurePanel) and open-direction
-// logic (handleToggle + the openUp override) were tuned against iOS Safari over
+// logic (handleToggle's space-based flip) were tuned against iOS Safari over
 // several attempts and are QA-confirmed working. They look like ordinary
 // geometry but are device-sensitive — ALWAYS re-verify on iPhone Safari
 // (browser + PWA) after editing anything here.
@@ -20,7 +20,9 @@ import { useBackButton } from './useBackButton.js'
 // Props: value, onChange, options [{value,label}], className (trigger),
 // wrapperClassName (outer relative div), ariaLabel, wrapperRef (forwarded to the
 // wrapper so callers can treat it like the old <select> ref), showChevron, and
-// openUp (force upward — used by the theme selects at the bottom of Settings).
+// pressDrag (press-drag-select, documented at the prop below). Every instance
+// uses the space-based auto-flip: down when the panel fits below, up only when
+// it doesn't and there's more room above.
 //
 // Extracted from main.jsx in Stage C, Step 4d (verbatim; the only change is
 // ReactDOM.createPortal → the directly-imported createPortal — same function).
@@ -45,7 +47,6 @@ export default function CustomSelect({
   ariaLabel,
   wrapperRef,
   showChevron = false,
-  openUp = false,
   pressDrag = false,
 }: {
   value: string
@@ -56,7 +57,6 @@ export default function CustomSelect({
   ariaLabel?: string
   wrapperRef?: RefObject<HTMLDivElement | null>
   showChevron?: boolean
-  openUp?: boolean
   // Q5: enable press-drag-select (the mode selector). The trigger toggles on POINTERDOWN (so a press can
   // drag straight into the just-opened menu and release on an option to pick it — handled by the global
   // pointer controller, lib/pointerGestures: the data-select-trigger marker starts the gesture and the
@@ -113,17 +113,12 @@ export default function CustomSelect({
   // Measurement only happens on open (close is cheap).
   const handleToggle = () => {
     if (!open && ref.current) {
-      if (openUp) {
-        // Caller forces upward (theme selects — always room above them).
-        openUpwardRef.current = true
-      } else {
-        const rect = ref.current.getBoundingClientRect()
-        const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight
-        const spaceBelow = vh - rect.bottom - 16
-        const spaceAbove = rect.top - 16
-        const estimatedHeight = options.length * 45 + 10
-        openUpwardRef.current = spaceBelow < estimatedHeight && spaceAbove > spaceBelow
-      }
+      const rect = ref.current.getBoundingClientRect()
+      const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight
+      const spaceBelow = vh - rect.bottom - 16
+      const spaceAbove = rect.top - 16
+      const estimatedHeight = options.length * 45 + 10
+      openUpwardRef.current = spaceBelow < estimatedHeight && spaceAbove > spaceBelow
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the
@@ -310,7 +305,10 @@ export default function CustomSelect({
             role="listbox"
             data-select-group={pressDrag || undefined}
             aria-label={ariaLabel}
-            className="rounded-2xl overflow-hidden"
+            // p-1 + the options' rounded-xl keep the drag-ring CONCENTRIC: the 12px inner radius
+            // plus the 4px inset sits inside the 16px outer radius, so the ring is never clipped
+            // by overflow-hidden and all four corners of the first/last options stay round.
+            className="rounded-2xl overflow-hidden p-1"
             style={{
               position: 'absolute',
               right: panelPos.right,
@@ -338,7 +336,7 @@ export default function CustomSelect({
                   onChange(opt.value)
                   closeAndFocus()
                 }}
-                className={`w-full text-left pl-4 pr-8 py-3 text-[15px] flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
+                className={`w-full text-left rounded-xl pl-4 pr-4 py-3 text-[15px] flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
                 style={{ color: '#1a1a1a', whiteSpace: 'nowrap' }}
               >
                 <span

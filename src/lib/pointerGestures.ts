@@ -9,10 +9,11 @@
 //     browser's implicit pointer-capture fires the ORIGINAL button no matter where the finger drifts.)
 //
 //   • DRAG-TO-SELECT (inside a [data-answer-grid] or [data-select-group] — "selection groups"): press an
-//     option, drag across (the option under your finger highlights live), release on an option → THAT
-//     option activates; release outside → cancel. So a wrong first touch can be corrected by sliding to
-//     the right one. Outside a group, dragging onto another button never activates it — the gesture
-//     belongs to the button you pressed.
+//     option, drag across (the option under your finger highlights live — but only once you've LEFT the
+//     pressed option, so a plain tap never flashes the ring; see nextHilite), release on an option →
+//     THAT option activates; release outside → cancel. So a wrong first touch can be corrected by
+//     sliding to the right one. Outside a group, dragging onto another button never activates it — the
+//     gesture belongs to the button you pressed.
 //
 //   • PRESS-DRAG MENU (Q5 + C2): a press on a [data-select-trigger] (the mode selector, or the ⚙ Settings
 //     button) whose own pointerdown opens a menu — you can drag straight into the menu and release on an
@@ -46,7 +47,7 @@
 // activation (the app's shortcut handler calls `.click()`) is unaffected: those clicks have no preceding
 // gesture, so they pass.
 //
-// TESTABILITY: resolveRelease, resolveTriggerRelease, menuFor, bandDirection, and scrollDelta are pure
+// TESTABILITY: resolveRelease, resolveTriggerRelease, nextHilite, menuFor, bandDirection, and scrollDelta are pure
 // (or layout-free DOM reads) and unit-tested, as are the pointer latch + click suppression via synthetic
 // events; the full wiring (real pointer drags + elementFromPoint + auto-scroll feel) is verified
 // on-device — jsdom has no layout engine, so elementFromPoint/getBoundingClientRect don't work there.
@@ -74,6 +75,21 @@ export function resolveRelease(
     return { suppressStart: true, activate: member }
   }
   return { suppressStart: releaseBtn !== startEl, activate: null }
+}
+
+// Pure decision for the GROUP drag hilite: given the group member under the pointer (null = off-grid),
+// the element the press started on, and whether the pointer has already left the start element, decide
+// the new hasLeft state and which element (if any) to hilite. The ring appears only AFTER the pointer
+// leaves the start element — a plain tap never flashes it — where "leaving" includes drifting off-grid
+// (member null). Once left, the member under the pointer hilites, INCLUDING the start element itself
+// (returning to it is a deliberate re-selection, so the ring confirms it like any other option).
+export function nextHilite(
+  member: Element | null,
+  startEl: Element,
+  hasLeft: boolean,
+): { hasLeft: boolean; show: Element | null } {
+  const left = hasLeft || member !== startEl
+  return { hasLeft: left, show: left ? member : null }
 }
 
 // Pure decision for a press-drag TRIGGER release: given the trigger's live-resolved menu and the element
@@ -136,6 +152,7 @@ export function installPointerGestures(): () => void {
   let trigger: Element | null = null // the [data-select-trigger] the press began on — its menu is paired via aria-controls (menuFor)
   let suppressEl: Element | null = null
   let hilited: Element | null = null
+  let hasLeftStart = false // group path: true once the pointer has left the pressed option (nextHilite)
   let clearTimer: ReturnType<typeof setTimeout> | null = null
   let lastX = 0 // latest pointer position, kept current for the edge auto-scroll loop
   let lastY = 0
@@ -221,6 +238,7 @@ export function installPointerGestures(): () => void {
     group = null
     trigger = null
     menuCache = null
+    hasLeftStart = false
   }
   // Suppress the start button's native click. On touch that click fires the ORIGINAL button regardless
   // of drift AND is DELAYED/async after release (a long press makes the browser "commit" to the pressed
@@ -267,9 +285,11 @@ export function installPointerGestures(): () => void {
     startEl = el
     group = el.closest(GROUP_SELECTOR)
     trigger = group ? null : el.closest('[data-select-trigger]')
+    hasLeftStart = false
     lastX = e.clientX
     lastY = e.clientY
-    if (group) setHilite(memberAt(group, e.clientX, e.clientY) ?? el)
+    // Deliberately NO hilite on press: in a group the ring appears only after the pointer LEAVES the
+    // pressed option (nextHilite, applied in onMove) — a plain tap never flashes it.
   }
   const onMove = (e: PointerEvent) => {
     if (!startEl || e.pointerId !== pointerId) return
@@ -288,7 +308,9 @@ export function installPointerGestures(): () => void {
       return
     }
     if (!group) return
-    setHilite(memberAt(group, e.clientX, e.clientY))
+    const h = nextHilite(memberAt(group, e.clientX, e.clientY), startEl, hasLeftStart)
+    hasLeftStart = h.hasLeft
+    setHilite(h.show)
   }
   const onUp = (e: PointerEvent) => {
     if (!startEl || e.pointerId !== pointerId) return

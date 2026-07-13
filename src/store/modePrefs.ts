@@ -68,14 +68,16 @@ export type ModePrefsState = ModePrefsValues & {
   applyPrefs: (partial: Partial<ModePrefsValues>) => void
 }
 
-// The launch defaults — single source of truth (match the components' old useState defaults),
-// reused by resetModePrefs(). Timing hidden by default in Classic/Deduction, shown in Flash.
+// The launch defaults — single source of truth, reused by resetModePrefs(). Timing hidden by
+// default in Classic/Deduction, shown in Flash. The Flash reveal (2s) and Blitz per-question
+// countdown (10s) launch at beginner-friendly lengths (Round-2 timer audit, 2026-07-12,
+// owner-ratified — a newcomer doing the mental method needs the headroom; elites turn them down).
 export const MODE_PREFS_DEFAULTS: ModePrefsValues = {
-  flashMs: 500,
+  flashMs: 2000,
   flashTimingOff: false,
   flashScoringOff: false,
   blitzSec: 60,
-  blitzQSec: 5,
+  blitzQSec: 10,
   blitzPerQ: false,
   blitzAllowMistakes: true,
   aoxN: '10',
