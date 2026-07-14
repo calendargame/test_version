@@ -246,8 +246,13 @@ button:focus,select:focus{outline:none}
 .boot-d{animation:bootPulse 1.4s infinite}
 .boot-d2{animation-delay:.18s}.boot-d3{animation-delay:.36s}
 @keyframes bootPulse{0%,70%,100%{opacity:.3}35%{opacity:1}}
-.boot-flow{stroke-dasharray:174;animation:bootFlow 2.6s infinite}
-@keyframes bootFlow{0%{stroke-dashoffset:0;animation-timing-function:ease-out}50%{stroke-dashoffset:-174;animation-timing-function:ease-in}100%{stroke-dashoffset:-348}}
+/* The trace's resting state only (fully drawn at offset 0). The erase/redraw sweep is DRIVEN
+   PER-FRAME by BootOverlay's rAF effect (math in src/lib/bootFlow.ts) — NOT by CSS keyframes:
+   shipping iOS mis-paints negative stroke-dashoffsets over an odd-count dasharray (WebKit bug
+   249307), so the driver emits non-negative offsets over a two-value dasharray sized to the TRUE
+   measured path length (~170.9; the old CSS assumed 174). Do not re-add an animation here — a
+   running CSS animation would beat the driver's inline styles in the cascade. */
+.boot-flow{stroke-dasharray:174 174}
 /* Diagonal-split background for stack entries that have been retroactively
    overridden right→wrong (e.g., user got it correct, later flipped via Override on
    a subsequent live unanswered question). Green-upper-left/red-lower-right tells the

@@ -74,7 +74,10 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
     const labels = Array.from(document.querySelectorAll('[data-fitlabel]'))
     expect(labels).toHaveLength(3)
     // scale = min(50/100) = 0.5 → 14px × 0.5 = 7px → floored to the 11px legibility minimum.
-    expect(labels.map((l) => l.style.fontSize)).toEqual(['11px', '11px', '11px'])
+    // The fitted size lands on the BUTTON (the caption inherits it) so the line-box strut shrinks
+    // with the text and the label stays vertically centered; the span itself carries no inline size.
+    expect(labels.map((l) => l.parentElement.style.fontSize)).toEqual(['11px', '11px', '11px'])
+    expect(labels.map((l) => l.style.fontSize)).toEqual(['', '', ''])
     // The measurement set is the static widest-caption twins, one per button, invisible to AT.
     const twins = Array.from(document.querySelectorAll('[data-fittwin]'))
     expect(twins.map((t) => t.textContent)).toEqual([
@@ -91,12 +94,20 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
     act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
     const expected = Math.max(11, 14 * 0.9) + 'px'
     const labels = Array.from(document.querySelectorAll('[data-fitlabel]'))
-    expect(labels.map((l) => l.style.fontSize)).toEqual([expected, expected, expected])
+    expect(labels.map((l) => l.parentElement.style.fontSize)).toEqual([
+      expected,
+      expected,
+      expected,
+    ])
     // Any settings interaction re-renders App and re-runs the dep-less fit effect. The base must
     // come off the static twin, not the already-shrunk caption — a feedback loop would step
     // 12.6 → 11.34 → 11 here instead of holding.
     act(() => useSettings.getState().setJanFebChance('25'))
     act(() => useSettings.getState().setJanFebChance('random'))
-    expect(labels.map((l) => l.style.fontSize)).toEqual([expected, expected, expected])
+    expect(labels.map((l) => l.parentElement.style.fontSize)).toEqual([
+      expected,
+      expected,
+      expected,
+    ])
   })
 })

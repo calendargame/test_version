@@ -26,6 +26,7 @@ import { useBackButton } from './components/useBackButton.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
 import { DOT_CELL } from './lib/dotLayout.js'
 import { sharedFitScale } from './lib/statFit.js'
+import { bootFlowOffset, BOOT_FLOW_FALLBACK_LEN } from './lib/bootFlow.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
 import type { InputStyle, SettingsValues } from './store/settings.js'
@@ -478,7 +479,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-13T22:20:00Z');
+    const DEPLOY_TS=new Date('2026-07-14T02:25:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
     // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
@@ -548,7 +549,8 @@ interface DedOpts {
     const bootHoldRemaining=(shownAt:number|undefined,now:number)=>shownAt===undefined?500:Math.max(500-(now-shownAt),0);
 
     // BootOverlay (Q3) — the full-screen UPDATING screen: the trace flows (erase-from-2 / redraw-from-2,
-    // soft both-ends trail via a blurred mask, sped through the complete moment) + "Updating" with a
+    // soft both-ends trail via a blurred mask, sped through the complete moment — driven per-frame by
+    // the rAF effect below; see lib/bootFlow for the iOS render fix) + "Updating" with a
     // sequential three-dot pulse. Shown by the Settings "Check for updates" button AND by the
     // auto-update-on-open SW effect in App (when a freshly-deployed version is waiting at launch).
     // The LOADING splash is no longer rendered here — it's index.html's body-level #boot, which App
@@ -558,6 +560,28 @@ interface DedOpts {
     // W5 logo, kept in sync with index.html's pre-React boot splash + src/components/W5Logo.tsx. Logo
     // scaled up (174×188) for both screens (owner 2026-06-28).
     function BootOverlay({updating=false}:{updating?:boolean}){
+      // iOS trace driver (2026-07-13): the erase/redraw sweep is driven per-frame from JS instead of
+      // CSS keyframes — shipping iOS mis-paints NEGATIVE dashoffsets over an odd-count dasharray
+      // (WebKit bug 249307), which turned the loop into fill→instant-vanish jumps on-device while
+      // every Chromium preview looked perfect. Same approved visual + 2.6s eased phases (the math
+      // lives in lib/bootFlow); the driver measures the TRUE path length (the CSS assumed 174,
+      // really ~170.9 — that mismatch alone cost ~0.35s of blank per cycle on every engine) and
+      // emits only non-negative offsets over a two-value dasharray, which iOS paints correctly.
+      // Deliberately ignores Reduce Motion: the trace is the sole FUNCTIONAL progress indicator
+      // during a blocking update (the app scales only decorative motion via --motion-scale).
+      const flowRef=useRef<SVGPathElement | null>(null);
+      useEffect(()=>{
+        if(!updating)return;
+        const p=flowRef.current;if(!p)return;
+        let L=BOOT_FLOW_FALLBACK_LEN;
+        try{const m=p.getTotalLength();if(m>0)L=m;}catch{/* jsdom has no getTotalLength — fall back */}
+        p.style.strokeDasharray=`${L} ${L}`;
+        const start=performance.now();
+        let raf=0;
+        const tick=(now:number)=>{p.style.strokeDashoffset=`${bootFlowOffset(now-start,L)}px`;raf=requestAnimationFrame(tick);};
+        raf=requestAnimationFrame(tick);
+        return()=>cancelAnimationFrame(raf);
+      },[updating]);
       return(
         <div className="boot-overlay">
           <div className="boot-mark">
@@ -565,7 +589,7 @@ interface DedOpts {
             <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style={{position:'relative'}}>
               {updating&&(<defs>
                 <filter id="bootSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
-                <mask id="bootMask"><path className="boot-flow" d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="#fff" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeDasharray="174" filter="url(#bootSoft)"/></mask>
+                <mask id="bootMask"><path ref={flowRef} className="boot-flow" d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="#fff" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeDasharray="174 174" filter="url(#bootSoft)"/></mask>
               </defs>)}
               <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
               <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask={updating?"url(#bootMask)":undefined}/>
@@ -2312,7 +2336,11 @@ interface DedOpts {
         // here the twin — same text classes, never inline-sized — is the clean base.
         const base=parseFloat(getComputedStyle(twins[0]).fontSize)||0;
         const px=scale<1&&base>0?Math.max(11,base*scale)+"px":"";
-        labels.forEach(l=>{l.style.fontSize=px;});
+        // Apply the fitted size to the BUTTON, not the caption span: the caption inherits it, so
+        // the button's line-box strut shrinks WITH the text and the label stays vertically
+        // centered. (Sizing the inline span alone left it baseline-aligned inside the button's
+        // un-shrunk text-sm strut — measured ~0.6px low on-device, the owner's 2026-07-13 catch.)
+        labels.forEach(l=>{const b=l.parentElement;if(b)b.style.fontSize=px;});
       };
       // Dep-less like StatPanel's: cheap (3 spans), and the trio row only exists while settings is
       // open (fitFooterBtns bails on the null ref otherwise). Re-observe on open/close; a web-font
@@ -2927,4 +2955,4 @@ interface DedOpts {
     // (tests/dateGen.dom), which drives them across every settings combination to prove no setting can
     // produce a malformed or unanswerable question. bootHoldRemaining is the pure boot-splash hold
     // calculation (tests/bootSplash.dom).
-    export { App, randomDate, makeDedPuzzle, bootHoldRemaining };
+    export { App, randomDate, makeDedPuzzle, bootHoldRemaining, BootOverlay };
