@@ -34,9 +34,11 @@ export default function W5Logo({
         <circle cx="202" cy="256" r="10" />
       </g>
       {/* the trace: 2 -> 3 -> 6, one smooth flowing curve (shape W5) */}
+      {/* trace dimmed 0.7 — matches the icon master (line dimmer than dots); keep #boot / W5Logo / BootOverlay identical */}
       <path
         d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196"
         stroke="currentColor"
+        strokeOpacity={0.7}
         strokeWidth="13"
         strokeLinecap="round"
         strokeLinejoin="round"

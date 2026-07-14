@@ -95,8 +95,13 @@ interface DedOpts {
     // _m1582 (monthOnly1582) — informational snapshots of per-mode toggles at spawn.
     // ─────────────────────────────────────────────────────────────────────────
     // Reset-style button shared className. Used by Reset Stats (Classic/Deduction/Flash),
-    // Round Reset (Blitz active), AoX Reset, Settings Reset.
+    // Round Reset (Blitz active), AoX Reset. (The ⚙ footer's Reset Settings / Full Reset pair
+    // uses the derived FOOTER_RESET_BTN_CLASS below.)
     const RESET_BTN_CLASS="px-3 py-2 rounded-xl bg-rose-600/90 text-white text-sm font-medium";
+    // Settings-footer variant (Round-3 font normalization): the ⚙ popover's Reset Settings /
+    // Full Reset buttons rest at the popover's text-xs control tier — same button in every other
+    // way, so it's derived. The game-mode Reset buttons keep text-sm via RESET_BTN_CLASS itself.
+    const FOOTER_RESET_BTN_CLASS=RESET_BTN_CLASS.replace("text-sm","text-xs");
     // Compact Reset Stats button variant (smaller py + col-span fit for stats panel).
     const RESET_STATS_BTN_CLASS="w-full px-3 py-1.5 rounded-xl btn-solid border border-transparent text-sm font-medium";
     // Reset Stats when ARMED (first tap of the two-tap confirm, Q2): rose/danger fill — the same danger
@@ -479,7 +484,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-14T02:25:00Z');
+    const DEPLOY_TS=new Date('2026-07-14T14:06:00Z');
 
     // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
     // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
@@ -540,17 +545,56 @@ interface DedOpts {
     const writeUpdateAttempts=(n: number)=>{try{sessionStorage.setItem(UPDATE_ATTEMPTS_KEY,String(n));}catch{/* best-effort */}};
     const clearUpdateAttempts=()=>{try{sessionStorage.removeItem(UPDATE_ATTEMPTS_KEY);}catch{/* best-effort */}};
 
+    // Q3 min-hold: the guaranteed minimum time the "Updating…" screen stays visible, shared by BOTH
+    // update paths so they feel identical — the AUTO path gates its reload on it (makeUpdateReloadGate
+    // below) and the manual Check-for-updates button waits it out before forceReloadLatest. Without a
+    // hold, activating an already-waiting worker completes in tens of ms and the reload outraces
+    // React's paint of the overlay — the owner never saw the screen (1s picked 2026-07-13).
+    const MIN_UPDATING_MS=1000;
+
+    // Post-update splash skip: a one-time sessionStorage flag stamped by the AUTO update path just
+    // before its reload (both the controllerchange reload and the 4s-safety reload) and CONSUMED
+    // (read + removed) by the next boot's hold computation — the user just watched the Updating
+    // screen ≥1s, so the follow-on LOADING splash skips its artificial 500ms hold and shows only as
+    // long as the real boot takes (it still waits for css-ready + mount). Deliberately NOT stamped by
+    // the manual forceReloadLatest path: that wipes every cache, and its genuinely slower cold boot
+    // wants the full hold. try/catch like the attempt counter above — sessionStorage can throw
+    // (privacy modes) and a broken flag must never break boot.
+    const SKIP_BOOT_HOLD_KEY='cg-skip-boot-hold';
+    const markSkipBootHold=()=>{try{sessionStorage.setItem(SKIP_BOOT_HOLD_KEY,'1');}catch{/* best-effort */}};
+    const consumeSkipBootHold=()=>{try{const set=sessionStorage.getItem(SKIP_BOOT_HOLD_KEY)!==null;sessionStorage.removeItem(SKIP_BOOT_HOLD_KEY);return set;}catch{return false;}};
+
+    // makeUpdateReloadGate (pure, exported for tests) — the AUTO update path's reload gate: reload()
+    // fires only when BOTH the SW handoff (controllerchange, or the 4s safety timeout — either calls
+    // onHandoff) AND the armed MIN_UPDATING_MS visible hold have completed, and at most ONCE. The
+    // hold is a plain setTimeout, never rAF — background-tab rAF throttling could park the callback
+    // and hang the reload forever. cancel() clears the hold timer AND marks the gate dead (wired to
+    // the update effect's cleanup) so a torn-down gate can never fire a stray reload — not even via
+    // a late onHandoff after the hold already elapsed.
+    const makeUpdateReloadGate=({minHoldMs,reload}:{minHoldMs:number;reload:()=>void})=>{
+      let handoff=false,held=false,reloaded=false;
+      let holdId: number|undefined;
+      const tryReload=()=>{if(handoff&&held&&!reloaded){reloaded=true;reload();}};
+      return{
+        armHold:()=>{holdId=window.setTimeout(()=>{held=true;tryReload();},minHoldMs);},
+        onHandoff:()=>{handoff=true;tryReload();},
+        cancel:()=>{reloaded=true;if(holdId!==undefined)window.clearTimeout(holdId);},
+      };
+    };
+
     // Pure (exported for tests): how much longer #boot must stay up. The splash needs ≥500ms of
     // VISIBLE time or a fast cached load flashes it for a frame, which reads as a glitch — and
     // visible time starts at the __bootShownAt stamp, NOT at navigation start (the old bug:
     // `500 - performance.now()` clamps to 0 whenever React mounts >500ms after navigation — i.e. on
     // every real network / SW cold boot — so the splash flashed exactly where it mattered). A
     // missing stamp (inline script failed/stripped) holds the full 500ms from now: the safe direction.
-    const bootHoldRemaining=(shownAt:number|undefined,now:number)=>shownAt===undefined?500:Math.max(500-(now-shownAt),0);
+    // skipHold (the consumed cg-skip-boot-hold flag — the boot right after an auto-update) drops the
+    // artificial hold entirely: remaining=0, the splash stays only for the real boot work.
+    const bootHoldRemaining=(shownAt:number|undefined,now:number,skipHold=false)=>skipHold?0:shownAt===undefined?500:Math.max(500-(now-shownAt),0);
 
-    // BootOverlay (Q3) — the full-screen UPDATING screen: the trace flows (erase-from-2 / redraw-from-2,
-    // soft both-ends trail via a blurred mask, sped through the complete moment — driven per-frame by
-    // the rAF effect below; see lib/bootFlow for the iOS render fix) + "Updating" with a
+    // BootOverlay (Q3) — the full-screen UPDATING screen: the fully-drawn W5 trace (STATIC for now —
+    // the erase-from-2 / redraw-from-2 flow sweep is parked behind BOOT_TRACE_ANIMATED below; see
+    // lib/bootFlow for the retained driver math + the iOS render fix) + "Updating" with a
     // sequential three-dot pulse. Shown by the Settings "Check for updates" button AND by the
     // auto-update-on-open SW effect in App (when a freshly-deployed version is waiting at launch).
     // The LOADING splash is no longer rendered here — it's index.html's body-level #boot, which App
@@ -559,9 +603,13 @@ interface DedOpts {
     // pass). Theme-aware (bg = --bg1; logo lavender on dark, brand-purple on light). The glyph is the
     // W5 logo, kept in sync with index.html's pre-React boot splash + src/components/W5Logo.tsx. Logo
     // scaled up (174×188) for both screens (owner 2026-06-28).
+    // Static trace for now (Backlog B2 revisits the sweep); flip to true to restore the rAF driver +
+    // blurred mask below (plus lib/bootFlow + .boot-flow in index.css — all kept intact for that).
+    const BOOT_TRACE_ANIMATED=false;
     function BootOverlay({updating=false}:{updating?:boolean}){
-      // iOS trace driver (2026-07-13): the erase/redraw sweep is driven per-frame from JS instead of
-      // CSS keyframes — shipping iOS mis-paints NEGATIVE dashoffsets over an odd-count dasharray
+      // iOS trace driver (2026-07-13; currently DISABLED via BOOT_TRACE_ANIMATED — the trace renders
+      // static): the erase/redraw sweep is driven per-frame from JS instead of CSS keyframes —
+      // shipping iOS mis-paints NEGATIVE dashoffsets over an odd-count dasharray
       // (WebKit bug 249307), which turned the loop into fill→instant-vanish jumps on-device while
       // every Chromium preview looked perfect. Same approved visual + 2.6s eased phases (the math
       // lives in lib/bootFlow); the driver measures the TRUE path length (the CSS assumed 174,
@@ -571,7 +619,7 @@ interface DedOpts {
       // during a blocking update (the app scales only decorative motion via --motion-scale).
       const flowRef=useRef<SVGPathElement | null>(null);
       useEffect(()=>{
-        if(!updating)return;
+        if(!updating||!BOOT_TRACE_ANIMATED)return;
         const p=flowRef.current;if(!p)return;
         let L=BOOT_FLOW_FALLBACK_LEN;
         try{const m=p.getTotalLength();if(m>0)L=m;}catch{/* jsdom has no getTotalLength — fall back */}
@@ -587,12 +635,13 @@ interface DedOpts {
           <div className="boot-mark">
             <div className="boot-glow"/>
             <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style={{position:'relative'}}>
-              {updating&&(<defs>
+              {updating&&BOOT_TRACE_ANIMATED&&(<defs>
                 <filter id="bootSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
                 <mask id="bootMask"><path ref={flowRef} className="boot-flow" d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="#fff" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeDasharray="174 174" filter="url(#bootSoft)"/></mask>
               </defs>)}
               <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
-              <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask={updating?"url(#bootMask)":undefined}/>
+              {/* trace dimmed 0.7 — matches the icon master (line dimmer than dots); keep #boot / W5Logo / BootOverlay identical */}
+              <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" strokeOpacity={0.7} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" mask={updating&&BOOT_TRACE_ANIMATED?"url(#bootMask)":undefined}/>
               <g fill="currentColor"><circle cx="310" cy="256" r="10"/><circle cx="310" cy="196" r="10"/></g>
               <circle cx="202" cy="196" r="9" fill="currentColor"/><circle cx="202" cy="196" r="19" fill="none" stroke="currentColor" strokeWidth="5"/>
             </svg>
@@ -2035,15 +2084,18 @@ interface DedOpts {
       // not read before its declaration (the compiler flags accessing a binding before it's declared).
       const [settingsOpen,setSettingsOpen]=useState(false);
       // Q3: the "Updating…" overlay (BootOverlay updating) — two triggers, each cleared by its reload:
-      // the Settings "Check for updates" button shows it for ~0.9s (so the screen registers) then runs
-      // forceReloadLatest (clear caches + reload), and the auto-update-on-open effect below shows it
-      // while a WAITING new version activates.
+      // the Settings "Check for updates" button shows it for MIN_UPDATING_MS (so the screen registers)
+      // then runs forceReloadLatest (clear caches + reload), and the auto-update-on-open effect below
+      // shows it for at least the same hold while a WAITING new version activates.
       const [updating,setUpdating]=useState(false);
-      const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,900);},[]);
+      const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,MIN_UPDATING_MS);},[]);
       // Q3 Loading screen: remove index.html's #boot splash once BOTH are true —
       //   • it has been VISIBLE ≥0.5s (bootHoldRemaining, anchored to the __bootShownAt rAF stamp — not
       //     navigation start), so a fast cached load doesn't flash it for a single frame (which read
-      //     like a glitch); on a slow load it has already served its time → the hold clamps to 0;
+      //     like a glitch); on a slow load it has already served its time → the hold clamps to 0; and
+      //     the boot right after an AUTO update skips the hold entirely (the one-time cg-skip-boot-hold
+      //     flag, consumed here — the user just watched the Updating screen ≥1s, so the splash shows
+      //     only as long as the real boot takes);
       //   • the real stylesheet has APPLIED — the build swaps the render-blocking CSS <link> into a
       //     preload (vite.config.js bootCssPreload) so the splash can be the page's first paint, and
       //     the swap stamps window.__cssReady + fires 'app-css-ready'. Removing #boot before then would
@@ -2076,7 +2128,11 @@ interface DedOpts {
               window.dispatchEvent(new Event('app-css-ready'));
             },4000);
           }
-        },bootHoldRemaining(window.__bootShownAt,performance.now()));
+        // Consume the skip flag unconditionally (it must never linger), but only HONOR it when no
+        // update attempt is pending: on the safety-retry boot (worker still waiting, attempts>0) the
+        // 500ms hold is what covers the async getRegistration→updateEngagedRef claim — skipping it
+        // there could reveal the app for a few frames before the Updating overlay paints.
+        },bootHoldRemaining(window.__bootShownAt,performance.now(),consumeSkipBootHold()&&readUpdateAttempts()===0));
         return ()=>{disposed=true;window.clearTimeout(id);if(cssFallbackId!==undefined)window.clearTimeout(cssFallbackId);window.removeEventListener('app-css-ready',finish);};
       },[]);
       // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so
@@ -2088,16 +2144,23 @@ interface DedOpts {
       // paint it unstyled), show the Updating screen (the updating effect below removes #boot AFTER the
       // overlay commits), message the waiting worker DIRECTLY ({type:'SKIP_WAITING'} — a handler the
       // generateSW worker ships natively, so unlike registerSW's returned updateSW(true) this cannot race
-      // the register module's own registration and no-op), and reload exactly ONCE when it takes control
-      // (controllerchange + the reloaded guard — controllerchange can also fire for unrelated SW
-      // handoffs). Cold-open only — NO resume/focus re-check (owner's call). All SW behaviour is
-      // on-device. The whole flow is wrapped in the sessionStorage attempt counter (the loop breaker —
-      // see readUpdateAttempts): after 2 straight failed attempts the flow is SKIPPED, the counter
-      // cleared, and the app renders on the old version instead of looping Updating→reload forever.
+      // the register module's own registration and no-op), and reload exactly ONCE through the reload
+      // gate (makeUpdateReloadGate): only after BOTH the SW handoff (controllerchange — which can also
+      // fire for unrelated SW handoffs, hence the gate's one-shot guard — or the 4s safety net) AND the
+      // MIN_UPDATING_MS visible hold, so the Updating screen always registers (activating an
+      // already-waiting worker takes tens of ms, and an ungated reload outraces the overlay's paint —
+      // the owner never saw the screen). The gate's reload also stamps cg-skip-boot-hold, so the boot
+      // it triggers skips the splash's artificial 500ms hold — the full flow: logo → Updating ≥1s →
+      // reload → the splash shows only as long as the real boot takes → the app. Cold-open only — NO
+      // resume/focus re-check (owner's call). All SW behaviour is on-device. The whole flow is wrapped
+      // in the sessionStorage attempt counter (the loop breaker — see readUpdateAttempts): after 2
+      // straight failed attempts the flow is SKIPPED, the counter cleared, and the app renders on the
+      // old version instead of looping Updating→reload forever.
       useEffect(()=>{
         if(!import.meta.env.PROD||typeof navigator==='undefined'||!('serviceWorker' in navigator))return;
         let cancelled=false;
         let engageOnCss: (()=>void) | null=null;
+        let gate: ReturnType<typeof makeUpdateReloadGate> | null=null;
         import('./sw.js').catch(()=>{});
         navigator.serviceWorker.getRegistration().then(reg=>{
           if(cancelled)return;
@@ -2117,22 +2180,26 @@ interface DedOpts {
             if(cancelled)return;
             writeUpdateAttempts(attempts+1);
             setUpdating(true); // #boot comes down only after this commits (the updating effect below)
-            let reloaded=false;
-            const reloadOnce=()=>{if(reloaded)return;reloaded=true;window.location.reload();};
-            navigator.serviceWorker.addEventListener('controllerchange',()=>{clearUpdateAttempts();reloadOnce();}); // success — reset the loop breaker, then the one reload
+            // The reload gate (armed now, released by whichever handoff arrives): both the success
+            // reload and the safety reload go through it, so both honor the min-hold, fire at most
+            // once, and stamp the next boot's splash skip just before navigating away.
+            gate=makeUpdateReloadGate({minHoldMs:MIN_UPDATING_MS,reload:()=>{markSkipBootHold();window.location.reload();}});
+            gate.armHold();
+            navigator.serviceWorker.addEventListener('controllerchange',()=>{clearUpdateAttempts();gate?.onHandoff();}); // success — reset the loop breaker, then the gated one-shot reload
             waiting.postMessage({type:'SKIP_WAITING'});
             // Safety net: if activation never fires controllerchange (skipWaiting failed), don't leave the
             // Updating screen stuck — a PLAIN reload after a few seconds (the old worker serves the old app
             // again; the update retries next launch). NEVER forceReloadLatest here: it wipes every cache,
             // and offline that bricks the app — the manual Check-for-updates button keeps that big hammer.
             // The attempt counter deliberately SURVIVES this reload (sessionStorage) — that's what limits
-            // the retry to two rounds via the >=2 check above.
-            window.setTimeout(()=>{if(!cancelled)reloadOnce();},4000);
+            // the retry to two rounds via the >=2 check above. (At 4s the min-hold is long done, so this
+            // handoff reloads immediately through the gate.)
+            window.setTimeout(()=>{if(!cancelled)gate?.onHandoff();},4000);
           };
           if(appCssApplied())engage();
           else{engageOnCss=engage;window.addEventListener('app-css-ready',engage,{once:true});}
         }).catch(()=>{});
-        return ()=>{cancelled=true;if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
+        return ()=>{cancelled=true;gate?.cancel();if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
       },[]);
       // The update path's #boot handoff (paired with updateEngagedRef above): remove the splash only
       // AFTER the Updating overlay has COMMITTED — effects run post-commit, so by now the overlay is in
@@ -2317,7 +2384,9 @@ interface DedOpts {
       // come from hidden STATIC twins of the widest caption set ("Save Defaults" / "Reset Settings" /
       // "Full Reset"), never the live captions — the Full Reset → "Confirm?" swap would otherwise
       // shrink the measurement and jiggle the whole row's size while arming. The math is
-      // lib/statFit's sharedFitScale (min ratio, capped at 1); an 11px floor keeps the captions
+      // lib/statFit's sharedFitScale (min ratio, capped at 1) off the trio's resting text-xs —
+      // the popover's control tier (Round-3 font normalization), so the fit CEILINGS there and
+      // shrinks below 12px only when a narrow screen forces it; an 11px floor keeps the captions
       // legible over cosmetic fit, and overflow-hidden on the buttons (below) contains the extreme
       // remainder. In jsdom every width is 0 → scale 1 → no-op (the statFit convention).
       const footerFitRef=useRef<HTMLDivElement | null>(null);
@@ -2331,7 +2400,7 @@ interface DedOpts {
         const scale=sharedFitScale(naturals,avails);
         // Base font off a STATIC twin, never a live caption: the captions carry the inline
         // fontSize the PREVIOUS pass set, so reading them would compound the shrink on every
-        // re-run of the dep-less effect (14·s, 14·s², … → pinned at the floor). Same feedback
+        // re-run of the dep-less effect (12·s, 12·s², … → pinned at the floor). Same feedback
         // loop StatPanel guards against by resetting before measuring (StatPanel.tsx fitAll);
         // here the twin — same text classes, never inline-sized — is the clean base.
         const base=parseFloat(getComputedStyle(twins[0]).fontSize)||0;
@@ -2339,7 +2408,7 @@ interface DedOpts {
         // Apply the fitted size to the BUTTON, not the caption span: the caption inherits it, so
         // the button's line-box strut shrinks WITH the text and the label stays vertically
         // centered. (Sizing the inline span alone left it baseline-aligned inside the button's
-        // un-shrunk text-sm strut — measured ~0.6px low on-device, the owner's 2026-07-13 catch.)
+        // un-shrunk resting-size strut — measured ~0.6px low on-device, the owner's 2026-07-13 catch.)
         labels.forEach(l=>{const b=l.parentElement;if(b)b.style.fontSize=px;});
       };
       // Dep-less like StatPanel's: cheap (3 spans), and the trio row only exists while settings is
@@ -2621,24 +2690,29 @@ interface DedOpts {
           <SectionLabel>Display</SectionLabel>
           <div className="text-xs text-purple-200/80">Date Format</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
-          {/* The Written/Numeric format pickers + the Input picker below use the chance-row pattern
-              (individually rounded gap-separated buttons, selected = btn-solid) rather than a fused
-              segmented control: a fused group's overflow-hidden clipped the press-drag ring square on
-              the inner buttons, while each button's own rounded-xl lets the ring follow every corner. */}
+          {/* The Written/Numeric date-format groups sit in a shared pill housing (owner call,
+              Round-3) — a RING-SAFE rebuild of the fused segmented control this look replaces: the
+              container draws the whole frame (border + surface-toggle, NO overflow-hidden) and each
+              borderless segment keeps its OWN radius one concentric step in (rounded-lg), so the
+              inset press-drag ring follows every segment's corners INSIDE the pill instead of being
+              clipped square (the Round-2 defect that unfused the originals). Unselected segments are
+              transparent — the container surface shows through, so they read as part of the pill.
+              Date-format groups ONLY, per the owner — the Input picker below and the chance rows
+              keep the flat chance-row pattern (individually rounded gap-separated buttons). */}
           <div className={`flex gap-2 ${randomFormat?"opacity-60 pointer-events-none":""}`}>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
-              <div className="flex gap-1.5">
-                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='written-mdy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='written-dmy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>DMY</button>
+              <div className="flex gap-0.5 p-0.5 border surface-tray rounded-xl">
+                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='written-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
               </div>
             </div>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
-              <div className="flex gap-1.5">
-                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-mdy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-dmy'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>DMY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${dateFormat==='numeric-ymd'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>YMD</button>
+              <div className="flex gap-0.5 p-0.5 border surface-tray rounded-xl">
+                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>YMD</button>
               </div>
             </div>
           </div>
@@ -2651,7 +2725,11 @@ interface DedOpts {
           </div>
           <div className="text-xs text-purple-200/80 pt-1">Theme</div>
           <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
-          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" className="panel rounded-xl px-2 py-1 text-sm w-full focus:outline-hidden focus-ring text-left"/></div>)}
+          {/* The theme selects sit in the popover's text-xs control tier (Round-3 font
+              normalization — their text-sm read oversized next to every neighboring control);
+              menuTextClassName sizes their portaled option rows to match the trigger. The bar's
+              mode selector keeps CustomSelect's default 15px menu. */}
+          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Dates</SectionLabel>
@@ -2692,17 +2770,17 @@ interface DedOpts {
             {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
                 full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
                 absolute keeps them out of the flex row; same text classes as the buttons. */}
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Save Defaults</span>
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Reset Settings</span>
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-sm font-medium">Full Reset</span>
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Save Defaults</span>
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Reset Settings</span>
+            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Full Reset</span>
             {/* Save Defaults (Q7): constructive → btn-solid purple (the Begin-button language), keeping
                 rose exclusively for the two destructive neighbors. Dims when live state already equals
                 the saved defaults (factory when none saved) — nothing new to save. Each caption sits in
                 a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
                 wrapping; overflow-hidden on the button contains the pre-fit paint). */}
-            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
-            <button type="button" onClick={resetSettings} className={`flex-1 ${RESET_BTN_CLASS} overflow-hidden ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
-            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
+            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-xs font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
+            <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
+            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>
         <div data-drag-stay className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
@@ -2839,7 +2917,7 @@ interface DedOpts {
                       isPrimary/button guard mirrors the controller's pointer latch: a second finger or a
                       right-click must not toggle. onClick is kept for keyboard/tests; the controller
                       suppresses the trigger's click on a real press so it doesn't double-toggle.
-                      gear-modified (Q8, the inside-bottom violet bar — index.css) marks live state ≠
+                      gear-modified (Q8, the flush inside-top violet bar — index.css) marks live state ≠
                       the saved defaults while the panel is CLOSED (the open gear is solid purple, no
                       bar); the aria-label mirrors the same boolean in both states. */}
                   <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-purple-100/80${settingsModified?" gear-modified":""}`}`} aria-label={settingsModified?"Settings (modified)":"Settings"}>⚙</button>
@@ -2954,5 +3032,8 @@ interface DedOpts {
     // makeDedPuzzle are the real date/puzzle generators — exported for the C2 date-generation fuzz
     // (tests/dateGen.dom), which drives them across every settings combination to prove no setting can
     // produce a malformed or unanswerable question. bootHoldRemaining is the pure boot-splash hold
-    // calculation (tests/bootSplash.dom).
-    export { App, randomDate, makeDedPuzzle, bootHoldRemaining, BootOverlay };
+    // calculation (tests/bootSplash.dom). makeUpdateReloadGate + consumeSkipBootHold are the
+    // auto-update path's testable core — the two-signal reload gate and the one-time post-update
+    // splash-skip flag (tests/updateReloadGate.dom, tests/bootSplash.dom); the PROD-gated update
+    // effect itself never runs under Vitest, it only wires these to the real SW.
+    export { App, randomDate, makeDedPuzzle, bootHoldRemaining, BootOverlay, makeUpdateReloadGate, consumeSkipBootHold };

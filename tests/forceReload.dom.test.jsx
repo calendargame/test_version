@@ -65,9 +65,13 @@ describe('Check for updates (force reload to latest)', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
     })
-    // "Check for updates" (onCheckUpdates) shows the Updating overlay for ~0.9s before reloading (Q3),
-    // so give waitFor more than its 1000ms default — the reload fires at ~900ms + the async SW/cache chain.
+    // "Check for updates" (onCheckUpdates) shows the Updating overlay for MIN_UPDATING_MS (1s) before
+    // reloading (Q3), so give waitFor more than its 1000ms default — the reload fires at ~1s + the
+    // async SW/cache chain.
     await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 5000 })
+    // The MANUAL path must NOT stamp cg-skip-boot-hold — only the AUTO update reload skips the
+    // next boot's splash hold (the manual force-reload wipes caches; its slower boot wants the hold).
+    expect(sessionStorage.getItem('cg-skip-boot-hold')).toBeNull()
     expect(getRegistrations).toHaveBeenCalled()
     expect(unregister).toHaveBeenCalledTimes(2) // both registrations unregistered
     expect(cacheKeys).toHaveBeenCalled()

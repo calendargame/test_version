@@ -6,7 +6,10 @@
 //   • ≥500ms of VISIBLE time — bootHoldRemaining, anchored to the window.__bootShownAt rAF stamp
 //     (index.html), NOT navigation start (the old `500 - performance.now()` clamped to 0 whenever
 //     React mounted >500ms after navigation — every real network / SW cold boot — flashing the
-//     splash for a single frame);
+//     splash for a single frame). EXCEPT the boot right after an AUTO update: the update path stamps
+//     the one-time cg-skip-boot-hold sessionStorage flag before reloading, and consuming it
+//     (consumeSkipBootHold) drops the artificial hold to 0 — the user just watched the Updating
+//     screen ≥1s, so the splash shows only as long as the real boot takes;
 //   • the real stylesheet has APPLIED — window.__cssReady / the window 'app-css-ready' event, set by
 //     the preload-swapped CSS link (vite.config.js bootCssPreload). While a pending preload link
 //     exists and __cssReady isn't stamped, removing #boot would reveal an unstyled app. If the link
@@ -16,7 +19,7 @@
 // paint/SW territory: on-device staging proof per the standing lesson. These tests pin the logic.)
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act } from '@testing-library/react'
-import { App, bootHoldRemaining } from '../src/main.jsx'
+import { App, bootHoldRemaining, consumeSkipBootHold } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 
 describe('bootHoldRemaining (pure)', () => {
@@ -35,12 +38,41 @@ describe('bootHoldRemaining (pure)', () => {
     expect(bootHoldRemaining(100, 600)).toBe(0)
     expect(bootHoldRemaining(100, 5000)).toBe(0)
   })
+
+  it('skipHold (the post-auto-update boot) → 0 regardless of the stamp', () => {
+    expect(bootHoldRemaining(undefined, 0, true)).toBe(0)
+    expect(bootHoldRemaining(100, 100, true)).toBe(0)
+    expect(bootHoldRemaining(100, 5000, true)).toBe(0)
+  })
+
+  it('skipHold false → unchanged behavior (the default)', () => {
+    expect(bootHoldRemaining(undefined, 0, false)).toBe(500)
+    expect(bootHoldRemaining(100, 250, false)).toBe(350)
+  })
+})
+
+describe('consumeSkipBootHold (the one-time post-update splash-skip flag)', () => {
+  afterEach(() => {
+    sessionStorage.removeItem('cg-skip-boot-hold')
+  })
+
+  it('flag present → true, and the flag is CONSUMED (a second read is false)', () => {
+    sessionStorage.setItem('cg-skip-boot-hold', '1')
+    expect(consumeSkipBootHold()).toBe(true)
+    expect(sessionStorage.getItem('cg-skip-boot-hold')).toBeNull()
+    expect(consumeSkipBootHold()).toBe(false)
+  })
+
+  it('flag absent → false (unchanged behavior)', () => {
+    expect(consumeSkipBootHold()).toBe(false)
+  })
 })
 
 describe('App removes the body-level #boot splash', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
+    sessionStorage.removeItem('cg-skip-boot-hold')
     useSettings.getState().resetSettings()
   })
   afterEach(() => {
@@ -52,6 +84,7 @@ describe('App removes the body-level #boot splash', () => {
     document.head.querySelector('link[rel="preload"]')?.remove()
     delete window.__cssReady
     delete window.__bootShownAt
+    sessionStorage.removeItem('cg-skip-boot-hold')
   })
 
   // CustomSelect portals into #root, so the harness must provide one (see app-mount.dom).
@@ -81,6 +114,18 @@ describe('App removes the body-level #boot splash', () => {
     })
     // No preload link exists here (dev/tests load CSS through the JS graph) → ready → removed.
     expect(document.getElementById('boot')).toBeNull()
+  })
+
+  it('post-auto-update boot (cg-skip-boot-hold set): comes down with NO artificial hold, flag consumed', () => {
+    sessionStorage.setItem('cg-skip-boot-hold', '1')
+    mountBootFixture()
+    mountApp()
+    // No 500ms hold — only the 0ms timer tick (the css gate is already ready here: no preload link).
+    act(() => {
+      vi.advanceTimersByTime(0)
+    })
+    expect(document.getElementById('boot')).toBeNull()
+    expect(sessionStorage.getItem('cg-skip-boot-hold')).toBeNull() // one-time: consumed by this boot
   })
 
   it('holds PAST the 500ms while the stylesheet preload is pending, then removes on app-css-ready', () => {

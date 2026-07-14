@@ -19,10 +19,11 @@ import { useBackButton } from './useBackButton.js'
 //
 // Props: value, onChange, options [{value,label}], className (trigger),
 // wrapperClassName (outer relative div), ariaLabel, wrapperRef (forwarded to the
-// wrapper so callers can treat it like the old <select> ref), showChevron, and
-// pressDrag (press-drag-select, documented at the prop below). Every instance
-// uses the space-based auto-flip: down when the panel fits below, up only when
-// it doesn't and there's more room above.
+// wrapper so callers can treat it like the old <select> ref), showChevron,
+// pressDrag (press-drag-select, documented at the prop below), and
+// menuTextClassName (option-row text size, documented at the prop below). Every
+// instance uses the space-based auto-flip: down when the panel fits below, up
+// only when it doesn't and there's more room above.
 //
 // Extracted from main.jsx in Stage C, Step 4d (verbatim; the only change is
 // ReactDOM.createPortal → the directly-imported createPortal — same function).
@@ -48,6 +49,7 @@ export default function CustomSelect({
   wrapperRef,
   showChevron = false,
   pressDrag = false,
+  menuTextClassName = 'text-[15px]',
 }: {
   value: string
   onChange: (value: string) => void
@@ -64,6 +66,10 @@ export default function CustomSelect({
   // its click is suppressed there to avoid a double-toggle. A quick tap still toggles; keyboard (the Tab
   // shortcut's .click(), arrows, Enter) is unaffected — those clicks have no preceding pointer gesture.
   pressDrag?: boolean
+  // Text-size class for the PORTALED option rows (Round-3 font normalization). Defaults to the
+  // original text-[15px]; the settings theme selects pass text-xs so their menu text matches
+  // their text-xs trigger, while the bar's mode selector keeps the default.
+  menuTextClassName?: string
 }) {
   const [open, setOpen] = useState(false)
   // activeIdx tracks the keyboard-highlighted option (≠ selected value). -1 when nothing is
@@ -105,8 +111,10 @@ export default function CustomSelect({
     else setPanelPos({ right, top: rect.bottom + 6 })
   }
   // Toggle handler measures available space the moment the dropdown opens.
-  // Each option button is ~45px tall (py-3 + text-[15px]) plus a small panel
-  // margin. If space below the trigger in the viewport isn't enough AND there's
+  // Each option button is ~45px tall (py-3 + the default text-[15px] menu text;
+  // a smaller menuTextClassName makes this an overestimate, which only errs
+  // toward flipping up early — safe) plus a small panel margin. If space below
+  // the trigger in the viewport isn't enough AND there's
   // more space above, flip upward. visualViewport height is used (it excludes
   // Safari's bottom toolbar) so bottom-of-screen dropdowns don't open down into
   // toolbar-covered space. The 16px buffer keeps the panel off the edge.
@@ -336,15 +344,19 @@ export default function CustomSelect({
                   onChange(opt.value)
                   closeAndFocus()
                 }}
-                className={`w-full text-left rounded-xl pl-4 pr-4 py-3 text-[15px] flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
+                className={`w-full text-left rounded-xl pl-4 pr-4 py-3 ${menuTextClassName} flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
                 style={{ color: '#1a1a1a', whiteSpace: 'nowrap' }}
               >
                 <span
                   style={{
                     display: 'inline-block',
+                    // The reserved check column stays a fixed 14px so row indents never shift,
+                    // but the ✓ glyph scales WITH the row's text tier (1em) — a text-xs menu
+                    // (the theme selects) gets a 12px check, the default menu ~15px. A fixed
+                    // 14px check read oversized once the Round-3 normalization shrank the rows.
                     width: '14px',
                     color: '#1a1a1a',
-                    fontSize: '14px',
+                    fontSize: '1em',
                   }}
                 >
                   {opt.value === value ? '✓' : ''}

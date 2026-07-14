@@ -42,6 +42,10 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- Head preload of the home-screen icon: fetches it at the very start of parsing so it's cached
+       before iOS's Add-to-Home-Screen sheet can ask for it. The end-of-body warm <img> below
+       consumes the preload, so no "preloaded but unused" console warning. -->
+  <link rel="preload" as="image" href="/apple-touch-icon.png" fetchpriority="high">
   <!-- Dark-mode home-screen icon is DISABLED. iOS does not reliably honor a dark-variant
        apple-touch-icon (often needs a remove + re-add, or ignores it), so we ship the single
        light icon. The dark master (design/icons/icon-piday-trace-dark.svg) is kept; to re-enable,
@@ -117,7 +121,8 @@
   <div id="boot"><div class="bw"><div class="bg"></div>
     <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style="position:relative">
       <g fill="currentColor" opacity="0.3"><circle cx="256" cy="256" r="10"/><circle cx="310" cy="316" r="10"/><circle cx="202" cy="316" r="10"/><circle cx="202" cy="256" r="10"/></g>
-      <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- trace dimmed 0.7 — matches the icon master (line dimmer than dots); keep #boot / W5Logo / BootOverlay identical -->
+      <path d="M310,256 C313,226 313,206 310,196 C300,184 240,184 202,196" stroke="currentColor" stroke-opacity="0.7" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
       <g fill="currentColor"><circle cx="310" cy="256" r="10"/><circle cx="310" cy="196" r="10"/></g>
       <circle cx="202" cy="196" r="9" fill="currentColor"/><circle cx="202" cy="196" r="19" fill="none" stroke="currentColor" stroke-width="5"/>
     </svg>
@@ -128,9 +133,10 @@
   <script>requestAnimationFrame(function(){window.__bootShownAt=performance.now()});</script>
   <!-- Warm the home-screen icon into the browser cache on first load. Without this, tapping iOS's
        "Add to Home Screen" before the icon has downloaded makes iOS fall back to a generic snapshot
-       (the icon must already be cached when that preview sheet renders). A real hidden <img> fetches
-       it eagerly — with no "preloaded-but-unused" console warning a <link rel=preload> would cause in
-       browsers that don't consume apple-touch-icon. -->
+       (the icon must already be cached when that preview sheet renders). The head <link rel=preload>
+       above starts the fetch even earlier (at parse start); this real hidden <img> then CONSUMES the
+       preload, so browsers that don't use apple-touch-icon never log a "preloaded but unused"
+       warning. -->
   <img src="/apple-touch-icon.png" alt="" aria-hidden="true" fetchpriority="high"
        style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" />
   <script type="module" src="/src/main.tsx"></script>

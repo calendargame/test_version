@@ -160,6 +160,10 @@ export default function GuidePage() {
           </li>
         </UL>
         <p>
+          Give the sheet a moment to show the app's icon before tapping <b>Add</b> — it can briefly
+          show a generic placeholder while the icon loads.
+        </p>
+        <p>
           Once it has loaded it works fully offline, with no connection needed to practice. A brief{' '}
           <b>loading screen</b> (the app logo) shows while it starts up.
         </p>
