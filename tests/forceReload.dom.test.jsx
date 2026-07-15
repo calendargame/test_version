@@ -13,6 +13,7 @@ describe('Check for updates (force reload to latest)', () => {
   let unregister, reload, cacheKeys, cacheDelete, getRegistrations, origLocation
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear() // the skip-boot-hold assertion below must see THIS test's stamp, not a stale one
     useSettings.getState().resetSettings()
     unregister = vi.fn().mockResolvedValue(true)
     getRegistrations = vi.fn().mockResolvedValue([{ unregister }, { unregister }])
@@ -69,9 +70,10 @@ describe('Check for updates (force reload to latest)', () => {
     // reloading (Q3), so give waitFor more than its 1000ms default — the reload fires at ~1s + the
     // async SW/cache chain.
     await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 5000 })
-    // The MANUAL path must NOT stamp cg-skip-boot-hold — only the AUTO update reload skips the
-    // next boot's splash hold (the manual force-reload wipes caches; its slower boot wants the hold).
-    expect(sessionStorage.getItem('cg-skip-boot-hold')).toBeNull()
+    // BOTH update paths stamp cg-skip-boot-hold just before reloading (Round-4): the user already
+    // watched the ≥1s Updating hold, so the post-update boot's splash skips its artificial 500ms
+    // hold and shows only the real (network-cold) boot time.
+    expect(sessionStorage.getItem('cg-skip-boot-hold')).toBe('1')
     expect(getRegistrations).toHaveBeenCalled()
     expect(unregister).toHaveBeenCalledTimes(2) // both registrations unregistered
     expect(cacheKeys).toHaveBeenCalled()

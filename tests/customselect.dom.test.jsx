@@ -9,8 +9,8 @@
 // via the global Tab shortcut or a mouse click — Enter/Space/arrows do NOT open it from the trigger.
 // The check mark (✓) marks the selection, independent of the box.
 // (Behavior updated 2026-06-06; the box-on-open suppression was 2026-06-01.)
-import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import CustomSelect from '../src/components/CustomSelect.jsx'
 
 const OPTIONS = [
@@ -99,5 +99,95 @@ describe('CustomSelect — active-cursor highlight', () => {
     expect(hasBox(gamma)).toBe(false) // touch → no box (mobile stays clean)
     fireEvent.pointerEnter(gamma, { pointerType: 'mouse' })
     expect(hasBox(gamma)).toBe(true) // mouse → box (desktop hover)
+  })
+})
+
+// ── Portal geometry: the doc-scroll coordinate term + forceDown (Round-4) ────────────────────
+//
+// The option panel portals into #root with position:absolute. In APP mode #root is
+// position:fixed at the viewport origin and the document can't scroll, so viewport coordinates
+// ARE containing-block coordinates (scrollY locked at 0). In GUIDE mode (html[data-doc-scroll])
+// #root goes static and the document becomes the scroller — the panel's containing block then
+// anchors at the DOCUMENT origin, so measurePanel must add window.scrollY or a scrolled-down
+// page paints the menu scrollY px above its trigger, sliding off the top of the screen (the
+// Round-4 "mode menu opens upward + clipped in How-to-Play" report). forceDown is the
+// mode-selector hardcode: its trigger lives in the fixed bar, so it always opens downward.
+describe('CustomSelect — portal position math (doc-scroll term + forceDown)', () => {
+  let rectSpy
+  // All triggers share one mocked rect — only the CustomSelect wrapper's rect is read while
+  // these tests run (jsdom's real getBoundingClientRect is all-zeros, useless for geometry).
+  const mockRect = ({ top, bottom, left, right }) => {
+    rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      top,
+      bottom,
+      left,
+      right,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+      toJSON: () => ({}),
+    })
+  }
+  const setScrollY = (v) =>
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: v })
+
+  afterEach(() => {
+    rectSpy?.mockRestore()
+    rectSpy = undefined
+    setScrollY(0) // jsdom never scrolls on its own; pin the mock back to the app-mode value
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const mount = (props = {}) => {
+    const root = document.createElement('div')
+    root.id = 'root'
+    document.body.appendChild(root)
+    render(
+      <CustomSelect value="b" onChange={() => {}} options={OPTIONS} ariaLabel="Test" {...props} />,
+    )
+    return screen.getByRole('button', { name: 'Test' })
+  }
+  const panel = () => screen.getByRole('listbox')
+
+  it('adds the document scroll to the panel top (guide mode: the containing block sits at the document origin)', () => {
+    mockRect({ top: 40, bottom: 63, left: 200, right: 300 }) // a top-bar trigger — plenty of space below, never flips
+    setScrollY(500)
+    fireEvent.click(mount())
+    expect(panel().style.top).toBe(`${63 + 6 + 500}px`) // rect.bottom + 6 + scrollY
+    expect(panel().style.bottom).toBe('') // opening down — top-positioned only
+  })
+
+  it('a bottom-of-screen trigger still auto-flips up (the theme selects); the same rect with forceDown opens down', () => {
+    // spaceBelow (innerHeight − rect.bottom − 16 = 12) is far under the 3×45+10 estimate and
+    // spaceAbove is larger → the auto-flip fires and the panel is bottom-positioned.
+    const rect = {
+      top: window.innerHeight - 68,
+      bottom: window.innerHeight - 28,
+      left: 200,
+      right: 300,
+    }
+    mockRect(rect)
+    fireEvent.click(mount())
+    expect(panel().style.bottom).toBe(`${window.innerHeight - rect.top + 6}px`) // − scrollY (0) — the term is symmetric
+    expect(panel().style.top).toBe('')
+    cleanup()
+    document.getElementById('root')?.remove()
+    // forceDown (the mode-selector hardcode): identical geometry, but the flip never fires.
+    fireEvent.click(mount({ forceDown: true }))
+    expect(panel().style.top).toBe(`${rect.bottom + 6}px`)
+    expect(panel().style.bottom).toBe('')
+  })
+
+  it('the scroll-reposition listener re-measures WITH the scroll term (the panel stays pinned mid-scroll)', () => {
+    mockRect({ top: 40, bottom: 63, left: 200, right: 300 })
+    fireEvent.click(mount())
+    expect(panel().style.top).toBe(`${63 + 6}px`) // scrollY 0 at open
+    setScrollY(800)
+    act(() => {
+      fireEvent.scroll(window) // the capture-phase window scroll listener re-runs measurePanel
+    })
+    expect(panel().style.top).toBe(`${63 + 6 + 800}px`)
   })
 })

@@ -22,7 +22,7 @@ const flashProps = {
   format: (v) => (v / 1000).toFixed(1) + 's',
   toText: (v) => String(v / 1000),
   fromText: (n) => n * 1000,
-  widthClass: 'w-10',
+  widthClass: 'w-[3.3em]', // the shared measured-minimum readout width (all six production sites)
 }
 const roundProps = {
   value: 60,
@@ -33,7 +33,7 @@ const roundProps = {
   label: 'Blitz round timer',
   format: (v) => v + 's',
   toText: String,
-  widthClass: 'w-14',
+  widthClass: 'w-[3.3em]',
 }
 const perQProps = {
   value: 10,
@@ -44,7 +44,7 @@ const perQProps = {
   label: 'Blitz question timer',
   format: (v) => v + 's',
   toText: String,
-  widthClass: 'w-8',
+  widthClass: 'w-[3.3em]',
 }
 
 const readout = (label) => screen.getByRole('button', { name: `Edit ${label}` })

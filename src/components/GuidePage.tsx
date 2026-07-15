@@ -971,11 +971,11 @@ export default function GuidePage() {
           </li>
           <li>
             Your saved defaults survive Full Reset — that's the point: Full Reset restores{' '}
-            <i>them</i>. The way back to the launch defaults is the <b>Clear saved defaults</b>{' '}
-            link, shown only while you have saved defaults: it always sits at the foot of the ⚙ menu
-            (below the reset buttons), and the confirmation popup carries the same link. The footer
-            one matters because the Save Defaults button — and with it the popup — dims whenever
-            everything already matches your defaults.
+            <i>them</i>. The way back to the launch defaults is the <b>Clear saved defaults</b> link
+            at the foot of the ⚙ menu (below the reset buttons), shown only while you have saved
+            defaults. It lives in the footer rather than the popup because the Save Defaults button
+            — and with it the popup — dims whenever everything already matches your defaults; the
+            footer link is always reachable.
           </li>
         </UL>
         <Subhead>Reset Settings (middle)</Subhead>

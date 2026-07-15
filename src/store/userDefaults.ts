@@ -17,9 +17,9 @@ import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
 // A THIRD store (not a settings-store v2) because the capture spans two stores — it belongs to
 // neither — and because surviving Full Reset must be an explicit property: Full Reset deliberately
 // does NOT clear this store (restoring "your" defaults requires them to outlive it); the only way
-// back to factory is a "Clear saved defaults" link (clearDefaults) — one in the Save Defaults popup
-// and one in the ⚙ footer (the footer link is the always-available path: at steady state, live ==
-// saved dims + locks the Save Defaults button, making the popup's link unreachable).
+// back to factory is the ⚙ footer's "Clear saved defaults" link (clearDefaults) — the single clear
+// affordance (Round-4 removed the Save Defaults popup's duplicate link), always reachable: at
+// steady state live == saved dims + locks the Save Defaults button, but never the footer link.
 //
 // `saved` is null until the user saves (null = factory semantics everywhere, via the effective*
 // helpers below). Same persist pattern as the other stores (localStorage 'cg-userdefaults-v1',

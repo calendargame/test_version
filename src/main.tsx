@@ -98,10 +98,14 @@ interface DedOpts {
     // Round Reset (Blitz active), AoX Reset. (The ⚙ footer's Reset Settings / Full Reset pair
     // uses the derived FOOTER_RESET_BTN_CLASS below.)
     const RESET_BTN_CLASS="px-3 py-2 rounded-xl bg-rose-600/90 text-white text-sm font-medium";
-    // Settings-footer variant (Round-3 font normalization): the ⚙ popover's Reset Settings /
-    // Full Reset buttons rest at the popover's text-xs control tier — same button in every other
-    // way, so it's derived. The game-mode Reset buttons keep text-sm via RESET_BTN_CLASS itself.
-    const FOOTER_RESET_BTN_CLASS=RESET_BTN_CLASS.replace("text-sm","text-xs");
+    // Settings-footer variant (Round-3 font normalization, Round-4 one-height tier): the ⚙
+    // popover's Reset Settings / Full Reset buttons rest at the popover control tier in BOTH
+    // font (text-xs) and height (py-1.5) — same button in every other way, so it's derived.
+    // The appended border border-transparent completes the tier's RENDERED height: every other
+    // tier control (toggles, chance chips, pill housings, theme selects) carries a 1px border,
+    // so without it these rendered 2px squatter than the column they're equalized with.
+    // The game-mode Reset buttons keep text-sm/py-2 (and no border) via RESET_BTN_CLASS itself.
+    const FOOTER_RESET_BTN_CLASS=RESET_BTN_CLASS.replace("text-sm","text-xs").replace("py-2","py-1.5")+" border border-transparent";
     // Compact Reset Stats button variant (smaller py + col-span fit for stats panel).
     const RESET_STATS_BTN_CLASS="w-full px-3 py-1.5 rounded-xl btn-solid border border-transparent text-sm font-medium";
     // Reset Stats when ARMED (first tap of the two-tap confirm, Q2): rose/danger fill — the same danger
@@ -484,7 +488,21 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-14T14:06:00Z');
+    const DEPLOY_TS=new Date('2026-07-15T04:50:00Z');
+
+    // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
+    // immediately before their reload — the AUTO path's gated reload (controllerchange or the
+    // 4s-safety handoff, via makeUpdateReloadGate below) and the MANUAL Check-for-updates path
+    // (forceReloadLatest below) — and CONSUMED (read + removed) by the next boot's hold
+    // computation: the user just watched the Updating screen ≥1s, so the follow-on LOADING splash
+    // skips its artificial 500ms hold and shows only as long as the real boot takes. It still
+    // waits for css-ready + mount, so even the manual path's genuinely network-cold boot (caches
+    // wiped) can never reveal an unstyled frame — post-update, the splash always shows only real
+    // boot time. try/catch throughout: sessionStorage can throw (privacy modes) and a broken flag
+    // must never break boot.
+    const SKIP_BOOT_HOLD_KEY='cg-skip-boot-hold';
+    const markSkipBootHold=()=>{try{sessionStorage.setItem(SKIP_BOOT_HOLD_KEY,'1');}catch{/* best-effort */}};
+    const consumeSkipBootHold=()=>{try{const set=sessionStorage.getItem(SKIP_BOOT_HOLD_KEY)!==null;sessionStorage.removeItem(SKIP_BOOT_HOLD_KEY);return set;}catch{return false;}};
 
     // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
     // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
@@ -496,7 +514,10 @@ interface DedOpts {
     // it on the automatic path: with the caches wiped, an offline launch has nothing to serve (the
     // auto path's safety fallback is a plain reload instead). It does NOT touch localStorage, so
     // saved stats, settings, bests, and Lookup history are all preserved (only the app code/asset
-    // cache is cleared).
+    // cache is cleared). Like the auto path's gated reload, it stamps cg-skip-boot-hold just before
+    // navigating (markSkipBootHold above): the user already sat through the ≥1s Updating hold, so
+    // the post-reload splash shows only the real (network-cold) boot time — no artificial 500ms
+    // hold stacked on top.
     const forceReloadLatest=async()=>{
       try{
         if('serviceWorker' in navigator){
@@ -508,6 +529,7 @@ interface DedOpts {
           await Promise.all(keys.map(k=>caches.delete(k)));
         }
       }catch{/* best-effort — reload regardless */}
+      markSkipBootHold();
       window.location.reload();
     };
 
@@ -552,18 +574,6 @@ interface DedOpts {
     // React's paint of the overlay — the owner never saw the screen (1s picked 2026-07-13).
     const MIN_UPDATING_MS=1000;
 
-    // Post-update splash skip: a one-time sessionStorage flag stamped by the AUTO update path just
-    // before its reload (both the controllerchange reload and the 4s-safety reload) and CONSUMED
-    // (read + removed) by the next boot's hold computation — the user just watched the Updating
-    // screen ≥1s, so the follow-on LOADING splash skips its artificial 500ms hold and shows only as
-    // long as the real boot takes (it still waits for css-ready + mount). Deliberately NOT stamped by
-    // the manual forceReloadLatest path: that wipes every cache, and its genuinely slower cold boot
-    // wants the full hold. try/catch like the attempt counter above — sessionStorage can throw
-    // (privacy modes) and a broken flag must never break boot.
-    const SKIP_BOOT_HOLD_KEY='cg-skip-boot-hold';
-    const markSkipBootHold=()=>{try{sessionStorage.setItem(SKIP_BOOT_HOLD_KEY,'1');}catch{/* best-effort */}};
-    const consumeSkipBootHold=()=>{try{const set=sessionStorage.getItem(SKIP_BOOT_HOLD_KEY)!==null;sessionStorage.removeItem(SKIP_BOOT_HOLD_KEY);return set;}catch{return false;}};
-
     // makeUpdateReloadGate (pure, exported for tests) — the AUTO update path's reload gate: reload()
     // fires only when BOTH the SW handoff (controllerchange, or the 4s safety timeout — either calls
     // onHandoff) AND the armed MIN_UPDATING_MS visible hold have completed, and at most ONCE. The
@@ -588,7 +598,8 @@ interface DedOpts {
     // `500 - performance.now()` clamps to 0 whenever React mounts >500ms after navigation — i.e. on
     // every real network / SW cold boot — so the splash flashed exactly where it mattered). A
     // missing stamp (inline script failed/stripped) holds the full 500ms from now: the safe direction.
-    // skipHold (the consumed cg-skip-boot-hold flag — the boot right after an auto-update) drops the
+    // skipHold (the consumed cg-skip-boot-hold flag — the boot right after an update, auto OR the
+    // manual Check-for-updates reload; both paths stamp it) drops the
     // artificial hold entirely: remaining=0, the splash stays only for the real boot work.
     const bootHoldRemaining=(shownAt:number|undefined,now:number,skipHold=false)=>skipHold?0:shownAt===undefined?500:Math.max(500-(now-shownAt),0);
 
@@ -1382,7 +1393,13 @@ interface DedOpts {
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
           <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
-          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={flashMs} min={100} max={5000} snap={100} disabled={active} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-10" onCommit={v=>{setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}}/></div></div>
+          {/* Slider readout width (Round-4, all SIX SliderValueEditor sites — 3 mode-screen + 3 in
+              the Save Defaults popup): ONE shared w-[3.3em] = the widest possible readout string
+              ("2m 55s", live-measured at 3.18em in text-xs tabular-nums) + ~4% breathing room, in
+              em so it tracks the fluid root font. SliderValueEditor applies widthClass to the
+              display button AND the tap-to-type input, so the input hugs the same tight column.
+              Keep all six in lockstep. */}
+          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={flashMs} min={100} max={5000} snap={100} disabled={active} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-[3.3em]" onCommit={v=>{setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}}/></div></div>
           <div className="mt-5">
             <div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1">{fmtFlashT(flashRemainMs)}</div><div className="bar"><span ref={flashBarRef} style={{width:"100%"}}></span></div></div>
             <div className="mt-4 rounded-2xl panel p-4">
@@ -1684,7 +1701,7 @@ interface DedOpts {
             <button type="button" onClick={toggleAllowMistakes} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
             <button type="button" onClick={togglePerQ} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border btn-solid border-transparent${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>{perQ?"Per Question":"Per Round"}</button>
           </div>
-          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-14" onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-8" onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
+          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-[3.3em]" onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-[3.3em]" onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
           <div className="mt-5">
             {!perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={blitzTimeRef}>{fmtBlitzT(blitzSec)}</span></div><div className="bar"><span ref={blitzBarRef} style={{width:"100%"}}></span></div></div>)}
             {perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={suddenTimeRef}>{qSec}s</span></div><div className="bar"><span ref={suddenBarRef} style={{width:"100%"}}></span></div></div>)}
@@ -2093,9 +2110,10 @@ interface DedOpts {
       //   • it has been VISIBLE ≥0.5s (bootHoldRemaining, anchored to the __bootShownAt rAF stamp — not
       //     navigation start), so a fast cached load doesn't flash it for a single frame (which read
       //     like a glitch); on a slow load it has already served its time → the hold clamps to 0; and
-      //     the boot right after an AUTO update skips the hold entirely (the one-time cg-skip-boot-hold
-      //     flag, consumed here — the user just watched the Updating screen ≥1s, so the splash shows
-      //     only as long as the real boot takes);
+      //     the boot right after an update — auto OR the manual Check-for-updates reload, BOTH stamp
+      //     the one-time cg-skip-boot-hold flag, consumed here — skips the hold entirely (the user
+      //     just watched the Updating screen ≥1s, so the splash shows only as long as the real boot
+      //     takes);
       //   • the real stylesheet has APPLIED — the build swaps the render-blocking CSS <link> into a
       //     preload (vite.config.js bootCssPreload) so the splash can be the page's first paint, and
       //     the swap stamps window.__cssReady + fires 'app-css-ready'. Removing #boot before then would
@@ -2689,30 +2707,39 @@ interface DedOpts {
         <div className="space-y-2">
           <SectionLabel>Display</SectionLabel>
           <div className="text-xs text-purple-200/80">Date Format</div>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
           {/* The Written/Numeric date-format groups sit in a shared pill housing (owner call,
-              Round-3) — a RING-SAFE rebuild of the fused segmented control this look replaces: the
-              container draws the whole frame (border + surface-toggle, NO overflow-hidden) and each
-              borderless segment keeps its OWN radius one concentric step in (rounded-lg), so the
-              inset press-drag ring follows every segment's corners INSIDE the pill instead of being
-              clipped square (the Round-2 defect that unfused the originals). Unselected segments are
-              transparent — the container surface shows through, so they read as part of the pill.
-              Date-format groups ONLY, per the owner — the Input picker below and the chance rows
-              keep the flat chance-row pattern (individually rounded gap-separated buttons). */}
+              Round-3; rebuilt FLUSH Round-4): the container draws the whole frame (border +
+              surface-tray, NO padding, NO overflow-hidden) and each borderless segment carries a
+              CONCENTRIC radius — calc(var(--radius-xl) - 1px), the housing's rounded-xl minus its
+              1px border — so a selected btn-solid segment's fill arc traces the housing's inner
+              edge exactly. (Equal radii offset by the border diverge ~0.41px at 45°, leaving a
+              hairline tray-colored crescent at every flush corner — visible at 3x device pixel
+              ratio.) Pressing MDY reads exactly like pressing the Buttons chip (clean flush
+              purple, no visible seam), with uniform rounding on all four corners even where a
+              corner isn't flush. Unselected segments are transparent — the
+              tray surface shows through, visible on its own only in the 2px gap-0.5 seams between
+              segments. Still RING-SAFE: with no overflow-hidden the inset press-drag ring follows
+              each segment's own radius instead of being clipped square (the Round-2 defect that
+              unfused the originals). Height sits at the popover one-height control tier: segment
+              text-xs + py-1.5 (~27.7px) + the housing's 1px top/bottom borders ≈ 29.7px = the
+              Buttons/Dots chip height (no other padding may sneak in). Date-format groups ONLY,
+              per the owner — the Input picker below and the chance rows keep the flat chance-row
+              pattern (individually rounded gap-separated buttons). */}
           <div className={`flex gap-2 ${randomFormat?"opacity-60 pointer-events-none":""}`}>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
-              <div className="flex gap-0.5 p-0.5 border surface-tray rounded-xl">
-                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='written-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
+              <div className="flex gap-0.5 border surface-tray rounded-xl">
+                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
               </div>
             </div>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
-              <div className="flex gap-0.5 p-0.5 border surface-tray rounded-xl">
-                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-lg text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>YMD</button>
+              <div className="flex gap-0.5 border surface-tray rounded-xl">
+                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>YMD</button>
               </div>
             </div>
           </div>
@@ -2724,12 +2751,12 @@ interface DedOpts {
             <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>Dots</button>
           </div>
           <div className="text-xs text-purple-200/80 pt-1">Theme</div>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
           {/* The theme selects sit in the popover's text-xs control tier (Round-3 font
               normalization — their text-sm read oversized next to every neighboring control);
               menuTextClassName sizes their portaled option rows to match the trigger. The bar's
               mode selector keeps CustomSelect's default 15px menu. */}
-          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1 text-xs w-full focus:outline-hidden focus-ring text-left"/></div>)}
+          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Dates</SectionLabel>
@@ -2739,7 +2766,7 @@ interface DedOpts {
             <span className="text-purple-300/60 text-sm shrink-0">→</span>
             <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
           </div>
-          <div className="flex items-center justify-between pt-1"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between pt-1"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
           {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
               minY<=1582<=maxY). Year 1582 itself spans both calendars. When locked, the selected value
               stays visually selected so it's restored when the range becomes mixed again. */}
@@ -2762,7 +2789,7 @@ interface DedOpts {
         </div>
         <div className="space-y-2 pt-3 border-t border-purple-500/20">
           <SectionLabel>Stats</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{saveStats?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
         <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
@@ -2778,7 +2805,7 @@ interface DedOpts {
                 the saved defaults (factory when none saved) — nothing new to save. Each caption sits in
                 a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
                 wrapping; overflow-hidden on the button contains the pre-fit paint). */}
-            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-2 rounded-xl btn-solid text-xs font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
+            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
             <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
             <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
@@ -2788,10 +2815,10 @@ interface DedOpts {
               ring breathing room around the text and the radius rounds its corners (vs a square outline
               hugging the glyphs); the negative margin cancels the padding so the text keeps its exact
               flow position. */}
-          {/* The always-available way back to factory semantics (Q7). The Save Defaults popup carries a
-              matching link, but the popup sits behind the Save Defaults button, which dims + locks
-              exactly when live == saved — at steady state the popup link is unreachable, so this footer
-              link (the same muted tier as Check for updates below) is the guaranteed path. FIRST link
+          {/* The ONLY way back to factory semantics (Q7; the Save Defaults popup's duplicate link was
+              removed in Round-4 — one action, one home). This footer link (the same muted tier as
+              Check for updates below) is always reachable: the Save Defaults button dims + locks
+              exactly when live == saved, but the footer never hides behind it. FIRST link
               row, directly under the button trio (Round-2): it's the only actionable setting in this
               block, and it belongs to the trio's story — below it the footer decays into contact info
               and metadata. Shown only while saved defaults exist. A plain immediate action, no
@@ -2853,25 +2880,20 @@ interface DedOpts {
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Flash speed</div>
-              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-10" onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
+              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Blitz round timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-14" onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
+              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
             </div>
             <div className="space-y-1">
               <div className="text-xs text-purple-200/80">Blitz question timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-8" onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
+              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
             </div>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-purple-100/80">Cancel</button>
               <button type="button" onClick={commitSaveDefaults} className="flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium">Save</button>
             </div>
-            {/* Escape hatch back to factory semantics — clears the snapshot (Full Reset deliberately
-                never does; the ⚙ footer's "Clear saved defaults" link is the same action, reachable
-                even when the dimmed Save Defaults button makes this popup unopenable). Shown only
-                while saved defaults exist; the popup stays open (the pending values remain saveable). */}
-            {savedDefaults!==null&&(<div className="text-center"><button type="button" onClick={clearUserDefaults} className="text-[11px] text-purple-300/60 underline select-none">Clear saved defaults (back to factory)</button></div>)}
           </div>
         </div>),
         document.getElementById('root')!
@@ -2928,8 +2950,10 @@ interface DedOpts {
                     auto-close bug — see the CustomSelect component for full context.
                     wrapperRef={modeSelectRef} so the existing settings click-outside handler
                     keeps treating taps inside the mode dropdown the same way it treated taps
-                    on the original <select>. showChevron renders the same ▲▼ indicator. */}
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{setMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
+                    on the original <select>. showChevron renders the same ▲▼ indicator.
+                    forceDown (Round-4, owner intent): the mode menu ALWAYS opens downward —
+                    the trigger sits in the fixed bar, so the panel always fits below it. */}
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{setMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag forceDown className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
             </div>
             {settingsJsx}

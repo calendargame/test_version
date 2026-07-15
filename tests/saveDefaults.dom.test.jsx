@@ -9,7 +9,7 @@
 // store/helper contract is locked in tests/userDefaults.test.js; visual polish (the violet bar,
 // footer wrap) is on-device per the standing lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
+import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
@@ -217,22 +217,21 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(gear().className).toContain('gear-modified')
   })
 
-  it("the popup's Clear-saved-defaults link shows only when a snapshot exists, clears it, and keeps the popup open", () => {
+  it('the popup carries NO clear link (footer-only, Round-4); the footer link clears while the popup is open', () => {
     mountApp()
     openSettings()
     openPopup()
-    expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // nothing saved yet (popup AND footer)
+    expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // nothing saved yet — no link anywhere
     act(() => fireEvent.click(btn('Save')))
     openPopup()
-    // Exact name — with a snapshot saved, the ⚙ footer shows its own "Clear saved defaults" link too.
-    act(() =>
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Clear saved defaults (back to factory)' }),
-      ),
-    )
+    // The Save Defaults popup's duplicate "(back to factory)" link was removed in Round-4 —
+    // the ⚙ footer's "Clear saved defaults" is the ONLY clear affordance.
+    const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
+    expect(within(dialog).queryByRole('button', { name: /Clear saved defaults/ })).toBeNull()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear saved defaults' })))
     expect(useUserDefaults.getState().saved).toBeNull() // back to factory semantics
-    expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // both links vanish…
-    expect(btn('Save')).toBeInTheDocument() // …but the popup stays open, still saveable
+    expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // the link hides itself…
+    expect(btn('Save')).toBeInTheDocument() // …and the open popup survives, still saveable
   })
 
   it('the ⚙ footer Clear-saved-defaults link: hidden without a snapshot, reachable at steady state (Save Defaults dimmed), clears it', () => {

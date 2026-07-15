@@ -21,9 +21,10 @@ import { useBackButton } from './useBackButton.js'
 // wrapperClassName (outer relative div), ariaLabel, wrapperRef (forwarded to the
 // wrapper so callers can treat it like the old <select> ref), showChevron,
 // pressDrag (press-drag-select, documented at the prop below), and
-// menuTextClassName (option-row text size, documented at the prop below). Every
-// instance uses the space-based auto-flip: down when the panel fits below, up
-// only when it doesn't and there's more room above.
+// menuTextClassName (option-row text size, documented at the prop below), and
+// forceDown (skip the auto-flip, documented at the prop below). Instances
+// without forceDown use the space-based auto-flip: down when the panel fits
+// below, up only when it doesn't and there's more room above.
 //
 // Extracted from main.jsx in Stage C, Step 4d (verbatim; the only change is
 // ReactDOM.createPortal → the directly-imported createPortal — same function).
@@ -32,8 +33,9 @@ export interface CustomSelectOption {
   value: string
   label: ReactNode
 }
-// Measured viewport coordinates for the portaled panel: right edge always pinned,
-// and exactly one of top (opening down) / bottom (flipping up).
+// Measured coordinates for the portaled panel, in its CONTAINING-BLOCK space
+// (viewport rect + document scroll — see measurePanel): right edge always
+// pinned, and exactly one of top (opening down) / bottom (flipping up).
 interface PanelPos {
   right: number
   top?: number
@@ -50,6 +52,7 @@ export default function CustomSelect({
   showChevron = false,
   pressDrag = false,
   menuTextClassName = 'text-[15px]',
+  forceDown = false,
 }: {
   value: string
   onChange: (value: string) => void
@@ -70,6 +73,11 @@ export default function CustomSelect({
   // original text-[15px]; the settings theme selects pass text-xs so their menu text matches
   // their text-xs trigger, while the bar's mode selector keeps the default.
   menuTextClassName?: string
+  // The MODE-SELECTOR hardcode (Round-4, explicit owner intent): always open DOWNWARD, skipping
+  // the space-based auto-flip. The mode menu's trigger lives in the fixed top bar, so the panel
+  // always fits below it — passed ONLY by the bar's mode selector; the settings theme selects
+  // keep the auto-flip.
+  forceDown?: boolean
 }) {
   const [open, setOpen] = useState(false)
   // activeIdx tracks the keyboard-highlighted option (≠ selected value). -1 when nothing is
@@ -106,9 +114,24 @@ export default function CustomSelect({
   const measurePanel = () => {
     if (!ref.current) return
     const rect = ref.current.getBoundingClientRect()
-    const right = window.innerWidth - rect.right
-    if (openUpwardRef.current) setPanelPos({ right, bottom: window.innerHeight - rect.top + 6 })
-    else setPanelPos({ right, top: rect.bottom + 6 })
+    // documentElement.clientWidth, NOT window.innerWidth: the CSS `right` offset resolves against
+    // the containing block's right edge. In GUIDE mode the containing block is the initial
+    // containing block, whose width EXCLUDES a classic document scrollbar — innerWidth includes
+    // it, which painted every dropdown one scrollbar-width LEFT of its trigger on the How-to-Play
+    // page (desktop Windows browsers; overlay-scrollbar platforms were unaffected). In app mode
+    // the document can't scroll, so clientWidth === innerWidth — bit-identical to the
+    // iOS-QA-confirmed values.
+    const right = document.documentElement.clientWidth - rect.right
+    // The ± window.scrollY term converts the viewport rect into the portal's containing-block
+    // space. In app mode #root is position:fixed at the viewport origin and the document can't
+    // scroll — scrollY is always 0, so these are bit-identical to the iOS-QA-confirmed values.
+    // In GUIDE mode (html[data-doc-scroll]) #root goes static and the DOCUMENT becomes the
+    // scroller, so the absolute panel's containing block anchors at the document origin: without
+    // the term, a page scrolled down S px painted the panel S px above the trigger, sliding off
+    // the top of the screen (the Round-4 "mode menu opens upward + clipped in HtP" report).
+    if (openUpwardRef.current)
+      setPanelPos({ right, bottom: window.innerHeight - rect.top + 6 - window.scrollY })
+    else setPanelPos({ right, top: rect.bottom + 6 + window.scrollY })
   }
   // Toggle handler measures available space the moment the dropdown opens.
   // Each option button is ~45px tall (py-3 + the default text-[15px] menu text;
@@ -126,7 +149,11 @@ export default function CustomSelect({
       const spaceBelow = vh - rect.bottom - 16
       const spaceAbove = rect.top - 16
       const estimatedHeight = options.length * 45 + 10
-      openUpwardRef.current = spaceBelow < estimatedHeight && spaceAbove > spaceBelow
+      // forceDown (the mode-selector hardcode — see the prop) pins the panel downward regardless
+      // of the measured space; every other instance keeps the auto-flip.
+      openUpwardRef.current = forceDown
+        ? false
+        : spaceBelow < estimatedHeight && spaceAbove > spaceBelow
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the

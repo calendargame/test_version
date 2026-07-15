@@ -45,7 +45,7 @@ export default function SliderValueEditor({
   format: (v: number) => string // display text, e.g. fmtFlashT → "2.0s"
   toText: (v: number) => string // edit seed, unit-less user text, e.g. 2000 → "2"
   fromText?: (n: number) => number // typed number → internal units (Flash: s ×1000 → ms)
-  widthClass: string // the readout's fixed width (w-8/w-10/w-14) so the row never shifts
+  widthClass: string // the readout's fixed width (the shared w-[3.3em] — see the first main.tsx site) so the row never shifts
   onCommit: (v: number) => void
 }) {
   const [text, setText] = useState<string | null>(null) // null = display mode
