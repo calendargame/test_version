@@ -16,7 +16,8 @@ import { useSettings } from './settings.js'
 // WHAT PERSISTS (agreed Stage-D scope):
 //   • Lifetime stats for the continuous modes — Classic, Flash, and Deduction's
 //     three sub-modes (Day/Month/Year). Each is the engine's Stats object.
-//   • All-time bests, config-keyed — Blitz (score/streak), Sudden (per-question),
+//   • All-time bests, config-keyed — Blitz per-round (score/streak), per-question
+//     sudden death (score only), per-question with Allow Mistakes (score/streak, C3a),
 //     and AoX (average/median). These already lived as component state; the store
 //     now owns them (and their types).
 //   • Lookup history (the last 20 lookups).
@@ -59,6 +60,12 @@ export type ProgressValues = {
   stats: Record<StatsKey, Stats>
   blitzBest: Record<string, BlitzBest>
   suddenBest: Record<string, SuddenBest>
+  // Per-question + Allow Mistakes bests (C3a): the same BlitzBest {score, streak} shape as
+  // per-round, keyed by the SAME per-question key string as suddenBest — for per-question,
+  // AM-ness is the MAP split (the two variants' record shapes differ), not a key segment.
+  // Added as a fresh key space, so no migration: an older payload simply lacks the key and
+  // zustand's shallow merge leaves the default {} standing (`version` stays 2).
+  suddenAmBest: Record<string, BlitzBest>
   aoxBest: Record<string, AoxBest>
   lookupHistory: LookupEntry[]
 }
@@ -68,6 +75,7 @@ export type ProgressState = ProgressValues & {
   setModeStats: (key: StatsKey, v: Updater<Stats>) => void
   setBlitzBest: (v: Updater<Record<string, BlitzBest>>) => void
   setSuddenBest: (v: Updater<Record<string, SuddenBest>>) => void
+  setSuddenAmBest: (v: Updater<Record<string, BlitzBest>>) => void
   setAoxBest: (v: Updater<Record<string, AoxBest>>) => void
   setLookupHistory: (v: Updater<LookupEntry[]>) => void
   resetProgress: () => void
@@ -93,6 +101,7 @@ export const makeProgressDefaults = (): ProgressValues => ({
   },
   blitzBest: {},
   suddenBest: {},
+  suddenAmBest: {},
   aoxBest: {},
   lookupHistory: [],
 })
@@ -105,6 +114,7 @@ const PERSISTED_KEYS: (keyof ProgressValues)[] = [
   'stats',
   'blitzBest',
   'suddenBest',
+  'suddenAmBest',
   'aoxBest',
   'lookupHistory',
 ]
@@ -146,6 +156,7 @@ export const useProgress = create<ProgressState>()(
         }),
       setBlitzBest: (v) => set((s) => ({ blitzBest: resolve(v, s.blitzBest) })),
       setSuddenBest: (v) => set((s) => ({ suddenBest: resolve(v, s.suddenBest) })),
+      setSuddenAmBest: (v) => set((s) => ({ suddenAmBest: resolve(v, s.suddenAmBest) })),
       setAoxBest: (v) => set((s) => ({ aoxBest: resolve(v, s.aoxBest) })),
       setLookupHistory: (v) => set((s) => ({ lookupHistory: resolve(v, s.lookupHistory) })),
       // Wipe all saved progress back to launch defaults. Because the store is persisted, this

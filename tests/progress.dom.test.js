@@ -64,6 +64,50 @@ describe('progress store — v1 envelope rehydrates through the migration', () =
     await useProgress.persist.rehydrate()
     expect(useProgress.getState().aoxBest).toEqual({ [newKey]: rec })
   })
+
+  // C3a no-migration pin: suddenAmBest was ADDED as a fresh key space (v2 stayed v2). A payload
+  // saved before it existed simply lacks the key — zustand's shallow merge must leave the default
+  // {} standing, with every pre-existing silo untouched. If this ever fails, a real migration
+  // became necessary.
+  it('a stored payload WITHOUT suddenAmBest hydrates with the default {} (no migration needed)', async () => {
+    const state = {
+      ...makeProgressDefaults(),
+      blitzBest: {
+        'm60|numeric-ymd|random|random|random|1583-10000|true': {
+          score: 4,
+          streak: 3,
+          scoreRoundId: 1,
+          streakRoundId: 1,
+        },
+      },
+      suddenBest: {
+        '10|numeric-ymd|random|random|random|1583-10000|true': { score: 2, roundId: 1 },
+      },
+    }
+    delete state.suddenAmBest // the pre-C3a payload shape
+    localStorage.setItem('cg-progress-v1', JSON.stringify({ state, version: 2 }))
+    await useProgress.persist.rehydrate()
+    const s = useProgress.getState()
+    expect(s.suddenAmBest).toEqual({})
+    expect(s.blitzBest['m60|numeric-ymd|random|random|random|1583-10000|true']?.score).toBe(4)
+    expect(s.suddenBest['10|numeric-ymd|random|random|random|1583-10000|true']?.score).toBe(2)
+  })
+
+  // The write-path twin of the pin above: partialize must persist every data silo — including
+  // suddenAmBest (C3a) — and never a setter function. (Asserted here rather than in the Node file:
+  // zustand only attaches the .persist API when a storage exists, i.e. under jsdom.)
+  it('partialize persists every data value — including suddenAmBest (C3a) — and no setters', () => {
+    const out = useProgress.persist.getOptions().partialize(useProgress.getState())
+    expect(Object.keys(out).sort()).toEqual([
+      'aoxBest',
+      'blitzBest',
+      'lookupHistory',
+      'stats',
+      'suddenAmBest',
+      'suddenBest',
+    ])
+    for (const v of Object.values(out)) expect(typeof v).not.toBe('function')
+  })
 })
 
 // ── C2 Part 4: the save/rehydrate ROUND-TRIP fuzz + corruption tolerance ─────────────────────────
@@ -132,6 +176,17 @@ describe('progress store — save/rehydrate round-trip fuzz + corruption toleran
             { score: Math.floor(rnd() * 50), roundId: rnd() < 0.3 ? null : Math.floor(rnd() * 9) },
           ]),
         ),
+        suddenAmBest: Object.fromEntries(
+          Array.from({ length: Math.floor(rnd() * 3) }, (_, i) => [
+            randKey(rnd) + i,
+            {
+              score: Math.floor(rnd() * 50),
+              streak: Math.floor(rnd() * 50),
+              scoreRoundId: rnd() < 0.3 ? null : Math.floor(rnd() * 9),
+              streakRoundId: rnd() < 0.3 ? null : Math.floor(rnd() * 9),
+            },
+          ]),
+        ),
         aoxBest: Object.fromEntries(
           Array.from({ length: Math.floor(rnd() * 3) }, (_, i) => [
             randKey(rnd) + i,
@@ -161,6 +216,7 @@ describe('progress store — save/rehydrate round-trip fuzz + corruption toleran
       expect(s.stats, `seed ${seed}`).toEqual(values.stats)
       expect(s.blitzBest, `seed ${seed}`).toEqual(values.blitzBest)
       expect(s.suddenBest, `seed ${seed}`).toEqual(values.suddenBest)
+      expect(s.suddenAmBest, `seed ${seed}`).toEqual(values.suddenAmBest)
       expect(s.aoxBest, `seed ${seed}`).toEqual(values.aoxBest)
       expect(s.lookupHistory, `seed ${seed}`).toEqual(values.lookupHistory)
     }

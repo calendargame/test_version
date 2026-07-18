@@ -63,7 +63,7 @@ export function useGameEngine({
   }, [state.questionId])
   const elapsed = (): number | null =>
     tStartRef.current != null ? (performance.now() - tStartRef.current) / 1000 : null
-  // Restart the solve timer without changing the question — AoX One-By-One reveals the next date
+  // Restart the solve timer without changing the question — AoX One-by-One reveals the next date
   // on Continue (the date was loaded earlier, hidden), so the solve time must run from the reveal,
   // not from when it loaded. Other modes never call it (the questionId effect covers them).
   const restartTimer = () => {

@@ -9,7 +9,10 @@ import { useBackButton } from './useBackButton.js'
 // popover) and floats over the page. Full listbox keyboard support
 // (↑/↓/Home/End/Enter/Space/Esc/Tab) and a click-outside-to-close handler that
 // correctly treats taps inside the portaled panel (and on native scrollbars)
-// as "inside".
+// as "inside". While open, an ELEMENT scroll (the settings popover's inner
+// wrapper) repositions the panel to its trigger, but a DOCUMENT scroll (guide
+// mode's page pan — even a touch-drag that starts inside the open panel)
+// CLOSES it with outside-tap semantics — see the reposition effect.
 //
 // ⚠ STABILITY NOTE: the portal positioning (measurePanel) and open-direction
 // logic (handleToggle's space-based flip) were tuned against iOS Safari over
@@ -105,8 +108,9 @@ export default function CustomSelect({
   const [panelPos, setPanelPos] = useState<PanelPos | null>(null)
   // measurePanel reads the trigger's current viewport rect and writes panelPos:
   // right edge aligned to the trigger, 6px below it (top) when opening down, or
-  // 6px above it (bottom) when flipping up. Called on open and on scroll/resize
-  // so the portaled panel stays pinned to its trigger.
+  // 6px above it (bottom) when flipping up. Called on open and on element-scroll/resize
+  // so the portaled panel stays pinned to its trigger (a DOCUMENT scroll closes the
+  // panel instead — see the reposition effect).
   // Plain function (no useCallback): it reads ref.current, which a manual dep array can't
   // track at ref.current granularity — useCallback here trips preserve-manual-memoization.
   // The React Compiler memoizes this automatically, so the reposition effect below can list
@@ -259,13 +263,27 @@ export default function CustomSelect({
       document.removeEventListener('touchstart', h)
     }
   }, [open, ref])
-  // Keep the portaled panel pinned to its trigger while open: any scroll
-  // (capture phase, since scroll doesn't bubble — this catches the settings
-  // popover's inner scroll wrapper) or viewport resize re-measures panelPos.
+  // While open, captured scrolls (capture phase, since scroll doesn't bubble) split by
+  // TARGET: an ELEMENT scroll — the settings popover's inner scroll wrapper — re-measures
+  // panelPos so the panel stays pinned to its trigger (the QA'd reposition), but a
+  // DOCUMENT scroll — the guide page itself panning (html[data-doc-scroll]; the app-mode
+  // document can't scroll) — CLOSES the panel with outside-tap semantics (activeIdx reset,
+  // no trigger refocus) instead of chasing the trigger through momentum-scroll jitter.
+  // A page scroll targets the Document node; documentElement is accepted too for WebKit
+  // safety. Accepted consequence: a touch-drag that starts inside the open panel and pans
+  // the page also closes it (native-iOS-like). Resize + visualViewport keep repositioning.
   useEffect(() => {
     if (!open) return
     const reposition = () => measurePanel()
-    window.addEventListener('scroll', reposition, true)
+    const onScroll = (e: Event) => {
+      if (e.target === document || e.target === document.documentElement) {
+        setOpen(false)
+        setActiveIdx(-1)
+        return
+      }
+      reposition()
+    }
+    window.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', reposition)
     const vv = window.visualViewport
     if (vv) {
@@ -273,7 +291,7 @@ export default function CustomSelect({
       vv.addEventListener('scroll', reposition)
     }
     return () => {
-      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('resize', reposition)
       if (vv) {
         vv.removeEventListener('resize', reposition)
@@ -281,10 +299,11 @@ export default function CustomSelect({
       }
     }
     // Depend on [open] alone. measurePanel closes over nothing render-specific (only the
-    // stable ref/openUpwardRef/setPanelPos), so calling a "stale" copy is behavior-identical;
-    // listing it would just re-subscribe the listeners every render. useCallback isn't an
-    // option here — it reads ref.current, which trips preserve-manual-memoization. The React
-    // Compiler memoizes measurePanel automatically, making this exactly correct at runtime.
+    // stable ref/openUpwardRef/setPanelPos) and setOpen/setActiveIdx are React's stable
+    // setters, so calling a "stale" copy is behavior-identical; listing them would just
+    // re-subscribe the listeners every render. useCallback isn't an option here — it reads
+    // ref.current, which trips preserve-manual-memoization. The React Compiler memoizes
+    // measurePanel automatically, making this exactly correct at runtime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   return (
@@ -326,7 +345,7 @@ export default function CustomSelect({
         </span>
       </button>
       {showChevron && (
-        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center leading-none text-[7px] text-white/90">
+        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center leading-none text-[7px] text-(--tx-w90)">
           <span>▲</span>
           <span>▼</span>
         </div>

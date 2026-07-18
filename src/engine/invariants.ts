@@ -90,5 +90,7 @@ export function checkGameInvariants(state: GameState, useJulian: boolean): strin
     v.push(`backDepth(${state.backDepth}) != forwardStack.length(${state.forwardStack.length})`)
   if (!isCount(state.questionId))
     v.push(`questionId is not a non-negative integer (${state.questionId})`)
+  if (!isCount(state.gridEpoch))
+    v.push(`gridEpoch is not a non-negative integer (${state.gridEpoch})`)
   return v
 }

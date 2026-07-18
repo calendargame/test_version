@@ -23,6 +23,7 @@ describe('progress store', () => {
     }
     expect(s.blitzBest).toEqual({})
     expect(s.suddenBest).toEqual({})
+    expect(s.suddenAmBest).toEqual({})
     expect(s.aoxBest).toEqual({})
     expect(s.lookupHistory).toEqual([])
   })
@@ -60,6 +61,16 @@ describe('progress store', () => {
     expect(useProgress.getState().blitzBest.k1.score).toBe(7)
     useProgress.getState().setSuddenBest((p) => ({ ...p, k2: { score: 3, roundId: 2 } }))
     expect(useProgress.getState().suddenBest.k2.score).toBe(3)
+    // The per-Q + Allow Mistakes map (C3a) — BlitzBest-shaped, its own silo.
+    useProgress
+      .getState()
+      .setSuddenAmBest({ k4: { score: 6, streak: 4, scoreRoundId: 3, streakRoundId: 3 } })
+    expect(useProgress.getState().suddenAmBest.k4.score).toBe(6)
+    useProgress
+      .getState()
+      .setSuddenAmBest((p) => ({ ...p, k5: { ...p.k4, streak: 5, streakRoundId: 4 } }))
+    expect(useProgress.getState().suddenAmBest.k5.streak).toBe(5)
+    expect(useProgress.getState().suddenAmBest.k4.streak).toBe(4)
     useProgress.getState().setAoxBest((p) => ({
       ...p,
       k3: { avg: 1.5, avgMed: 1.4, avgRoundId: 1, med: 1.4, medAvg: 1.5, medRoundId: 1 },
@@ -80,11 +91,13 @@ describe('progress store', () => {
     const g = useProgress.getState
     g().setModeStats('classic', { played: 9, good: 9, streak: 9, best: 9, times: [9] })
     g().setBlitzBest({ k: { score: 1, streak: 1, scoreRoundId: 1, streakRoundId: 1 } })
+    g().setSuddenAmBest({ k: { score: 1, streak: 1, scoreRoundId: 1, streakRoundId: 1 } })
     g().setLookupHistory([{ id: 'a', label: 'x', weekday: 'w', result: 'r', y: 1, m: 1, d: 1 }])
     g().resetProgress()
     const s = g()
     expect(s.stats.classic).toEqual(blank)
     expect(s.blitzBest).toEqual({})
+    expect(s.suddenAmBest).toEqual({})
     expect(s.lookupHistory).toEqual([])
     // The factory returns fresh nested objects — mutating live state must not leak into defaults.
     s.stats.classic.times.push(1)

@@ -28,3 +28,4 @@ dist-ssr
 
 # Private working doc (plan + rules + backlog) — local only, not published
 PROJECT.md
+.gstack/

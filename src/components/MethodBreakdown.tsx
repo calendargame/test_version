@@ -50,7 +50,7 @@ export function MethodExplanation({
         : []
   if (summaries.length === 0)
     return (
-      <div className="text-sm text-purple-100/80">Show Codes is only supported for AD dates.</div>
+      <div className="text-sm text-(--tx-100-80)">Show Codes is only supported for AD dates.</div>
     )
   // Collapse-when-same: gather each code's values across all interpretations,
   // dedup via Set (preserves insertion order), and join with slashes if 2+ unique.
@@ -85,14 +85,14 @@ export function MethodExplanation({
       <div className="grid grid-cols-5 gap-2 text-center text-sm">
         {codes.map((c, i) => (
           <div key={i} className="flex flex-col gap-1">
-            <div className="text-[11px] text-purple-200/80">
+            <div className="text-[11px] text-(--tx-200-80)">
               {c.italic ? <i>{c.label}</i> : c.label}
             </div>
-            <div className="font-semibold tabular-nums text-purple-50">{c.value}</div>
+            <div className="font-semibold tabular-nums text-(--tx-50)">{c.value}</div>
           </div>
         ))}
       </div>
-      <div className="mt-2 text-center text-[11px] text-purple-300/60">{calendarText}</div>
+      <div className="mt-2 text-center text-[11px] text-(--tx-300-60)">{calendarText}</div>
     </div>
   )
 }

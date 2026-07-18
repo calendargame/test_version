@@ -3,6 +3,7 @@ import Expander from './Expander.jsx'
 import { Kbd, SectionLabel, SECTION_LABEL_CLASS } from './primitives.jsx'
 import { DAY } from '../lib/format.js'
 import { DOT_CELL } from '../lib/dotLayout.js'
+import { selectionSuppressesToggle } from '../lib/selectionGuard.js'
 
 // GuidePage / GuideSection — the How-to-Play tab: an accordion of documentation
 // sections (each a GuideSection wrapping an Expander) covering every observable
@@ -31,12 +32,19 @@ export function GuideSection({
     <div className="rounded-2xl panel overflow-hidden">
       <button
         type="button"
-        onClick={() => onToggle(id)}
+        // Guide text is selectable (`select-text` on the title span + the body wrapper below) —
+        // a desktop drag-select across a title fires this click on mouse-up, so skip the toggle
+        // while such a selection stands (lib/selectionGuard owns the rule) rather than collapse
+        // the panel out from under it.
+        onClick={(e) => {
+          if (selectionSuppressesToggle(window.getSelection(), e.currentTarget)) return
+          onToggle(id)
+        }}
         className="w-full text-left px-4 py-3 flex items-center justify-between"
       >
-        <span className="text-sm font-semibold text-purple-50">{title}</span>
+        <span className="text-sm font-semibold text-(--tx-50) select-text">{title}</span>
         <span
-          className={`text-[7px] text-white/90 leading-none transition-transform ease-in-out ${isOpen ? 'rotate-180' : ''}`}
+          className={`text-[7px] text-(--tx-w90) leading-none transition-transform ease-in-out ${isOpen ? 'rotate-180' : ''}`}
           // Match the Expander's duration EXACTLY (.expander uses the same calc) so the triangle and
           // the panel finish together — and honor the reduce-motion --motion-scale, so both snap
           // instantly under "Reduce Motion" instead of the panel snapping while the triangle spins.
@@ -46,7 +54,7 @@ export function GuideSection({
         </span>
       </button>
       <Expander open={isOpen}>
-        <div className="px-4 pb-4 pt-1 text-[13px] text-purple-100/90 leading-relaxed space-y-2">
+        <div className="px-4 pb-4 pt-1 text-[13px] text-(--tx-100-90) leading-relaxed space-y-2 select-text">
           {children}
         </div>
       </Expander>
@@ -60,19 +68,18 @@ export function GuideSection({
 function Divider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 px-1 pt-1">
-      <div className="flex-1 h-px bg-purple-500/20"></div>
+      <div className="flex-1 h-px bg-(--bg-500-20)"></div>
       <span className={SECTION_LABEL_CLASS}>{label}</span>
-      <div className="flex-1 h-px bg-purple-500/20"></div>
+      <div className="flex-1 h-px bg-(--bg-500-20)"></div>
     </div>
   )
 }
 // Lead — a one-line summary at the top of a GuideSection, so the section's gist is
-// scannable before the details. Slightly brighter than body text — the bare
-// text-purple-50 the section titles use, which the light-theme override block in
-// index.css remaps (an alpha variant like /95 would escape that block and turn
-// near-invisible on light/parchment).
+// scannable before the details. Slightly brighter than body text — the same --tx-50
+// ramp tier the section titles use (Q16, index.css), which every theme defines, so
+// it stays legible on light/parchment by construction.
 function Lead({ children }: { children: ReactNode }) {
-  return <p className="text-purple-50">{children}</p>
+  return <p className="text-(--tx-50)">{children}</p>
 }
 // Subhead — a small uppercase sub-label inside a section (the keyboard-group style),
 // used to break a long section into scannable blocks. SectionLabel (primitives) owns
@@ -81,8 +88,8 @@ function Subhead({ children }: { children: ReactNode }) {
   return <SectionLabel className="mb-1 mt-1">{children}</SectionLabel>
 }
 // Bulleted list helper — scannable detail with theme-legible bullets: the markers use
-// the per-theme --mut-color var directly (Tailwind v4 var shorthand), so they stay
-// visible on every theme with no override-block entry.
+// the per-theme --mut-color var directly (the Tailwind v4 var shorthand — the precedent
+// the Q16 text/rule ramp generalized app-wide), so they stay visible on every theme.
 function UL({ children }: { children: ReactNode }) {
   return <ul className="list-disc pl-5 space-y-1 marker:text-(--mut-color)">{children}</ul>
 }
@@ -113,7 +120,7 @@ function DotDiagram() {
       width="156"
       role="img"
       aria-label={ariaLabel}
-      className="my-1 text-purple-100/90"
+      className="my-1 text-(--tx-100-90)"
     >
       {DAY.map((day, i) => (
         <g key={day}>
@@ -146,7 +153,7 @@ export default function GuidePage() {
           reform took effect) are treated as Julian, matching history — the Julian Calendar setting,
           on by default, controls this. Every later date is Gregorian.
         </p>
-        <Subhead>Install &amp; offline</Subhead>
+        <Subhead>Install and offline</Subhead>
         <p>
           It runs entirely in your browser and saves your progress on this device. Add it to your
           home screen to use it like an app:
@@ -167,6 +174,13 @@ export default function GuidePage() {
           Once it has loaded it works fully offline, with no connection needed to practice. A brief{' '}
           <b>loading screen</b> (the app logo) shows while it starts up.
         </p>
+        <p>
+          The app is designed portrait-only. An Android install locks itself to portrait; on iPhone
+          and other phones that still rotate, turning the device sideways brings up a full-screen{' '}
+          <b>Rotate back to portrait</b> screen until you turn it upright again — any running Flash
+          or Blitz countdown pauses while it's up, so an accidental rotation mid-round never costs
+          time. Desktop windows and tablets are never blocked.
+        </p>
         <Subhead>Updates</Subhead>
         <p>
           Updates take care of themselves: while you use the app, any new version quietly downloads
@@ -176,7 +190,7 @@ export default function GuidePage() {
           a <b>Check for updates</b> link that reloads the newest version on the spot (your saved
           progress is kept), behind the same updating screen.
         </p>
-        <Subhead>The book &amp; contact</Subhead>
+        <Subhead>The book and contact</Subhead>
         <p>
           It pairs with the book{' '}
           <i>Day-of-the-Week Calculation: A Highly Optimized Mental Method</i>.
@@ -186,13 +200,13 @@ export default function GuidePage() {
           <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all">
             dayoftheweekcalculation@gmail.com
           </a>
-          .
+          . Nothing is too small to mention — even a typo or a detail that looks slightly off.
         </p>
       </GuideSection>
       <Divider label="Interface" />
       <GuideSection id="buttons" title="Buttons" openId={open} onToggle={toggle}>
         <Lead>How tapping, dragging, and each on-screen button work.</Lead>
-        <Subhead>Tapping &amp; dragging</Subhead>
+        <Subhead>Tapping and dragging</Subhead>
         <UL>
           <li>Tap any button to use it.</li>
           <li>
@@ -206,7 +220,9 @@ export default function GuidePage() {
           </li>
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
-            release to switch (or just tap to open the menu and tap a mode, as before).
+            release to switch (or just tap to open the menu and tap a mode, as before). If you
+            scroll this How to Play page while the menu is open, it closes — the same as tapping
+            outside it.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it
@@ -218,6 +234,13 @@ export default function GuidePage() {
           <li>
             Timer sliders (Flash speed and both Blitz timers) — tap the value beside the slider to
             type an exact number of seconds instead of dragging.
+          </li>
+          <li>
+            Text around the app can't be selected or highlighted, so presses and drags always
+            operate the game. The exceptions are anywhere you type (the Year Range, Lookup, and AoX
+            run length fields, plus any timer value you've tapped to type), the contact email, and
+            everything in this How to Play guide, section titles included — guide text selects and
+            copies like a normal page.
           </li>
         </UL>
         <p>
@@ -233,7 +256,7 @@ export default function GuidePage() {
           <li>
             <b>Begin</b> — timer modes only (Blitz, Flash, AoX). Starts a round or run; the timer
             starts and the date is shown (Flash hides it after the configured duration; AoX hides it
-            between solves only when One-By-One is on).
+            between solves only when One-by-One is on).
           </li>
           <li>
             <b>Reset</b> — timer modes only. In Blitz, ends the current round and unlocks settings;
@@ -288,7 +311,7 @@ export default function GuidePage() {
             trip never alters how a date was originally shown.
           </li>
         </UL>
-        <Subhead>Reveal, Override &amp; Show Codes</Subhead>
+        <Subhead>Reveal, Override, and Show Codes</Subhead>
         <p>
           <b>Reveal</b> — show the correct answer without guessing. Counts as a wrong attempt. No
           penalty on unanswered dates while browsing back.
@@ -319,8 +342,8 @@ export default function GuidePage() {
         <UL>
           <li>
             <b>Blitz</b> — override past dates after the round ends to adjust your score and saved
-            bests. With Allow Mistakes off (or in Per Question), overriding a correct answer to
-            wrong during a round ends the round, just like a wrong answer.
+            bests. With Allow Mistakes off, overriding a correct answer to wrong during a round ends
+            the round, just like a wrong answer; with it on, the round keeps going.
           </li>
           <li>
             <b>AoX</b> — without Allow Mistakes, overriding a correct answer ends the run.
@@ -602,12 +625,12 @@ export default function GuidePage() {
           </li>
         </UL>
         <p>
-          At the foot of the menu: <b>Save Defaults</b>, <b>Reset Settings</b> and <b>Full Reset</b>{' '}
-          (see the Data section); directly under them — once you've saved your own defaults — a{' '}
-          <b>Clear saved defaults</b> link; then your Contact email, the Last Updated timestamp, and
-          the <b>Check for updates</b> link.
+          At the foot of the menu: <b>Save Defaults</b>, <b>Reset Settings</b>, and{' '}
+          <b>Full Reset</b> (see the Data section); directly under them — once you've saved your own
+          defaults — <b>View saved defaults</b> and <b>Clear saved defaults</b> links; then your
+          Contact email, the Last Updated timestamp, and the <b>Check for updates</b> link.
         </p>
-        <p className="text-purple-300/70 text-[12px]">
+        <p className="text-(--tx-300-70) text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
           changing several at once regenerates the date just once (and never restarts your solve
           timer mid-adjustment). The sections below cover each setting and exactly when a change
@@ -689,7 +712,7 @@ export default function GuidePage() {
         <div className="flex justify-center">
           <DotDiagram />
         </div>
-        <p className="text-purple-300/70 text-[12px] text-center">
+        <p className="text-(--tx-300-70) text-[12px] text-center">
           Sunday sits in the centre. The dots are deliberately unlabelled — their positions follow
           the day-of-week practice movement, so choosing one is the same motion you trace when
           calculating.
@@ -899,15 +922,16 @@ export default function GuidePage() {
             survives Full Reset.
           </li>
           <li>
-            <b>Per-mode setup</b> — Flash speed; Blitz / Sudden timer lengths, Allow Mistakes, and
-            Per-Round vs Per-Question; AoX count, Allow Mistakes, and One-By-One; the Deduction
+            <b>Per-mode setup</b> — Flash speed; both Blitz timer lengths, Allow Mistakes, and Per
+            Round vs Per Question; AoX run length, Allow Mistakes, and One-by-One; the Deduction
             sub-type; and each mode's show / hide stat toggles.
           </li>
           <li>
             <b>Stats</b> in the casual modes (Classic, Flash, Deduction).
           </li>
           <li>
-            <b>All-time bests</b> — Blitz score &amp; streak, Sudden score, AoX average &amp;
+            <b>All-time bests</b> — Blitz score and streak (kept separately for Per Round and for
+            Per Question with Allow Mistakes), Per Question sudden-death score, and AoX average and
             median.
           </li>
           <li>
@@ -931,7 +955,7 @@ export default function GuidePage() {
       </GuideSection>
       <GuideSection
         id="reset-settings"
-        title="Save Defaults, Reset Settings &amp; Full Reset"
+        title="Save Defaults, Reset Settings, and Full Reset"
         openId={open}
         onToggle={toggle}
       >
@@ -947,21 +971,22 @@ export default function GuidePage() {
         <UL>
           <li>Every setting in the ⚙ menu (all of Display — Input included — Dates, and Stats).</li>
           <li>
-            Four values from the mode screens: AoX run length (N), Flash speed, and both Blitz
-            timers (Per Round and Per Question).
+            Four values from the mode screens: AoX run length, Flash speed, and both Blitz timers
+            (Per Round and Per Question).
           </li>
         </UL>
         <p>
           Nothing else from the mode screens is captured — Blitz's Per Round vs Per Question, the
-          Deduction sub-type, Allow Mistakes, One-By-One, and the show/hide stat toggles always
+          Deduction sub-type, Allow Mistakes, One-by-One, and the show/hide stat toggles always
           reset to their launch values.
         </p>
         <UL>
           <li>
             Tapping the button opens a confirmation popup where the four mode-screen values can be
             edited before saving — so you can make, say, a different Flash speed your default
-            without changing the live one. The menu settings are captured exactly as they are.
-            Cancel discards any edits.
+            without changing the live one. As on the mode screens, tap the time readout beside any
+            of the popup's three sliders to type an exact value. The menu settings are captured
+            exactly as they are. Cancel discards any edits.
           </li>
           <li>
             While anything the snapshot covers differs from your defaults, the closed gear (⚙) shows
@@ -971,11 +996,13 @@ export default function GuidePage() {
           </li>
           <li>
             Your saved defaults survive Full Reset — that's the point: Full Reset restores{' '}
-            <i>them</i>. The way back to the launch defaults is the <b>Clear saved defaults</b> link
-            at the foot of the ⚙ menu (below the reset buttons), shown only while you have saved
-            defaults. It lives in the footer rather than the popup because the Save Defaults button
-            — and with it the popup — dims whenever everything already matches your defaults; the
-            footer link is always reachable.
+            <i>them</i>. Two links at the foot of the ⚙ menu (below the reset buttons), shown only
+            while you have saved defaults: <b>View saved defaults</b> opens a read-only popup
+            showing the four saved mode-screen values (every menu setting is also part of the
+            snapshot, captured as it was when you saved), and <b>Clear saved defaults</b> is the way
+            back to the launch defaults. They live in the footer rather than the popup because the
+            Save Defaults button — and with it the popup — dims whenever everything already matches
+            your defaults; the footer links are always reachable.
           </li>
         </UL>
         <Subhead>Reset Settings (middle)</Subhead>
@@ -993,25 +1020,26 @@ export default function GuidePage() {
           <li>Theme back to Use System Settings with Dusk (dark) and Light (light)</li>
         </UL>
         <p>
-          It does <b>not</b> touch mode-specific config outside the menu (AoX N, timer durations,
-          Deduction sub-types and toggles) or your stats and history. No confirmation prompt — tap
-          to apply. When every menu setting is already at your defaults, the button dims and locks
-          since tapping it would have no effect.
+          It does <b>not</b> touch mode-specific config outside the menu (the AoX run length, timer
+          durations, Deduction sub-types and toggles) or your stats and history. No confirmation
+          prompt — tap to apply. When every menu setting is already at your defaults, the button
+          dims and locks since tapping it would have no effect.
         </p>
         <Subhead>Full Reset (right)</Subhead>
         <p>Restores the entire site to its launch state:</p>
         <UL>
           <li>
-            Wipes all stats, all-time bests (Blitz, Sudden, AoX), Lookup history, and in-progress
-            rounds and runs. Your stats, all-time bests, and Lookup history are saved on this
-            device, so Full Reset clears that saved copy permanently.
+            Wipes all stats, all-time bests (Blitz and AoX), Lookup history, and in-progress rounds
+            and runs. Your stats, all-time bests, and Lookup history are saved on this device, so
+            Full Reset clears that saved copy permanently.
           </li>
           <li>
             Resets every setting and toggle across all modes — both the ⚙ menu and the per-mode
-            toggles. The menu settings and the four Save Defaults values (AoX N, Flash speed, both
-            Blitz timers) restore to <i>your</i> saved defaults; everything else (Per Round / Per
-            Question, Deduction sub-types and toggles, Allow Mistakes, One-By-One, the show/hide
-            stat toggles) returns to its launch value. The saved defaults themselves survive.
+            toggles. The menu settings and the four Save Defaults values (AoX run length, Flash
+            speed, both Blitz timers) restore to <i>your</i> saved defaults; everything else (Per
+            Round / Per Question, Deduction sub-types and toggles, Allow Mistakes, One-by-One, the
+            show/hide stat toggles) returns to its launch value. The saved defaults themselves
+            survive.
           </li>
           <li>
             Closes any open overlay (How to Play, ⚙ menu, codes, method breakdown) and switches to
@@ -1050,18 +1078,18 @@ export default function GuidePage() {
             score. With it on, Reveal and Show Codes also count as a miss but keep the run going:
             Reveal flashes the answer then automatically moves on; Show Codes opens the codes so you
             can study, then a <b>Next</b> button moves you on (it waits, since you need time to
-            read). With One-By-One on, Reveal also waits on a Next button so you can see the answer
+            read). With One-by-One on, Reveal also waits on a Next button so you can see the answer
             before the next hidden date. With Allow Mistakes off, Reveal or Show Codes ends the run.
           </li>
           <li>
-            <b>One-By-One</b> — hides the date between solves. Press Continue to reveal each new
+            <b>One-by-One</b> — hides the date between solves. Press Continue to reveal each new
             date.
           </li>
           <li>
             <b>Last / Avg / Med</b> — tap any of these to show or hide all three time stats.
           </li>
         </UL>
-        <Subhead>Back / Forward &amp; Override</Subhead>
+        <Subhead>Back / Forward and Override</Subhead>
         <UL>
           <li>
             <b>Back / Forward</b> — browse previous dates from the current run without affecting it.
@@ -1081,7 +1109,7 @@ export default function GuidePage() {
             Stats is on or off.
           </li>
         </UL>
-        <Subhead>Stats &amp; bests</Subhead>
+        <Subhead>Stats and bests</Subhead>
         <p>
           Stats in AoX are always visible and always track. Best average and best median are tracked
           independently — they can come from different runs. Beneath each best, the companion metric
@@ -1099,7 +1127,7 @@ export default function GuidePage() {
           summary is preserved when you return.
         </p>
         <p>
-          Bests are tracked per exact configuration: AoX size (n), Allow Mistakes, Date Format (or
+          Bests are tracked per exact configuration: AoX run length, Allow Mistakes, Date Format (or
           Random Format on its own bucket), Leap Year Chance, Jan/Feb Chance on Leap Years, Julian
           Chance, year range, and Calendar System (Julian on/off). Changing any of these creates a
           separate bucket — your previous bests remain stored and reappear when you switch back to
@@ -1177,7 +1205,9 @@ export default function GuidePage() {
           </li>
           <li>
             <b>Both Year toggles on</b> — each puzzle randomly picks (50/50) which constraint to
-            enforce. The two can't both be true for the same window.
+            enforce. The two can't both be true for the same window. While both are on, two-year
+            puzzles are centred in the space the five-year layout uses, so the answer area and the
+            buttons below hold still as the two layouts alternate.
           </li>
           <li>
             <b>1582 Only</b> (Month mode) — when on, every puzzle uses year 1582, forcing the
@@ -1188,7 +1218,13 @@ export default function GuidePage() {
             single value.
           </li>
         </UL>
-        <Subhead>Sub-types &amp; stats</Subhead>
+        <p>
+          A correct answer briefly pulses the chosen option green, and when the next puzzle keeps
+          the same answer layout the pulse carries over onto it. When the layout itself changes
+          between puzzles — a two-year window after a five-year one, or October 1582's four-day
+          window after a seven-day one — the new layout appears clean, with nothing carried over.
+        </p>
+        <Subhead>Sub-types and stats</Subhead>
         <p>
           Switch sub-types anytime — progress in each is preserved, including question history.
           Stats are tracked separately for each sub-type, and Back/Forward only walks the current
@@ -1222,39 +1258,47 @@ export default function GuidePage() {
         <Subhead>Round options</Subhead>
         <UL>
           <li>
-            <b>Allow Mistakes</b> — when on, wrong answers count against accuracy but don't end the
-            round. When off, a wrong answer ends the round immediately.
+            <b>Allow Mistakes</b> — when on, wrong answers count against accuracy and break your
+            streak but don't end the round: in Per Round the countdown just keeps running, and in
+            Per Question the current question's clock keeps running while you retry the same date
+            (you advance — with a fresh question clock — only by answering correctly). When off, a
+            wrong answer ends the round immediately in either sub-mode.
           </li>
           <li>
             <b>Per Round / Per Question</b> — tap to switch. Per Round uses a single countdown for
             the whole round (10s–5m, default 60s). Per Question gives each question its own
             countdown (1s–30s, in half-seconds, default 10s); running out of time ends the round.
-            Adjust either with its slider or tap the value to type. Per Question always enforces no
-            mistakes: tapping Per Question auto-disables Allow Mistakes, and tapping Allow Mistakes
-            on while in Per Question auto-switches back to Per Round.
+            Adjust either with its slider or tap the value to type. The two switches are independent
+            — any combination of Per Round / Per Question and Allow Mistakes plays (and keeps its
+            own bests).
           </li>
         </UL>
-        <Subhead>Ending a round &amp; Override</Subhead>
+        <Subhead>Ending a round and Override</Subhead>
         <p>
           When the round ends, the correct answer for the current date is highlighted and your bests
-          are recorded. A round also ends if you give up on the current date with Reveal or Show
-          Codes, or — with Allow Mistakes off (or in Per Question) — if you override a correct
-          answer to wrong.
+          are recorded. A round ends when time runs out — the round countdown in Per Round, or any
+          single question's clock in Per Question. It also ends if you give up on the current date
+          with Reveal or Show Codes, or — with Allow Mistakes off — on a wrong answer or if you
+          override a correct answer to wrong.
         </p>
         <p>
           You can then browse your round's history with Back/Forward and override past dates to
           adjust your score and saved bests. Overriding the question that ended the round — whether
-          it ended on a wrong answer, a Reveal, or a Show Codes — credits it and resumes the round:
-          the countdown picks up where it left off (Per Round) or a fresh question timer starts on
-          the next date (Per Question), and the round's bests aren't locked in until the round ends
-          for real (so a misclick you fix doesn't update your bests). Override works the same
-          whether Save Stats is on or off.
+          it ended on a wrong answer, a Reveal, or a Show Codes (in Per Question with Allow
+          Mistakes, this includes a round that timed out on a question you'd answered wrong —
+          crediting that answer resumes the round with a fresh question clock) — credits it and
+          resumes the round: the countdown picks up where it left off (Per Round) or a fresh
+          question timer starts on the next date (Per Question), and the round's bests aren't locked
+          in until the round ends for real (so a misclick you fix doesn't update your bests).
+          Override works the same whether Save Stats is on or off.
         </p>
-        <Subhead>Streak &amp; bests</Subhead>
+        <Subhead>Streak and bests</Subhead>
         <UL>
           <li>
-            Streak is hidden in Per Question, since any wrong answer ends the round, making streak
-            equal to score.
+            Streak is hidden in Per Question only when Allow Mistakes is off, since there a wrong
+            answer ends the round and streak always equals score. With Allow Mistakes on, streak
+            works exactly as in Per Round: a wrong answer breaks it, and Best Streak is the highest
+            streak the round reached.
           </li>
           <li>
             Best scores are tracked per exact configuration: timer duration, Allow Mistakes, Per
@@ -1264,12 +1308,13 @@ export default function GuidePage() {
             stored and reappear when you switch back.
           </li>
           <li>
-            Best score and best streak are tracked independently in Per Round; a <i>Same Round</i>{' '}
-            or <i>Different Rounds</i> tag tells you whether they came from the same exceptional
-            round or two different strong ones.
+            Best score and best streak are tracked independently in Per Round and in Per Question
+            with Allow Mistakes on; a <i>Same Round</i> or <i>Different Rounds</i> tag tells you
+            whether they came from the same exceptional round or two different strong ones. Per
+            Question with Allow Mistakes off keeps a single best score (streak would equal it).
           </li>
         </UL>
-        <Subhead>Leaving &amp; resetting</Subhead>
+        <Subhead>Leaving and resetting</Subhead>
         <p>
           Leaving Blitz mid-round abandons it — you return to a fresh, idle Blitz (no hidden
           countdown keeps running while you're away). If you leave after a round ends without

@@ -149,6 +149,37 @@ const testOgMeta = (base) => ({
     html.replaceAll('https://calendargame.app/', `https://calendargame.app${base}`),
 })
 
+// The PWA web app manifest, handed to VitePWA below. Module-scope + exported (the
+// swapBlockingStylesheet precedent) so tests/webManifest.test.js can pin the BUILT manifest's
+// keys without running a build — vite-plugin-pwa JSON-serializes these entries into
+// dist/manifest.webmanifest as-is (it only adds the base-derived start_url/scope + lang), so
+// every key:value pinned here is a byte sequence the built manifest ships.
+export const webManifest = {
+  name: 'Calendar Game',
+  short_name: 'Calendar Game',
+  description: 'A mobile-first trainer for fast mental day-of-the-week calculation.',
+  theme_color: '#0d1117',
+  background_color: '#0d1117',
+  display: 'standalone',
+  // The portrait lock's Android half (Q11): a manifest orientation hard-locks every Android
+  // INSTALL to portrait at the OS level (it only binds in the installed standalone context —
+  // browser tabs rotate freely everywhere). iOS parses + ignores the key (harmless); there the
+  // in-app rotate-back overlay takes over (main.tsx RotateOverlay). The manifest revision
+  // change rides the normal SW update path. Pinned by tests/webManifest.test.js.
+  orientation: 'portrait',
+  icons: [
+    { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+    { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+    { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+    {
+      src: 'maskable-icon-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
+    },
+  ],
+}
+
 export default defineConfig(({ command, mode }) => ({
   // Dev/preview serve from '/'. A production `vite build` derives its base from the repo it builds
   // in (see pagesBase above): '/' for the live org page, '/<repo>/' for the staging project repo.
@@ -196,25 +227,7 @@ export default defineConfig(({ command, mode }) => ({
       // exclusion explicitly so no future globPatterns widening can ever precache them. (User
       // globIgnores REPLACES the default, so the stock node_modules ignore is restated.)
       workbox: { globIgnores: ['**/node_modules/**/*', '**/apple-splash-*.png'] },
-      manifest: {
-        name: 'Calendar Game',
-        short_name: 'Calendar Game',
-        description: 'A mobile-first trainer for fast mental day-of-the-week calculation.',
-        theme_color: '#0d1117',
-        background_color: '#0d1117',
-        display: 'standalone',
-        icons: [
-          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          {
-            src: 'maskable-icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
+      manifest: webManifest,
       // The SW never runs in dev (keeps HMR clean) — offline is verified against a production
       // build via `vite preview`.
       devOptions: { enabled: false },

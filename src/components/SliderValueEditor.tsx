@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { commitSliderText } from '../lib/sliderValue.js'
 
 // SliderValueEditor — the tap-to-type value readout beside every timer slider (Round-2).
 //
-// Display mode renders the exact span the sliders always had (tabular-nums text-xs, fixed width,
-// right-aligned) as a button; tapping it swaps in a small text input seeded with the current
-// value (auto-focused + selected so typing replaces it outright). The validation trio is the
+// Display mode renders the readout the sliders always had (tabular-nums text-xs, right-aligned)
+// as a button; tapping it swaps in a small text input seeded with the current value
+// (auto-focused + selected so typing replaces it outright). The validation trio is the
 // AoX-N field's, adapted to numbers-with-units (lib/sliderValue):
 //   • onChange — permissive regex only (digits, plus one '.' OR ',' when inputMode is decimal:
 //     iOS/Android decimal keypads in comma-locales only offer ',', so rejecting it would silently
@@ -16,6 +17,14 @@ import { commitSliderText } from '../lib/sliderValue.js'
 //     Escape handlers skip presses while a text input holds focus, but this input unmounts on the
 //     revert — without the stop the same native event would bubble on and slam the panel shut on
 //     what the user meant as a typing dismiss (the AoX popup field's contract).
+//
+// Width: both modes render in a single-cell inline-grid over an always-mounted invisible strut
+// span holding `widest` — the column locks to the widest POSSIBLE readout measured in the
+// device's OWN font, identical across sites and constant at runtime (Round-4's hand-measured
+// w-[3.3em] was Segoe UI's 3.18em; iOS's SF Pro renders "2m 55s" wider, and the overflow wrapped
+// at the space). The button adds whitespace-nowrap (nothing else forbade that wrap); the input
+// takes w-full min-w-0 — min-w-0 is MANDATORY: without it the input's intrinsic min-content
+// width blows the cell open past the strut.
 //
 // The user always types SECONDS — Flash converts ×1000 to ms via fromText; milliseconds are never
 // exposed (the readout label is already seconds everywhere). `disabled` mirrors the slider's own
@@ -32,7 +41,7 @@ export default function SliderValueEditor({
   format,
   toText,
   fromText,
-  widthClass,
+  widest,
   onCommit,
 }: {
   value: number // current value, internal units (ms for Flash, seconds for the Blitz timers)
@@ -45,7 +54,7 @@ export default function SliderValueEditor({
   format: (v: number) => string // display text, e.g. fmtFlashT → "2.0s"
   toText: (v: number) => string // edit seed, unit-less user text, e.g. 2000 → "2"
   fromText?: (n: number) => number // typed number → internal units (Flash: s ×1000 → ms)
-  widthClass: string // the readout's fixed width (the shared w-[3.3em] — see the first main.tsx site) so the row never shifts
+  widest: string // the widest possible readout string (the shared SLIDER_READOUT_WIDEST — see the first main.tsx site), mounted as the width strut so the row never shifts
   onCommit: (v: number) => void
 }) {
   const [text, setText] = useState<string | null>(null) // null = display mode
@@ -63,8 +72,20 @@ export default function SliderValueEditor({
       inputRef.current?.select()
     }
   }, [editing])
+  // The single-cell grid from the width note above: strut + live control overlay in one cell.
+  const cell = (control: ReactNode) => (
+    <span className="inline-grid shrink-0">
+      <span
+        aria-hidden="true"
+        className="col-start-1 row-start-1 invisible whitespace-nowrap tabular-nums text-xs"
+      >
+        {widest}
+      </span>
+      {control}
+    </span>
+  )
   if (!editing)
-    return (
+    return cell(
       <button
         type="button"
         aria-label={`Edit ${label}`}
@@ -72,10 +93,10 @@ export default function SliderValueEditor({
         onClick={() => {
           if (!disabled) setText(toText(value))
         }}
-        className={`tabular-nums text-xs ${widthClass} shrink-0 text-right${disabled ? ' pointer-events-none' : ''}`}
+        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right${disabled ? ' pointer-events-none' : ''}`}
       >
         {format(value)}
-      </button>
+      </button>,
     )
   const re = inputMode === 'decimal' ? /^\d*[.,]?\d*$/ : /^\d*$/
   const commit = () => {
@@ -83,7 +104,7 @@ export default function SliderValueEditor({
     if (v !== null) onCommit(v)
     setText(null)
   }
-  return (
+  return cell(
     <input
       ref={inputRef}
       type="text"
@@ -103,7 +124,7 @@ export default function SliderValueEditor({
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
-      className={`panel rounded-md px-1 ${widthClass} shrink-0 text-right tabular-nums text-xs focus:outline-hidden focus-ring`}
-    />
+      className="col-start-1 row-start-1 w-full min-w-0 panel rounded-md px-1 text-right tabular-nums text-xs focus:outline-hidden focus-ring"
+    />,
   )
 }

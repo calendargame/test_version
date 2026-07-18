@@ -139,6 +139,7 @@ export interface Stats {
 export interface GameState {
   date: Question //                 current question {y,m,d,_fmt,_jul} (or a Deduction puzzle)
   questionId: number //             bumps on every advance / RESET — the hook resets the solve-timer on this, NOT on raw date changes (Back/Forward change date but must not reset the timer)
+  gridEpoch: number //              bumps ONLY on RESET / RESET_ROUND — the UI keys the answer grids on it, so every reset REMOUNTS them and the cleared colors SNAP to idle (a remounted element never CSS-transitions from its predecessor's state; .surface-button's hover transition would otherwise fade the green away, Q9). NOT bumped on advance / REGEN_DATE: a remount there would restart in-flight flash keyframes
   persistBtns: Btns //              answer-grid state {idx: 'correct'|'wrong-latest'|'wrong-prev'|'override-wrong'}
   stats: Stats //                   {played,good,streak,best,times}
   stack: StackEntry[] //            back-history (oldest→newest)
@@ -261,6 +262,7 @@ const blankStats = (): Stats => ({ played: 0, good: 0, streak: 0, best: 0, times
 export const initEngine = (date: Question, initialStats?: Stats): GameState => ({
   date,
   questionId: 0,
+  gridEpoch: 0,
   persistBtns: {},
   stats: initialStats ?? blankStats(),
   stack: [],
@@ -640,6 +642,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...initEngine(regen ? nextDate : state.date),
         questionId: state.questionId + 1,
+        // initEngine re-zeroes gridEpoch — carry the bump instead, so the reset remounts the grids (Q9).
+        gridEpoch: state.gridEpoch + 1,
       }
     }
 
@@ -672,8 +676,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     // ── TIMEOUT_MISS ─────────────────────────────────────────────────────────────
-    // Blitz per-question (sudden-death) timeout: count a played miss (no `countedWrong`, so
-    // no Override path opens) + show the answer. The round-over lock is the component's
+    // Blitz per-question timeout: on a pristine question, count a played miss (this action sets
+    // no `countedWrong`, so a pristine expiry opens no Override path) + show the answer. On a
+    // burned question (per-Q + Allow Mistakes: answered wrong, then the clock died) `countedWrong`
+    // is ALREADY set, so that end stays Override-rescuable (main.tsx's resumableEnd) and the
+    // played increment is not repeated (the guard below). The round-over lock is the component's
     // (!active disables the grid). Distinct from LOCK_REVEAL (no stat) + REVEAL (countedWrong).
     case 'TIMEOUT_MISS': {
       const { useJulian, saveStats } = action
@@ -720,6 +727,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         persistBtns: {},
+        gridEpoch: state.gridEpoch + 1, // remount the grids — the cleared colors snap, not fade (Q9)
         stack: [],
         forwardStack: [],
         backDepth: 0,

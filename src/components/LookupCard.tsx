@@ -419,8 +419,8 @@ export default function LookupCard({
             Clear
           </button>
         </div>
-        {displayNote && <div className="text-sm text-purple-100/90">{displayNote}</div>}
-        <p className="text-xs text-purple-100/90">
+        {displayNote && <div className="text-sm text-(--tx-100-90)">{displayNote}</div>}
+        <p className="text-xs text-(--tx-100-90)">
           Format: <b>{inputMeta.label}</b>
           <br />
           AD dates only, 1–10000
@@ -434,11 +434,11 @@ export default function LookupCard({
             header above content scrolling below" — same pattern as the popover sticky
             footer's elev-shadow-up. */}
         <div
-          className={`lookup-history-header -mx-4 px-4 pb-3 border-b border-purple-500/40 flex items-center justify-between text-[11px] uppercase tracking-wide text-purple-200/70${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
+          className={`lookup-history-header -mx-4 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70)${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
         >
           <span>History</span>
           {entries.length > 0 && (
-            <button type="button" onClick={clearHist} className="text-purple-200/70 font-medium">
+            <button type="button" onClick={clearHist} className="text-(--tx-200-70) font-medium">
               Clear History
             </button>
           )}
@@ -453,12 +453,12 @@ export default function LookupCard({
                 <button
                   type="button"
                   onClick={() => selEntry(e)}
-                  className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-purple-400 bg-purple-500/35' : 'hist-unsel hover:bg-purple-500/15'}`}
+                  className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-(--acc) bg-(--hist-sel)' : 'hist-unsel hover:bg-(--hist-hov)'}`}
                 >
-                  <span className="block text-[13px] font-medium text-purple-100/90">
+                  <span className="block text-[13px] font-medium text-(--tx-100-90)">
                     {e.label}
                   </span>
-                  <span className="text-[12px] font-semibold text-purple-200/80">
+                  <span className="text-[12px] font-semibold text-(--tx-200-80)">
                     {getEntryWeekday(e)}
                   </span>
                 </button>
@@ -466,7 +466,7 @@ export default function LookupCard({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-purple-200/70">No lookups yet</p>
+          <p className="text-sm text-(--tx-200-70)">No lookups yet</p>
         )}
         {/* MethodBreakdownSection wrapper: -mx-4 + px-4 extends the existing border-t
             divider full-width across the panel (was previously stopping short at the
@@ -474,7 +474,7 @@ export default function LookupCard({
             elev-shadow-up signals "fixed footer below content scrolling above." */}
         <MethodBreakdownSection
           date={cdv}
-          className={`lookup-method-section -mx-4 px-4 pt-4 border-t border-purple-500/40${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
+          className={`lookup-method-section -mx-4 px-4 pt-4 border-t border-(--bd-500-40)${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
           contentClassName="mt-3 rounded-2xl panel px-4 pt-[3px] pb-1.5"
           open={cov}
           onOpenChange={sco}

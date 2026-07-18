@@ -319,6 +319,42 @@ describe('gameReducer — RESET_ROUND', () => {
   })
 })
 
+// Q9: gridEpoch — the grid-remount key. The UI keys every answer grid on it, so a bump REMOUNTS
+// the grid and the cleared colors snap to idle (no green fade). It must bump on the TWO resets
+// ONLY: a bump on advance / REGEN_DATE would remount mid-flash and restart the keyframes.
+describe('gameReducer — gridEpoch (Q9: bumps on the two resets only)', () => {
+  it('starts at 0', () => {
+    expect(initEngine(DATE).gridEpoch).toBe(0)
+  })
+
+  it('RESET bumps it — carried across the initEngine spread, not re-zeroed', () => {
+    let s = { ...answer(initEngine(DATE), C), gridEpoch: 4 }
+    s = gameReducer(s, { type: 'RESET', timingOff: true, nextDate: NEXT })
+    expect(s.gridEpoch).toBe(5)
+  })
+
+  it('RESET_ROUND bumps it', () => {
+    let s = answer(initEngine(DATE), C)
+    s = gameReducer(s, { type: 'RESET_ROUND' })
+    expect(s.gridEpoch).toBe(1)
+  })
+
+  it('no other action bumps it (answer/advance, New, regen, Reveal, Show Codes, Override, Back/Forward, timeouts)', () => {
+    let s = answer(initEngine(DATE), W) // wrong — stays
+    s = answer(s, C) // late-correct — advances
+    s = neu(s) // NEW — advances again
+    s = gameReducer(s, { type: 'REGEN_DATE', nextDate: DATE }) // regen in place
+    s = reveal(s) // burn
+    s = showCodes(s) // read-only review (already revealed)
+    s = override(s) // Path 3 — credits + advances
+    s = back(s) // browse back
+    s = forward(s) // return to the live edge
+    s = gameReducer(s, { type: 'TIMEOUT_MISS', useJulian: false, saveStats: true }) // counted miss + lock
+    s = gameReducer(s, { type: 'LOCK_REVEAL', useJulian: false }) // per-round timeout mark
+    expect(s.gridEpoch).toBe(0)
+  })
+})
+
 // The two general flags AoX adds (Stage C, Step 5 fold). `complete` = credit-and-stay (the run's
 // last solve); `noAdvance` = override-without-advancing (the failing reversal of that solve). The
 // one-question-loop modes never pass either, so their behavior is unchanged (regressions below).

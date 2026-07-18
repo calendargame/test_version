@@ -7,8 +7,8 @@ import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
 // userDefaults.ts — the user's saved PERSONAL DEFAULTS (Session 11, Q7 "Save Defaults").
 //
 // The ⚙ footer's Save Defaults button snapshots the full 14-value settings panel PLUS the four
-// capturable mode-screen prefs (Flash reveal speed, both Blitz timer lengths, AoX run length N —
-// deliberately NOT Blitz Per-Round/Per-Question, Deduction sub-type, Allow Mistakes, One-By-One,
+// capturable mode-screen prefs (Flash reveal speed, both Blitz timer lengths, the AoX run length —
+// deliberately NOT Blitz Per-Round/Per-Question, Deduction sub-type, Allow Mistakes, One-by-One,
 // or the show/hide stat toggles). From then on those saved values — not the factory constants —
 // are what "default" means everywhere: Reset Settings restores the saved panel values, Full Reset
 // restores the saved panel values AND pushes the four prefs back over its factory modePrefs reset,
@@ -62,8 +62,8 @@ export const effectiveSettingsDefaults = (saved: SavedDefaults | null): Settings
 export const effectivePrefDefaults = (saved: SavedDefaults | null): PrefDefaults =>
   saved ? { ...FACTORY_PREF_DEFAULTS, ...saved.prefs } : FACTORY_PREF_DEFAULTS
 
-// The AoX-N clamp — the SAME rule as the AoX input's blur/Enter commit (main.tsx): 2–1000,
-// non-numeric → 10.
+// The AoX run-length clamp — the rule's ONE home (Q18): the AoX input's blur/Enter/Escape commits
+// and the Save Defaults popup's N field (both main.tsx) all call it. 2–1000, non-numeric → 10.
 export const normalizeAoxN = (s: string): string =>
   String(Math.max(2, Math.min(1000, parseInt(s) || 10)))
 

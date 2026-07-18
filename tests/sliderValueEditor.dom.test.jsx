@@ -6,7 +6,8 @@
 // onChange regex; blur/Enter commit through the parse → convert → snap → clamp pipeline
 // (lib/sliderValue, pure math locked in tests/sliderValue.test.js); Escape reverts WITHOUT
 // committing and stops propagation (the popup/settings Escape contract); disabled follows the
-// slider's lock. The finger-sized tap-target feel is on-device per the standing lesson.
+// slider's lock; the widest-string width strut (invisible + nowrap, button nowrap, input
+// min-w-0). The finger-sized tap-target feel is on-device per the standing lesson.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import SliderValueEditor from '../src/components/SliderValueEditor.jsx'
@@ -22,7 +23,7 @@ const flashProps = {
   format: (v) => (v / 1000).toFixed(1) + 's',
   toText: (v) => String(v / 1000),
   fromText: (n) => n * 1000,
-  widthClass: 'w-[3.3em]', // the shared measured-minimum readout width (all six production sites)
+  widest: '2m 55s', // the widest-possible strut string (all six production sites pass SLIDER_READOUT_WIDEST)
 }
 const roundProps = {
   value: 60,
@@ -33,7 +34,7 @@ const roundProps = {
   label: 'Blitz round timer',
   format: (v) => v + 's',
   toText: String,
-  widthClass: 'w-[3.3em]',
+  widest: '2m 55s',
 }
 const perQProps = {
   value: 10,
@@ -44,7 +45,7 @@ const perQProps = {
   label: 'Blitz question timer',
   format: (v) => v + 's',
   toText: String,
-  widthClass: 'w-[3.3em]',
+  widest: '2m 55s',
 }
 
 const readout = (label) => screen.getByRole('button', { name: `Edit ${label}` })
@@ -163,5 +164,23 @@ describe('SliderValueEditor', () => {
     rerender(<SliderValueEditor {...flashProps} disabled onCommit={onCommit} />)
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('the width strut sizes both modes: invisible nowrap widest string, nowrap button, min-w-0 input', () => {
+    render(<SliderValueEditor {...flashProps} onCommit={vi.fn()} />)
+    // The strut is always mounted, invisible, hidden from the a11y tree, and single-line — it
+    // holds the shared single-cell grid at the widest POSSIBLE readout width in the live font.
+    const strut = screen.getByText('2m 55s')
+    expect(strut).toHaveClass('invisible', 'whitespace-nowrap', 'tabular-nums', 'text-xs')
+    expect(strut).toHaveAttribute('aria-hidden', 'true')
+    expect(strut.parentElement).toHaveClass('inline-grid')
+    // The display button overlays the strut's cell and must never wrap at the "2m 55s" space
+    // (the Round-4 iOS bug: SF Pro outgrew the hand-measured width and the readout broke lines).
+    expect(readout('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'whitespace-nowrap')
+    openEditor('Flash speed')
+    // The strut stays mounted through the swap; the input fills the cell but MUST carry min-w-0
+    // — without it the input's intrinsic min-content width blows the cell open past the strut.
+    expect(screen.getByText('2m 55s')).toBe(strut)
+    expect(field('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'w-full', 'min-w-0')
   })
 })

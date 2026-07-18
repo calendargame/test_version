@@ -81,6 +81,14 @@ function optState(btn) {
   if (c.includes('btn-override-wrong')) return 'override-wrong'
   return 'idle'
 }
+// The visible answer-grid element itself (the Q14 both-crosses sizer strut deliberately carries
+// NO data-answer-grid, so this always finds the REAL grid).
+function visibleAnswerGrid() {
+  return Array.from(document.querySelectorAll('[data-answer-grid="true"]')).find(
+    (g) => !isHidden(g),
+  )
+}
+const flashGoodCount = () => visibleAnswerGrid().querySelectorAll('.flash-good').length
 
 const MON3 = {
   Jan: 1,
@@ -548,5 +556,161 @@ describe('Deduction — C2: a silo round-trip preserves browse + armed-override 
     // The Month silo kept its own credit, untouched by Day's override.
     clickCtrl('Month')
     expect(statValue('Score')).toBe('1/1')
+  })
+})
+
+// ── Q13: flash validity — a flash only renders on a grid with the button count it was born in ──
+// Answering correct advances INSIDE the flash's 550ms window, so the carried green pulse used to
+// repaint on whatever button sat at the same index in the NEW layout when the option count changed
+// (Year 2↔5 under both crosses, Day 7↔4 across Oct 1582). The rule is general: a count-changing
+// advance suppresses the carried flash in the same commit; a same-count advance keeps it — the
+// designed feedback, exactly as in the fixed 7-grid weekday modes.
+describe('Deduction — Q13: carried flash suppressed when the option count changes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // Answer correct once and classify the advance: 'same' | 'change' (option count), asserting the
+  // carried-flash rule for that branch. Returns 'skip' WITHOUT asserting in the one case the
+  // screen-derived oracle can mis-pick — a dead Feb-29 Year option (non-leap year) whose formula
+  // weekday collides with the shown one; the mis-click stays on-screen as wrong-latest, so it's
+  // detectable, and New recovers. Clears the flash timer afterwards so every advance is measured
+  // in isolation.
+  function advanceAndCheck() {
+    const prevN = optButtons().length
+    answerCorrect()
+    if (optButtons().some((b) => optState(b) === 'wrong-latest')) {
+      act(() => {
+        vi.advanceTimersByTime(600)
+      })
+      clickCtrl('New')
+      return 'skip'
+    }
+    const newN = optButtons().length
+    const flashes = flashGoodCount()
+    if (newN === prevN) {
+      expect(flashes).toBe(1) // same layout → the carried pulse renders, exactly one
+    } else {
+      expect(flashes).toBe(0) // layout changed → suppressed in the same commit it renders
+    }
+    act(() => {
+      vi.advanceTimersByTime(600)
+    })
+    return newN === prevN ? 'same' : 'change'
+  }
+
+  it('Year both-crosses: 2↔5 flips render clean; same-layout advances keep exactly one pulse', () => {
+    pin({ minY: 1500, maxY: 1650, useJulian: true }) // ab (1500/1600 century) + jul (1581-1583) both possible
+    mountApp()
+    switchToDeduction()
+    clickCtrl('Year')
+    clickCtrl('ab Cross')
+    clickCtrl('Jul Cross')
+    let sawSame = false
+    let sawChange = false
+    // Each puzzle picks ab (N=5) or jul (N=2) 50/50, so both branches show up fast.
+    for (let k = 0; k < 120 && !(sawSame && sawChange); k++) {
+      const kind = advanceAndCheck()
+      if (kind === 'same') sawSame = true
+      if (kind === 'change') sawChange = true
+    }
+    expect(sawSame).toBe(true)
+    expect(sawChange).toBe(true)
+  })
+
+  it('Day pinned to 1582: the Oct 7↔4 layout pair also suppresses the carried flash', () => {
+    pin({ minY: 1582, maxY: 1582, useJulian: true })
+    mountApp()
+    switchToDeduction()
+    let sawSame = false
+    let sawChange = false // a 7↔4 (or 4↔7) advance — Oct pre-gap [1-4] vs the 7-day windows
+    // P(4-option layout) ≈ (1/12)·(4/21) per advance → a flip pair lands in ~32 advances on
+    // average; 400 puts the no-flip odds around 1e-6.
+    for (let k = 0; k < 400 && !(sawSame && sawChange); k++) {
+      const kind = advanceAndCheck()
+      if (kind === 'same') sawSame = true
+      if (kind === 'change') sawChange = true
+    }
+    expect(sawSame).toBe(true)
+    expect(sawChange).toBe(true)
+  })
+})
+
+// ── Q14: both-crosses Year reserves the 5-layout height (2-button grid centered in a sizer) ──
+// With ab Cross AND Jul Cross both on, puzzles alternate between the 5-option two-row and the
+// 2-option one-row layouts, teleporting everything below the answer panel ~57px per flip. The
+// 2-option grid therefore overlays an invisible inert 5-layout strut that holds the panel at the
+// 5-layout's height, with the real buttons self-centered in that space. The sizer exists EXACTLY
+// when both toggles are on and N===2 — any other 2-option Year (e.g. Jul Cross alone, where every
+// puzzle is one row) keeps the tight layout. The pixel geometry itself is on-device territory;
+// this pins the structure.
+describe('Deduction — Q14: both-crosses 2-option Year sizer overlay', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // The sizer renders as the real grid's immediate previous sibling inside the overlay wrapper;
+  // in the tight layout the grid is the keyed wrapper's first element (no sibling at all).
+  const sizerOf = (grid) => {
+    const prev = grid.previousElementSibling
+    return prev && prev.getAttribute('aria-hidden') === 'true' ? prev : null
+  }
+
+  it('sizer + self-centered grid exactly on the N=2 puzzles; N=5 stays the plain tight grid', () => {
+    pin({ minY: 1500, maxY: 1650, useJulian: true })
+    mountApp()
+    switchToDeduction()
+    clickCtrl('Year')
+    clickCtrl('ab Cross')
+    clickCtrl('Jul Cross')
+    let checked2 = false
+    let checked5 = false
+    for (let k = 0; k < 120 && !(checked2 && checked5); k++) {
+      const grid = visibleAnswerGrid()
+      if (optButtons().length === 2) {
+        expect(grid.className).toContain('col-start-1 row-start-1 self-center')
+        const sizer = sizerOf(grid)
+        expect(sizer).toBeTruthy()
+        expect(sizer.className).toContain('invisible')
+        expect(sizer.className).toContain('pointer-events-none')
+        expect(sizer.className).toContain('grid-cols-6')
+        expect(sizer.hasAttribute('data-answer-grid')).toBe(false)
+        expect(sizer.children.length).toBe(5) // the five 5-layout strut cells…
+        expect(sizer.querySelectorAll('button').length).toBe(0) // …inert DIVs, never buttons
+        checked2 = true
+      } else {
+        expect(optButtons().length).toBe(5)
+        expect(grid.className).not.toContain('self-center')
+        expect(sizerOf(grid)).toBe(null)
+        checked5 = true
+      }
+      clickCtrl('New') // reroll — ab/jul picked 50/50 per puzzle
+    }
+    expect(checked2).toBe(true)
+    expect(checked5).toBe(true)
+  })
+
+  it('Jul Cross alone (N=2 but only one toggle) does NOT reserve: no sizer, no self-center', () => {
+    pin({ minY: 1581, maxY: 1583, useJulian: true })
+    mountApp()
+    switchToDeduction()
+    clickCtrl('Year')
+    clickCtrl('Jul Cross')
+    expect(optButtons().length).toBe(2)
+    const grid = visibleAnswerGrid()
+    expect(grid.className).not.toContain('self-center')
+    expect(sizerOf(grid)).toBe(null)
   })
 })

@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
 //
-// Blitz mode — characterization tests (Stage C, Step 6, Step 3). Blitz is the hardest mode:
-// a countdown (Per Round, 60s) or per-question (Per Question / sudden-death, 5s) timer, with
-// Best Score / Best Streak records. These lock TODAY's behavior before migrating onto the
-// shared engine (which will need a round-stats / best / timerDone extension).
+// Blitz mode — characterization tests (Stage C, Step 6, Step 3) + the C3a sub-mode suite.
+// Blitz runs a countdown (Per Round, 60s) or per-question (Per Question, 10s) timer, with
+// Best Score / Best Streak records. Per Question splits by Allow Mistakes (C3a): AM off is
+// sudden death (a wrong ends the round, score-only Best); AM on keeps the round going — the
+// question clock keeps draining while you retry, and only a correct answer advances with a
+// fresh clock (score+streak Best, its own silo). The characterization batches lock the
+// original behavior; the C3a describe below pins the new sub-mode.
 //
-// The countdown-to-zero is impractical to fast-forward (rAF runs ~60×/s for 60s), so these
-// tests exercise the ANSWER behavior + round-end-via-wrong (reachable without the timer
-// expiring). Fake timers keep the rAF countdown from running during the test.
+// Fake timers keep the rAF countdown frozen for the answer-behavior tests (the 60s drain is
+// impractical to sit through). The fake-timer clock DOES drive requestAnimationFrame and
+// performance.now in lockstep, so the C3a expiry tests fast-forward the per-question clock
+// deliberately with vi.advanceTimersByTime (qSec=1 via the modePrefs store).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
+import { useModePrefs } from '../src/store/modePrefs.js'
+import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
 
@@ -43,6 +49,13 @@ function readDate() {
 }
 const correctName = ({ y, m, d }) => DAY[wday(y, m, d)]
 const wrongName = ({ y, m, d }) => DAY[(wday(y, m, d) + 1) % 7]
+const wrongName2 = ({ y, m, d }) => DAY[(wday(y, m, d) + 2) % 7] // a SECOND distinct wrong day
+// Fast-forward the faked clock (rAF frames + performance.now advance in lockstep) inside act,
+// so the countdown loop's state updates are flushed. Used by the C3a expiry tests.
+const tick = (ms) =>
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
 const isDisabled = (btn) => btn.className.includes('pointer-events-none')
@@ -56,6 +69,13 @@ function statValue(label) {
   if (!labelSpan) throw new Error(`stat "${label}" not found`)
   const spans = labelSpan.parentElement.querySelectorAll('span')
   return spans[spans.length - 1].textContent.trim()
+}
+// Whether a stat cell with this label is rendered at all (visible) — for the C3a
+// streak-visibility pins (per-Q sudden death hides Streak; per-Q + AM shows it).
+function hasStat(label) {
+  return !!Array.from(document.querySelectorAll('span')).find(
+    (s) => s.textContent.trim() === label && !isHidden(s),
+  )
 }
 function begin() {
   act(() => {
@@ -170,10 +190,11 @@ describe('Blitz — characterization (batch 2: Per Question / sudden death)', ()
     document.getElementById('root')?.remove()
   })
 
-  it('Per Question: a correct answer advances, a wrong answer ends the round', () => {
+  it('Per Question (Allow Mistakes off): a correct answer advances, a wrong answer ends the round', () => {
     mountApp()
     switchToBlitz()
     clickText('Per Round') // toggle to Per Question (button shows the current mode)
+    clickText('Allow Mistakes') // off → sudden death (independent toggles since C3a — no auto-off)
     begin()
     click(correctName(readDate())) // 1/1, next question
     expect(statValue('Score')).toBe('1/1')
@@ -440,7 +461,8 @@ describe('Blitz — C2 Q2-A (Override resumes a misclick-ended round)', () => {
   it('Per Question: Override after a sudden-death misclick resumes on a fresh question', () => {
     mountApp()
     switchToBlitz()
-    clickText('Per Round') // → Per Question (sudden death; Allow Mistakes forced off)
+    clickText('Per Round') // → Per Question
+    clickText('Allow Mistakes') // off → sudden death (independent toggles since C3a — no auto-off)
     begin()
     click(correctName(readDate())) // 1/1, next question
     click(wrongName(readDate())) // sudden-death miss → round ends 1/2
@@ -615,5 +637,341 @@ describe('Blitz — Q2 (a config change on popover close resets the round)', () 
     toggleSettings()
     toggleSettings() // no change → no reset
     expect(ctrl('Reset')).toBeInTheDocument() // still active
+  })
+
+  // Q9: the close-fired round reset REMOUNTS the answer grid (keyed on the engine's gridEpoch —
+  // Blitz's resetRound is eng.resetStats, i.e. RESET, which bumps it) — fresh DOM nodes have no
+  // prior colors to CSS-transition from, so the cleared grid snaps to idle instead of fading. A
+  // normal advance must NOT remount (the epoch is untouched), or an in-flight flash keyframe
+  // would restart.
+  it('the settings-close reset REMOUNTS the answer grid; a normal advance does NOT (Q9)', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    const stable = dayBtn(DAY[0])
+    click(correctName(readDate())) // 1/1 — advances
+    expect(dayBtn(DAY[0])).toBe(stable) // same node across an advance — no remount mid-flash
+    click(wrongName(readDate())) // wrong → the round ends; red + revealed green persist
+    const before = DAY.map((nm) => dayBtn(nm))
+    toggleSettings()
+    act(() => useSettings.getState().setMinY(1700))
+    toggleSettings() // close → resetRound → RESET bumps gridEpoch → the keyed grid remounts
+    expect(ctrl('Begin')).toBeInTheDocument()
+    DAY.forEach((nm, i) => expect(dayBtn(nm)).not.toBe(before[i])) // all-new nodes — snap, no fade
+  })
+
+  it('a manual Reset tap REMOUNTS the answer grid too (Q9: same RESET mechanism)', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    click(wrongName(readDate())) // round ends — the answer colors persist on the grid
+    const before = DAY.map((nm) => dayBtn(nm))
+    clickText('Reset') // resetRound → eng.resetStats → RESET bumps gridEpoch
+    expect(ctrl('Begin')).toBeInTheDocument()
+    DAY.forEach((nm, i) => expect(dayBtn(nm)).not.toBe(before[i])) // remounted — snap, no fade
+  })
+})
+
+// ── C3a (Q15): the Per Question + Allow Mistakes sub-mode ─────────────────────────────────────────
+// The two Blitz switches are now fully independent (the old auto-off exclusion died): per-Q + AM is
+// a real fourth combination — a wrong answer marks the miss, breaks the streak, and leaves the SAME
+// question on screen with its clock still draining; only a correct answer (or an in-round Override
+// credit) advances, always with a fresh question clock; the round ends when any one question's
+// clock expires. Its Best is score+streak (the BlitzBest shape) in its OWN silo (suddenAmBest),
+// separate from sudden death's score-only record at the same config. The expiry tests set qSec=1
+// (the slider min) via the modePrefs store and drive the faked rAF clock with tick().
+describe('Blitz — Per Question + Allow Mistakes (C3a)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('the two switches are independent: Per Question keeps Allow Mistakes on, and vice versa', () => {
+    mountApp()
+    switchToBlitz()
+    expect(ctrl('Allow Mistakes').className).toContain('btn-solid') // AM on (factory)
+    clickText('Per Round') // → Per Question
+    expect(ctrl('Per Question')).toBeInTheDocument()
+    expect(ctrl('Allow Mistakes').className).toContain('btn-solid') // NOT auto-disabled anymore
+    clickText('Allow Mistakes') // off
+    expect(ctrl('Allow Mistakes').className).not.toContain('btn-solid')
+    expect(ctrl('Per Question')).toBeInTheDocument() // still Per Question
+    clickText('Allow Mistakes') // back on while in Per Question
+    expect(ctrl('Allow Mistakes').className).toContain('btn-solid')
+    expect(ctrl('Per Question')).toBeInTheDocument() // did NOT bounce back to Per Round
+  })
+
+  it('a wrong answer counts a miss, breaks the streak, and stays on the SAME date (round live)', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round') // → Per Question, AM stays on
+    begin()
+    const d = readDate()
+    click(wrongName(d))
+    expect(statValue('Score')).toBe('0/1')
+    expect(statValue('Streak')).toBe('0/0')
+    expect(ctrl('Reset')).toBeInTheDocument() // round still live
+    expect(readDate()).toEqual(d) // SAME question — no advance
+    click(wrongName2(d)) // a second, different wrong tap on the burned question
+    expect(statValue('Score')).toBe('0/1') // no double count
+    expect(readDate()).toEqual(d)
+  })
+
+  it('after a wrong, the correct answer advances WITHOUT credit; the next clean correct credits', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    begin()
+    const d = readDate()
+    click(wrongName(d)) // 0/1, stays
+    click(correctName(d)) // late correct → advances, uncredited
+    expect(statValue('Score')).toBe('0/1')
+    expect(ctrl('Reset')).toBeInTheDocument()
+    click(correctName(readDate())) // the NEW question credits normally — proves the advance
+    expect(statValue('Score')).toBe('1/2')
+  })
+
+  it('a wrong does NOT refresh the question clock: the original deadline still ends the round', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    act(() => useModePrefs.getState().setBlitzQSec(1)) // fastest clock (slider min)
+    begin()
+    tick(500) // half the 1s clock gone
+    const d = readDate()
+    click(wrongName(d)) // burned — the clock must KEEP draining
+    tick(600) // past the ORIGINAL 1s deadline
+    expect(isDisabled(dayBtn(correctName(d)))).toBe(true) // round over — grid locked
+    expect(dayBtn(correctName(d)).className).toContain('btn-correct-persist') // answer revealed
+  })
+
+  it('a correct answer DOES refresh the question clock (advance grants a fresh qSec)', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    act(() => useModePrefs.getState().setBlitzQSec(1))
+    begin()
+    tick(900) // ~0.1s left on the first question
+    click(correctName(readDate())) // advance → fresh 1s clock
+    tick(900) // past the OLD deadline, inside the new one
+    expect(ctrl('Reset')).toBeInTheDocument() // still live — the clock was refreshed
+    const d = readDate()
+    expect(isDisabled(dayBtn(correctName(d)))).toBe(false)
+    click(correctName(d)) // and still answerable
+    expect(statValue('Score')).toBe('2/2')
+  })
+
+  it('a timeout on a burned question ends the round (no double count) and IS Override-rescuable', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    act(() => useModePrefs.getState().setBlitzQSec(1))
+    begin()
+    const d = readDate()
+    click(wrongName(d)) // burned at ~t0 — played 1
+    tick(1100) // the clock dies on the burned question
+    expect(statValue('Score')).toBe('0/1') // ONE played — the timeout must not re-count it
+    expect(dayBtn(correctName(d)).className).toContain('btn-correct-persist')
+    expect(isDisabled(dayBtn(correctName(d)))).toBe(true)
+    // countedWrong (set by the wrong) survives the timeout → this end is resumable (ratified):
+    // crediting the wrong resumes the round on the next date with a FRESH question clock.
+    expect(isDisabled(ctrl('Override'))).toBe(false)
+    act(() => fireEvent.click(ctrl('Override')))
+    expect(statValue('Score')).toBe('1/1') // credited
+    expect(ctrl('Reset')).toBeInTheDocument()
+    tick(500) // half a fresh 1s clock — a stale deadline would already have re-ended the round
+    click(correctName(readDate()))
+    expect(statValue('Score')).toBe('2/2')
+  })
+
+  it('Streak is visible in per-Q + AM (per-round semantics), hidden only in sudden death', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round') // → Per Question, AM on
+    expect(statValue('Streak')).toBe('0/0') // the cell renders in per-Q + AM
+    clickText('Allow Mistakes') // off → sudden death hides it (streak would equal score)
+    expect(hasStat('Streak')).toBe(false)
+    clickText('Allow Mistakes') // back on
+    begin()
+    click(correctName(readDate())) // streak 1
+    click(correctName(readDate())) // streak 2 (the high-water)
+    const d = readDate()
+    click(wrongName(d)) // streak breaks, round continues
+    click(correctName(d)) // uncredited advance
+    expect(statValue('Streak')).toBe('0/2') // running 0 / best 2 — exactly per-round semantics
+  })
+
+  it('the per-Q + AM Best row records score AND streak with ★ flags and the Same Round tag', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    begin()
+    click(correctName(readDate()))
+    click(correctName(readDate())) // 2/2
+    act(() => fireEvent.click(ctrl('Reveal'))) // give up → the round ends 2/3
+    expect(screen.getByText(/Best Score: 2\b/).textContent).toContain('★')
+    expect(screen.getByText(/Best Streak: 2\b/).textContent).toContain('★')
+    expect(screen.getByText('Same Round')).toBeInTheDocument() // both set by this round
+    clickText('Reset')
+    begin()
+    click(correctName(readDate()))
+    click(correctName(readDate()))
+    click(correctName(readDate())) // 3/3 — beats both fields
+    act(() => fireEvent.click(ctrl('Reveal')))
+    expect(screen.getByText(/Best Score: 3\b/).textContent).toContain('★') // re-flagged
+    expect(screen.getByText(/Best Streak: 3\b/).textContent).toContain('★')
+    expect(screen.getByText('Same Round')).toBeInTheDocument()
+  })
+
+  it('a post-round Override rolls the per-Q + AM Best back (same-round rollback)', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    begin()
+    click(correctName(readDate())) // 1/1
+    act(() => fireEvent.click(ctrl('Reveal'))) // the round ends 1/2, Best Score 1 recorded
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    act(() => fireEvent.click(ctrl('<'))) // browse the credited answer
+    expect(isDisabled(ctrl('Override'))).toBe(false)
+    act(() => fireEvent.click(ctrl('Override'))) // flip it to wrong → good 1→0
+    expect(screen.getByText(/Best Score: 0\b/)).toBeInTheDocument() // rolled back with the round
+  })
+
+  it('an Override rescue reverts the provisionally saved Best until the round truly ends', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    begin()
+    click(correctName(readDate())) // 1/1
+    act(() => fireEvent.click(ctrl('Reveal'))) // ends 1/2 → Best Score 1 provisionally saved
+    expect(statValue('Score')).toBe('1/2')
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    act(() => fireEvent.click(ctrl('Override'))) // credit the revealed miss + RESUME
+    expect(statValue('Score')).toBe('2/2')
+    expect(screen.getByText(/Best Score: —/)).toBeInTheDocument() // reverted to the pre-round record
+    click(correctName(readDate())) // live again on the next date
+    expect(statValue('Score')).toBe('3/3')
+    act(() => fireEvent.click(ctrl('Reveal'))) // end for real → re-saves at the true final score
+    expect(screen.getByText(/Best Score: 3\b/)).toBeInTheDocument()
+  })
+
+  it('in-round Override on a wrong (Path 3) credits, advances, keeps the round live, and re-arms the clock', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    act(() => useModePrefs.getState().setBlitzQSec(1))
+    begin()
+    const d = readDate()
+    tick(600) // burn most of the 1s clock
+    click(wrongName(d)) // 0/1, same question, still draining
+    act(() => fireEvent.click(ctrl('Override'))) // "you were right all along" → credit + advance
+    expect(statValue('Score')).toBe('1/1')
+    tick(600) // past the original deadline — only a re-armed clock survives this
+    expect(ctrl('Reset')).toBeInTheDocument()
+    click(correctName(readDate())) // genuinely live on the NEW date
+    expect(statValue('Score')).toBe('2/2')
+  })
+
+  it('in-round Override after a retry-correct (Path 4) retro-credits and re-arms the clock', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    act(() => useModePrefs.getState().setBlitzQSec(1))
+    begin()
+    const d = readDate()
+    click(wrongName(d)) // burned — played 1
+    click(correctName(d)) // uncredited advance → fresh clock, pendingWrongOverride armed
+    expect(statValue('Score')).toBe('0/1')
+    tick(600)
+    act(() => fireEvent.click(ctrl('Override'))) // credit the earlier wrong; the live question advances past itself
+    expect(statValue('Score')).toBe('1/1')
+    tick(600) // past the pre-override deadline — the C3a branch must have re-armed
+    expect(ctrl('Reset')).toBeInTheDocument()
+    click(correctName(readDate()))
+    expect(statValue('Score')).toBe('2/2')
+  })
+
+  it('retro-flipping a correct to wrong with AM on keeps the round going (AM off ends it — pinned above)', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    begin()
+    click(correctName(readDate())) // 1/1, advanced
+    act(() => fireEvent.click(ctrl('Override'))) // flip that correct → wrong
+    expect(statValue('Score')).toBe('0/1')
+    expect(ctrl('Reset')).toBeInTheDocument()
+    const d = readDate()
+    expect(isDisabled(dayBtn(correctName(d)))).toBe(false) // the grid is still answerable
+    click(correctName(d))
+    expect(statValue('Score')).toBe('1/2') // round continued
+  })
+
+  it('sudden-death and per-Q + AM keep SEPARATE Best silos at the same config', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Per Round')
+    clickText('Allow Mistakes') // off → sudden death
+    begin()
+    click(correctName(readDate())) // 1/1
+    click(wrongName(readDate())) // sudden death → ends 1/2
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    expect(screen.queryByText(/Best Streak:/)).toBeNull() // the score-only row
+    clickText('Reset')
+    clickText('Allow Mistakes') // on → the AM silo (same qSec + config)
+    expect(screen.getByText(/Best Score: —/)).toBeInTheDocument() // its own empty record
+    expect(screen.getByText(/Best Streak: —/)).toBeInTheDocument()
+    begin()
+    click(correctName(readDate()))
+    click(correctName(readDate())) // 2/2
+    act(() => fireEvent.click(ctrl('Reveal'))) // ends 2/3
+    expect(screen.getByText(/Best Score: 2\b/)).toBeInTheDocument()
+    clickText('Reset')
+    clickText('Allow Mistakes') // back off — the sudden-death record is untouched
+    expect(screen.getByText(/Best Score: 1\b/)).toBeInTheDocument()
+    expect(screen.queryByText(/Best Streak:/)).toBeNull()
+  })
+})
+
+// ── C3a freshness: the new map joins Blitz's fully-reset report, and Full Reset wipes it ─────────
+// Pristine settings here (no per-test overrides) so App's isFullyReset can actually be true: the
+// Full Reset footer button is dimmed exactly when EVERYTHING is at launch state, so a lone
+// suddenAmBest record must light it, and resetProgress (what Full Reset runs) must re-dim it.
+describe('Blitz — C3a freshness (suddenAmBest blocks fully-reset until wiped)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('a suddenAmBest record enables Full Reset; resetProgress re-dims it', () => {
+    mountApp()
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+    const fullResetBtn = () => screen.getByRole('button', { name: /Full Reset/ })
+    expect(isDisabled(fullResetBtn())).toBe(true) // pristine app → fully reset → dimmed
+    act(() =>
+      useProgress
+        .getState()
+        .setSuddenAmBest({ k: { score: 2, streak: 2, scoreRoundId: 1, streakRoundId: 1 } }),
+    )
+    expect(isDisabled(fullResetBtn())).toBe(false) // the new map counts against Blitz freshness
+    act(() => useProgress.getState().resetProgress()) // the wipe Full Reset performs
+    expect(isDisabled(fullResetBtn())).toBe(true)
   })
 })

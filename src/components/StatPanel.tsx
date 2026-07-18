@@ -132,7 +132,7 @@ export default function StatPanel({
               items.push(
                 <div
                   key={`d-armed-${i}`}
-                  className="w-px h-8 self-center bg-purple-500/20 shrink-0"
+                  className="w-px h-8 self-center bg-(--bg-500-20) shrink-0"
                 />,
               )
             }
@@ -149,7 +149,7 @@ export default function StatPanel({
               className="flex-1 min-w-0 flex flex-col items-center py-2 gap-0.5"
             >
               <span
-                className={`text-xs text-purple-200/80 leading-none whitespace-nowrap ${s.off ? ' strike-center' : ''}`}
+                className={`text-xs text-(--tx-200-80) leading-none whitespace-nowrap ${s.off ? ' strike-center' : ''}`}
               >
                 {s.label}
               </span>
@@ -166,7 +166,7 @@ export default function StatPanel({
           )
           if (i < stats.length - 1) {
             items.push(
-              <div key={`d-${i}`} className="w-px h-8 self-center bg-purple-500/20 shrink-0" />,
+              <div key={`d-${i}`} className="w-px h-8 self-center bg-(--bg-500-20) shrink-0" />,
             )
           }
         }

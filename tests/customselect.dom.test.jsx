@@ -102,7 +102,8 @@ describe('CustomSelect — active-cursor highlight', () => {
   })
 })
 
-// ── Portal geometry: the doc-scroll coordinate term + forceDown (Round-4) ────────────────────
+// ── Portal geometry: the doc-scroll coordinate term + forceDown (Round-4) + the
+//    document-scroll close (Q2) ─────────────────────────────────────────────────────────────
 //
 // The option panel portals into #root with position:absolute. In APP mode #root is
 // position:fixed at the viewport origin and the document can't scroll, so viewport coordinates
@@ -112,7 +113,10 @@ describe('CustomSelect — active-cursor highlight', () => {
 // page paints the menu scrollY px above its trigger, sliding off the top of the screen (the
 // Round-4 "mode menu opens upward + clipped in How-to-Play" report). forceDown is the
 // mode-selector hardcode: its trigger lives in the fixed bar, so it always opens downward.
-describe('CustomSelect — portal position math (doc-scroll term + forceDown)', () => {
+// While open, captured scrolls split by TARGET (Q2): an ELEMENT scroll (the settings
+// popover's inner wrapper) repositions the panel; a DOCUMENT scroll (guide mode's page pan)
+// CLOSES it with outside-tap semantics — no trigger refocus.
+describe('CustomSelect — portal position math (doc-scroll term + forceDown + doc-scroll close)', () => {
   let rectSpy
   // All triggers share one mocked rect — only the CustomSelect wrapper's rect is read while
   // these tests run (jsdom's real getBoundingClientRect is all-zeros, useless for geometry).
@@ -180,14 +184,42 @@ describe('CustomSelect — portal position math (doc-scroll term + forceDown)', 
     expect(panel().style.bottom).toBe('')
   })
 
-  it('the scroll-reposition listener re-measures WITH the scroll term (the panel stays pinned mid-scroll)', () => {
+  it('an ELEMENT scroll re-measures WITH the scroll term (the panel stays pinned mid-scroll)', () => {
     mockRect({ top: 40, bottom: 63, left: 200, right: 300 })
     fireEvent.click(mount())
     expect(panel().style.top).toBe(`${63 + 6}px`) // scrollY 0 at open
     setScrollY(800)
+    // An element scroll (the settings popover's inner wrapper) — the capture-phase window
+    // listener sees target = the element and re-runs measurePanel. (A DOCUMENT scroll
+    // closes the panel instead — next test.)
+    const scroller = document.createElement('div')
+    document.body.appendChild(scroller)
     act(() => {
-      fireEvent.scroll(window) // the capture-phase window scroll listener re-runs measurePanel
+      fireEvent.scroll(scroller)
     })
     expect(panel().style.top).toBe(`${63 + 6 + 800}px`)
+    scroller.remove()
+  })
+
+  it('a DOCUMENT scroll closes the panel — outside-tap semantics, no trigger refocus', () => {
+    mockRect({ top: 40, bottom: 63, left: 200, right: 300 })
+    const trigger = mount()
+    fireEvent.click(trigger)
+    expect(screen.queryAllByRole('option').length).toBe(3)
+    act(() => {
+      fireEvent.scroll(document) // a page scroll targets the Document node
+    })
+    expect(screen.queryAllByRole('option').length).toBe(0) // closed, not repositioned
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).not.toBe(trigger) // no refocus (≠ Esc's closeAndFocus)
+    cleanup()
+    document.getElementById('root')?.remove()
+    // WebKit safety: engines that target documentElement for the page scroll close too.
+    fireEvent.click(mount())
+    expect(screen.queryAllByRole('option').length).toBe(3)
+    act(() => {
+      fireEvent.scroll(document.documentElement)
+    })
+    expect(screen.queryAllByRole('option').length).toBe(0)
   })
 })

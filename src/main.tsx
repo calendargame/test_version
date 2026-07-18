@@ -50,7 +50,10 @@ const ReactDOM = { createRoot, createPortal }
 // --- Shared types for the typed App + mode components (Stage C, TypeScript, final file). ---
 type GenDate = (minY: number, maxY: number) => Question
 type FmtDate = (y: number, m: number, d: number, fmt?: FormatId) => string
-type FlashState = { type: 'good' | 'bad'; idx: number }
+// FlashState.n — option count of the grid the flash was born in (set by Deduction, whose grids
+// change size; see DeductionMode's gridFlash validity rule). The weekday modes omit it: their
+// 7-grid is fixed, so the carried flash is always valid — the designed feedback.
+type FlashState = { type: 'good' | 'bad'; idx: number; n?: number }
 type GameEngine = ReturnType<typeof useGameEngine>
 interface ModeProps {
   visible: boolean
@@ -65,6 +68,7 @@ interface ModeProps {
   janFebChance: string
   julianChance: string
   settingsOpen?: boolean //  the ⚙ popover open state — modes defer their settings side-effects to its CLOSE
+  clockPaused?: boolean //  Q11: true while the rotate-back overlay covers the app — the countdown modes (Flash, Blitz) freeze their live clocks for its duration
   onFreshChange?: (fresh: boolean) => void
 }
 interface DedOpts {
@@ -111,6 +115,13 @@ interface DedOpts {
     // Reset Stats when ARMED (first tap of the two-tap confirm, Q2): rose/danger fill — the same danger
     // colour as RESET_BTN_CLASS — so "tap again to confirm" reads as a warning, not a normal button.
     const RESET_STATS_ARMED_CLASS="w-full px-3 py-1.5 rounded-xl bg-rose-600/90 text-white border border-transparent text-sm font-medium";
+    // Boxed numeric-input shared className (Q18) — the app's second shared input idiom beside
+    // SliderValueEditor: a panel box with centered tabular digits at the text-xs control tier.
+    // Used by the AoX run-length field (mode screen + the Save Defaults popup, both appending
+    // " py-1 w-14 shrink-0") and the ⚙ Year Range pair (" py-1.5 w-16"). text-xs keeps the AoX
+    // box's rendered height flush with its Allow Mistakes / One-by-One neighbors (py-1 + the
+    // 1rem text-xs line + a 1px border on all three).
+    const NUM_INPUT_CLASS="panel rounded-xl px-2 text-center tabular-nums text-xs focus:outline-hidden focus-ring";
     // Presentational primitives (NewBestStar, SectionLabel, Kbd) + their class consts → src/components/primitives.jsx, imported at top.
     // buttonStateClass — picks the className for an answer-grid button based on its
     // persistent state (correct/wrong-latest/wrong-prev/override-wrong) and any active
@@ -143,7 +154,11 @@ interface DedOpts {
     // and AoX now also blurs the answer on touch like the others (harmless: just drops focus after a
     // tap) — so behaviour, and the DOM tests that drive it, are unchanged. The dots are unlabelled
     // circles (aria-label carries the accessible day name) sized + positioned by the .dot-box/
-    // .dot-cluster/.dot-btn CSS (index.css).
+    // .dot-cluster/.dot-btn CSS (index.css). Every caller keys the grid on state.gridEpoch (Q9):
+    // RESET / RESET_ROUND bump it, so a reset REMOUNTS the grid and the cleared colors SNAP to idle
+    // — .surface-button's hover transition would otherwise fade the green away (remounted elements
+    // never transition from a predecessor's styles; reorder/useLayoutEffect alone proven insufficient).
+    // Deduction keys its own puzzle-grid wrapper the same way.
     function WeekdayAnswer({inputStyle,persistBtns,flash,optionsDisabled,onPick}:{
       inputStyle: InputStyle;
       persistBtns: Record<string, ButtonState | undefined>;
@@ -325,6 +340,10 @@ interface DedOpts {
     const isTouch=typeof window!=="undefined"&&("ontouchstart" in window||navigator.maxTouchPoints>0||matchMedia("(pointer:coarse)").matches);
     const fmtBlitzT=(s: number)=>{const sec=Math.ceil(s);if(sec<60)return sec+"s";const m=Math.floor(sec/60),r=sec%60;return m+"m "+r+"s";};
     const fmtFlashT=(ms: number)=>(ms/1000).toFixed(1)+"s";
+    // The ONE readout-width strut string shared by all six SliderValueEditor sites (3 mode-screen
+    // + 3 in the Save Defaults popup): the widest value ANY readout can display — derivation at
+    // the first site (FlashMode). One const = all six columns identical, constant at runtime.
+    const SLIDER_READOUT_WIDEST=fmtBlitzT(175); /* "2m 55s" */
     // Time display follows WCA convention (regulation 9f1): individual single times
     // (Last) are truncated to hundredths — the third decimal is dropped, never rounded.
     // Averages, medians, and bests are rounded to nearest hundredth (toFixed(2)).
@@ -465,12 +484,16 @@ interface DedOpts {
     // timer mid-adjustment. fn runs through a ref so the latest closure (current run/round state) fires.
     // (Mode-LOCAL toggles that change outside the popover must keep useChangeEffect — they'd never see an
     // open→close transition coincide with their change.)
+    // Both effects are LAYOUT effects (Q9, must move together): the close-fired reset/regen has to commit
+    // in the SAME paint as the popover close — as passive effects they ran a frame later, so the closing
+    // popover uncovered the still-green grid for one frame before the reset landed. Same-kind effects run
+    // in declaration order, so the fnRef updater stays ahead of the close-watcher below.
     function useSettingsCloseEffect(settingsOpen: boolean, deps: React.DependencyList, fn: () => void){
       const fnRef=useRef(fn);
-      useEffect(()=>{fnRef.current=fn;});
+      useLayoutEffect(()=>{fnRef.current=fn;});
       const snapRef=useRef(deps);
       const wasOpenRef=useRef(settingsOpen);
-      useEffect(()=>{
+      useLayoutEffect(()=>{
         const wasOpen=wasOpenRef.current;
         wasOpenRef.current=settingsOpen;
         if(settingsOpen&&!wasOpen){snapRef.current=deps;return;}   // opened → snapshot the current values
@@ -488,7 +511,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-15T04:50:00Z');
+    const DEPLOY_TS=new Date('2026-07-18T00:52:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -658,6 +681,28 @@ interface DedOpts {
             </svg>
           </div>
           {updating&&<div className="boot-updating">Updating<span className="boot-d boot-d1">.</span><span className="boot-d boot-d2">.</span><span className="boot-d boot-d3">.</span></div>}
+        </div>
+      );
+    }
+
+    // RotateOverlay (Q11) — the full-screen "rotate back to portrait" screen for the platforms the
+    // manifest's orientation:'portrait' can't hard-lock (iOS parses + ignores the key; locked
+    // Android installs never rotate, so they never see this). Rendered by App while
+    // landscapeBlocked (touch device + CSS landscape + short viewport — the gate lives in App so
+    // the same boolean also pauses the countdown modes via clockPaused). Speaks the boot-splash
+    // visual language: the same .boot-overlay/.boot-mark/.boot-glow frame as #boot / BootOverlay
+    // (theme-aware bg + light-theme logo recolor come from those classes) with the W5 mark at the
+    // splash's exact size (W5Logo size 188 = the 174×188 splash glyph — no duplicated SVG). The
+    // fixed z-100 cover also blocks every interaction with the sideways app beneath it; rotating
+    // back unmounts it, no dismiss affordance by design.
+    function RotateOverlay(){
+      return(
+        <div className="boot-overlay">
+          <div className="boot-mark">
+            <div className="boot-glow"/>
+            <W5Logo size={188}/>
+          </div>
+          <div className="rotate-caption">Rotate back to portrait</div>
         </div>
       );
     }
@@ -909,7 +954,7 @@ interface DedOpts {
     // Step 5, redone). Like Blitz, the engine runs the per-question loop (answer / credit / stats /
     // history / Override / Show Codes) and the COMPONENT owns the run layer: the run lifecycle
     // (idle/running/done/failed), the Ao-N count, Best Average/Median (per config, with rollback),
-    // One-By-One, and the fail-on-mistake rule. The run's stats ARE the engine stats — good =
+    // One-by-One, and the fail-on-mistake rule. The run's stats ARE the engine stats — good =
     // credited solves, played = attempts, times = solve times, streak/best. The fold needs only
     // two general engine flags: `complete` (the Nth solve credits without advancing) and
     // `noAdvance` (a failing override of that solve stays put). See gameReducer.
@@ -918,8 +963,8 @@ interface DedOpts {
       const allowMistakes=useModePrefs(s=>s.aoxAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setAoxAllowMistakes);   // persisted (mode-prefs store)
       const oneByOne=useModePrefs(s=>s.aoxOneByOne),setOneByOne=useModePrefs(s=>s.setAoxOneByOne);   // persisted (mode-prefs store)
       const [runPhase,setRunPhase]=useState("idle");   // idle | running | done | failed (the RUN; the engine just runs the per-question loop)
-      const [shown,setShown]=useState(false);           // One-By-One: is the current date revealed? (always true for non-One-By-One while running)
-      const n=Math.max(2,Math.min(1000,parseInt(aoxN)||10));
+      const [shown,setShown]=useState(false);           // One-by-One: is the current date revealed? (always true for non-One-by-One while running)
+      const n=+normalizeAoxN(aoxN);   // the ONE 2–1000 clamp (store/userDefaults normalizeAoxN; junk → 10)
       // Best keying: bests are siloed per difficulty configuration. Dimensions: n, allowMistakes,
       // format (random→'random' bucket), leapChance, janFebChance, julianChance, year range,
       // useJulian — the SAME dimensions as Blitz/Sudden (and as How-to-Play documents). The original
@@ -944,8 +989,8 @@ interface DedOpts {
       // retryable — excluded). The grid is dimmed for it (the engine ignores answers on it).
       const resolvedMiss=isRunning&&!inBack&&state.revealed&&state.countedWrong;
       // Of those, which WAIT on a "Next" button vs auto-advance: SHOW CODES (calcPenaltyActive — set by
-      // SHOW_CODES, never by REVEAL) always pauses so you can read the codes; a One-By-One Reveal also
-      // pauses (One-By-One pauses between dates by design). A plain non-One-By-One Reveal does NOT wait
+      // SHOW_CODES, never by REVEAL) always pauses so you can read the codes; a One-by-One Reveal also
+      // pauses (One-by-One pauses between dates by design). A plain non-One-by-One Reveal does NOT wait
       // — onReveal flashes the answer then auto-advances (owner's call, C2: a reveal doesn't need to
       // pause when the run flows date-to-date on its own). (C2 Q4 + the reveal-flash refinement.)
       const awaitingNext=resolvedMiss&&(state.calcPenaltyActive||oneByOne);
@@ -961,7 +1006,7 @@ interface DedOpts {
       const [bestNew,setBestNew]=useState<Record<string, { avg: boolean; med: boolean }>>({});
       const nextRunIdRef=useRef(1);
       const currentRunIdRef=useRef<number | null>(null);
-      // Pending auto-advance after a non-One-By-One Reveal (flash the answer for FLASH_MS, then advance).
+      // Pending auto-advance after a non-One-by-One Reveal (flash the answer for FLASH_MS, then advance).
       // Held in a ref so reset / leaving the mode / unmount can cancel it before it fires.
       const revealAdvanceRef=useRef<ReturnType<typeof setTimeout> | null>(null);
       const cancelRevealAdvance=()=>{if(revealAdvanceRef.current){clearTimeout(revealAdvanceRef.current);revealAdvanceRef.current=null;}};
@@ -1051,8 +1096,8 @@ interface DedOpts {
       const overrideAvail=!state.overrideUsedThisQ&&(state.countedWrong||state.canOverrideCorrect||(state.pendingWrongOverride!=null&&!last?.overrideUsed)||eng.retroOverrideEligible);
       const codesDisabled=runPhase==="idle"||(oneByOne&&!shown&&!inBack&&!isLocked);
       // resolvedMiss dims the grid — a revealed/show-coded question the engine ignores answers on
-      // (covers the brief non-One-By-One reveal flash before it auto-advances, the Show-Codes pause,
-      // and the One-By-One reveal pause).
+      // (covers the brief non-One-by-One reveal flash before it auto-advances, the Show-Codes pause,
+      // and the One-by-One reveal pause).
       const optionsDisabled=isLocked||state.calcOpen||resolvedMiss||(oneByOne&&!shown&&!inBack)||runPhase==="idle"||inBack;
       const scoreDisplay=runPhase==="idle"?"0/0":`${doneCount}/${S.played}`;
       const accuracyDisplay=fmtAccuracyPct(doneCount,S.played);
@@ -1060,7 +1105,7 @@ interface DedOpts {
 
       // Handlers.
       const begin=()=>{eng.resetStats();currentRunIdRef.current=nextRunIdRef.current++;prevBestSnapRef.current=null;setRunPhase("running");setShown(true);};
-      const continueRun=()=>{setShown(true);eng.restartTimer();};   // One-By-One: reveal the already-loaded next date + start its solve timer
+      const continueRun=()=>{setShown(true);eng.restartTimer();};   // One-by-One: reveal the already-loaded next date + start its solve timer
       const startOrContinue=()=>{if(runPhase==="idle")begin();else continueRun();};
       const submitDoW=(i: number)=>{
         setFlashWithTimeout({type:i===correct?"good":"bad",idx:i});
@@ -1068,18 +1113,18 @@ interface DedOpts {
         const willAdvance=i===correct&&!willComplete;                            // a non-completing correct (first-try or late) advances
         eng.answer(i,{complete:willComplete});
         if(i!==correct&&!allowMistakes){eng.lockReveal();setRunPhase("failed");} // wrong + no mistakes → reveal the answer + fail the run
-        else if(willAdvance&&oneByOne)setShown(false);                           // One-By-One: hide the freshly-loaded next date until Continue
+        else if(willAdvance&&oneByOne)setShown(false);                           // One-by-One: hide the freshly-loaded next date until Continue
       };
       // Reveal. Allow Mistakes OFF → fail the run. Allow Mistakes ON → count a played miss + show the
-      // answer; then continue the run. One-By-One pauses on a "Next" button (awaitingNext) so you see
-      // the answer before the next hidden date. Non-One-By-One FLOWS: flash the answer for FLASH_MS so
+      // answer; then continue the run. One-by-One pauses on a "Next" button (awaitingNext) so you see
+      // the answer before the next hidden date. Non-One-by-One FLOWS: flash the answer for FLASH_MS so
       // it's visible (a same-render advance would batch the reveal away, painting nothing), then
       // auto-advance — the next date streams in on its own, like a correct answer. (C2 Q4 + the
       // reveal-flash refinement, owner 2026-06-13.)
       const onReveal=()=>{
         eng.reveal();
         if(!allowMistakes){setRunPhase("failed");return;}
-        if(oneByOne)return; // One-By-One: pause on "Next" (awaitingNext) — see the answer, then Continue
+        if(oneByOne)return; // One-by-One: pause on "Next" (awaitingNext) — see the answer, then Continue
         setFlashWithTimeout({type:"good",idx:correct}); // flash the revealed answer
         if(revealAdvanceRef.current)clearTimeout(revealAdvanceRef.current);
         revealAdvanceRef.current=setTimeout(()=>{revealAdvanceRef.current=null;eng.doNew();},FLASH_MS);
@@ -1088,9 +1133,9 @@ interface DedOpts {
       // (you need time to read the codes — calcPenaltyActive keeps awaitingNext true). Allow Mistakes
       // off fails the run. (C2 Q4 — Show Codes intentionally keeps the Next pause, unlike Reveal.)
       const onShowCodes=()=>{const open=!state.calcOpen;eng.showCodes(open);if(open&&!allowMistakes&&isRunning)setRunPhase("failed");};
-      // Advance past a show-coded / One-By-One-revealed miss (Allow Mistakes on) — the run continues.
-      // Closes the codes panel if open, loads the next date (the miss was already counted), One-By-One
-      // hides it until Continue. (Non-One-By-One Reveal auto-advances instead — see onReveal.) (C2 Q4.)
+      // Advance past a show-coded / One-by-One-revealed miss (Allow Mistakes on) — the run continues.
+      // Closes the codes panel if open, loads the next date (the miss was already counted), One-by-One
+      // hides it until Continue. (Non-One-by-One Reveal auto-advances instead — see onReveal.) (C2 Q4.)
       const onNext=()=>{if(state.calcOpen)eng.showCodes(false);eng.doNew();if(oneByOne)setShown(false);};
       const onOverride=()=>{
         // A credit / completion via Override DURING the reveal-flash window must kill the pending
@@ -1146,7 +1191,7 @@ interface DedOpts {
             {label:"Average",value:fmtTime(calcAvg(S.times)),off:!saveStats,fn:null},
             {label:"Median",value:fmtTime(calcMed(S.times)),off:!saveStats,fn:null},
           ]}/></div>
-          <div className="mt-3 text-xs text-purple-300/60">
+          <div className="mt-3 text-xs text-(--tx-300-60)">
             <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-[125px]">
                 <div>Best Average: {fmtTime(bestData.avg)}{bestNew[bestKey]?.avg&&<NewBestStar/>}</div>
@@ -1160,16 +1205,20 @@ interface DedOpts {
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2 flex-nowrap">
-            <div className="flex items-center shrink-0"><span className={`text-sm leading-none text-purple-200/80${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{if(runPhase==="idle")setAoxN(e.target.value);}} onBlur={()=>setAoxN(String(Math.max(2,Math.min(1000,parseInt(aoxN)||10))))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(String(Math.max(2,Math.min(1000,parseInt(aoxN)||10))));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(String(n));e.currentTarget.blur();}}} className={`panel rounded-xl px-2 py-1 w-14 text-center tabular-nums text-sm focus:outline-hidden shrink-0${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
-            <button type="button" onClick={()=>{if(runPhase==="idle")setAllowMistakes(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
-            <button type="button" onClick={()=>{if(runPhase==="idle")setOneByOne(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${oneByOne?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>One-By-One</button>
+            {/* The run-length field (Q18): the shared boxed-numeric idiom (NUM_INPUT_CLASS) + the
+                popup N field's validation trio — digits only while typing, and blur, Enter and
+                Escape all normalize-commit with the shared clamp (normalizeAoxN). text-xs on the
+                'Ao' span too, so "Ao10" reads as one flush token. */}
+            <div className="flex items-center shrink-0"><span className={`text-xs leading-none text-(--tx-200-80)${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{const v=e.target.value;if(runPhase==="idle"&&(v===''||/^\d*$/.test(v)))setAoxN(v);}} onBlur={()=>setAoxN(normalizeAoxN(aoxN))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
+            <button type="button" onClick={()=>{if(runPhase==="idle")setAllowMistakes(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
+            <button type="button" onClick={()=>{if(runPhase==="idle")setOneByOne(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${oneByOne?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>One-by-One</button>
           </div>
           <div className="mt-4 rounded-2xl panel p-4">
             <div className="text-center relative">
-              {(inBack||isLocked)&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
+              {(inBack||isLocked)&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-(--tx-300-60)">Q{state.stack.length+1}</span>}
               <div className="text-3xl font-bold">{dateVisible?fmtDate(date.y,date.m,date.d,date._fmt):"—"}</div>
             </div>
-            <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={submitDoW}/>
+            <WeekdayAnswer key={state.gridEpoch} inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={submitDoW}/>
           </div>
           <div className="mt-4 rounded-2xl panel p-3 space-y-3">
             <div className="grid grid-cols-4 gap-2">
@@ -1241,10 +1290,10 @@ interface DedOpts {
           <div className="mt-5">
             <div className="mt-4 rounded-2xl panel p-4">
               <div className="text-center relative">
-                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
+                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-(--tx-300-60)">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{fmtDate(date.y,date.m,date.d,date._fmt)}</div>
               </div>
-              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
+              <WeekdayAnswer key={state.gridEpoch} inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1275,7 +1324,7 @@ interface DedOpts {
     // ClassicMode; that duplication gets factored into a shared shell in Step 6, once all
     // modes' variations are known.)
     // ============================================================
-    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function FlashMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,clockPaused,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const [active,setActive]=useState(false);
       const [flashPhase,setFlashPhase]=useState("dash");      // dash (idle) | show (revealing) | hide ("…")
       const [showTimerDate,setShowTimerDate]=useState(false); // keep the date visible after Reveal
@@ -1317,13 +1366,41 @@ interface DedOpts {
       };
 
       // rAF countdown of the reveal-time label while showing (cosmetic; matches App's loop).
+      // Gated off while the rotate-back overlay pauses the clock (Q11) so the frozen number
+      // can't tick behind the overlay.
       useEffect(()=>{
-        if(!(active&&flashPhase==="show"))return;
+        if(!(active&&flashPhase==="show")||clockPaused)return;
         let raf = 0;
         const loop=()=>{const now=performance.now();if(flashDeadlineRef.current)setFlashRemainMs(Math.max(0,flashDeadlineRef.current-now));raf=requestAnimationFrame(loop);};
         raf=requestAnimationFrame(loop);
         return ()=>cancelAnimationFrame(raf);
-      },[active,flashPhase]);
+      },[active,flashPhase,clockPaused]);
+
+      // Rotate-overlay clock freeze (Q11): a LIVE flash (phase "show", deadline armed) must not
+      // burn its reveal window behind the rotate-back overlay. Pause = freezeFlash's bar-pinning
+      // trick WITHOUT the teardown: cancel the auto-hide timer, remember the remaining ms, pin the
+      // bar mid-sweep (the rAF number loop above is gated off while paused, so bar + number freeze
+      // together). Rotate-back (the cleanup) re-arms deadline/timer for exactly the remaining time
+      // and resumes the bar sweep from its pinned scale — the same rAF-then-transition shape as
+      // startFlashBar, from the pinned position instead of scaleX(1). Every other state (idle,
+      // hide, ended, frozen) has no armed deadline — nothing to pause; the remain null-guard makes
+      // the resume a no-op if the flash was somehow torn down mid-pause. No interaction can reach
+      // the mode while the overlay is up (fixed z-100 cover), so the refs can't shift under a pause.
+      const flashPausedRemainRef=useRef<number | null>(null);
+      useEffect(()=>{
+        if(!clockPaused||flashDeadlineRef.current==null)return;
+        flashPausedRemainRef.current=Math.max(0,flashDeadlineRef.current-performance.now());
+        clearTimeout(flashTimerRef.current ?? undefined);flashTimerRef.current=null;flashDeadlineRef.current=null;
+        const bar=flashBarRef.current;   // captured once: the node we pin IS the node we resume (and the cleanup must not re-read a ref)
+        if(bar){const t=getComputedStyle(bar).transform;bar.style.transition="none";bar.style.transform=t;}
+        return()=>{
+          const rem=flashPausedRemainRef.current;flashPausedRemainRef.current=null;
+          if(rem==null)return;
+          flashDeadlineRef.current=performance.now()+rem;setFlashRemainMs(rem);
+          flashTimerRef.current=setTimeout(endFlashPhase,Math.max(50,rem));   // same ≥50ms floor as begin()
+          requestAnimationFrame(()=>{if(!bar)return;bar.getBoundingClientRect();bar.style.transition=`transform ${rem}ms linear`;bar.style.transform="scaleX(0)";});
+        };
+      },[clockPaused,endFlashPhase]);
 
       const begin=()=>{
         eng.doNew();                       // advance to a fresh date to reveal
@@ -1393,21 +1470,24 @@ interface DedOpts {
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
           <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
-          {/* Slider readout width (Round-4, all SIX SliderValueEditor sites — 3 mode-screen + 3 in
-              the Save Defaults popup): ONE shared w-[3.3em] = the widest possible readout string
-              ("2m 55s", live-measured at 3.18em in text-xs tabular-nums) + ~4% breathing room, in
-              em so it tracks the fluid root font. SliderValueEditor applies widthClass to the
-              display button AND the tap-to-type input, so the input hugs the same tight column.
-              Keep all six in lockstep. */}
-          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={flashMs} min={100} max={5000} snap={100} disabled={active} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-[3.3em]" onCommit={v=>{setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}}/></div></div>
+          {/* Slider readout width (all SIX SliderValueEditor sites — 3 mode-screen + 3 in the
+              Save Defaults popup): each editor mounts the shared SLIDER_READOUT_WIDEST string as
+              an always-on invisible strut in a single-cell inline-grid, so the column locks to
+              the widest POSSIBLE readout AS MEASURED IN THE DEVICE'S OWN FONT — Round-4's
+              hand-measured w-[3.3em] was Segoe UI's 3.18em, but iOS's SF Pro renders wider, and
+              the overflow wrapped at the space. Widest string = fmtBlitzT(175) "2m 55s": only the
+              Blitz round timer (10–300s, step 5) ever formats "Xm YZs", and any two-digit
+              remainder out-measures the 300 cap's "5m 0s" (one more digit, tabular-nums);
+              fmtFlashT tops out at "5.0s", the per-question timer at "29.5s". */}
+          <div className="mt-3"><div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" value={flashMs} onChange={e=>{const v=+e.target.value;setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}} disabled={active} style={{"--rng-fill":Math.round((flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={flashMs} min={100} max={5000} snap={100} disabled={active} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widest={SLIDER_READOUT_WIDEST} onCommit={v=>{setFlashMs(v);if(!active){setFlashRemainMs(v);resetFlashBar();}}}/></div></div>
           <div className="mt-5">
-            <div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1">{fmtFlashT(flashRemainMs)}</div><div className="bar"><span ref={flashBarRef} style={{width:"100%"}}></span></div></div>
+            <div className="mb-3"><div className="text-center text-xs tabular-nums text-(--tx-200-80) mb-1">{fmtFlashT(flashRemainMs)}</div><div className="bar"><span ref={flashBarRef} style={{width:"100%"}}></span></div></div>
             <div className="mt-4 rounded-2xl panel p-4">
               <div className="text-center relative">
-                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
+                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-(--tx-300-60)">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{dateText}</div>
               </div>
-              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
+              <WeekdayAnswer key={state.gridEpoch} inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1426,6 +1506,17 @@ interface DedOpts {
       );
     }
 
+    // BlitzBestRow — the two-field Best Score / Best Streak row with ★ new-best flags and the
+    // Same Round / Different Rounds tag, shared by the two BlitzBest-shaped records: per-round
+    // (blitzBest) and per-question + Allow Mistakes (suddenAmBest, C3a). The tag renders only
+    // once BOTH round ids exist: same id = one exceptional round set both, different = two
+    // strong ones. (Per-question sudden death keeps its own score-only row — different shape.)
+    function BlitzBestRow({rec,newFlags}:{rec?: BlitzBest;newFlags?: { score: boolean; streak: boolean }}){
+      const newF=newFlags||{score:false,streak:false};
+      const showTag=rec&&rec.scoreRoundId!=null&&rec.streakRoundId!=null;
+      return(<div className="mt-3 text-xs text-(--tx-300-60)"><div className="flex flex-wrap items-start gap-4"><div className="min-w-[125px]">Best Score: {rec?.score??'—'}{newF.score&&<NewBestStar/>}</div><div className="min-w-[125px]">Best Streak: {rec?.streak??'—'}{newF.streak&&<NewBestStar/>}</div>{showTag&&<span className="shrink-0 ml-auto">{rec.scoreRoundId===rec.streakRoundId?"Same Round":"Different Rounds"}</span>}</div></div>);
+    }
+
     // ============================================================
     // BlitzMode — the Blitz game mode on the shared engine (mode-untangle Step 3).
     //
@@ -1433,11 +1524,12 @@ interface DedOpts {
     // so the engine `S` already IS the round score — Blitz needs NO reducer changes. BlitzMode
     // = the engine + a countdown (Per Round `blitzSec` / Per Question `qSec`) + Best Score/
     // Streak tracking. Begin = engine.resetStats() (fresh round) + start timer; answering uses
-    // the engine; a round ends on the clock, a per-round wrong with Allow-Mistakes-off, or a
-    // per-Q wrong. Best is reconciled in an effect when a round ends (set to max, tagged with
-    // the round id) and ROLLED BACK there too when an Override drops the round that set it.
+    // the engine; a round ends on the clock or on a wrong with Allow Mistakes off (either
+    // timing sub-mode — the two toggles are fully independent, C3a). Best is reconciled in an
+    // effect when a round ends (set to max, tagged with the round id) and ROLLED BACK there
+    // too when an Override drops the round that set it.
     // ============================================================
-    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
+    function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,clockPaused,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const perQ=useModePrefs(s=>s.blitzPerQ),setPerQ=useModePrefs(s=>s.setBlitzPerQ);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.blitzAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setBlitzAllowMistakes);   // persisted (mode-prefs store)
       const [active,setActive]=useState(false);
@@ -1451,11 +1543,14 @@ interface DedOpts {
       const blitzBarRef=useRef<HTMLSpanElement | null>(null),blitzTimeRef=useRef<HTMLSpanElement | null>(null);
       const qDeadlineRef=useRef<number | null>(null),qPausedAtRef=useRef<number | null>(null),qPausedAccRef=useRef(0);
       const suddenBarRef=useRef<HTMLSpanElement | null>(null),suddenTimeRef=useRef<HTMLSpanElement | null>(null);
-      // Blitz/Sudden all-time bests persist across reloads (Stage D1): from the progress store.
+      // Blitz all-time bests persist across reloads (Stage D1): from the progress store — per-round
+      // (blitzBest), per-Q sudden death (suddenBest), and per-Q + Allow Mistakes (suddenAmBest, C3a).
       // (The "new best ★" markers below stay local — they're per-session UI, not persisted.)
       const blitzBest=useProgress(s=>s.blitzBest),setBlitzBest=useProgress(s=>s.setBlitzBest);
       const suddenBest=useProgress(s=>s.suddenBest),setSuddenBest=useProgress(s=>s.setSuddenBest);
+      const suddenAmBest=useProgress(s=>s.suddenAmBest),setSuddenAmBest=useProgress(s=>s.setSuddenAmBest);
       const [blitzBestNew,setBlitzBestNew]=useState<Record<string, { score: boolean; streak: boolean }>>({}),[suddenBestNew,setSuddenBestNew]=useState<Record<string, boolean>>({});
+      const [suddenAmBestNew,setSuddenAmBestNew]=useState<Record<string, { score: boolean; streak: boolean }>>({});
       const currentRoundIdRef=useRef<number | null>(null),nextRoundIdRef=useRef(1);
       // The FULL Best records that stood BEFORE the current round (snapshotted at Begin), serving two
       // jobs from one snapshot: (a) the reconcile's cross-round rollback FLOOR — a later Override that
@@ -1464,7 +1559,7 @@ interface DedOpts {
       // Override credits a misclick and RESUMES the round, the Best the interrupted round provisionally
       // saved is rolled back wholesale to these records (it re-saves only when the round genuinely
       // ends). (C2 Q2-A.)
-      const prevRoundBestRef=useRef<{ blitzBk: string; suddenBk: string; blitz?: BlitzBest; sudden?: SuddenBest }>({blitzBk:'',suddenBk:''});
+      const prevRoundBestRef=useRef<{ blitzBk: string; suddenBk: string; blitz?: BlitzBest; sudden?: SuddenBest; suddenAm?: BlitzBest }>({blitzBk:'',suddenBk:''});
       // saveStats:true ALWAYS (like AoX): the round tracks internally regardless of the global Save
       // Stats toggle, which now gates only the DISPLAY (dimmed "—" stats), whether a Best is recorded,
       // and whether Override shows while off. Always-tracking keeps the misclick-rescue credit
@@ -1480,12 +1575,17 @@ interface DedOpts {
       const {flash,setFlashWithTimeout}=useButtonFlash();   // green/red answer pulse
 
       // A round ended by a player ACTION (not the clock) is RESUMABLE via Override — credit the
-      // resolved question + continue. countedWrong is set by a wrong answer, a Reveal, OR a Show Codes
-      // (all three end the round); a TIMER end (LOCK_REVEAL / TIMEOUT_MISS) does NOT set countedWrong,
-      // so the clock running out is correctly NOT resumable. So "reveal or show codes then override"
-      // continues the round, same as a misclick (owner's call, C2 — override is uniform). The resume
-      // reverts the interrupted round's provisionally-saved Best (see resumeRound). One source of truth
-      // for both the resume (onOverride) and any round-end-resumable check.
+      // resolved question + continue. countedWrong is set by a wrong answer, a Reveal, OR a Show
+      // Codes; a TIMER end on a pristine question (LOCK_REVEAL / TIMEOUT_MISS) does NOT set it, so
+      // the clock simply running out is correctly NOT resumable. One deliberate corner (per-Q +
+      // Allow Mistakes, C3a): a wrong answer leaves the round running with countedWrong SET, so a
+      // timeout on that burned question ends the round with countedWrong still true — that end IS
+      // resumable (crediting the wrong resumes with a fresh question clock, exactly what a
+      // judged-correct answer would have granted before the expiry; owner-ratified). So "reveal or
+      // show codes then override" continues the round, same as a misclick (owner's call, C2 —
+      // override is uniform). The resume reverts the interrupted round's provisionally-saved Best
+      // (see resumeRound). One source of truth for both the resume (onOverride) and any
+      // round-end-resumable check.
       const resumableEnd=timerDone&&state.countedWrong;
       // Override availability is uniform — NOT gated on the live `saveStats` (owner's call, C2: gating
       // it made Override more forgiving when Save Stats is ON than OFF, which is backwards). Blitz
@@ -1494,7 +1594,10 @@ interface DedOpts {
       // invisible in practice mode (stats dimmed, no Best recorded).
       const overrideAvail=engOverrideAvail;
 
-      // Per-config Best silos (mirrors App's getBlitzBk / getSuddenBk keys exactly).
+      // The per-config Best silo keys. blitzBk leads with an m/n Allow-Mistakes marker (both
+      // per-round variants share the one blitzBest map); suddenBk has NO AM segment — for
+      // per-question, AM-ness is the MAP split (suddenBest = sudden death, suddenAmBest = Allow
+      // Mistakes on, C3a), because the two record shapes differ (score-only vs score+streak).
       const blitzBk=`${allowMistakes?'m':'n'}${blitzSec}|${randomFormat?'random':dateFormat}|${leapChance}|${janFebChance}|${julianChance}|${minY}-${maxY}|${useJulian}`;
       const suddenBk=`${qSec}|${randomFormat?'random':dateFormat}|${leapChance}|${janFebChance}|${julianChance}|${minY}-${maxY}|${useJulian}`;
 
@@ -1515,9 +1618,10 @@ interface DedOpts {
 
       // Countdown loop (Per Round drains blitzRemain; Per Question drains qRemain). On 0 the
       // round ends — per-round timeout shows the answer with no stat (lockReveal); per-Q
-      // timeout counts a miss (timeoutMiss).
+      // timeout counts a miss (timeoutMiss). Gated off while the rotate-back overlay pauses the
+      // clock (Q11) so the round can't drain — or expire — behind the overlay.
       useEffect(()=>{
-        if(!active)return;
+        if(!active||clockPaused)return;
         let raf = 0;
         const loop=()=>{
           const now=performance.now();
@@ -1543,18 +1647,43 @@ interface DedOpts {
         raf=requestAnimationFrame(loop);
         return ()=>cancelAnimationFrame(raf);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- endRound is behavior-stable (closes over only stable setters + ref writes); excluded so its identity change doesn't restart the countdown
-      },[active,perQ,blitzSec,qSec,eng]);
+      },[active,perQ,blitzSec,qSec,eng,clockPaused]);
 
+      // Rotate-overlay clock freeze (Q11). The countdown math above ALREADY carries pause
+      // bookkeeping — blitzPausedAcc is subtracted from the round's elapsed, qPausedAcc extends
+      // the question deadline (designed in with the clocks, dormant until now) — and this effect
+      // is what engages it: while the rotate-back overlay covers the app (clockPaused), stamp the
+      // pause start; on rotate-back (the cleanup) fold the paused span into the accumulators so
+      // both clocks resume exactly where they stopped. The rAF loop is gated off while paused
+      // (nothing visible to draw, and the round must not expire behind the overlay). Both
+      // sub-modes' refs are stamped unconditionally — the idle one's accumulator is reset by
+      // begin/freshQClock/resumeRound before its clock ever reads it; the null-guards make the
+      // fold a no-op if the round was torn down mid-pause (stopRound nulls the stamps).
+      useEffect(()=>{
+        if(!clockPaused)return;
+        const at=performance.now();
+        blitzPausedAtRef.current=at;qPausedAtRef.current=at;
+        return()=>{
+          const dt=performance.now()-at;
+          if(blitzPausedAtRef.current!=null){blitzPausedAtRef.current=null;blitzPausedAccRef.current+=dt;}
+          if(qPausedAtRef.current!=null){qPausedAtRef.current=null;qPausedAccRef.current+=dt;}
+        };
+      },[clockPaused]);
+
+      // Arm a FRESH per-question clock for the question now on screen — one home for the stamp
+      // (deadline = now + qSec, pause bookkeeping cleared, display reset). Every per-Q advance
+      // grants one: Begin, a correct answer, an in-round Override credit that advanced (C3a), and
+      // the Override-rescue resume.
+      const freshQClock=()=>{qDeadlineRef.current=performance.now()+qSec*1000;qPausedAccRef.current=0;qPausedAtRef.current=null;setQRemain(qSec);};
       const begin=()=>{
         eng.resetStats();                       // fresh round (S→0, history clear, new date)
         currentRoundIdRef.current=nextRoundIdRef.current++;
         // Snapshot the FULL Best records standing before this round (per the active config) — the
         // reconcile floor + the resume-revert target.
-        prevRoundBestRef.current={blitzBk,suddenBk,blitz:blitzBest[blitzBk],sudden:suddenBest[suddenBk]};
+        prevRoundBestRef.current={blitzBk,suddenBk,blitz:blitzBest[blitzBk],sudden:suddenBest[suddenBk],suddenAm:suddenAmBest[suddenBk]};
         setActive(true);setTimerDone(false);setShowTimerDate(false);
-        const now=performance.now();
-        if(!perQ){blitzStartRef.current=now;blitzPausedAccRef.current=0;blitzPausedAtRef.current=null;setBlitzRemain(blitzSec);blitzRemainRef.current=blitzSec;}
-        else{qDeadlineRef.current=now+qSec*1000;qPausedAccRef.current=0;qPausedAtRef.current=null;setQRemain(qSec);}
+        if(!perQ){blitzStartRef.current=performance.now();blitzPausedAccRef.current=0;blitzPausedAtRef.current=null;setBlitzRemain(blitzSec);blitzRemainRef.current=blitzSec;}
+        else freshQClock();
         resetTimerBars();
       };
       const onAnswer=(i: number)=>{
@@ -1562,41 +1691,50 @@ interface DedOpts {
         setFlashWithTimeout({type:i===correct?"good":"bad",idx:i});
         eng.answer(i);
         if(i===correct){
-          if(perQ){const now=performance.now();qDeadlineRef.current=now+qSec*1000;qPausedAccRef.current=0;qPausedAtRef.current=null;setQRemain(qSec);}
+          if(perQ)freshQClock();
           // per-round: round continues; engine already advanced to the next date
         }else{
-          // Wrong: per-Q is sudden death; per-round ends only when Allow Mistakes is off.
-          if(perQ||!allowMistakes){eng.lockReveal();endRound();}
+          // Wrong: ends the round only when Allow Mistakes is off (either timing sub-mode). With
+          // AM on the component does NOTHING — the engine has marked the wrong, counted played,
+          // broken the streak, and stayed on the question: per-round keeps its countdown, and
+          // per-Q keeps the SAME draining question clock (no refresh) until a correct answer or an
+          // Override credit advances (C3a).
+          if(!allowMistakes){eng.lockReveal();endRound();}
         }
       };
-      // Resume a round that an Override just RESCUED. A player action (a wrong answer, a Reveal, or a
-      // Show Codes) ended the round (the clock stopped, the Best was provisionally saved by the
-      // timerDone effect) and crediting that resolved question via Override continues the round
-      // instead of leaving it dead. Two halves: (1) revert the Best to
-      // the pre-round records (it re-saves only when the round genuinely ends) + clear its ★; (2)
-      // restart the clock — Per Round continues the countdown WHERE IT STOPPED
-      // (blitzStart = now − elapsed, so the remaining time = blitzRemainRef), Per Question starts a
-      // fresh per-question timer on the (already-advanced) next date. Restores the pre-rewrite
-      // behavior the Blitz mode-untangle dropped (original 7176a50 did exactly this). (C2 Q2-A.)
+      // Resume a round that an Override just RESCUED. A player action (a wrong answer, a Reveal, or
+      // a Show Codes — or, in per-Q + Allow Mistakes, the clock expiring on a question already
+      // answered wrong; see resumableEnd) ended the round (the clock stopped, the Best was
+      // provisionally saved by the timerDone effect) and crediting that resolved question via
+      // Override continues the round instead of leaving it dead. Two halves: (1) revert the active
+      // sub-mode's Best to the pre-round record (it re-saves only when the round genuinely ends) +
+      // clear its ★ — safe to branch on the live prefs, the toggles are idle-locked; (2) restart
+      // the clock — Per Round continues the countdown WHERE IT STOPPED (blitzStart = now − elapsed,
+      // so the remaining time = blitzRemainRef), Per Question starts a fresh per-question timer on
+      // the (already-advanced) next date. Restores the pre-rewrite behavior the Blitz mode-untangle
+      // dropped (original 7176a50 did exactly this). (C2 Q2-A.)
       const resumeRound=()=>{
         const snap=prevRoundBestRef.current;
         if(!perQ){
           setBlitzBest(prev=>{const nx={...prev};if(snap.blitz)nx[snap.blitzBk]=snap.blitz;else delete nx[snap.blitzBk];return nx;});
           setBlitzBestNew(p=>{if(!(snap.blitzBk in p))return p;const nx={...p};delete nx[snap.blitzBk];return nx;});
+        }else if(allowMistakes){
+          setSuddenAmBest(prev=>{const nx={...prev};if(snap.suddenAm)nx[snap.suddenBk]=snap.suddenAm;else delete nx[snap.suddenBk];return nx;});
+          setSuddenAmBestNew(p=>{if(!(snap.suddenBk in p))return p;const nx={...p};delete nx[snap.suddenBk];return nx;});
         }else{
           setSuddenBest(prev=>{const nx={...prev};if(snap.sudden)nx[snap.suddenBk]=snap.sudden;else delete nx[snap.suddenBk];return nx;});
           setSuddenBestNew(p=>{if(!(snap.suddenBk in p))return p;const nx={...p};delete nx[snap.suddenBk];return nx;});
         }
         setActive(true);setTimerDone(false);setShowTimerDate(false);
-        const now=performance.now();
-        if(!perQ){blitzStartRef.current=now-(blitzSec-blitzRemainRef.current)*1000;blitzPausedAccRef.current=0;blitzPausedAtRef.current=null;}
-        else{qDeadlineRef.current=now+qSec*1000;qPausedAccRef.current=0;qPausedAtRef.current=null;setQRemain(qSec);}
+        if(!perQ){blitzStartRef.current=performance.now()-(blitzSec-blitzRemainRef.current)*1000;blitzPausedAccRef.current=0;blitzPausedAtRef.current=null;}
+        else freshQClock();
       };
       // Override-to-wrong is a mistake: flipping a CORRECT answer to wrong (a live first-try
       // reversal, or retro-flipping the most-recent correct history entry) ends the round when
-      // Allow Mistakes is off (or Per Question) — exactly like a real wrong answer (bug #1).
-      // Wrong→credit overrides (countedWrong / pendingWrongOverride) are corrections and never
-      // end the round. Detect the to-wrong direction from the same fields the reducer reads.
+      // Allow Mistakes is off — exactly like a real wrong answer (bug #1); with AM on the round
+      // keeps going in either timing sub-mode (C3a). Wrong→credit overrides (countedWrong /
+      // pendingWrongOverride) are corrections and never end the round. Detect the to-wrong
+      // direction from the same fields the reducer reads.
       const onOverride=()=>{
         // A round ended by an action (wrong / Reveal / Show Codes — see `resumableEnd` above) is
         // RESUMABLE: crediting the resolved question via Override continues the round instead of
@@ -1606,9 +1744,19 @@ interface DedOpts {
         if(state.canOverrideCorrect&&state.prevStatsSnapshot)flipToWrong=!state.prevStatsSnapshot.wasWrong;
         else if(eng.retroOverrideEligible){const last=state.stack[state.stack.length-1];flipToWrong=!!(last?.capsule?.snapshot&&!last.capsule.snapshot.wasWrong);}
         if(state.countedWrong)setFlashWithTimeout({type:"good",idx:correct});
-        eng.override(); // credit (Path 3); the round then resumes (rescue) or the timerDone effect reconciles
+        eng.override(); // credit (Path 3/4/5); the round then resumes (rescue) or the timerDone effect reconciles
         if(resumableEnd)resumeRound();
-        else if(active&&flipToWrong&&(perQ||!allowMistakes))endRound();
+        else if(active&&flipToWrong&&!allowMistakes)endRound();
+        else if(active&&perQ&&(state.countedWrong||state.pendingWrongOverride!=null)){
+          // The override ADVANCED the live question (Path 3 credits this burned question and
+          // advances; Path 4 credits the previous wrong and advances — overrideAvail already
+          // excludes the spent-target Path-4 no-op) — a new date must never inherit the old date's
+          // drained clock, exactly as a correct answer refreshes it (C3a). `state` here is the
+          // PRE-dispatch snapshot (the same idiom flipToWrong reads above), and the three branches
+          // are mutually exclusive: a retro flip requires neither field set, so it correctly
+          // leaves the live question's clock draining.
+          freshQClock();
+        }
       };
       const onReveal=()=>{eng.reveal();endRound();};
       // Opening Show Codes during an active round ends the round (so Best Score is recorded and
@@ -1637,7 +1785,10 @@ interface DedOpts {
 
       // Reconcile Best when a round is over: set to max(S) tagged with the round id, and roll
       // back when an Override has dropped the score of the round that set the Best. Runs on
-      // S changes while timerDone (covers both round-end and post-round override).
+      // S changes while timerDone (covers both round-end and post-round override). Three-way by
+      // sub-mode (safe on live prefs — the toggles are idle-locked): per-round → blitzBest;
+      // per-Q + Allow Mistakes → suddenAmBest, the SAME BlitzBest shape + reconcile (C3a);
+      // per-Q sudden death → suddenBest (score only).
       useEffect(()=>{
         if(!timerDone)return;
         if(!saveStats)return;   // practice mode (Save Stats off): the round plays + tracks internally but records NO Best (C2 Q2-B — now that the engine always tracks, gate the Best here like AoX does)
@@ -1652,6 +1803,16 @@ interface DedOpts {
             if(scoreUp||streakUp)setBlitzBestNew(p=>{const e=p[blitzBk]||{score:false,streak:false};return{...p,[blitzBk]:{score:e.score||scoreUp,streak:e.streak||streakUp}};});
             return{...prev,[blitzBk]:next};
           });
+        }else if(allowMistakes){
+          setSuddenAmBest(prev=>{
+            const cur=prev[suddenBk]??{score:0,streak:0,scoreRoundId:null,streakRoundId:null};
+            const fb=prevRoundBestRef.current;
+            const next=reconcileBlitzBest(cur,S.good,S.best,rid,{score:fb.suddenAm?.score??0,streak:fb.suddenAm?.streak??0});
+            if(next.score===cur.score&&next.streak===cur.streak&&next.scoreRoundId===cur.scoreRoundId&&next.streakRoundId===cur.streakRoundId)return prev;
+            const scoreUp=next.score>cur.score,streakUp=next.streak>cur.streak;
+            if(scoreUp||streakUp)setSuddenAmBestNew(p=>{const e=p[suddenBk]||{score:false,streak:false};return{...p,[suddenBk]:{score:e.score||scoreUp,streak:e.streak||streakUp}};});
+            return{...prev,[suddenBk]:next};
+          });
         }else{
           setSuddenBest(prev=>{
             const cur=prev[suddenBk]??{score:0,roundId:null};
@@ -1661,9 +1822,12 @@ interface DedOpts {
             return{...prev,[suddenBk]:next};
           });
         }
-      },[timerDone,saveStats,S.good,S.best,perQ,blitzBk,suddenBk,setBlitzBest,setSuddenBest]);
+      },[timerDone,saveStats,S.good,S.best,perQ,allowMistakes,blitzBk,suddenBk,setBlitzBest,setSuddenBest,setSuddenAmBest]);
 
-      const togglePerQ=()=>{if(active||timerDone)return;setPerQ(v=>{const n=!v;if(n&&allowMistakes)setAllowMistakes(false);return n;});};
+      // Both toggles are bare idle-gated flips — fully independent since C3a (the old auto-off
+      // coupling died with the sudden-death-only per-Q). The idle lock (also mirrored by the
+      // pointer-events dim on the buttons) is what makes the live-prefs branching above safe.
+      const togglePerQ=()=>{if(active||timerDone)return;setPerQ(v=>!v);};
       const toggleAllowMistakes=()=>{if(active||timerDone)return;setAllowMistakes(v=>!v);};
 
       // Freshness for App's isFullyReset. The two timer lengths compare against their EFFECTIVE
@@ -1671,7 +1835,7 @@ interface DedOpts {
       // excluded config (perQ, allowMistakes) stays factory-fixed (not capturable).
       const defBlitzSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzSec);
       const defBlitzQSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzQSec);
-      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&blitzSec===defBlitzSec&&qSec===defBlitzQSec&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&flash===null;
+      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&blitzSec===defBlitzSec&&qSec===defBlitzQSec&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&Object.keys(suddenAmBest).length===0&&flash===null;
       useEffect(()=>{onFreshChange?.(blitzIsFresh);},[blitzIsFresh,onFreshChange]);
 
       const shouldShowTimerDate=active||showTimerDate;
@@ -1679,7 +1843,9 @@ interface DedOpts {
       const timerBlocksReveal=!shouldShowTimerDate;
       const revealDisabled=(state.locked&&state.revealed)||state.calcOpen||state.calcPenaltyActive||timerBlocksReveal||timerDone;
       const timerBusy=active;
-      const showStreak=!perQ;
+      // Streak is hidden only in per-Q sudden death: there a wrong ends the round, so streak
+      // always equals score. With Allow Mistakes on it behaves exactly like per-round (C3a).
+      const showStreak=!perQ||allowMistakes;
       const sOff=!saveStats;
       const statsArr=[
         {label:"Score",value:`${S.good}/${S.played}`,off:sOff,fn:null},
@@ -1691,26 +1857,27 @@ interface DedOpts {
       ];
       const date=state.date;
       const dateText=shouldShowTimerDate?fmtDate(date.y,date.m,date.d,date._fmt):"—";
-      const bScore=blitzBest[blitzBk],sScore=suddenBest[suddenBk];
+      const bScore=blitzBest[blitzBk],sScore=suddenBest[suddenBk],saScore=suddenAmBest[suddenBk];
       return(
         <div style={{display:visible?"block":"none"}}>
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr}/></div>
-          {!perQ&&(()=>{const newF=blitzBestNew[blitzBk]||{score:false,streak:false};const showTag=bScore&&bScore.scoreRoundId!=null&&bScore.streakRoundId!=null;return(<div className="mt-3 text-xs text-purple-300/60"><div className="flex flex-wrap items-start gap-4"><div className="min-w-[125px]">Best Score: {bScore?.score??'—'}{newF.score&&<NewBestStar/>}</div><div className="min-w-[125px]">Best Streak: {bScore?.streak??'—'}{newF.streak&&<NewBestStar/>}</div>{showTag&&<span className="shrink-0 ml-auto">{bScore.scoreRoundId===bScore.streakRoundId?"Same Round":"Different Rounds"}</span>}</div></div>);})()}
-          {perQ&&(<div className="mt-3 text-xs text-purple-300/60"><div className="flex flex-wrap items-start gap-4"><div className="min-w-[125px]">Best Score: {sScore?.score??'—'}{suddenBestNew[suddenBk]&&<NewBestStar/>}</div></div></div>)}
+          {!perQ&&<BlitzBestRow rec={bScore} newFlags={blitzBestNew[blitzBk]}/>}
+          {perQ&&allowMistakes&&<BlitzBestRow rec={saScore} newFlags={suddenAmBestNew[suddenBk]}/>}
+          {perQ&&!allowMistakes&&(<div className="mt-3 text-xs text-(--tx-300-60)"><div className="flex flex-wrap items-start gap-4"><div className="min-w-[125px]">Best Score: {sScore?.score??'—'}{suddenBestNew[suddenBk]&&<NewBestStar/>}</div></div></div>)}
           <div className="mt-3 flex gap-2">
-            <button type="button" onClick={toggleAllowMistakes} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
+            <button type="button" onClick={toggleAllowMistakes} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
             <button type="button" onClick={togglePerQ} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border btn-solid border-transparent${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>{perQ?"Per Question":"Per Round"}</button>
           </div>
-          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-[3.3em]" onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-[3.3em]" onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
+          <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
           <div className="mt-5">
-            {!perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={blitzTimeRef}>{fmtBlitzT(blitzSec)}</span></div><div className="bar"><span ref={blitzBarRef} style={{width:"100%"}}></span></div></div>)}
-            {perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-purple-200/80 mb-1"><span ref={suddenTimeRef}>{qSec}s</span></div><div className="bar"><span ref={suddenBarRef} style={{width:"100%"}}></span></div></div>)}
+            {!perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-(--tx-200-80) mb-1"><span ref={blitzTimeRef}>{fmtBlitzT(blitzSec)}</span></div><div className="bar"><span ref={blitzBarRef} style={{width:"100%"}}></span></div></div>)}
+            {perQ&&(<div className="mb-3"><div className="text-center text-xs tabular-nums text-(--tx-200-80) mb-1"><span ref={suddenTimeRef}>{qSec}s</span></div><div className="bar"><span ref={suddenBarRef} style={{width:"100%"}}></span></div></div>)}
             <div className="mt-4 rounded-2xl panel p-4">
               <div className="text-center relative">
-                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
+                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-(--tx-300-60)">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{dateText}</div>
               </div>
-              <WeekdayAnswer inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
+              <WeekdayAnswer key={state.gridEpoch} inputStyle={inputStyle} persistBtns={state.persistBtns} flash={flash} optionsDisabled={optionsDisabled} onPick={onAnswer}/>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
               <div className="grid grid-cols-4 gap-2">
@@ -1792,9 +1959,9 @@ interface DedOpts {
       const idleBtn="surface-button";
 
       const changeDedType=(t: string)=>{if(t===dedType)return;setFlash(null);setDedType(t);};   // each silo persists; just swap which shows
-      const onAnswer=(i: number)=>{setFlashWithTimeout({type:i===correct?"good":"bad",idx:i});eng.answer(i);};
+      const onAnswer=(i: number)=>{setFlashWithTimeout({type:i===correct?"good":"bad",idx:i,n:date.options.length});eng.answer(i);};
       // Override-after-wrong flashes green on the correct option, matching App's dedFlash branch.
-      const onOverride=()=>{if(state.countedWrong)setFlashWithTimeout({type:"good",idx:correct});eng.override();};
+      const onOverride=()=>{if(state.countedWrong)setFlashWithTimeout({type:"good",idx:correct,n:date.options.length});eng.override();};
 
       // Auto-switch out of Year when a range/Julian change makes it unbuildable (mirrors App).
       useEffect(()=>{if(dedType==="year"&&!yearSubPossible)setDedType("day");},[dedType,yearSubPossible,setDedType]);   // setDedType is a stable store setter
@@ -1822,6 +1989,15 @@ interface DedOpts {
       const {resetArmed,onResetTap,resetBtnRef}=useResetStatsArm(eng.resetStats,!engineFresh(state),visible);   // Q2 two-tap confirm (resets the ACTIVE sub-type's silo)
       useEffect(()=>{onFreshChange?.(deductionIsFresh);},[deductionIsFresh,onFreshChange]);
       const date=state.date as DedPuzzle;
+      // Flash-validity rule (Q13, the general form): a flash only renders on a grid with the
+      // button count it was born in. Advancing on a correct (or an Override credit) can CHANGE
+      // the layout — Year 2↔5 under both crosses, Day 7↔4 across Oct 1582 — and the carried
+      // pulse would repaint on an unrelated button; deriving per commit suppresses it in the
+      // SAME render the new layout appears (no timers, no race — the pending 550ms clear needs
+      // nothing, setFlashWithTimeout already swaps it on the next answer). Same-count advances
+      // keep the pulse: the designed feedback, as in the fixed 7-grid weekday modes.
+      // deductionIsFresh above reads the RAW flash (a suppressed flash still owns a live timer).
+      const gridFlash=flash&&flash.n===date?.options.length?flash:null;
       // Codes-panel target mirrors App's deduction calcTarget: just the date fields (so
       // displayedFormat falls to the current dateFormat) + the puzzle's _jul snapshot.
       const calcTarget: { y: number; m: number; d: number; _jul?: boolean; _fmt?: FormatId } | null=date?{y:date.y,m:date.m,d:date.d,_jul:date._jul}:null;
@@ -1842,28 +2018,44 @@ interface DedOpts {
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef}/></div>
           <div className="mt-3"><button type="button" data-key="S" ref={resetBtnRef} className={resetArmed?RESET_STATS_ARMED_CLASS:RESET_STATS_BTN_CLASS} onClick={onResetTap}>{resetArmed?"Reset Stats?":"Reset Stats"}</button></div>
           <div className="mt-5">
-            <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
+            {/* Day/Month/Year trio pinned to exact page center (Q10): minmax(0,1fr) side tracks.
+                Bare 1fr means minmax(auto,1fr) — on narrow screens an occupied side's min-w-20
+                toggle can refuse to shrink below its floor, so that track outgrows the empty one
+                and shoves the trio ~5px off center (Month/Year). A 0 minimum keeps the two side
+                tracks always exactly equal; a too-wide toggle just bleeds into the page gutter. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
               <div className="flex justify-start">
-                {dedType==="year"&&(()=>{const disabled=!abPossible;const active=abCrossOnly&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setAbCrossOnly(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${disabled?" opacity-60 pointer-events-none":""}`}><i>ab</i> Cross</button>);})()}
+                {dedType==="year"&&(()=>{const disabled=!abPossible;const active=abCrossOnly&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setAbCrossOnly(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${disabled?" opacity-60 pointer-events-none":""}`}><i>ab</i> Cross</button>);})()}
               </div>
               <div className="flex gap-2 items-center">
-                {["day","month","year"].map(t=>{const disabled=t==="year"&&!yearSubPossible;return(<button key={t} type="button" onClick={()=>{if(disabled)return;changeDedType(t);}} className={`px-2 py-1.5 rounded-xl text-sm font-medium border min-w-16 ${dedType===t?"btn-solid border-transparent text-white":"surface-toggle text-purple-100/80"}${disabled?" opacity-60 pointer-events-none":""}`}>{t[0].toUpperCase()+t.slice(1)}</button>);})}
+                {["day","month","year"].map(t=>{const disabled=t==="year"&&!yearSubPossible;return(<button key={t} type="button" onClick={()=>{if(disabled)return;changeDedType(t);}} className={`px-2 py-1.5 rounded-xl text-sm font-medium border min-w-16 ${dedType===t?"btn-solid border-transparent text-white":"surface-toggle text-(--tx-100-80)"}${disabled?" opacity-60 pointer-events-none":""}`}>{t[0].toUpperCase()+t.slice(1)}</button>);})}
               </div>
               <div className="flex justify-end">
-                {dedType==="year"&&(()=>{const disabled=!julPossible;const active=julCrossOnly&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setJulCrossOnly(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${disabled?" opacity-60 pointer-events-none":""}`}>Jul Cross</button>);})()}
-                {dedType==="month"&&(()=>{const disabled=!m1582Possible;const active=monthOnly1582&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setMonthOnly1582(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${disabled?" opacity-60 pointer-events-none":""}`}>1582 Only</button>);})()}
+                {dedType==="year"&&(()=>{const disabled=!julPossible;const active=julCrossOnly&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setJulCrossOnly(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${disabled?" opacity-60 pointer-events-none":""}`}>Jul Cross</button>);})()}
+                {dedType==="month"&&(()=>{const disabled=!m1582Possible;const active=monthOnly1582&&!disabled;return(<button type="button" onClick={()=>{if(disabled)return;setMonthOnly1582(v=>!v);}} className={`px-2 py-1 rounded-xl text-xs font-medium border min-w-20 ${active?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${disabled?" opacity-60 pointer-events-none":""}`}>1582 Only</button>);})()}
               </div>
             </div>
             <div className="mt-4 rounded-2xl panel p-4">
               <div className="text-center relative">
-                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-purple-300/60">Q{state.stack.length+1}</span>}
+                {state.backDepth>0&&<span className="absolute right-0 top-0 text-[11px] tabular-nums text-(--tx-300-60)">Q{state.stack.length+1}</span>}
                 <div className="text-3xl font-bold">{date?fmtDatePartial(date.y,date.m,date.d,date._fmt,date.type):"—"}</div>
-                {date&&<div className="mt-1 text-lg text-purple-100">Weekday: <span className="font-semibold">{DAY[date.w]}</span></div>}
+                {date&&<div className="mt-1 text-lg text-(--tx-100)">Weekday: <span className="font-semibold">{DAY[date.w]}</span></div>}
               </div>
-              <div className="mt-4">
-                {date&&date.type==="year"&&(()=>{const N=date.options.length;const gridCls=N===2?"grid-cols-2":N===5?"grid-cols-6":"grid-cols-3";const colSpanFor=(idx: number)=>N===5?(idx<3?"col-span-2":"col-span-3"):"";return(<div className={`grid gap-2 ${gridCls}`} data-answer-grid="true">{date.options.map((y,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(flash&&flash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} py-2 text-sm ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${colSpanFor(idx)}`}>{fmtYear(y)}</button>);})}</div>);})()}
-                {date&&date.type==="month"&&(<div className="grid grid-cols-2 gap-3" data-answer-grid="true">{date.options.map((mv,idx)=>{const last=idx===date.options.length-1?"col-span-2":"";const ps=state.persistBtns[idx];const isFlashing=!!(flash&&flash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{mv}</button>);})}</div>)}
-                {date&&date.type==="day"&&(<div className="grid grid-cols-3 gap-2" data-answer-grid="true">{date.options.map((dv,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(flash&&flash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} py-2 text-sm ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${centerLastOpt(idx,date.options.length)}`}>{dv}</button>);})}</div>)}
+              {/* key=gridEpoch — Deduction's puzzle grids remount on reset, same snap-clean as the
+                  weekday modes' keyed WeekdayAnswer (Q9; see its doc comment). */}
+              <div key={state.gridEpoch} className="mt-4">
+                {/* Both-crosses 2-option Year (Q14): overlay the real grid on an invisible inert
+                    5-layout sizer (five DIVs mirroring the N===5 grid/col-span classes) so the
+                    answer panel holds the 5-layout's height — the New/‹›/Reveal/Override row must
+                    not move a pixel as puzzles alternate 2↔5. The real grid self-centers in that
+                    space (the 5-layout's visual centroid; top/bottom-aligned reads as a dead band).
+                    A strut, not a calc(): it tracks the real button metrics by construction.
+                    abCrossOnly&&julCrossOnly is trustworthy (the auto-clear effects above drop a
+                    stale toggle the moment its prerequisites break); any other 2-option Year (the
+                    rare no-toggle Julian straddle) keeps the tight single-row layout. */}
+                {date&&date.type==="year"&&(()=>{const N=date.options.length;const gridCls=N===2?"grid-cols-2":N===5?"grid-cols-6":"grid-cols-3";const colSpanFor=(idx: number)=>N===5?(idx<3?"col-span-2":"col-span-3"):"";const reserve=abCrossOnly&&julCrossOnly&&N===2;const answerGrid=(<div className={`grid gap-2 ${gridCls}${reserve?" col-start-1 row-start-1 self-center":""}`} data-answer-grid="true">{date.options.map((y,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} text-sm ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${colSpanFor(idx)}`}>{fmtYear(y)}</button>);})}</div>);return reserve?(<div className="grid"><div className="col-start-1 row-start-1 invisible pointer-events-none grid gap-2 grid-cols-6" aria-hidden="true">{[0,1,2,3,4].map(i=>(<div key={i} className={`${baseBtn} text-sm ${i<3?"col-span-2":"col-span-3"}`}>&nbsp;</div>))}</div>{answerGrid}</div>):answerGrid;})()}
+                {date&&date.type==="month"&&(<div className="grid grid-cols-2 gap-3" data-answer-grid="true">{date.options.map((mv,idx)=>{const last=idx===date.options.length-1?"col-span-2":"";const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{mv}</button>);})}</div>)}
+                {date&&date.type==="day"&&(<div className="grid grid-cols-3 gap-2" data-answer-grid="true">{date.options.map((dv,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} text-sm ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${centerLastOpt(idx,date.options.length)}`}>{dv}</button>);})}</div>)}
               </div>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
@@ -1953,6 +2145,26 @@ interface DedOpts {
         // boot color. tc is '' before the stylesheet applies (tests/dev first pass) → keep the stamp.
         if(tc)document.documentElement.style.background=tc;
       },[activeTheme]);
+      // Q11 portrait lock, the non-Android half: the manifest's orientation:'portrait'
+      // (vite.config.js webManifest) hard-locks installs only on Android, so on every platform
+      // that ignores it (iOS foremost) App covers a sideways screen with RotateOverlay. Gate =
+      // ALL of: a touch device (isTouch — desktop windows are never blocked), CSS landscape, and
+      // a SHORT viewport (max-height 500px: only phone-in-landscape heights match — iPad
+      // landscape is ≥768px tall, so tablets stay free; ~500 also clears the tallest phone
+      // landscape, 440px-class, with margin). One combined media query so a single change
+      // listener tracks rotation in both directions; the same boolean pauses the countdown
+      // modes via clockPaused (an accidental mid-round rotation must not burn the clock behind
+      // the overlay). Deliberately NOT the startup-image path — those stay portrait-only; the
+      // overlay takes over after first paint.
+      const [landscapeBlocked,setLandscapeBlocked]=useState(false);
+      useEffect(()=>{
+        if(!isTouch)return;
+        const mq=window.matchMedia("(orientation: landscape) and (max-height: 500px)");
+        const h=()=>setLandscapeBlocked(mq.matches);
+        h();   // launched already-sideways → blocked from the first commit
+        mq.addEventListener("change",h);
+        return()=>mq.removeEventListener("change",h);
+      },[]);
       // Save Stats toggle. Flips the global ⚙ setting; each always-mounted mode component
       // reads the new saveStats prop itself (display dimming + Best-recording gate). Save Stats
       // is not a date-generation setting, so it never regenerates a date.
@@ -2233,10 +2445,11 @@ interface DedOpts {
         // arrow-nav handler (handleTriggerKeyDown on the trigger) sees subsequent keys.
         if(e.key==='Tab'){
           if(e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
-          // The Save Defaults MODAL owns Tab while it's up (its scrim's focus trap) — opening the mode
-          // dropdown behind an aria-modal dialog would break the modal contract. The trap already
-          // stopPropagation()s presses inside its tree; this covers presses that start outside it.
-          if(document.querySelector('[data-save-defaults]'))return;
+          // An open settings MODAL (Save Defaults / View saved defaults) owns Tab while it's up (its
+          // scrim's focus trap) — opening the mode dropdown behind an aria-modal dialog would break
+          // the modal contract. The trap already stopPropagation()s presses inside its tree; this
+          // covers presses that start outside it.
+          if(document.querySelector('[data-settings-modal]'))return;
           if(modeSelectRef.current){
             const trigger=modeSelectRef.current.querySelector('button');
             if(trigger){e.preventDefault();trigger.focus();trigger.click();}
@@ -2346,6 +2559,10 @@ interface DedOpts {
       const saveDefaultsCardRef=useRef<HTMLDivElement | null>(null); // the dialog card — focused on open (the modal a11y contract below)
       const pendSettingsRef=useRef<SettingsValues | null>(null);
       const [pendPrefs,setPendPrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
+      // View saved defaults (Q12) read-only popup state — the footer link's inspect twin of the
+      // Save card. No pending snapshot: it renders the EFFECTIVE saved values (defPrefs) directly.
+      const [viewDefaultsOpen,setViewDefaultsOpen]=useState(false);
+      const viewDefaultsCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
       // aoxIsFresh — reported up from AoxMode via the onFreshChange prop. AoxMode's ~24
       // internal state fields are otherwise opaque to the App, so we mirror their combined
       // freshness state here to use in isFullyReset (the Full Reset dim/lock check below).
@@ -2459,11 +2676,11 @@ interface DedOpts {
         // Treat that as "inside" so picking a theme/mode doesn't slam the settings popover shut
         // before the selection registers.
         const inListbox=!!(target&&target.closest&&target.closest('[role="listbox"]'));
-        // The Save Defaults popup (Q7) portals to #root with a full-screen scrim — clicks on it
-        // (scrim included) are "inside": a scrim tap cancels only the POPUP (its own onClick
-        // handler), never the settings panel beneath it.
-        const inSaveDefaults=!!(target&&target.closest&&target.closest('[data-save-defaults]'));
-        if(!inBtn&&!inPop&&!inSel&&!inListbox&&!inSaveDefaults){
+        // The settings modals (Save Defaults Q7 / View saved defaults Q12) portal to #root with a
+        // full-screen scrim — clicks on either (scrim included) are "inside": a scrim tap cancels
+        // only the POPUP (its own onClick handler), never the settings panel beneath it.
+        const inModal=!!(target&&target.closest&&target.closest('[data-settings-modal]'));
+        if(!inBtn&&!inPop&&!inSel&&!inListbox&&!inModal){
           // Year-range inputs (and any future input in the popover) commit on blur. When closing
           // settings via click-outside on a non-focusable element, the input keeps focus until
           // the popover unmounts — and React's synthetic onBlur doesn't reliably fire on unmount,
@@ -2489,12 +2706,16 @@ interface DedOpts {
       // Save Defaults popup lifecycle (Q7): closing Settings by ANY path closes the popup too —
       // it's a child flow of the panel (Cancel semantics; the pending snapshot is discarded).
       useEffect(()=>{if(!settingsOpen)setSaveDefaultsOpen(false);},[settingsOpen]);
+      useEffect(()=>{if(!settingsOpen)setViewDefaultsOpen(false);},[settingsOpen]);   // the View popup (Q12) is a child flow of the panel too
       // Escape cancels the POPUP first — registered in the CAPTURE phase with stopPropagation so
       // the settings Escape handler above (bubble phase) never sees the same press and the panel
       // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field normalize-commits),
       // mirroring the settings handler's guard — and like it, the guard excludes type="range": the
       // popup's three sliders keep focus after an adjust and must not swallow the dismiss.
       useEffect(()=>{if(!saveDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setSaveDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[saveDefaultsOpen]);
+      // The View popup (Q12) gets the same capture-phase Escape — minus the text-entry guard: its
+      // only control is the Close button (no inputs), so nothing can ever be mid-edit.
+      useEffect(()=>{if(!viewDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setViewDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[viewDefaultsOpen]);
       // The popup's modal a11y contract, part 1 of 2 (part 2 = the Tab trap on the scrim, below): on
       // open, move focus INTO the dialog — the card is tabIndex={-1} with role="dialog" +
       // aria-modal="true", so screen readers announce a modal and keyboard context starts inside it.
@@ -2502,6 +2723,7 @@ interface DedOpts {
       // keeps operating the live settings panel while commitSaveDefaults would still save the snapshot
       // captured at open — a silent divergence between what's on screen and what Save persists.
       useEffect(()=>{if(saveDefaultsOpen)saveDefaultsCardRef.current?.focus();},[saveDefaultsOpen]);
+      useEffect(()=>{if(viewDefaultsOpen)viewDefaultsCardRef.current?.focus();},[viewDefaultsOpen]);   // same contract for the View popup (Q12)
       // Theme option arrays — keys match the CustomSelect API (value/label) so
       // they can be passed directly without per-render mapping.
       const DARK_THEMES=[{value:'dusk',label:'Dusk'},{value:'midnight',label:'Midnight'},{value:'nebula',label:'Nebula'}];
@@ -2509,8 +2731,8 @@ interface DedOpts {
       const ALL_THEMES_LABELED=[{value:'dusk',label:'Dusk (dark)'},{value:'midnight',label:'Midnight (dark)'},{value:'nebula',label:'Nebula (dark)'},{value:'light',label:'Light (light)'},{value:'parchment',label:'Parchment (light)'}];
       // Resets every setting in the ⚙ popover to its EFFECTIVE default — the user's saved personal
       // defaults when they exist (Q7, store/userDefaults), the factory launch values otherwise.
-      // Stays PANEL-ONLY by design: never touches mode-specific config outside the popover (AoX N,
-      // timer durations, Deduction sub-types/toggles) or stats/history (Reset Stats handles that) —
+      // Stays PANEL-ONLY by design: never touches mode-specific config outside the popover (the AoX
+      // run length, timer durations, Deduction sub-types/toggles) or stats/history (Reset Stats handles that) —
       // Full Reset alone restores the four captured mode prefs.
       // Triggers the unified popover-settings effect, which will regenerate the current
       // date as appropriate (Random Format / Date Format / Leap Chance are always-regen).
@@ -2531,6 +2753,7 @@ interface DedOpts {
         setSaveDefaultsOpen(true);
       };
       const closeSaveDefaults=useCallback(()=>setSaveDefaultsOpen(false),[]);
+      const closeViewDefaults=useCallback(()=>setViewDefaultsOpen(false),[]);
       // Save commits the EDITED pending snapshot (never the live stores — they stay untouched);
       // from here on Reset Settings / Full Reset / the gear indicator mean THESE values by "default".
       const commitSaveDefaults=()=>{
@@ -2564,10 +2787,10 @@ interface DedOpts {
         // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, last mode) → launch
         // defaults. Runs BEFORE the remount-key bumps so the modes re-read the now-default prefs.
         resetModePrefs();
-        // …then push the four SAVED personal defaults (Flash speed, both Blitz timers, AoX N — Q7,
+        // …then push the four SAVED personal defaults (Flash speed, both Blitz timers, the AoX run length — Q7,
         // store/userDefaults, which deliberately SURVIVES Full Reset) back over that factory reset,
         // still before the remount-key bumps. Everything else in modePrefs (Per-Round/Question,
-        // Deduction sub-type, Allow Mistakes, One-By-One, show/hide toggles) stays factory. A no-op
+        // Deduction sub-type, Allow Mistakes, One-by-One, show/hide toggles) stays factory. A no-op
         // when nothing is saved (defPrefs = the factory values).
         applyModePrefs(defPrefs);
         // Lookup input/output are transient local state (the history itself was cleared by resetProgress).
@@ -2614,6 +2837,7 @@ interface DedOpts {
       // CustomSelect / the mode components. See components/useBackButton.
       useBackButton(settingsOpen, ()=>setSettingsOpen(false), 'settings');
       useBackButton(saveDefaultsOpen, closeSaveDefaults, 'save-defaults');   // opens after 'settings' → Back closes the popup first (LIFO)
+      useBackButton(viewDefaultsOpen, closeViewDefaults, 'view-defaults');   // ditto for the View popup (Q12)
       useBackButton(mode==='guide', ()=>setMode(prevNonGuideModeRef.current||'classic'), 'guide');
       // NOTE: the "disarm when state flips to fully-reset" safety-net effect was moved to just
       // after the isFullyReset declaration below — its dependency array reads isFullyReset, which
@@ -2706,8 +2930,8 @@ interface DedOpts {
             control + its behaviour is unchanged — purely a regroup. */}
         <div className="space-y-2">
           <SectionLabel>Display</SectionLabel>
-          <div className="text-xs text-purple-200/80">Date Format</div>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{randomFormat?"On":"Off"}</button></div>
+          <div className="text-xs text-(--tx-200-80)">Date Format</div>
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{randomFormat?"On":"Off"}</button></div>
           {/* The Written/Numeric date-format groups sit in a shared pill housing (owner call,
               Round-3; rebuilt FLUSH Round-4): the container draws the whole frame (border +
               surface-tray, NO padding, NO overflow-hidden) and each borderless segment carries a
@@ -2730,69 +2954,69 @@ interface DedOpts {
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
               <div className="flex gap-0.5 border surface-tray rounded-xl">
-                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
+                <button type="button" onClick={()=>setDateFormat('written-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-mdy'?"btn-solid":"text-(--tx-100-80) hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('written-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='written-dmy'?"btn-solid":"text-(--tx-100-80) hover:bg-(--stgl-hov)"}`}>DMY</button>
               </div>
             </div>
             <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
               <div className="flex gap-0.5 border surface-tray rounded-xl">
-                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-mdy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>MDY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-dmy'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>DMY</button>
-                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid":"text-purple-100/80 hover:bg-(--stgl-hov)"}`}>YMD</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-mdy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-mdy'?"btn-solid":"text-(--tx-100-80) hover:bg-(--stgl-hov)"}`}>MDY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-dmy')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-dmy'?"btn-solid":"text-(--tx-100-80) hover:bg-(--stgl-hov)"}`}>DMY</button>
+                <button type="button" onClick={()=>setDateFormat('numeric-ymd')} className={`flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium ${dateFormat==='numeric-ymd'?"btn-solid":"text-(--tx-100-80) hover:bg-(--stgl-hov)"}`}>YMD</button>
               </div>
             </div>
           </div>
           {/* Input — Buttons / Dots (the logo's 7-dot answer layout). Locks/dims in Deduction (answers
               aren't weekdays; value preserved), like Julian/Leap-Year Chance when they don't apply. */}
-          <div className="text-xs text-purple-200/80 pt-1">Input</div>
+          <div className="text-xs text-(--tx-200-80) pt-1">Input</div>
           <div className={`flex gap-1.5${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
-            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='buttons'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>Buttons</button>
-            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>Dots</button>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='buttons'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Buttons</button>
+            <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Dots</button>
           </div>
-          <div className="text-xs text-purple-200/80 pt-1">Theme</div>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useSystem?"On":"Off"}</button></div>
+          <div className="text-xs text-(--tx-200-80) pt-1">Theme</div>
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Use System Settings</span><button type="button" onClick={()=>setUseSystem(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useSystem?"On":"Off"}</button></div>
           {/* The theme selects sit in the popover's text-xs control tier (Round-3 font
               normalization — their text-sm read oversized next to every neighboring control);
               menuTextClassName sizes their portaled option rows to match the trigger. The bar's
               mode selector keeps CustomSelect's default 15px menu. */}
-          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-purple-200/80 w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div>)}
+          {useSystem?(<><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-(--tx-200-80) w-10 shrink-0">Dark:</span><CustomSelect value={darkTheme} onChange={setDarkTheme} options={DARK_THEMES} ariaLabel="Dark theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div><div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-(--tx-200-80) w-10 shrink-0">Light:</span><CustomSelect value={lightTheme} onChange={setLightTheme} options={LIGHT_THEMES} ariaLabel="Light theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div></>):(<div data-drag-stay className="flex items-center gap-3"><span className="text-xs text-(--tx-200-80) w-10 shrink-0">Theme:</span><CustomSelect value={manualTheme} onChange={setManualTheme} options={ALL_THEMES_LABELED} ariaLabel="Theme" wrapperClassName="flex-1" menuTextClassName="text-xs" className="panel rounded-xl px-2 py-1.5 text-xs w-full focus:outline-hidden focus-ring text-left"/></div>)}
         </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
+        <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
           <SectionLabel>Dates</SectionLabel>
-          <div className="text-xs text-purple-200/80">Year Range</div>
+          <div className="text-xs text-(--tx-200-80)">Year Range</div>
           <div className="flex items-center gap-2">
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
-            <span className="text-purple-300/60 text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className="w-16 panel rounded-xl px-2 py-1.5 text-xs text-center focus:outline-hidden focus-ring tabular-nums"/>
+            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
+            <span className="text-(--tx-300-60) text-sm shrink-0">→</span>
+            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
           </div>
-          <div className="flex items-center justify-between pt-1"><span className="text-xs text-purple-200/80">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{useJulian?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
           {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
               minY<=1582<=maxY). Year 1582 itself spans both calendars. When locked, the selected value
               stays visually selected so it's restored when the range becomes mixed again. */}
-          <div className="text-xs text-purple-200/80 pt-1">Julian Chance</div>
+          <div className="text-xs text-(--tx-200-80) pt-1">Julian Chance</div>
           <div className="flex gap-1.5">
-            {(() => { const julianMixed=useJulian&&minY<=1582&&maxY>=1582; return ['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!julianMixed)return;setJulianChance(v);}} aria-disabled={!julianMixed} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${julianChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${!julianMixed?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
+            {(() => { const julianMixed=useJulian&&minY<=1582&&maxY>=1582; return ['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!julianMixed)return;setJulianChance(v);}} aria-disabled={!julianMixed} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${julianChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${!julianMixed?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
           </div>
           {/* Leap Year Chance: locked when the active range/calendar has no leap years; the selected value
               is preserved + restored when a leap year becomes reachable again. */}
-          <div className="text-xs text-purple-200/80 pt-1">Leap Year Chance</div>
+          <div className="text-xs text-(--tx-200-80) pt-1">Leap Year Chance</div>
           <div className="flex gap-1.5">
-            {(() => { const leapReachable=rangeHasLeapYear(minY,maxY,useJulian); return ['random','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!leapReachable)return;setLeapChance(v);}} aria-disabled={!leapReachable} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${leapChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}${!leapReachable?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
+            {(() => { const leapReachable=rangeHasLeapYear(minY,maxY,useJulian); return ['random','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>{if(!leapReachable)return;setLeapChance(v);}} aria-disabled={!leapReachable} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${leapChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${!leapReachable?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
           </div>
           {/* Jan/Feb Chance: the listed % is the exact probability a leap-year date lands on Jan/Feb
               (Random = natural ~17%). Stays unlocked even when leap years aren't currently reachable. */}
-          <div className="text-xs text-purple-200/80 pt-1">Jan/Feb Chance on Leap Years</div>
+          <div className="text-xs text-(--tx-200-80) pt-1">Jan/Feb Chance on Leap Years</div>
           <div className="flex gap-1.5">
-            {['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>setJanFebChance(v)} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${janFebChance===v?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{v==='random'?'Random':v+'%'}</button>))}
+            {['random','25','50','75','100'].map(v=>(<button key={v} type="button" onClick={()=>setJanFebChance(v)} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${janFebChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{v==='random'?'Random':v+'%'}</button>))}
           </div>
         </div>
-        <div className="space-y-2 pt-3 border-t border-purple-500/20">
+        <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
           <SectionLabel>Stats</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-purple-200/80">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-purple-100/80"}`}>{saveStats?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
-        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-purple-500/20${!popoverAtBottom?" elev-shadow-up":""}`}>
+        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-(--bd-500-20)${!popoverAtBottom?" elev-shadow-up":""}`}>
           <div ref={footerFitRef} className="flex gap-2">
             {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
                 full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
@@ -2810,26 +3034,32 @@ interface DedOpts {
             <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>
-        <div data-drag-stay className="pt-3 px-4 border-t border-purple-500/20 text-[11px] text-purple-300/60 space-y-0.5">
-          {/* All three footer text links carry rounded-md px-1 -mx-1: the padding gives the press-drag
+        <div data-drag-stay className="pt-3 px-4 border-t border-(--bd-500-20) text-[11px] text-(--tx-300-60) space-y-0.5">
+          {/* All four footer text links carry rounded-md px-1 -mx-1: the padding gives the press-drag
               ring breathing room around the text and the radius rounds its corners (vs a square outline
               hugging the glyphs); the negative margin cancels the padding so the text keeps its exact
               flow position. */}
-          {/* The ONLY way back to factory semantics (Q7; the Save Defaults popup's duplicate link was
-              removed in Round-4 — one action, one home). This footer link (the same muted tier as
-              Check for updates below) is always reachable: the Save Defaults button dims + locks
-              exactly when live == saved, but the footer never hides behind it. FIRST link
-              row, directly under the button trio (Round-2): it's the only actionable setting in this
-              block, and it belongs to the trio's story — below it the footer decays into contact info
-              and metadata. Shown only while saved defaults exist. A plain immediate action, no
-              arm/confirm step: it only forgets the snapshot — live settings are untouched, and a
-              re-save recreates it in two taps. It inherits the footer's data-drag-stay, so the panel
-              stays open and the link's own disappearance is the visible feedback. */}
-          {savedDefaults!==null&&(<div><button type="button" onClick={clearUserDefaults} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button></div>)}
+          {/* Saved-defaults link row (Q7 + Q12), shown only while a snapshot exists — with nothing
+              saved there's nothing to view OR clear, so both links hide together. View saved
+              defaults (non-destructive inspect — the read-only popup below) sits LEFT of Clear
+              saved defaults, matching the button trio's left→right escalation; gap-3 keeps ~4px
+              between the two press-drag rings (each ring extends px-1 past its text), flex-wrap is
+              the narrow-viewport fallback. Clear is the ONLY way back to factory semantics (the
+              Save Defaults popup's duplicate link was removed in Round-4 — one action, one home).
+              This footer row (the same muted tier as Check for updates below) is always reachable:
+              the Save Defaults button dims + locks exactly when live == saved, but the footer never
+              hides behind it. FIRST link row, directly under the button trio (Round-2): these are
+              the only actionable settings in this block, and they belong to the trio's story —
+              below it the footer decays into contact info and metadata. Clear is a plain immediate
+              action, no arm/confirm step: it only forgets the snapshot — live settings are
+              untouched, and a re-save recreates it in two taps. The row inherits the footer's
+              data-drag-stay, so a drag-release on either link acts with the panel staying open
+              (Clear's own disappearance is its visible feedback). */}
+          {savedDefaults!==null&&(<div className="flex flex-wrap gap-3"><button type="button" onClick={()=>setViewDefaultsOpen(true)} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button><button type="button" onClick={clearUserDefaults} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button></div>)}
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
           <div className="flex items-center gap-2 flex-wrap">
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
-            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-purple-300/60) so it matches the surrounding footer text on every theme. */}
+            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme. */}
             <button type="button" onClick={onCheckUpdates} className="underline select-none rounded-md px-1 -mx-1">Check for updates</button>
           </div>
         </div>
@@ -2838,25 +3068,30 @@ interface DedOpts {
       // popover card (the ⚙ trigger's aria-controls menu), so its DOM is invisible to the press-drag controller
       // (a drag-release on popup content can never drag-dismiss the panel) and it escapes the
       // card's overflow/max-height context (a true centered modal — scrim + the popover's own
-      // card/shadow language). data-save-defaults marks the whole tree (scrim included) "inside"
-      // for the settings click-outside handler above; the scrim itself cancels the POPUP only
+      // card/shadow language). data-settings-modal marks the whole tree (scrim included) "inside"
+      // for the settings click-outside handler above (the same marker as the View popup below —
+      // one guard covers both modals); the scrim itself cancels the POPUP only
       // (target===currentTarget, so card clicks never do), and Escape + Android Back + any
-      // settings close also cancel (the effects above). Edits touch ONLY the pending snapshot:
+      // settings close also cancel (the effects above). Row labels are Title Case (the ⚙ panel's
+      // label tier, Q6) and every paired aria-label mirrors its visible text exactly — no case
+      // drift to maintain, WCAG label-in-name safe. Edits touch ONLY the pending snapshot:
       // the three sliders mirror the mode screens' (same ranges/steps/--rng-fill, and the same
       // tap-to-type SliderValueEditor readouts — the popup seeds from the LIVE prefs, so its
       // ranges must stay a superset of every committable value) and
-      // the N field mirrors the AoX input's validation trio — digits only while typing (stricter
-      // than the AoX field's raw writes: the pending snapshot never holds junk), and blur, Enter
-      // and Escape all normalize-commit with the AoX clamp (2–1000, fallback 10) — Escape on the
-      // AoX field likewise commits the clamped current value; the popup's real discard is Cancel.
+      // the N field shares the AoX input's validation trio (Q18 — one idiom, one clamp): digits
+      // only while typing (the pending snapshot never holds junk), and blur, Enter
+      // and Escape all normalize-commit with the shared normalizeAoxN clamp (2–1000, fallback 10)
+      // — the AoX field's Escape likewise commits; the popup's real discard is Cancel.
       const commitPendAoxN=()=>setPendPrefs(p=>({...p,aoxN:normalizeAoxN(p.aoxN)}));
-      // Modal a11y contract, part 2 of 2 (part 1 = the focus-on-open effect above): the card is a real
+      // Modal a11y contract, part 2 of 2 (part 1 = the focus-on-open effects above): the card is a real
       // role="dialog" aria-modal, and the scrim's Tab handler is the focus trap — plain Tab / Shift+Tab
       // cycle the popup's own controls and WRAP at the ends (native traversal in between), never
-      // escaping to the settings panel under the scrim. stopPropagation keeps the press from the
+      // escaping to the settings panel under the scrim. Shared by BOTH settings modals (the Save
+      // Defaults card and the read-only View popup, Q12 — with the View popup's single Close button
+      // first===last, so Tab wraps in place). stopPropagation keeps the press from the
       // app-wide Tab shortcut (which would open the mode selector behind the modal); the shortcut's own
-      // handler also bails while the modal is mounted for presses that start outside the scrim's tree.
-      const trapSaveDefaultsTab=(e: React.KeyboardEvent<HTMLDivElement>)=>{
+      // handler also bails while a modal is mounted for presses that start outside the scrim's tree.
+      const trapModalTab=(e: React.KeyboardEvent<HTMLDivElement>)=>{
         if(e.key!=='Tab')return;
         e.stopPropagation();
         const f=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button,input'));
@@ -2866,40 +3101,66 @@ interface DedOpts {
         else if(ae===last||!e.currentTarget.contains(ae)){e.preventDefault();first.focus();}
       };
       const saveDefaultsJsx=saveDefaultsOpen&&ReactDOM.createPortal(
-        (<div data-save-defaults role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setSaveDefaultsOpen(false);}} onKeyDown={trapSaveDefaultsTab}>
+        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setSaveDefaultsOpen(false);}} onKeyDown={trapModalTab}>
           <div ref={saveDefaultsCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="save-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="save-defaults-title" className="text-sm font-semibold text-purple-50">Save current settings as your defaults?</div>
-            <div className="text-xs text-purple-200/80">Also saved from the mode screens:</div>
+            <div id="save-defaults-title" className="text-sm font-semibold text-(--tx-50)">Save current settings as your defaults?</div>
+            <div className="text-xs text-(--tx-200-80)">Also saved from the mode screens:</div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-purple-200/80 shrink-0">AoX run length (N)</span>
+              <span className="text-xs text-(--tx-200-80) shrink-0">AoX Run Length</span>
               {/* The Escape branch STOPS PROPAGATION: it blurs the field, and without the stop the
                   same native event would reach the document-level settings Escape handler AFTER the
                   blur — its input-has-focus skip no longer applies, and it would slam the whole
                   panel (and this popup) shut on what the user meant as a keyboard dismiss. */}
-              <input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length (N)" value={pendPrefs.aoxN} onChange={e=>{const v=e.target.value;if(v===''||/^\d*$/.test(v))setPendPrefs(p=>({...p,aoxN:v}));}} onBlur={commitPendAoxN} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitPendAoxN();e.currentTarget.blur();}else if(e.key==="Escape"){e.stopPropagation();commitPendAoxN();e.currentTarget.blur();}}} className="panel rounded-xl px-2 py-1 w-14 text-center tabular-nums text-sm focus:outline-hidden focus-ring shrink-0"/>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX Run Length" value={pendPrefs.aoxN} onChange={e=>{const v=e.target.value;if(v===''||/^\d*$/.test(v))setPendPrefs(p=>({...p,aoxN:v}));}} onBlur={commitPendAoxN} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitPendAoxN();e.currentTarget.blur();}else if(e.key==="Escape"){e.stopPropagation();commitPendAoxN();e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0`}/>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-purple-200/80">Flash speed</div>
-              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
+              <div className="text-xs text-(--tx-200-80)">Flash Speed</div>
+              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash Speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash Speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-purple-200/80">Blitz round timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz round timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
+              <div className="text-xs text-(--tx-200-80)">Blitz Round Timer</div>
+              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz Round Timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz Round Timer" format={fmtBlitzT} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-purple-200/80">Blitz question timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz question timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widthClass="w-[3.3em]" onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
+              <div className="text-xs text-(--tx-200-80)">Blitz Question Timer</div>
+              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz Question Timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz Question Timer" format={v=>v+"s"} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
             </div>
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-purple-100/80">Cancel</button>
+              <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Cancel</button>
               <button type="button" onClick={commitSaveDefaults} className="flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium">Save</button>
             </div>
           </div>
         </div>),
         document.getElementById('root')!
       );
+      // View saved defaults popup (Q12): the READ-ONLY twin of the Save card — the same portal /
+      // scrim / card recipes and the same modal contract (focus-on-open, capture Escape, close
+      // with settings, Android Back, the shared trapModalTab + data-settings-modal marker), but
+      // no pending snapshot: the four rows render the EFFECTIVE saved prefs (defPrefs — forward-
+      // merged, so a legacy snapshot missing a field shows factory, never undefined) through the
+      // SAME formatters as the Save card (normalizeAoxN / fmtFlashT / fmtBlitzT / +"s"), so the
+      // two popups always display identically. Static value spans, deliberately non-editable
+      // look; the one control is a full-width Close in the Cancel recipe.
+      const viewDefaultsJsx=viewDefaultsOpen&&ReactDOM.createPortal(
+        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setViewDefaultsOpen(false);}} onKeyDown={trapModalTab}>
+          <div ref={viewDefaultsCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="view-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+            <div id="view-defaults-title" className="text-sm font-semibold text-(--tx-50)">Your saved defaults</div>
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">AoX Run Length</span><span className="text-sm tabular-nums text-(--tx-50)">{normalizeAoxN(defPrefs.aoxN)}</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Flash Speed</span><span className="text-sm tabular-nums text-(--tx-50)">{fmtFlashT(defPrefs.flashMs)}</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Blitz Round Timer</span><span className="text-sm tabular-nums text-(--tx-50)">{fmtBlitzT(defPrefs.blitzSec)}</span></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Blitz Question Timer</span><span className="text-sm tabular-nums text-(--tx-50)">{defPrefs.blitzQSec+"s"}</span></div>
+            <div className="text-[11px] text-(--tx-300-60)">Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.</div>
+            <div className="pt-1"><button type="button" onClick={closeViewDefaults} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
+          </div>
+        </div>),
+        document.getElementById('root')!
+      );
       return(
         <>
+          {/* Both overlays are fixed z-100 covers; the Updating screen renders LATER in the DOM
+              so it wins if a landscape launch coincides with an update (the reload happens
+              regardless — rotating can't pause it, so Updating is the truthful screen). */}
+          {landscapeBlocked?<RotateOverlay/>:null}
           {updating?<BootOverlay updating/>:null}
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
@@ -2939,10 +3200,10 @@ interface DedOpts {
                       isPrimary/button guard mirrors the controller's pointer latch: a second finger or a
                       right-click must not toggle. onClick is kept for keyboard/tests; the controller
                       suppresses the trigger's click on a real press so it doesn't double-toggle.
-                      gear-modified (Q8, the flush inside-top violet bar — index.css) marks live state ≠
+                      gear-modified (Q8, the flush inside-bottom violet bar — index.css) marks live state ≠
                       the saved defaults while the panel is CLOSED (the open gear is solid purple, no
                       bar); the aria-label mirrors the same boolean in both states. */}
-                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-purple-100/80${settingsModified?" gear-modified":""}`}`} aria-label={settingsModified?"Settings (modified)":"Settings"}>⚙</button>
+                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80)${settingsModified?" gear-modified":""}`}`} aria-label={settingsModified?"Settings (modified)":"Settings"}>⚙</button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the
@@ -2958,6 +3219,7 @@ interface DedOpts {
             </div>
             {settingsJsx}
             {saveDefaultsJsx}
+            {viewDefaultsJsx}
           </div>
         </div>
         {/* Scroll container. Clamped modes (everything but HtP): position:absolute inset:0
@@ -2987,10 +3249,10 @@ interface DedOpts {
             <ClassicMode visible={mode==="classic"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setClassicIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"flash-"+flashResetKey} mode="Flash" active={mode==="flash"}>
-            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setFlashIsFresh}/>
+            <FlashMode visible={mode==="flash"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} clockPaused={landscapeBlocked} onFreshChange={setFlashIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"blitz-"+blitzResetKey} mode="Blitz" active={mode==="blitz"}>
-            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} onFreshChange={setBlitzIsFresh}/>
+            <BlitzMode visible={mode==="blitz"} genDate={genDate} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} inputStyle={inputStyle} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} fmtDate={fmtDate} settingsOpen={settingsOpen} clockPaused={landscapeBlocked} onFreshChange={setBlitzIsFresh}/>
           </ModeErrorBoundary>
           <ModeErrorBoundary key={"deduction-"+deductionResetKey} mode="Deduction" active={mode==="deduction"}>
             <DeductionMode visible={mode==="deduction"} minY={minY} maxY={maxY} useJulian={useJulian} saveStats={saveStats} dateFormat={dateFormat} randomFormat={randomFormat} leapChance={leapChance} janFebChance={janFebChance} julianChance={julianChance} settingsOpen={settingsOpen} onFreshChange={setDeductionIsFresh}/>

@@ -169,3 +169,162 @@ describe('blitzBest — fuzz vs the independent max-round-good oracle', () => {
     expect(sawResume).toBe(true) // the runs actually exercised a resume-revert
   })
 })
+
+// ── C3a (Q15): the per-Q + Allow Mistakes map (suddenAmBest) reuses reconcileBlitzBest UNCHANGED ──
+// These sessions model the NEW sub-mode's event stream — a clean correct credits good and extends
+// the streak, a wrong breaks the streak and burns the question (the retry-correct advances WITHOUT
+// credit), a question-clock expiry ends the round (played isn't reconciled) — so good and the
+// streak high-water move INDEPENDENTLY, unlike the all-correct per-round model above where
+// best === good. TWO independent oracles: Best Score == the max good any round reached, Best
+// Streak == the max streak high-water any round reached; a reconcile bug on either FIELD (the maps
+// share the reconcile, so a per-field regression is the realistic failure) breaks its equality.
+describe('blitzBest — per-Q + Allow Mistakes fuzz (C3a): two independent oracles', () => {
+  // Like runSession above: only the LAST round is override-mutable (the component re-runs the
+  // reconcile on post-round overrides until the next Begin), and fallback = the Best standing at
+  // Begin (prevRoundBestRef) = the max over all prior rounds.
+  function runPerQAmSession(seed, rounds) {
+    const rnd = mulberry32(seed)
+    let best = { score: 0, streak: 0, scoreRoundId: null, streakRoundId: null }
+    const roundGoods = []
+    const roundHws = []
+    let nextId = 1
+    let sawDivergence = false
+    for (let r = 0; r < rounds; r++) {
+      const roundId = nextId++
+      const fallback = {
+        score: roundGoods.length ? Math.max(...roundGoods) : 0,
+        streak: roundHws.length ? Math.max(...roundHws) : 0,
+      }
+      // Play the round: clean corrects and wrongs (a wrong = streak break + an uncredited
+      // retry-correct advance) until the clock takes a question.
+      let good = 0
+      let streak = 0
+      let hw = 0
+      const questions = Math.floor(rnd() * 10)
+      for (let q = 0; q < questions; q++) {
+        if (rnd() < 0.65) {
+          good++
+          streak++
+          hw = Math.max(hw, streak)
+        } else {
+          streak = 0
+        }
+      }
+      if (good !== hw) sawDivergence = true // the two oracles genuinely decouple in these runs
+      roundGoods.push(good)
+      roundHws.push(hw)
+      const i = roundGoods.length - 1
+      best = reconcileBlitzBest(best, good, hw, roundId, fallback)
+      expect(best.score, `perQ-AM seed ${seed} round ${r}: score`).toBe(Math.max(...roundGoods))
+      expect(best.streak, `perQ-AM seed ${seed} round ${r}: streak`).toBe(Math.max(...roundHws))
+      // Post-round overrides re-run the reconcile on the shifted engine stats: a credit raises
+      // good (a burned question judged right — the streak recompute can extend the high-water),
+      // a flip drops it (and can drop the recomputed high-water).
+      while (rnd() < 0.4) {
+        if (rnd() < 0.5 && good > 0) {
+          good--
+          if (hw > 0 && rnd() < 0.5) hw--
+        } else {
+          good++
+          if (rnd() < 0.5) hw++
+        }
+        roundGoods[i] = good
+        roundHws[i] = hw
+        best = reconcileBlitzBest(best, good, hw, roundId, fallback)
+        expect(best.score, `perQ-AM seed ${seed} round ${r} (override): score`).toBe(
+          Math.max(...roundGoods),
+        )
+        expect(best.streak, `perQ-AM seed ${seed} round ${r} (override): streak`).toBe(
+          Math.max(...roundHws),
+        )
+      }
+    }
+    return sawDivergence
+  }
+  it('per-Q + AM Best tracks BOTH oracles across 200 random sessions', () => {
+    let sawDivergence = false
+    for (let seed = 1; seed <= 200; seed++)
+      sawDivergence = runPerQAmSession(seed, 12) || sawDivergence
+    expect(sawDivergence).toBe(true)
+  })
+
+  // The RESUME-REVERT composite for the NEW map — the component machinery is shared with
+  // per-round (resumeRound reverts to the pre-round snapshot, the timerDone effect re-reconciles),
+  // but per-Q + AM reaches it through its own ends (Reveal / Show Codes / a timeout on a burned
+  // question) and its rescue credits the resolved question (Path 3). Same independent oracles as
+  // above over rounds that have FULLY ended, plus post-end override-downs that must never pull
+  // either field below the pre-round fallback floor (the floor is inside the oracle: prior
+  // rounds' values never drop).
+  function runPerQAmResumeSession(seed, rounds) {
+    const rnd = mulberry32(seed)
+    let best = { score: 0, streak: 0, scoreRoundId: null, streakRoundId: null }
+    const endedGoods = []
+    const endedHws = []
+    let nextId = 1
+    let sawResume = false
+    for (let r = 0; r < rounds; r++) {
+      const roundId = nextId++
+      const preRound = { ...best } // snapshot at Begin — the revert target AND the reconcile floor
+      const fallback = { score: preRound.score, streak: preRound.streak }
+      let good = 0
+      let streak = 0
+      let hw = 0
+      let ended = false
+      while (!ended) {
+        const steps = Math.floor(rnd() * 5) // play a segment: corrects with occasional wrongs
+        for (let s = 0; s < steps; s++) {
+          if (rnd() < 0.7) {
+            good++
+            streak++
+            hw = Math.max(hw, streak)
+          } else {
+            streak = 0
+          }
+        }
+        best = reconcileBlitzBest(best, good, hw, roundId, fallback) // the segment ENDS provisionally
+        if ((good > 0 || hw > 0) && rnd() < 0.5) {
+          best = { ...preRound } // Override rescue → resumeRound reverts to the pre-round snapshot
+          if (rnd() < 0.8) {
+            good++ // the rescue credited the resolved question (Path 3 extends the streak too)
+            streak++
+            hw = Math.max(hw, streak)
+          }
+          sawResume = true
+        } else {
+          ended = true
+        }
+      }
+      endedGoods.push(good)
+      endedHws.push(hw)
+      const i = endedGoods.length - 1
+      expect(best.score, `perQ-AM resume seed ${seed} round ${r}: score`).toBe(
+        Math.max(0, ...endedGoods),
+      )
+      expect(best.streak, `perQ-AM resume seed ${seed} round ${r}: streak`).toBe(
+        Math.max(0, ...endedHws),
+      )
+      // Post-end override-downs on the just-ended round: the oracle (prior rounds stand) proves
+      // the same-round rollback never falls below the pre-round floor.
+      while (good > 0 && rnd() < 0.5) {
+        good--
+        if (hw > 0 && rnd() < 0.5) hw--
+        endedGoods[i] = good
+        endedHws[i] = hw
+        best = reconcileBlitzBest(best, good, hw, roundId, fallback)
+        expect(best.score, `perQ-AM resume seed ${seed} round ${r} (drop): score`).toBe(
+          Math.max(0, ...endedGoods),
+        )
+        expect(best.streak, `perQ-AM resume seed ${seed} round ${r} (drop): streak`).toBe(
+          Math.max(0, ...endedHws),
+        )
+      }
+    }
+    return sawResume
+  }
+  it('per-Q + AM Best survives end→override→resume→re-end cycles across 200 random sessions', () => {
+    let sawResume = false
+    for (let seed = 1; seed <= 200; seed++)
+      sawResume = runPerQAmResumeSession(seed, 10) || sawResume
+    expect(sawResume).toBe(true) // the runs actually exercised a resume-revert
+  })
+})

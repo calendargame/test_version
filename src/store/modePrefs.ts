@@ -11,7 +11,7 @@ import { persist } from 'zustand/middleware'
 // every visit.
 //
 // What it holds: Flash reveal speed; Blitz round/per-question timers + Per-Round/Question
-// + Allow Mistakes; AoX count (N) + Allow Mistakes + One-By-One; Deduction sub-type; and
+// + Allow Mistakes; the AoX run length + Allow Mistakes + One-by-One; Deduction sub-type; and
 // the per-mode show/hide stat toggles (timing/scoring), namespaced per mode since their
 // defaults differ (Classic/Deduction launch with timing hidden, Flash with it shown).
 // `allowMistakes` is likewise namespaced (blitz*/aox*).
@@ -124,7 +124,7 @@ export const useModePrefs = create<ModePrefsState>()(
       // persisted, this also overwrites the saved copy back to defaults (Full Reset).
       resetModePrefs: () => set(() => ({ ...MODE_PREFS_DEFAULTS })),
       // Apply a partial value snapshot over the current state — App's Full Reset pushing the four
-      // SAVED personal defaults (Flash speed, both Blitz timers, AoX N — store/userDefaults) back
+      // SAVED personal defaults (Flash speed, both Blitz timers, the AoX run length — store/userDefaults) back
       // over the factory resetModePrefs() it just ran; keys not in the partial keep their values.
       applyPrefs: (partial) => set(() => ({ ...partial })),
     }),

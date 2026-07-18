@@ -34,8 +34,8 @@ const btn = (name) => screen.getByRole('button', { name })
 const isDimmed = (b) => b.className.includes('pointer-events-none')
 const openPopup = () => act(() => fireEvent.click(btn('Save Defaults')))
 const popupTitle = () => screen.queryByText('Save current settings as your defaults?')
-const nField = () => screen.getByRole('textbox', { name: 'AoX run length (N)' })
-const flashSlider = () => screen.getByRole('slider', { name: 'Flash speed' })
+const nField = () => screen.getByRole('textbox', { name: 'AoX Run Length' })
+const flashSlider = () => screen.getByRole('slider', { name: 'Flash Speed' })
 
 describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   beforeEach(() => {
@@ -159,8 +159,8 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     openSettings()
     openPopup()
     expect(flashSlider().value).toBe('4000')
-    expect(screen.getByRole('slider', { name: 'Blitz round timer' }).value).toBe('300')
-    expect(screen.getByRole('slider', { name: 'Blitz question timer' }).value).toBe('25')
+    expect(screen.getByRole('slider', { name: 'Blitz Round Timer' }).value).toBe('300')
+    expect(screen.getByRole('slider', { name: 'Blitz Question Timer' }).value).toBe('25')
   })
 
   it("the popup's N field applies the AoX validation trio (digits only, clamp on commit, Escape revert)", () => {
@@ -283,7 +283,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     openSettings()
     openPopup()
-    const scrim = document.querySelector('[data-save-defaults]')
+    const scrim = document.querySelector('[data-settings-modal]')
     // The settings click-outside handler must treat the scrim as "inside" (mousedown path)…
     act(() => fireEvent.mouseDown(scrim))
     expect(btn('Reset Settings')).toBeInTheDocument()

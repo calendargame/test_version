@@ -4,7 +4,7 @@
 // has its OWN near-duplicate engine (timer / stats / Override / Back-Forward / Show Codes) plus
 // a unique "average of N" (Ao-N) RUN layer — a run of N solves that completes on the Nth, fails
 // on a mistake (when Allow Mistakes is off), tracks Best Average / Best Median per config, and
-// supports One-By-One (date hidden until you reveal it). These lock TODAY's observable behavior
+// supports One-by-One (date hidden until you reveal it). These lock TODAY's observable behavior
 // before folding the common engine onto the shared useGameEngine. Written against the current
 // <App/> (AoX already renders via AoxMode) as a black box, so they stay valid before AND after.
 //
@@ -45,7 +45,7 @@ function click(name) {
   })
 }
 // AoX date is the only VISIBLE numeric-ymd leaf div (other modes are display:none; AoX shows
-// "—" when the date is hidden — idle / One-By-One-not-yet-revealed).
+// "—" when the date is hidden — idle / One-by-One-not-yet-revealed).
 function readDate() {
   const els = Array.from(document.querySelectorAll('div')).filter(
     (e) => e.children.length === 0 && /^-?\d+-\d+-\d+$/.test(e.textContent.trim()) && !isHidden(e),
@@ -333,8 +333,8 @@ describe('AoX — characterization (batch 4: Back/Forward review)', () => {
   })
 })
 
-// ── Batch 5: One-By-One ─────────────────────────────────────────────────────────
-describe('AoX — characterization (batch 5: One-By-One)', () => {
+// ── Batch 5: One-by-One ─────────────────────────────────────────────────────────
+describe('AoX — characterization (batch 5: One-by-One)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     pin()
@@ -346,13 +346,13 @@ describe('AoX — characterization (batch 5: One-By-One)', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('One-By-One hides the date after the first question until Continue reveals it', () => {
+  it('One-by-One hides the date after the first question until Continue reveals it', () => {
     mountApp()
     switchToAox()
-    click('One-By-One')
+    click('One-by-One')
     setN(3)
     click('Begin')
-    answerCorrect() // 1/1 → next question is hidden (One-By-One)
+    answerCorrect() // 1/1 → next question is hidden (One-by-One)
     expect(statValue('Score')).toBe('1/1')
     // Date hidden now → Continue is offered, and no visible ymd date is present.
     expect(ctrl('Continue')).toBeInTheDocument()
@@ -408,10 +408,10 @@ describe('AoX — characterization (batch 6: Reveal + Show Codes)', () => {
     expect(ctrl('Hide Codes')).toBeInTheDocument() // panel open
   })
 
-  // C2 Q4 + the reveal-flash refinement: Reveal with Allow Mistakes ON (and One-By-One OFF) counts a
+  // C2 Q4 + the reveal-flash refinement: Reveal with Allow Mistakes ON (and One-by-One OFF) counts a
   // miss, FLASHES the answer briefly, then AUTO-ADVANCES — no pause/Next button (the run flows
   // date-to-date on its own). Before the fix a revealed question was a locked dead-end.
-  it('Reveal (Allow Mistakes on, One-By-One off) counts a miss, flashes the answer, then auto-advances', () => {
+  it('Reveal (Allow Mistakes on, One-by-One off) counts a miss, flashes the answer, then auto-advances', () => {
     mountApp()
     switchToAox()
     click('Allow Mistakes')
@@ -434,22 +434,22 @@ describe('AoX — characterization (batch 6: Reveal + Show Codes)', () => {
     expect(statValue('Streak')).toBe('1/1')
   })
 
-  // One-By-One reveals DO pause (One-By-One pauses between dates by design) — a "Next" button, so you
+  // One-by-One reveals DO pause (One-by-One pauses between dates by design) — a "Next" button, so you
   // see the answer before the next hidden date.
-  it('Reveal (Allow Mistakes on, One-By-One on) pauses on a Next button', () => {
+  it('Reveal (Allow Mistakes on, One-by-One on) pauses on a Next button', () => {
     mountApp()
     switchToAox()
     click('Allow Mistakes')
-    click('One-By-One')
+    click('One-by-One')
     setN(3)
     click('Begin')
     const d1 = readDate()
     click('Reveal')
     expect(statValue('Score')).toBe('0/1')
     expect(dayState(correctName(d1))).toBe('correct')
-    expect(readDate()).toEqual(d1) // stays — no auto-advance under One-By-One
+    expect(readDate()).toEqual(d1) // stays — no auto-advance under One-by-One
     expect(ctrl('Next')).toBeInTheDocument() // pauses on Next
-    click('Next') // advance → the next date is hidden (One-By-One), Continue offered
+    click('Next') // advance → the next date is hidden (One-by-One), Continue offered
     expect(ctrl('Continue')).toBeInTheDocument()
   })
 
@@ -544,7 +544,7 @@ describe('AoX — bug fix (Override-completed run stays on the Nth question, C2)
 })
 
 // ── Batch 6e: reveal-flash race — Override DURING the flash window cancels the pending auto-advance ──
-// onReveal (Allow Mistakes on, One-By-One off) flashes the answer then auto-advances ~FLASH_MS later
+// onReveal (Allow Mistakes on, One-by-One off) flashes the answer then auto-advances ~FLASH_MS later
 // via a setTimeout (revealAdvanceRef). If the player credits the revealed miss via Override inside that
 // window, the stale timer must be cancelled — else it fires an extra doNew() that SKIPS a question, or
 // at the final question RE-OPENS the phantom-Q(N+1) overshoot the completion fix closed. (Found 2026-06-20.)
@@ -893,5 +893,80 @@ describe('AoX — Q2 (a config change on popover close resets a done/failed run)
     toggleSettings() // no change → no reset
     expect(ctrl('Reset')).toBeInTheDocument() // still done
     expect(statValue('Score')).toBe('2/2')
+  })
+
+  // Q9: the close-fired reset REMOUNTS the answer grid (keyed on the engine's gridEpoch, which
+  // RESET bumps) — fresh DOM nodes have no prior green to CSS-transition from, so the cleared
+  // grid snaps to idle instead of fading. Node identity is the observable remount proof.
+  it('the settings-close reset REMOUNTS the answer grid (Q9: fresh nodes, cleared green)', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    answerCorrect() // Q1 → advance
+    const green = correctName(readDate()) // Q2's correct day — its green persists on the held solve
+    answerCorrect() // run done
+    expect(dayState(green)).toBe('correct')
+    const before = DAY.map((nm) => dayBtn(nm))
+    toggleSettings()
+    act(() => useSettings.getState().setMinY(1700))
+    toggleSettings() // close → reset() → RESET bumps gridEpoch → the keyed grid remounts
+    DAY.forEach((nm, i) => expect(dayBtn(nm)).not.toBe(before[i])) // all-new nodes
+    expect(dayState(green)).toBe('idle') // and the green is gone
+  })
+
+  it('a manual Reset tap REMOUNTS the answer grid too (Q9: same RESET mechanism)', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    answerCorrect()
+    const green = correctName(readDate())
+    answerCorrect() // run done → Reset shown
+    const before = DAY.map((nm) => dayBtn(nm))
+    click('Reset') // reset() → eng.resetStats() → RESET bumps gridEpoch
+    expect(ctrl('Begin')).toBeInTheDocument() // back to idle
+    DAY.forEach((nm, i) => expect(dayBtn(nm)).not.toBe(before[i])) // remounted — snap, no fade
+    expect(dayState(green)).toBe('idle')
+  })
+})
+
+// ── Q18: the run-length field (the shared boxed-numeric idiom + the one clamp) ────
+describe('AoX — Q18 (the run-length field shares the popup N field validation trio)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  // The field gained its aria-label in the same batch (a Q18 gap-fill) — an accessible-name
+  // lookup here is itself the regression test for it.
+  const nField = () => screen.getByRole('textbox', { name: 'AoX run length' })
+
+  it('rejects non-digits outright and normalize-commits on blur/Enter/Escape (normalizeAoxN)', () => {
+    mountApp()
+    switchToAox()
+    // Seed a known committed value first (the modePrefs singleton carries state across tests).
+    act(() => {
+      fireEvent.change(nField(), { target: { value: '10' } })
+      fireEvent.blur(nField())
+    })
+    // The flagged Q18 behavior change: letters never ENTER the field (the popup N field's
+    // contract) — previously they were accepted raw and only clamped away on commit.
+    act(() => fireEvent.change(nField(), { target: { value: 'abc' } }))
+    expect(nField().value).toBe('10')
+    act(() => fireEvent.change(nField(), { target: { value: '' } }))
+    act(() => fireEvent.blur(nField()))
+    expect(nField().value).toBe('10') // empty commits to the fallback
+    act(() => fireEvent.change(nField(), { target: { value: '2000' } }))
+    act(() => fireEvent.keyDown(nField(), { key: 'Enter' }))
+    expect(nField().value).toBe('1000') // Enter commits with the shared 2–1000 clamp
+    act(() => fireEvent.change(nField(), { target: { value: '1' } }))
+    act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
+    expect(nField().value).toBe('2') // Escape commits the clamped current value too
   })
 })

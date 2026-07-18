@@ -122,10 +122,10 @@ export class ModeErrorBoundary extends Component<ModeErrorBoundaryProps, ErrorBo
         <div className="text-3xl" aria-hidden="true">
           😵
         </div>
-        <div className="text-sm font-medium text-purple-100/90">
+        <div className="text-sm font-medium text-(--tx-100-90)">
           This mode hit an unexpected error.
         </div>
-        <div className="text-xs text-purple-300/70 leading-relaxed">
+        <div className="text-xs text-(--tx-300-70) leading-relaxed">
           Switch to another mode from the menu above, use Full Reset in&nbsp;⚙, or reload the page.
         </div>
         <button
