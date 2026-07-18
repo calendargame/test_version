@@ -511,7 +511,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-18T00:52:00Z');
+    const DEPLOY_TS=new Date('2026-07-18T01:35:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the

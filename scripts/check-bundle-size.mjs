@@ -15,13 +15,13 @@ import { gzipSync } from 'node:zlib'
 import { join } from 'node:path'
 
 // Budget for the total app JS (sum of dist/assets/*.js), gzipped (KB). Baselines: 119.92 KB
-// (Stage E0/E2, 2026-06-05, React Compiler ON) → bumped for Current Work C1, which added Sentry
-// real-user error reporting as a ~26 KB gzip LAZY chunk (src/observability/sentryClient.ts —
-// loaded off the critical render path, tree-shaken to errors-only: no Session Replay/Tracing). The
-// headroom is deliberate: enough for normal iteration, tight enough to catch a surprise (e.g.
-// accidentally re-adding Sentry Replay would balloon the lazy chunk and trip this). Bump consciously
-// as the app grows — a sudden jump toward it means an unexpected import; run `npm run analyze` first.
-const BUDGET_TOTAL_JS_GZIP_KB = 165
+// (Stage E0/E2, 2026-06-05) → 165 (Sentry lazy chunk) → 250 (owner call, 2026-07-17: the number is
+// deliberately GENEROUS now — the app sat at 164.36 with 0.6 KB left after the round-5 batch and the
+// owner ruled the cap should never constrain feature work). The check is kept purely as an ACCIDENT
+// tripwire: normal growth will never reach it, but an unexpected jump (accidentally importing a large
+// library, re-adding Sentry Replay, a build-config regression) still fails loudly. If it ever trips,
+// run `npm run analyze` first — at this ceiling a trip almost certainly means a mistake, not growth.
+const BUDGET_TOTAL_JS_GZIP_KB = 250
 
 const ASSETS_DIR = 'dist/assets'
 
