@@ -7,7 +7,7 @@
 // (lib/sliderValue, pure math locked in tests/sliderValue.test.js); Escape reverts WITHOUT
 // committing and stops propagation (the popup/settings Escape contract); disabled follows the
 // slider's lock; the widest-string width strut (invisible + nowrap, button nowrap, input
-// min-w-0). The finger-sized tap-target feel is on-device per the standing lesson.
+// min-w-0 + size 1). The finger-sized tap-target feel is on-device per the standing lesson.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import SliderValueEditor from '../src/components/SliderValueEditor.jsx'
@@ -166,7 +166,7 @@ describe('SliderValueEditor', () => {
     expect(onCommit).not.toHaveBeenCalled()
   })
 
-  it('the width strut sizes both modes: invisible nowrap widest string, nowrap button, min-w-0 input', () => {
+  it('the width strut sizes both modes: invisible nowrap widest string, nowrap button, min-w-0 size-1 input', () => {
     render(<SliderValueEditor {...flashProps} onCommit={vi.fn()} />)
     // The strut is always mounted, invisible, hidden from the a11y tree, and single-line — it
     // holds the shared single-cell grid at the widest POSSIBLE readout width in the live font.
@@ -178,9 +178,13 @@ describe('SliderValueEditor', () => {
     // (the Round-4 iOS bug: SF Pro outgrew the hand-measured width and the readout broke lines).
     expect(readout('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'whitespace-nowrap')
     openEditor('Flash speed')
-    // The strut stays mounted through the swap; the input fills the cell but MUST carry min-w-0
-    // — without it the input's intrinsic min-content width blows the cell open past the strut.
+    // The strut stays mounted through the swap; the input fills the cell but MUST collapse BOTH
+    // of its intrinsic sizes — min-w-0 kills the min-content floor, and size={1} the ~20-char
+    // default max-content (the auto grid column tracks max-content too, so without it the cell
+    // blew open and squeezed the slider the moment editing started — the Round-5 staging bug
+    // jsdom's layout-less DOM could not catch; the fixed layout itself stays an on-device check).
     expect(screen.getByText('2m 55s')).toBe(strut)
     expect(field('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'w-full', 'min-w-0')
+    expect(field('Flash speed')).toHaveAttribute('size', '1')
   })
 })

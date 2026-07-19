@@ -184,11 +184,22 @@ export default function GuidePage() {
         <Subhead>Updates</Subhead>
         <p>
           Updates take care of themselves: while you use the app, any new version quietly downloads
-          in the background, and it's applied — behind a short <b>updating screen</b> — the next
-          time you open the app fresh. Switching back from another app never triggers it; the update
-          waits for a fresh open. To force the latest right now instead, the Settings (⚙) panel has
-          a <b>Check for updates</b> link that reloads the newest version on the spot (your saved
-          progress is kept), behind the same updating screen.
+          in the background and takes effect the next time you open the app fresh. A short{' '}
+          <b>updating screen</b> marks the change — it appears once for each new version, even when
+          the switch already finished quietly between visits. Switching back from another app never
+          triggers it; the update waits for a fresh open. To force the latest right now instead, the
+          Settings (⚙) panel has a <b>Check for updates</b> link that reloads the newest version on
+          the spot (your saved progress is kept), behind the same updating screen.
+        </p>
+        <p>
+          To see what an update actually changed, the <b>Changelog</b> link right next to Check for
+          updates opens a plain-words list of what recent updates changed, each entry dated and
+          listed newest first — the dates use the numeric form of your selected format, and the list
+          scrolls within the popup once it grows long. After an update, a small{' '}
+          <b>light-blue dot</b> points the way there: it appears at the top-right corner of the gear
+          button (⚙) until you open the menu, and on the Changelog link itself until the first time
+          you open the changelog. The gear's dot is separate from the small violet bar that marks
+          modified settings (see the Save Defaults section), and the two can show at once.
         </p>
         <Subhead>The book and contact</Subhead>
         <p>
@@ -447,9 +458,20 @@ export default function GuidePage() {
           start.
         </p>
         <p>
-          When timing stats are off, leaving and returning to a mode preserves the current question
-          exactly as you left it — same date, same answers, codes panel in the same state. In all
-          other modes, stats are always visible.
+          When timing stats are off, leaving and returning to one of these modes preserves the
+          current question exactly as you left it — same date, same answers, codes panel in the same
+          state.
+        </p>
+        <Subhead>Hiding stats (Blitz, AoX)</Subhead>
+        <p>
+          Blitz and AoX hide timing <i>visually only</i>. Because a round's score and a run's
+          average depend on timing, the clock never stops in these modes: tap Last, Avg, or Med to
+          dim all three, and the times keep being recorded in the background — tap again and the
+          same numbers reappear. There is no pause and no "Enable and Reset Stats?" step, since
+          hiding can never cause a desync. Score and Accuracy always stay visible, along with Streak
+          wherever the mode shows it — the score is the whole point of these modes. In AoX, hiding
+          quiets the trio only while a run is going; a finished run always shows its result, since
+          the average is what you ran for.
         </p>
       </GuideSection>
       <GuideSection id="keyboard" title="Keyboard Input" openId={open} onToggle={toggle}>
@@ -626,9 +648,10 @@ export default function GuidePage() {
         </UL>
         <p>
           At the foot of the menu: <b>Save Defaults</b>, <b>Reset Settings</b>, and{' '}
-          <b>Full Reset</b> (see the Data section); directly under them — once you've saved your own
-          defaults — <b>View saved defaults</b> and <b>Clear saved defaults</b> links; then your
-          Contact email, the Last Updated timestamp, and the <b>Check for updates</b> link.
+          <b>Full Reset</b> (see the Data section); directly under them the{' '}
+          <b>View saved defaults</b> link — joined, once you've saved your own defaults, by{' '}
+          <b>Clear saved defaults</b>; then your Contact email, the Last Updated timestamp, and the{' '}
+          <b>Check for updates</b> and <b>Changelog</b> links.
         </p>
         <p className="text-(--tx-300-70) text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
@@ -985,30 +1008,46 @@ export default function GuidePage() {
             Tapping the button opens a confirmation popup where the four mode-screen values can be
             edited before saving — so you can make, say, a different Flash speed your default
             without changing the live one. As on the mode screens, tap the time readout beside any
-            of the popup's three sliders to type an exact value. The menu settings are captured
-            exactly as they are. Cancel discards any edits.
+            of the popup's three sliders to type an exact value; a value you've changed highlights
+            in violet. The menu settings are captured exactly as they are. Cancel discards any
+            edits.
           </li>
           <li>
             While anything the snapshot covers differs from your defaults, the closed gear (⚙) shows
             a small violet bar along its bottom edge, and the Save Defaults button is active; once
             everything already matches your defaults, the bar disappears and the button dims —
-            nothing new to save.
+            nothing new to save. The bar is separate from the light-blue update dot at the gear's
+            top-right corner (see Updates in the first section), and the two can show at once.
           </li>
           <li>
             Your saved defaults survive Full Reset — that's the point: Full Reset restores{' '}
-            <i>them</i>. Two links at the foot of the ⚙ menu (below the reset buttons), shown only
-            while you have saved defaults: <b>View saved defaults</b> opens a read-only popup
-            showing the four saved mode-screen values (every menu setting is also part of the
-            snapshot, captured as it was when you saved), and <b>Clear saved defaults</b> is the way
-            back to the launch defaults. They live in the footer rather than the popup because the
-            Save Defaults button — and with it the popup — dims whenever everything already matches
-            your defaults; the footer links are always reachable.
+            <i>them</i>. <b>View saved defaults</b>, at the foot of the ⚙ menu (below the reset
+            buttons), opens a popup with the same four rows as the Save Defaults popup, showing your
+            saved mode-screen values (every menu setting is also part of the snapshot, captured as
+            it was when you saved). The link is always there: before you've saved any defaults it
+            shows the factory values instead, labelled as such.
+          </li>
+          <li>
+            That popup is also where you edit your defaults directly. Adjust any row — here the run
+            length is a tap-to-type readout too, like the timer readouts — and the changed value
+            highlights in violet, the Close button becomes Cancel and Save, and a note appears:
+            saving there updates only those four values, while every menu setting in the snapshot
+            stays exactly as it was. Saving from the factory view creates your saved defaults, with
+            the menu settings captured at their launch values.
+          </li>
+          <li>
+            <b>Clear saved defaults</b>, to the right of View saved defaults and shown only while
+            you have saved defaults, is the way back to the launch defaults. It asks for
+            confirmation in a small popup before it forgets the snapshot; your current settings are
+            untouched. The links live in the footer rather than the Save Defaults popup because that
+            button — and with it its popup — dims whenever everything already matches your defaults;
+            the footer links are always reachable.
           </li>
         </UL>
         <Subhead>Reset Settings (middle)</Subhead>
         <p>
-          Restores everything in the menu to your saved defaults — or, if you haven't saved any, to
-          the launch defaults:
+          Restores everything the snapshot covers to your saved defaults — or, if you haven't saved
+          any, to the launch defaults. That is the whole ⚙ menu:
         </p>
         <UL>
           <li>Random Format off, Written MDY</li>
@@ -1020,10 +1059,20 @@ export default function GuidePage() {
           <li>Theme back to Use System Settings with Dusk (dark) and Light (light)</li>
         </UL>
         <p>
-          It does <b>not</b> touch mode-specific config outside the menu (the AoX run length, timer
-          durations, Deduction sub-types and toggles) or your stats and history. No confirmation
-          prompt — tap to apply. When every menu setting is already at your defaults, the button
-          dims and locks since tapping it would have no effect.
+          …plus the same four mode-screen values Save Defaults captures: the AoX run length, the
+          Flash speed, and both Blitz timers. That makes Reset Settings the exact mirror of Save
+          Defaults — one copies your live setup into your defaults, the other copies your defaults
+          back over your live setup — across the very same values the gear's violet bar watches, so
+          a single tap clears that bar whatever changed.
+        </p>
+        <p>
+          It still leaves everything else alone: the other mode-screen choices (Blitz's Per Round
+          versus Per Question, Allow Mistakes, One-by-One, the Deduction sub-type, and the show/hide
+          stat toggles) and your stats and history. Restoring a mode-screen value while a Blitz
+          round or an AoX run is going resets that round or run when you close the menu, exactly as
+          a menu change does. No confirmation prompt — tap to apply. When everything the snapshot
+          covers is already at your defaults, the button dims and locks, since tapping it would have
+          no effect.
         </p>
         <Subhead>Full Reset (right)</Subhead>
         <p>Restores the entire site to its launch state:</p>
@@ -1086,7 +1135,9 @@ export default function GuidePage() {
             date.
           </li>
           <li>
-            <b>Last / Avg / Med</b> — tap any of these to show or hide all three time stats.
+            <b>Last / Avg / Med</b> — tap any of these to show or hide all three time stats. Hiding
+            is visual only: your times keep recording, the clock never stops, and a finished run
+            always shows its result.
           </li>
         </UL>
         <Subhead>Back / Forward and Override</Subhead>
@@ -1111,12 +1162,13 @@ export default function GuidePage() {
         </UL>
         <Subhead>Stats and bests</Subhead>
         <p>
-          Stats in AoX are always visible and always track. Best average and best median are tracked
-          independently — they can come from different runs. Beneath each best, the companion metric
-          from the run that set it is also shown (e.g. the median from the run that set your best
-          average). A <i>Same Round</i> or <i>Different Rounds</i> tag tells you whether your best
-          average and best median came from the same exceptional run, or from two different strong
-          ones.
+          Stats in AoX always track — the clock never stops. You can dim the timing trio (Last / Avg
+          / Med) with a tap while a run is going, but it's visual only, and a completed run always
+          shows its result. Best average and best median are tracked independently — they can come
+          from different runs. Beneath each best, the companion metric from the run that set it is
+          also shown (e.g. the median from the run that set your best average). A <i>Same Round</i>{' '}
+          or <i>Different Rounds</i> tag tells you whether your best average and best median came
+          from the same exceptional run, or from two different strong ones.
         </p>
         <p>
           Bests stay honest under Override: a finished run's record follows its corrected stats —
@@ -1255,6 +1307,11 @@ export default function GuidePage() {
       <GuideSection id="blitz" title="Blitz" openId={open} onToggle={toggle}>
         <Lead>Answer as many dates as possible before time runs out.</Lead>
         <p>Score shows correct answers for the current round only.</p>
+        <p>
+          Tap Last, Avg, or Med to hide the timing stats. This is visual only — the clock keeps
+          running and your times reappear unchanged when you tap again (see Stats). Score and
+          Accuracy stay visible, along with Streak wherever the mode shows it.
+        </p>
         <Subhead>Round options</Subhead>
         <UL>
           <li>

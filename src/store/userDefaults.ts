@@ -10,9 +10,10 @@ import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
 // capturable mode-screen prefs (Flash reveal speed, both Blitz timer lengths, the AoX run length —
 // deliberately NOT Blitz Per-Round/Per-Question, Deduction sub-type, Allow Mistakes, One-by-One,
 // or the show/hide stat toggles). From then on those saved values — not the factory constants —
-// are what "default" means everywhere: Reset Settings restores the saved panel values, Full Reset
-// restores the saved panel values AND pushes the four prefs back over its factory modePrefs reset,
-// and the gear's "modified" bar lights when live state diverges from them.
+// are what "default" means everywhere: Reset Settings restores the saved panel values AND the four
+// prefs (extended to the prefs in round-6 Q7 — it used to be panel-only), Full Reset does the same
+// and additionally wipes stats/history and returns every non-capturable mode pref to factory, and
+// the gear's "modified" bar lights when live state diverges from them.
 //
 // A THIRD store (not a settings-store v2) because the capture spans two stores — it belongs to
 // neither — and because surviving Full Reset must be an explicit property: Full Reset deliberately

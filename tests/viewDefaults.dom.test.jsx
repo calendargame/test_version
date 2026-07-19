@@ -1,25 +1,31 @@
 // @vitest-environment jsdom
 //
-// View saved defaults (Q12) — the ⚙ footer's read-only inspect twin of the Save Defaults popup.
+// The defaults manager (Q12, made editable in Q5 round-6) — the ⚙ footer's window onto the
+// saved (or factory) defaults, on the ONE shared DefaultsCard with the Save Defaults popup.
 //
-// Drives the real <App/> like a user: once a snapshot exists, a "View saved defaults" link appears
-// LEFT of "Clear saved defaults" (non-destructive inspect before destructive wipe; both hide
-// together when nothing is saved — nothing to view). It opens a read-only modal fed by the SAME
-// effective-defaults memo + formatters as the Save card, with full modal parity (focus-on-open,
-// capture Escape, close-with-settings, Android Back, the shared Tab trap) and the renamed
-// [data-settings-modal] marker shared with the Save popup (the marker-rename regression lives
-// here). Visual polish (one-line fit, themes, drag-release) is on-device per the standing lesson.
+// Drives the real <App/> like a user: the "View saved defaults" link is ALWAYS visible, LEFT of
+// "Clear saved defaults" (which still appears only while a snapshot exists). It opens the shared
+// card seeded from the EFFECTIVE defaults: read-only at rest (one full-width Close), the factory
+// view when nothing is saved (adapted title and subline), and fully editable — a dirty row's
+// value goes btn-solid, the restricted-write note replaces the footnote, and Save writes ONLY the
+// four shown values (the ⚙ half stays byte-identical; from the factory view it CREATES the
+// snapshot). The manager's AoX row is the ONE deliberate difference from the Save card: a
+// tap-to-type SliderValueEditor readout (strut "1000"), no visible box. Clear runs through its
+// own confirm modal (Cancel + a red-tier Clear) with full modal parity. Modal parity for the
+// manager itself (focus-on-open, capture Escape, close-with-settings, Android Back, the shared
+// Tab trap, the [data-settings-modal] marker) is locked here too. Visual polish (one-line fit,
+// themes, drag-release) is on-device per the standing lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
-import { useModePrefs } from '../src/store/modePrefs.js'
+import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 
-// ── Harness helpers (the saveDefaults.dom harness, plus the View popup's own) ──
+// ── Harness helpers (the saveDefaults.dom harness, plus the manager's own) ──
 function mountApp() {
-  // CustomSelect panels AND both settings modals portal into #root; provide one. App's own
+  // CustomSelect panels AND the settings modals portal into #root; provide one. App's own
   // tree mounts into RTL's container (not #root), so there's no duplicate auto-mount.
   const root = document.createElement('div')
   root.id = 'root'
@@ -30,19 +36,27 @@ function mountApp() {
 const gear = () => screen.getByRole('button', { name: /^Settings/ })
 const openSettings = () => act(() => fireEvent.click(gear()))
 const btn = (name) => screen.getByRole('button', { name })
-const openView = () => act(() => fireEvent.click(btn('View saved defaults')))
-const viewTitle = () => screen.queryByText('Your saved defaults')
-const viewDialog = () => screen.getByRole('dialog', { name: 'Your saved defaults' })
+const openManager = () => act(() => fireEvent.click(btn('View saved defaults')))
+const savedTitle = () => screen.queryByText('Your saved defaults')
+const managerDialog = (name = 'Your saved defaults') => screen.getByRole('dialog', { name })
 // Save a snapshot through the UI (settings must be open): Save Defaults → Save.
 const saveSnapshot = () => {
   act(() => fireEvent.click(btn('Save Defaults')))
   act(() => fireEvent.click(btn('Save')))
 }
-// A row's static value text, located from its visible label span (label + value share a row div).
-const rowValue = (label) =>
-  within(viewDialog()).getByText(label).parentElement.lastElementChild.textContent
+// A row's tap-to-type readout (SliderValueEditor display mode) inside a dialog.
+const readout = (dialog, label) => within(dialog).getByRole('button', { name: `Edit ${label}` })
+// The shared card's four row labels, in their fixed order (the parity contract).
+const ROW_LABELS = ['AoX Run Length', 'Flash Speed', 'Blitz Round Timer', 'Blitz Question Timer']
+const expectRowsInOrder = (dialog) => {
+  const els = ROW_LABELS.map((t) => within(dialog).getByText(t))
+  for (let i = 1; i < els.length; i++)
+    expect(
+      els[i - 1].compareDocumentPosition(els[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+}
 
-describe('View saved defaults (Q12)', () => {
+describe('The defaults manager (Q12 + Q5 round-6)', () => {
   beforeEach(() => {
     // All persisted singletons back to a clean baseline.
     localStorage.clear()
@@ -56,28 +70,31 @@ describe('View saved defaults (Q12)', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('the link hides without a snapshot, appears LEFT of Clear after a save, and opens the read-only modal', () => {
-    act(() => useModePrefs.getState().setFlashMs(800)) // something to save
+  it('the View link is ALWAYS visible; with nothing saved it opens the labeled FACTORY view, Clear hidden', () => {
     mountApp()
     openSettings()
-    expect(screen.queryByRole('button', { name: 'View saved defaults' })).toBeNull() // nothing saved — nothing to view
-    saveSnapshot()
-    const view = btn('View saved defaults')
-    const clear = btn('Clear saved defaults')
-    // One flex row, View LEFT of Clear (non-destructive inspect before destructive wipe).
-    expect(view.parentElement).toBe(clear.parentElement)
-    expect(view.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    openView()
-    const dialog = viewDialog()
+    expect(btn('View saved defaults')).toBeInTheDocument() // no snapshot needed any more
+    expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // nothing to clear
+    openManager()
+    const dialog = managerDialog('Default settings') // adapted title
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
-    // Read-only by construction: the one control is Close — no fields, no sliders.
-    expect(within(dialog).queryAllByRole('textbox')).toHaveLength(0)
-    expect(within(dialog).queryAllByRole('slider')).toHaveLength(0)
-    expect(within(dialog).getAllByRole('button')).toHaveLength(1)
+    expect(
+      within(dialog).getByText("These are the factory defaults — you haven't saved your own."),
+    ).toBeInTheDocument() // adapted subline
+    // The factory values, through the card's own formatters/readouts.
+    expect(readout(dialog, 'AoX Run Length').textContent).toBe('10')
+    expect(readout(dialog, 'Flash Speed').textContent).toBe('2.0s')
+    expect(readout(dialog, 'Blitz Round Timer').textContent).toBe('1m 0s')
+    expect(readout(dialog, 'Blitz Question Timer').textContent).toBe('10s')
+    // Read-only at rest: one full-width Close, no Cancel/Save, no dirty note.
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull()
+    expect(screen.queryByText('Saving here updates only these values.')).toBeNull()
   })
 
-  it('shows the four saved values through the SAME formatters as the Save card', () => {
+  it('with a snapshot: View sits LEFT of Clear, and the saved values render through the SAME formatters as the Save card', () => {
     const p = useModePrefs.getState()
     p.setFlashMs(800)
     p.setBlitzSec(90)
@@ -86,11 +103,23 @@ describe('View saved defaults (Q12)', () => {
     mountApp()
     openSettings()
     saveSnapshot()
-    openView()
-    expect(rowValue('AoX Run Length')).toBe('25') // normalizeAoxN
-    expect(rowValue('Flash Speed')).toBe('0.8s') // fmtFlashT
-    expect(rowValue('Blitz Round Timer')).toBe('1m 30s') // fmtBlitzT
-    expect(rowValue('Blitz Question Timer')).toBe('10.5s') // +"s"
+    const view = btn('View saved defaults')
+    const clear = btn('Clear saved defaults')
+    // One flex row, View LEFT of Clear (non-destructive inspect before destructive wipe).
+    expect(view.parentElement).toBe(clear.parentElement)
+    expect(view.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    openManager()
+    const dialog = managerDialog()
+    expect(readout(dialog, 'AoX Run Length').textContent).toBe('25') // normalizeAoxN
+    expect(readout(dialog, 'Flash Speed').textContent).toBe('0.8s') // fmtFlashT
+    expect(readout(dialog, 'Blitz Round Timer').textContent).toBe('1m 30s') // fmtBlitzT
+    expect(readout(dialog, 'Blitz Question Timer').textContent).toBe('10.5s') // +"s"
+    // The clean-state footnote (replaced by the restricted-write note only once dirty).
+    expect(
+      within(dialog).getByText(
+        'Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('a legacy snapshot missing a field forward-merges to factory — never undefined', () => {
@@ -104,72 +133,270 @@ describe('View saved defaults (Q12)', () => {
     )
     mountApp()
     openSettings()
-    openView()
-    expect(rowValue('Blitz Question Timer')).toBe('10s') // factory 10, forward-merged
-    expect(rowValue('Flash Speed')).toBe('0.8s') // the saved fields still read saved
-    expect(rowValue('AoX Run Length')).toBe('25')
+    openManager()
+    const dialog = managerDialog()
+    expect(readout(dialog, 'Blitz Question Timer').textContent).toBe('10s') // factory 10, forward-merged
+    expect(readout(dialog, 'Flash Speed').textContent).toBe('0.8s') // the saved fields still read saved
+    expect(readout(dialog, 'AoX Run Length').textContent).toBe('25')
   })
 
-  it('Close, scrim mousedown/click and Escape dismiss the popup only — the settings panel survives', () => {
+  it('editing turns the row btn-solid, swaps the footnote for the restricted-write note, and swaps Close for Cancel + Save', () => {
     act(() => useModePrefs.getState().setFlashMs(800))
     mountApp()
     openSettings()
     saveSnapshot()
-    openView()
-    act(() => fireEvent.click(btn('Close')))
-    expect(viewTitle()).toBeNull()
+    openManager()
+    const dialog = managerDialog()
+    expect(readout(dialog, 'Flash Speed').className).not.toContain('btn-solid') // clean at rest
+    act(() =>
+      fireEvent.change(within(dialog).getByRole('slider', { name: 'Flash Speed' }), {
+        target: { value: '1200' },
+      }),
+    )
+    expect(readout(dialog, 'Flash Speed').className).toContain('btn-solid') // the dirty accent
+    expect(readout(dialog, 'Blitz Round Timer').className).not.toContain('btn-solid') // per-row, not global
+    expect(screen.getByText('Saving here updates only these values.')).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.',
+      ),
+    ).toBeNull() // the note REPLACES the footnote while dirty
+    expect(within(dialog).queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    // Cancel discards: reopening seeds fresh from the saved defaults, back at rest.
+    act(() => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
+    expect(savedTitle()).toBeNull()
+    openManager()
+    const dialog2 = managerDialog()
+    expect(readout(dialog2, 'Flash Speed').textContent).toBe('0.8s')
+    expect(within(dialog2).getByRole('button', { name: 'Close' })).toBeInTheDocument()
+  })
+
+  it("the manager's Save writes ONLY the four shown values — the ⚙ half stays byte-identical, live prefs untouched", () => {
+    useSettings.getState().setLeapChance('75')
+    useSettings.getState().setMinY(1600)
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot() // snapshot: leapChance 75, minY 1600, flashMs 800
+    const settingsBefore = { ...useUserDefaults.getState().saved.settings }
+    // Diverge the LIVE panel so a re-capture would be visible as a settings change…
+    act(() => useSettings.getState().setLeapChance('random'))
+    openManager()
+    act(() =>
+      fireEvent.change(screen.getByRole('slider', { name: 'Flash Speed' }), {
+        target: { value: '1200' },
+      }),
+    )
+    act(() => fireEvent.click(btn('Save')))
+    expect(savedTitle()).toBeNull() // Save closes the manager
+    const saved = useUserDefaults.getState().saved
+    expect(saved.prefs.flashMs).toBe(1200) // the edited value landed
+    expect(saved.prefs.blitzSec).toBe(MODE_PREFS_DEFAULTS.blitzSec) // untouched rows unchanged
+    expect(saved.settings).toEqual(settingsBefore) // …but the ⚙ half passed through AS-SAVED
+    expect(useModePrefs.getState().flashMs).toBe(800) // editing defaults never edits live prefs
+  })
+
+  it('the AoX row is tap-to-type (no visible box): the readout opens an input, Enter commits with the 2–1000 clamp', () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot()
+    openManager()
+    const dialog = managerDialog()
+    expect(within(dialog).queryAllByRole('textbox')).toHaveLength(0) // no box at rest — the ONE difference from the Save card
+    act(() => fireEvent.click(readout(dialog, 'AoX Run Length')))
+    const input = within(dialog).getByRole('textbox', { name: 'AoX Run Length' }) // editLabel — a count, not "(seconds)"
+    act(() => fireEvent.change(input, { target: { value: '2000' } }))
+    act(() => fireEvent.keyDown(input, { key: 'Enter' }))
+    expect(readout(dialog, 'AoX Run Length').textContent).toBe('1000') // Enter commits with the clamp
+    expect(readout(dialog, 'AoX Run Length').className).toContain('btn-solid') // the dirty accent on the readout
+    // Escape mid-edit reverts the edit only — the popup (and panel) survive the press.
+    act(() => fireEvent.click(readout(dialog, 'AoX Run Length')))
+    const input2 = within(dialog).getByRole('textbox', { name: 'AoX Run Length' })
+    act(() => {
+      input2.focus()
+      fireEvent.change(input2, { target: { value: '77' } })
+      fireEvent.keyDown(input2, { key: 'Escape' })
+    })
+    expect(readout(dialog, 'AoX Run Length').textContent).toBe('1000')
+    expect(savedTitle()).toBeInTheDocument()
     expect(btn('Reset Settings')).toBeInTheDocument()
-    openView()
-    // The settings click-outside handler must treat the scrim as "inside" — the renamed
-    // [data-settings-modal] marker (the marker-rename regression, shared with the Save popup)…
+  })
+
+  it('editing from the FACTORY view + Save CREATES the snapshot (factory ⚙ values + the edits) and Clear appears', () => {
+    mountApp()
+    openSettings()
+    expect(useUserDefaults.getState().saved).toBeNull()
+    openManager()
+    const dialog = managerDialog('Default settings')
+    act(() => fireEvent.click(readout(dialog, 'AoX Run Length')))
+    const input = within(dialog).getByRole('textbox', { name: 'AoX Run Length' })
+    act(() => fireEvent.change(input, { target: { value: '25' } }))
+    act(() => fireEvent.keyDown(input, { key: 'Enter' }))
+    expect(screen.getByText('Saving here updates only these values.')).toBeInTheDocument()
+    act(() => fireEvent.click(btn('Save')))
+    const saved = useUserDefaults.getState().saved
+    expect(saved).not.toBeNull()
+    expect(saved.settings).toEqual(SETTINGS_DEFAULTS) // the ⚙ half captured at factory
+    expect(saved.prefs).toEqual({
+      flashMs: MODE_PREFS_DEFAULTS.flashMs,
+      blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
+      blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
+      aoxN: '25',
+    })
+    expect(btn('Clear saved defaults')).toBeInTheDocument() // the Clear link appears with the snapshot
+    openManager()
+    expect(savedTitle()).toBeInTheDocument() // and the manager now opens on the saved view
+  })
+
+  it('SHARED-CARD PARITY: both popups render the same rows, sliders, and readouts — the AoX box is the one difference', () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    // The Save Defaults card…
+    act(() => fireEvent.click(btn('Save Defaults')))
+    const saveDialog = screen.getByRole('dialog', {
+      name: 'Save current settings as your defaults?',
+    })
+    expectRowsInOrder(saveDialog)
+    expect(
+      within(saveDialog)
+        .getAllByRole('slider')
+        .map((s) => s.getAttribute('aria-label')),
+    ).toEqual(['Flash Speed', 'Blitz Round Timer', 'Blitz Question Timer'])
+    expect(within(saveDialog).getAllByRole('textbox')).toHaveLength(1) // the visible AoX box stays
+    readout(saveDialog, 'Flash Speed') // the same tap-to-type readouts beside the sliders
+    readout(saveDialog, 'Blitz Round Timer')
+    readout(saveDialog, 'Blitz Question Timer')
+    expect(within(saveDialog).queryByRole('button', { name: 'Edit AoX Run Length' })).toBeNull()
+    act(() => fireEvent.click(within(saveDialog).getByRole('button', { name: 'Cancel' })))
+    // …and the manager: identical structure, except the AoX readout replaces the box.
+    openManager()
+    const manageDialog = managerDialog('Default settings')
+    expectRowsInOrder(manageDialog)
+    expect(
+      within(manageDialog)
+        .getAllByRole('slider')
+        .map((s) => s.getAttribute('aria-label')),
+    ).toEqual(['Flash Speed', 'Blitz Round Timer', 'Blitz Question Timer'])
+    expect(within(manageDialog).queryAllByRole('textbox')).toHaveLength(0)
+    readout(manageDialog, 'AoX Run Length')
+    readout(manageDialog, 'Flash Speed')
+    readout(manageDialog, 'Blitz Round Timer')
+    readout(manageDialog, 'Blitz Question Timer')
+  })
+
+  it('the CLEAR CONFIRM popup: Cancel keeps the snapshot, Clear forgets it (View stays, Clear link hides)', () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot()
+    act(() => fireEvent.click(btn('Clear saved defaults')))
+    const dialog = managerDialog('Clear your saved defaults?')
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
+    act(() => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
+    expect(useUserDefaults.getState().saved).not.toBeNull() // Cancel keeps it
+    expect(btn('Reset Settings')).toBeInTheDocument() // the settings panel survived
+    act(() => fireEvent.click(btn('Clear saved defaults')))
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' })))
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
+    expect(useUserDefaults.getState().saved).toBeNull() // back to factory semantics
+    expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // the link hides itself
+    expect(btn('View saved defaults')).toBeInTheDocument() // View is permanent
+  })
+
+  it('the Clear confirm carries full modal parity: scrim, Escape, and close-with-settings', () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot()
+    act(() => fireEvent.click(btn('Clear saved defaults')))
+    // The settings click-outside handler must treat the scrim as "inside" (mousedown path)…
     const scrim = document.querySelector('[data-settings-modal]')
     act(() => fireEvent.mouseDown(scrim))
     expect(btn('Reset Settings')).toBeInTheDocument()
     // …and a scrim CLICK cancels only the popup.
     act(() => fireEvent.click(scrim))
-    expect(viewTitle()).toBeNull()
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
+    expect(useUserDefaults.getState().saved).not.toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument()
-    openView()
+    act(() => fireEvent.click(btn('Clear saved defaults')))
     act(() => fireEvent.keyDown(document.body, { key: 'Escape' })) // capture-phase popup handler wins
-    expect(viewTitle()).toBeNull()
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument()
+    act(() => fireEvent.click(btn('Clear saved defaults')))
+    act(() => fireEvent.click(gear())) // any settings close counts
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
+    expect(useUserDefaults.getState().saved).not.toBeNull() // dismissal never clears
   })
 
-  it('closing Settings closes the popup with it (child flow of the panel)', () => {
+  it('Close, scrim mousedown/click and Escape dismiss the manager only — the settings panel survives', () => {
     act(() => useModePrefs.getState().setFlashMs(800))
     mountApp()
     openSettings()
     saveSnapshot()
-    openView()
-    expect(viewTitle()).toBeInTheDocument()
+    openManager()
+    act(() => fireEvent.click(btn('Close')))
+    expect(savedTitle()).toBeNull()
+    expect(btn('Reset Settings')).toBeInTheDocument()
+    openManager()
+    // The settings click-outside handler must treat the scrim as "inside" — the shared
+    // [data-settings-modal] marker (the same guard as the Save popup)…
+    const scrim = document.querySelector('[data-settings-modal]')
+    act(() => fireEvent.mouseDown(scrim))
+    expect(btn('Reset Settings')).toBeInTheDocument()
+    // …and a scrim CLICK cancels only the popup.
+    act(() => fireEvent.click(scrim))
+    expect(savedTitle()).toBeNull()
+    expect(btn('Reset Settings')).toBeInTheDocument()
+    openManager()
+    act(() => fireEvent.keyDown(document.body, { key: 'Escape' })) // capture-phase popup handler wins
+    expect(savedTitle()).toBeNull()
+    expect(btn('Reset Settings')).toBeInTheDocument()
+  })
+
+  it('closing Settings closes the manager with it (child flow of the panel)', () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot()
+    openManager()
+    expect(savedTitle()).toBeInTheDocument()
     act(() => fireEvent.click(gear())) // any settings close counts
-    expect(viewTitle()).toBeNull()
+    expect(savedTitle()).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reset Settings' })).toBeNull()
   })
 
-  it('the single-button Tab trap wraps in place on Close; the mode dropdown stays suppressed', () => {
+  it('the Tab trap wraps across the card controls; the mode dropdown stays suppressed', () => {
     act(() => useModePrefs.getState().setFlashMs(800))
     mountApp()
     openSettings()
     saveSnapshot()
-    openView()
-    const close = btn('Close')
-    // first === last in the shared trapModalTab → Tab and Shift+Tab both wrap to Close itself.
+    openManager()
+    const dialog = managerDialog()
+    const first = readout(dialog, 'AoX Run Length') // the card's first control
+    const close = btn('Close') // …and its last (the resting read-only state)
+    // Tab from the LAST control wraps to the first instead of escaping to the panel under the
+    // scrim; Shift+Tab from the FIRST wraps back to the last.
     act(() => {
       close.focus()
       fireEvent.keyDown(close, { key: 'Tab' })
     })
-    expect(document.activeElement).toBe(close)
-    act(() => fireEvent.keyDown(close, { key: 'Tab', shiftKey: true }))
+    expect(document.activeElement).toBe(first)
+    act(() => fireEvent.keyDown(first, { key: 'Tab', shiftKey: true }))
     expect(document.activeElement).toBe(close)
     // The app-wide Tab shortcut bails while a settings modal is up (the [data-settings-modal]
     // guard) — the mode dropdown must not open behind the aria-modal dialog.
     act(() => fireEvent.keyDown(window, { key: 'Tab' }))
     expect(screen.queryByRole('listbox')).toBeNull()
-    expect(viewTitle()).toBeInTheDocument()
+    expect(savedTitle()).toBeInTheDocument()
   })
 
-  it('Android Back closes the popup first, then Settings (LIFO overlay stack)', async () => {
+  it('Android Back closes the manager first, then Settings (LIFO overlay stack)', async () => {
     act(() => useModePrefs.getState().setFlashMs(800))
     mountApp()
     openSettings()
@@ -192,10 +419,40 @@ describe('View saved defaults (Q12)', () => {
       }
       window.removeEventListener('popstate', count)
     })
-    openView()
-    expect(viewTitle()).toBeInTheDocument()
+    openManager()
+    expect(savedTitle()).toBeInTheDocument()
     act(() => window.dispatchEvent(new PopStateEvent('popstate')))
-    expect(viewTitle()).toBeNull()
+    expect(savedTitle()).toBeNull()
+    expect(btn('Reset Settings')).toBeInTheDocument() // settings survived the first Back
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')))
+    expect(screen.queryByRole('button', { name: 'Reset Settings' })).toBeNull()
+  })
+
+  it('Android Back closes the Clear confirm first, then Settings (LIFO overlay stack)', async () => {
+    act(() => useModePrefs.getState().setFlashMs(800))
+    mountApp()
+    openSettings()
+    saveSnapshot()
+    // The same quiescence flush as above (saveSnapshot's popup close queues a traversal).
+    await act(async () => {
+      let quiet = 0
+      let seen = 0
+      const count = () => {
+        seen++
+      }
+      window.addEventListener('popstate', count)
+      for (let i = 0; i < 20 && quiet < 2; i++) {
+        seen = 0
+        await new Promise((r) => setTimeout(r, 0))
+        quiet = seen === 0 ? quiet + 1 : 0
+      }
+      window.removeEventListener('popstate', count)
+    })
+    act(() => fireEvent.click(btn('Clear saved defaults')))
+    expect(screen.getByText('Clear your saved defaults?')).toBeInTheDocument()
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')))
+    expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
+    expect(useUserDefaults.getState().saved).not.toBeNull() // Back never clears
     expect(btn('Reset Settings')).toBeInTheDocument() // settings survived the first Back
     act(() => window.dispatchEvent(new PopStateEvent('popstate')))
     expect(screen.queryByRole('button', { name: 'Reset Settings' })).toBeNull()

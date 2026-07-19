@@ -23,21 +23,32 @@ import { commitSliderText } from '../lib/sliderValue.js'
 // device's OWN font, identical across sites and constant at runtime (Round-4's hand-measured
 // w-[3.3em] was Segoe UI's 3.18em; iOS's SF Pro renders "2m 55s" wider, and the overflow wrapped
 // at the space). The button adds whitespace-nowrap (nothing else forbade that wrap); the input
-// takes w-full min-w-0 — min-w-0 is MANDATORY: without it the input's intrinsic min-content
-// width blows the cell open past the strut.
+// takes w-full min-w-0 size={1} — BOTH intrinsic sizes are MANDATORY collapses, because the
+// auto-sized grid column tracks its items' max-content as well as their min-content: min-w-0
+// neutralizes the min-content floor, and size={1} the max-content one (the size attribute
+// defaults to ~20 characters — wider than any readout — so without it the column grew to the
+// input the moment editing started, squeezing the slider; the Round-5 staging bug jsdom could
+// not see). With both collapsed the input simply fills the strut-defined cell.
 //
 // The user always types SECONDS — Flash converts ×1000 to ms via fromText; milliseconds are never
-// exposed (the readout label is already seconds everywhere). `disabled` mirrors the slider's own
-// condition (mid-round lock); pointer-events-none + the aria flag rather than the disabled
-// attribute so the readout keeps its exact resting look (the plain span never dimmed).
+// exposed (the readout label is already seconds everywhere). The ONE non-seconds site is the
+// defaults manager's AoX run-length row (Q5 round-6), which types a plain count: it passes
+// `editLabel` to replace the default "(seconds)"-suffixed input name. `disabled` mirrors the
+// slider's own condition (mid-round lock); pointer-events-none + the aria flag rather than the
+// disabled attribute so the readout keeps its exact resting look (the plain span never dimmed).
+// `accent` is the defaults cards' dirty state (Q5 round-6): the display readout wears the
+// btn-solid accent pill — px-1 -mx-1 (the footer-link ring idiom) so the fill extends past the
+// digits while the strut-defined column, and the digits inside it, never move.
 export default function SliderValueEditor({
   value,
   min,
   max,
   snap,
   disabled = false,
+  accent = false,
   inputMode,
   label,
+  editLabel,
   format,
   toText,
   fromText,
@@ -49,8 +60,10 @@ export default function SliderValueEditor({
   max: number
   snap: number // the typed-value snap grid, internal units (100ms / 5s / 0.5s)
   disabled?: boolean
+  accent?: boolean // dirty state (the defaults cards, Q5 round-6): the readout wears the btn-solid pill
   inputMode: 'decimal' | 'numeric'
   label: string // accessible name base, e.g. "Flash speed"
+  editLabel?: string // input accessible name override for non-seconds values (defaults to `${label} (seconds)`)
   format: (v: number) => string // display text, e.g. fmtFlashT → "2.0s"
   toText: (v: number) => string // edit seed, unit-less user text, e.g. 2000 → "2"
   fromText?: (n: number) => number // typed number → internal units (Flash: s ×1000 → ms)
@@ -93,7 +106,7 @@ export default function SliderValueEditor({
         onClick={() => {
           if (!disabled) setText(toText(value))
         }}
-        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right${disabled ? ' pointer-events-none' : ''}`}
+        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
       >
         {format(value)}
       </button>,
@@ -108,8 +121,9 @@ export default function SliderValueEditor({
     <input
       ref={inputRef}
       type="text"
+      size={1}
       inputMode={inputMode}
-      aria-label={`${label} (seconds)`}
+      aria-label={editLabel ?? `${label} (seconds)`}
       value={text}
       onChange={(e) => {
         if (re.test(e.target.value)) setText(e.target.value)

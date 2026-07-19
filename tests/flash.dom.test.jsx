@@ -13,6 +13,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
+import { useModePrefs } from '../src/store/modePrefs.js'
+import { useUserDefaults } from '../src/store/userDefaults.js'
+import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
 
@@ -428,5 +431,40 @@ describe('Flash — C2: mode switch mid-flash stops the flash', () => {
     switchToFlash()
     expect(dateDisplayText()).toBe('—') // idle dash — the flash did not survive
     expect(ctrl('Begin')).toBeInTheDocument()
+  })
+})
+
+// ── Q7 round-6: Reset Settings now restores the Flash speed too, straight into the store — which
+// bypasses the slider's onChange sync of the idle countdown label (a local mirror of flashMs). An
+// effect keyed on flashMs re-seeds that label at rest, so a store-driven reset shows the right number.
+// (Q7 round-6 = "extend Reset Settings"; distinct from the Session-11 Q7 that added Save Defaults.)
+describe('Flash — Q7 round-6 (Reset Settings restoring the Flash speed re-syncs the idle countdown)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useModePrefs.getState().resetModePrefs()
+    useUserDefaults.getState().clearDefaults()
+    useProgress.getState().resetProgress()
+    useModePrefs.getState().setFlashMs(800) // a non-default live speed → the idle label reads 0.8s
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+
+  it('the idle countdown label follows a store-driven Flash speed reset (not just the slider)', () => {
+    mountApp()
+    switchToFlash()
+    expect(flashCountdownText()).toBe('0.8s') // seeded from the live 800ms speed
+    toggleSettings()
+    act(() => fireEvent.click(ctrl('Reset Settings'))) // restores flashMs → 2000 (factory), no slider event
+    toggleSettings()
+    expect(useModePrefs.getState().flashMs).toBe(2000)
+    expect(flashCountdownText()).toBe('2.0s') // the idle label re-synced to the restored speed
   })
 })

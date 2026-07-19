@@ -565,6 +565,15 @@ describe('Deduction — C2: a silo round-trip preserves browse + armed-override 
 // (Year 2↔5 under both crosses, Day 7↔4 across Oct 1582). The rule is general: a count-changing
 // advance suppresses the carried flash in the same commit; a same-count advance keeps it — the
 // designed feedback, exactly as in the fixed 7-grid weekday modes.
+//
+// Both sweeps below carry a raised 60s per-test timeout (the third it() argument). Each loop
+// iteration is a full <App/> re-render plus a constrained puzzle regeneration (the Year cross
+// window's trySpawn retries up to 3000×), and the loops run up to their probabilistic caps
+// (120 / 400) — legitimate, bounded work that the default 20s budget cannot absorb when the full
+// suite's parallel workers contend for the CPU (the intermittent CI "Run tests" timeout: these
+// sweeps assert nothing on the wall, they simply run long). The caps still break early the moment
+// both branches are observed, and nothing about the generation is forced, so every probability
+// documented per-sweep stays exactly as written.
 describe('Deduction — Q13: carried flash suppressed when the option count changes', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -622,7 +631,7 @@ describe('Deduction — Q13: carried flash suppressed when the option count chan
     }
     expect(sawSame).toBe(true)
     expect(sawChange).toBe(true)
-  })
+  }, 60000)
 
   it('Day pinned to 1582: the Oct 7↔4 layout pair also suppresses the carried flash', () => {
     pin({ minY: 1582, maxY: 1582, useJulian: true })
@@ -639,7 +648,7 @@ describe('Deduction — Q13: carried flash suppressed when the option count chan
     }
     expect(sawSame).toBe(true)
     expect(sawChange).toBe(true)
-  })
+  }, 60000)
 })
 
 // ── Q14: both-crosses Year reserves the 5-layout height (2-button grid centered in a sizer) ──

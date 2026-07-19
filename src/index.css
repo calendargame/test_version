@@ -265,6 +265,17 @@ button:focus,select:focus{outline:none}
 .gear-modified{position:relative}
 .gear-modified::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:9999px;background:rgba(167,139,250,.85)}
 [data-theme="light"] .gear-modified::after,[data-theme="parchment"] .gear-modified::after{background:rgba(124,58,237,.75)}
+/* Q6 — the update-signal dot: a small light-blue dot at the TOP-RIGHT INSIDE corner of its host,
+   the two-stage breadcrumb to the changelog after an update (the Q2 build-stamp detection lights
+   it). Worn by the closed ⚙ gear (cleared on opening Settings) and by the footer's Changelog link
+   (cleared on its first tap). Light blue — deliberately outside the violet "customized" and rose
+   "destructive" families: it means "news", not state or danger. ::before, NOT ::after, so it can
+   share the gear with .gear-modified's bottom bar (both at once = an update landed while settings
+   are customized); 3px inset keeps the 6px dot fully inside the gear's rounded-xl corner arc.
+   Deeper blue on the light themes for contrast (the gear-modified pattern). */
+.update-dot{position:relative}
+.update-dot::before{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:9999px;background:rgba(125,211,252,.95)}
+[data-theme="light"] .update-dot::before,[data-theme="parchment"] .update-dot::before{background:rgba(2,132,199,.8)}
 /* Q3 boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
    and by the auto-update-on-open boot check when a freshly-deployed version is waiting; the LOADING
    splash is separate — index.html's body-level #boot, inline-styled there and removed by App's
@@ -351,7 +362,22 @@ html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}
    animations should multiply their duration by var(--motion-scale) to respect the setting for free. */
 :root{--motion-scale:1}
 @media (prefers-reduced-motion: reduce){:root{--motion-scale:0}}
-.expander{max-height:0;transition:max-height calc(.28s * var(--motion-scale)) ease-in-out;overflow:hidden;will-change:max-height}
+/* Accordion slide (Q4): the grid-template-rows 0fr→1fr idiom. The wrapper (components/Expander) is
+   a one-row grid whose track tweens 0fr⇄1fr via .expander-open, so the browser animates the TRUE
+   content height — open and close both travel the full distance in the same uniform duration,
+   killing the old measured max-height cap's timing flaws (short panels finishing early; closing
+   dead-time while the unused cap headroom collapsed) and its retina measurement-rounding clip risk.
+   The column is minmax(0,1fr), not the implicit auto — auto floors the track at the content's
+   min-content width and could push it past the container (the Q10 bare-1fr lesson, main.tsx);
+   minmax(0,1fr) reproduces block-child sizing exactly. The row div needs min-height:0 (so the track
+   can shrink below the content's min-height) and overflow:hidden (clips while the track is smaller
+   than the content — during motion and at closed rest; at open rest the track equals the content by
+   layout, so nothing clips). Duration multiplies by --motion-scale (above): Reduce Motion snaps
+   instantly. The GuideSection triangle + CODES_CLOSE_MS (lib/constants) key off this .28s — keep in
+   sync (tests/expander.dom pins both). */
+.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(.28s * var(--motion-scale)) ease-in-out}
+.expander-open{grid-template-rows:1fr}
+.expander>div{min-height:0;overflow:hidden}
 /* Strikethrough for disabled/off stat labels (StatPanel). The native CSS
    line-through is drawn at the FONT's strikeout metric — for system UI fonts
    (Segoe UI on Windows, San Francisco on iOS) that sits noticeably HIGH on the

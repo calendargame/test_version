@@ -15,6 +15,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
+import { useModePrefs } from '../src/store/modePrefs.js'
+import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
@@ -78,6 +80,23 @@ function statValue(label) {
   const spans = labelSpan.parentElement.querySelectorAll('span')
   return spans[spans.length - 1].textContent.trim()
 }
+// Tap a stat cell (Q8: the timing-trio cells are buttons that toggle the visual-only hide). The
+// cell is the label span's parent (a <button> for the timing trio); clicking it fires the toggle.
+function clickStat(label) {
+  const labelSpan = Array.from(document.querySelectorAll('span')).find(
+    (s) => s.textContent.trim() === label && !isHidden(s),
+  )
+  if (!labelSpan) throw new Error(`stat "${label}" not found`)
+  act(() => {
+    fireEvent.click(labelSpan.parentElement)
+  })
+}
+// Fast-forward the faked clock (performance.now advances in lockstep) inside act, so a solve made
+// after the tick records a nonzero time. Used by the Q8 visual-only-timing tests.
+const tick = (ms) =>
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
 // Best Average / Best Median VALUE ("1.23s" or "—"). Picks the innermost "Best X:" line and
 // extracts just the time, ignoring the new-best ★ and the sibling Median/Average sub-line.
 function bestVal(which) {
@@ -968,5 +987,121 @@ describe('AoX — Q18 (the run-length field shares the popup N field validation 
     act(() => fireEvent.change(nField(), { target: { value: '1' } }))
     act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
     expect(nField().value).toBe('2') // Escape commits the clamped current value too
+  })
+})
+
+// ── Q7 round-6: Reset Settings now restores the AoX run length too, so a Reset Settings that
+// changes a running/ended run's N reconciles it on the popover close — AoX's existing settings-close
+// reset rule, now triggered by the aoxN dep the close-effect gained. Uses a FACTORY panel so Reset
+// Settings touches ONLY the run length, isolating the mode-screen-pref path from the ⚙-panel path.
+// (Q7 round-6 = "extend Reset Settings"; distinct from the Session-11 Q7 that added Save Defaults.)
+describe('AoX — Q7 round-6 (Reset Settings restoring the run length reconciles the run)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useModePrefs.getState().resetModePrefs()
+    useUserDefaults.getState().clearDefaults()
+    useProgress.getState().resetProgress()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+
+  it('a RUNNING run resets when Reset Settings restores a divergent run length on close', () => {
+    useModePrefs.getState().setAoxN('25') // diverges from the factory 10
+    mountApp()
+    switchToAox()
+    click('Begin')
+    expect(ctrl('Reset')).toBeInTheDocument() // running → Reset shown
+    toggleSettings() // open ⚙ → snapshot (aoxN '25')
+    act(() => fireEvent.click(ctrl('Reset Settings'))) // restores aoxN → '10' (the panel is already factory)
+    expect(ctrl('Reset')).toBeInTheDocument() // still running while open (deferred to close)
+    toggleSettings() // close → the aoxN dep changed → reset()
+    expect(ctrl('Begin')).toBeInTheDocument() // run reset to idle
+    expect(useModePrefs.getState().aoxN).toBe('10') // run length restored to the factory default
+  })
+})
+
+// ── Q8: the visual-only timing-stats hide toggle (Last/Average/Median) ───────────────────────
+// AoX gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it dims the display but the
+// engine keeps timing (AoX feeds the engine timingOff:false always). So there is NO "Enable and
+// Reset Stats?" arm — hiding can never desync — and the scoring trio stays untoggleable. Hiding
+// suppresses only the LIVE mid-run trio: a COMPLETED run always shows its result (the average is
+// the point of the run). The pref (aoxTimingOff) is excluded from the defaults system (verified in
+// tests/saveDefaults.dom.test.jsx).
+describe('AoX — Q8 visual-only timing hide', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+    useModePrefs.getState().resetModePrefs() // aoxTimingOff starts false (shown)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('tapping a timing stat dims all three (visual only); the scoring trio stays; no reset prompt', () => {
+    mountApp()
+    switchToAox()
+    setN(3)
+    click('Begin')
+    tick(500)
+    answerCorrect() // one solve; run still going
+    expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
+    clickStat('Average') // hide the timing trio
+    expect(statValue('Last')).toBe('—')
+    expect(statValue('Average')).toBe('—')
+    expect(statValue('Median')).toBe('—')
+    // Scoring trio is untoggleable — still visible.
+    expect(statValue('Score')).toBe('1/1')
+    expect(statValue('Streak')).toBe('1/1')
+    // VISUAL ONLY: never the Classic/Flash/Deduction "Enable and Reset Stats?" confirmation.
+    expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
+    clickStat('Median') // tapping any timing box re-shows all three
+    expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
+  })
+
+  it('the engine keeps timing while the trio is hidden — a solve made while hidden appears on re-show', () => {
+    mountApp()
+    switchToAox()
+    setN(4)
+    click('Begin')
+    answerCorrect() // solve #1 immediate → 0.00s
+    clickStat('Last') // hide
+    expect(statValue('Last')).toBe('—')
+    tick(4000)
+    answerCorrect() // solve #2 recorded WHILE hidden (~4.00s)
+    expect(statValue('Score')).toBe('2/2') // the run kept going
+    clickStat('Last') // re-show
+    const last = statValue('Last')
+    expect(last).toMatch(/^\d+\.\d{2}s$/)
+    // Nonzero → the hidden solve WAS timed by the engine (would be 0.00s if the toggle wrongly fed
+    // useGameEngine's timingOff and stopped tracking).
+    expect(last).not.toBe('0.00s')
+    expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
+  })
+
+  it('a completed run shows its result even when the trio is hidden', () => {
+    act(() => useModePrefs.getState().setAoxTimingOff(true)) // hidden before the run
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    answerCorrect() // 1/2 → running, trio suppressed
+    expect(statValue('Average')).toBe('—')
+    answerCorrect() // 2/2 → run completes
+    expect(statValue('Score')).toBe('2/2')
+    // The completed run reveals its result regardless of the hide toggle (the average is the point).
+    expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
+    expect(statValue('Last')).toMatch(/^\d+\.\d{2}s$/)
+    expect(statValue('Median')).toMatch(/^\d+\.\d{2}s$/)
   })
 })

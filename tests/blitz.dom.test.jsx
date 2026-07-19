@@ -17,6 +17,7 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { useModePrefs } from '../src/store/modePrefs.js'
+import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
@@ -59,9 +60,10 @@ const tick = (ms) =>
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
 const isDisabled = (btn) => btn.className.includes('pointer-events-none')
-// Blitz stat cells are <div>s (Blitz can't hide stats, so no toggle/button). Find the cell
-// via its label <span>, scoped to the visible panel (the hidden Classic/Flash/AoX panels
-// also contain "Score" spans). The value is the cell's last <span>.
+// Find a stat cell via its label <span>, scoped to the visible panel (the hidden Classic/Flash/
+// AoX panels also contain "Score" spans). The value is the cell's last <span>. The scoring trio
+// (Score/Accuracy/Streak) cells are <div>s; the timing trio (Last/Average/Median) cells are
+// <button>s since Q8 (the visual-only hide toggle) — statValue reads either the same way.
 function statValue(label) {
   const labelSpan = Array.from(document.querySelectorAll('span')).find(
     (s) => s.textContent.trim() === label && !isHidden(s),
@@ -69,6 +71,17 @@ function statValue(label) {
   if (!labelSpan) throw new Error(`stat "${label}" not found`)
   const spans = labelSpan.parentElement.querySelectorAll('span')
   return spans[spans.length - 1].textContent.trim()
+}
+// Tap a stat cell (Q8: the timing-trio cells are buttons that toggle the visual-only hide). The
+// cell is the label span's parent (a <button> for the timing trio); clicking it fires the toggle.
+function clickStat(label) {
+  const labelSpan = Array.from(document.querySelectorAll('span')).find(
+    (s) => s.textContent.trim() === label && !isHidden(s),
+  )
+  if (!labelSpan) throw new Error(`stat "${label}" not found`)
+  act(() => {
+    fireEvent.click(labelSpan.parentElement)
+  })
 }
 // Whether a stat cell with this label is rendered at all (visible) — for the C3a
 // streak-visibility pins (per-Q sudden death hides Streak; per-Q + AM shows it).
@@ -672,6 +685,58 @@ describe('Blitz — Q2 (a config change on popover close resets the round)', () 
   })
 })
 
+// ── Q7 round-6: Reset Settings now restores the mode-screen round timer too, so a Reset Settings
+// that changes a running/ended round's timer reconciles it on the popover close — exactly the Q2 rule,
+// now triggered by the timer dep the close-effect gained. Uses a FACTORY panel so Reset Settings
+// touches ONLY the timer, isolating the mode-screen-pref path from the ⚙-panel path Q2 already covers.
+// (Q7 round-6 = "extend Reset Settings"; distinct from the Session-11 Q7 that added Save Defaults.)
+describe('Blitz — Q7 round-6 (Reset Settings restoring the round timer reconciles the round)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useModePrefs.getState().resetModePrefs()
+    useUserDefaults.getState().clearDefaults()
+    useProgress.getState().resetProgress()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+
+  it('an ACTIVE round resets when Reset Settings restores a divergent round timer on close', () => {
+    useModePrefs.getState().setBlitzSec(120) // diverges from the factory 60
+    mountApp()
+    switchToBlitz()
+    begin()
+    expect(ctrl('Reset')).toBeInTheDocument() // active → Reset shown
+    toggleSettings() // open ⚙ → snapshot (blitzSec 120)
+    act(() => fireEvent.click(ctrl('Reset Settings'))) // restores blitzSec → 60 (the panel is already factory)
+    expect(ctrl('Reset')).toBeInTheDocument() // still active while open (deferred to close)
+    toggleSettings() // close → the blitzSec dep changed → resetRound
+    expect(ctrl('Begin')).toBeInTheDocument() // round reset to idle
+    expect(useModePrefs.getState().blitzSec).toBe(60) // timer restored to the factory default
+  })
+
+  it('an ENDED round (timerDone) resets when Reset Settings restores a divergent timer on close', () => {
+    useModePrefs.getState().setBlitzSec(120)
+    mountApp()
+    switchToBlitz()
+    begin()
+    clickText('Reveal') // ends the round → timerDone
+    expect(ctrl('Reset')).toBeInTheDocument()
+    toggleSettings()
+    act(() => fireEvent.click(ctrl('Reset Settings')))
+    toggleSettings()
+    expect(ctrl('Begin')).toBeInTheDocument() // ended round reset on close
+    expect(useModePrefs.getState().blitzSec).toBe(60)
+  })
+})
+
 // ── C3a (Q15): the Per Question + Allow Mistakes sub-mode ─────────────────────────────────────────
 // The two Blitz switches are now fully independent (the old auto-off exclusion died): per-Q + AM is
 // a real fourth combination — a wrong answer marks the miss, breaks the streak, and leaves the SAME
@@ -973,5 +1038,88 @@ describe('Blitz — C3a freshness (suddenAmBest blocks fully-reset until wiped)'
     expect(isDisabled(fullResetBtn())).toBe(false) // the new map counts against Blitz freshness
     act(() => useProgress.getState().resetProgress()) // the wipe Full Reset performs
     expect(isDisabled(fullResetBtn())).toBe(true)
+  })
+})
+
+// ── Q8: the visual-only timing-stats hide toggle (Last/Average/Median) ───────────────────────
+// Blitz gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it dims the display but the
+// engine keeps timing (Blitz feeds the engine timingOff:false always). So there is NO "Enable and
+// Reset Stats?" arm — hiding can never desync — and the scoring trio (Score/Accuracy/Streak) stays
+// untoggleable. One toggle per mode (blitzTimingOff), shared across Per Round / Per Question, and
+// excluded from the defaults system (verified in tests/saveDefaults.dom.test.jsx).
+describe('Blitz — Q8 visual-only timing hide', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+    useModePrefs.getState().resetModePrefs() // blitzTimingOff starts false (shown)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('tapping a timing stat dims all three (visual only); the scoring trio stays; no reset prompt', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    tick(500)
+    click(correctName(readDate())) // one solve recorded and shown
+    expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
+    expect(statValue('Score')).toBe('1/1')
+    clickStat('Average') // hide the timing trio
+    expect(statValue('Last')).toBe('—')
+    expect(statValue('Average')).toBe('—')
+    expect(statValue('Median')).toBe('—')
+    // Scoring trio is untoggleable — still visible.
+    expect(statValue('Score')).toBe('1/1')
+    expect(statValue('Accuracy')).toBe('100.0%')
+    expect(statValue('Streak')).toBe('1/1')
+    // VISUAL ONLY: never the Classic/Flash/Deduction "Enable and Reset Stats?" confirmation.
+    expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
+    clickStat('Median') // tapping any timing box re-shows all three
+    expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
+  })
+
+  it('the engine keeps timing while the trio is hidden — a solve made while hidden appears on re-show', () => {
+    mountApp()
+    switchToBlitz()
+    begin()
+    click(correctName(readDate())) // solve #1 immediate → 0.00s
+    clickStat('Last') // hide
+    expect(statValue('Last')).toBe('—')
+    tick(4000)
+    click(correctName(readDate())) // solve #2 recorded WHILE hidden (~4.00s)
+    expect(statValue('Score')).toBe('2/2') // the round kept running
+    clickStat('Last') // re-show
+    const last = statValue('Last')
+    expect(last).toMatch(/^\d+\.\d{2}s$/)
+    // Nonzero → the hidden solve WAS timed by the engine (would be 0.00s if the toggle wrongly
+    // fed useGameEngine's timingOff and stopped tracking).
+    expect(last).not.toBe('0.00s')
+    expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
+  })
+
+  it('one toggle per mode: hiding in Per Round carries into Per Question', () => {
+    mountApp()
+    switchToBlitz()
+    begin() // Per Round (default)
+    tick(500)
+    click(correctName(readDate()))
+    clickStat('Average') // hide in Per Round
+    expect(statValue('Average')).toBe('—')
+    clickText('Reset') // idle unlocks the sub-mode switch
+    act(() => fireEvent.click(ctrl('Per Round'))) // → Per Question
+    begin()
+    tick(500)
+    click(correctName(readDate())) // a Per Question solve
+    expect(statValue('Score')).toBe('1/1')
+    expect(statValue('Average')).toBe('—') // still hidden — the toggle is shared
   })
 })

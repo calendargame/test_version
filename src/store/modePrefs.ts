@@ -13,8 +13,13 @@ import { persist } from 'zustand/middleware'
 // What it holds: Flash reveal speed; Blitz round/per-question timers + Per-Round/Question
 // + Allow Mistakes; the AoX run length + Allow Mistakes + One-by-One; Deduction sub-type; and
 // the per-mode show/hide stat toggles (timing/scoring), namespaced per mode since their
-// defaults differ (Classic/Deduction launch with timing hidden, Flash with it shown).
-// `allowMistakes` is likewise namespaced (blitz*/aox*).
+// defaults differ (Classic/Deduction launch with timing hidden, Flash with it shown). Those
+// three non-round toggles feed useGameEngine's `timingOff` (timing actually pauses while hidden,
+// with the desync-arm on re-enable). Blitz and AoX instead carry a VISUAL-ONLY timing toggle
+// (blitzTimingOff/aoxTimingOff, launch SHOWN, Q8): it dims the timing trio's display but never
+// stops the engine clock — round/run timing is structural (the score/average is the mode), so
+// there is no arm/reset and hiding can never desync. `allowMistakes` is likewise namespaced
+// (blitz*/aox*).
 //
 // NOT here (intentionally): the current tab — the app always opens to Classic; and any
 // mid-game state — a half-finished timed run can't fairly resume.
@@ -35,10 +40,12 @@ export type ModePrefsValues = {
   blitzQSec: number
   blitzPerQ: boolean
   blitzAllowMistakes: boolean
+  blitzTimingOff: boolean // VISUAL-ONLY (Q8): dims the timing trio; the engine keeps timing
   // AoX
   aoxN: string
   aoxAllowMistakes: boolean
   aoxOneByOne: boolean
+  aoxTimingOff: boolean // VISUAL-ONLY (Q8): dims the LIVE trio; a completed run still shows its result
   // Deduction
   dedType: string
   dedTimingOff: boolean
@@ -56,9 +63,11 @@ export type ModePrefsState = ModePrefsValues & {
   setBlitzQSec: (v: Updater<number>) => void
   setBlitzPerQ: (v: Updater<boolean>) => void
   setBlitzAllowMistakes: (v: Updater<boolean>) => void
+  setBlitzTimingOff: (v: Updater<boolean>) => void
   setAoxN: (v: Updater<string>) => void
   setAoxAllowMistakes: (v: Updater<boolean>) => void
   setAoxOneByOne: (v: Updater<boolean>) => void
+  setAoxTimingOff: (v: Updater<boolean>) => void
   setDedType: (v: Updater<string>) => void
   setDedTimingOff: (v: Updater<boolean>) => void
   setDedScoringOff: (v: Updater<boolean>) => void
@@ -69,9 +78,11 @@ export type ModePrefsState = ModePrefsValues & {
 }
 
 // The launch defaults — single source of truth, reused by resetModePrefs(). Timing hidden by
-// default in Classic/Deduction, shown in Flash. The Flash reveal (2s) and Blitz per-question
-// countdown (10s) launch at beginner-friendly lengths (Round-2 timer audit, 2026-07-12,
-// owner-ratified — a newcomer doing the mental method needs the headroom; elites turn them down).
+// default in Classic/Deduction, shown in Flash; Blitz and AoX launch with their VISUAL-ONLY
+// timing SHOWN (blitzTimingOff/aoxTimingOff false — Q8). The Flash reveal (2s) and Blitz
+// per-question countdown (10s) launch at beginner-friendly lengths (Round-2 timer audit,
+// 2026-07-12, owner-ratified — a newcomer doing the mental method needs the headroom; elites
+// turn them down).
 export const MODE_PREFS_DEFAULTS: ModePrefsValues = {
   flashMs: 2000,
   flashTimingOff: false,
@@ -80,9 +91,11 @@ export const MODE_PREFS_DEFAULTS: ModePrefsValues = {
   blitzQSec: 10,
   blitzPerQ: false,
   blitzAllowMistakes: true,
+  blitzTimingOff: false,
   aoxN: '10',
   aoxAllowMistakes: false,
   aoxOneByOne: false,
+  aoxTimingOff: false,
   dedType: 'day',
   dedTimingOff: true,
   dedScoringOff: false,
@@ -109,10 +122,12 @@ export const useModePrefs = create<ModePrefsState>()(
       setBlitzPerQ: (v) => set((s) => ({ blitzPerQ: resolve(v, s.blitzPerQ) })),
       setBlitzAllowMistakes: (v) =>
         set((s) => ({ blitzAllowMistakes: resolve(v, s.blitzAllowMistakes) })),
+      setBlitzTimingOff: (v) => set((s) => ({ blitzTimingOff: resolve(v, s.blitzTimingOff) })),
       setAoxN: (v) => set((s) => ({ aoxN: resolve(v, s.aoxN) })),
       setAoxAllowMistakes: (v) =>
         set((s) => ({ aoxAllowMistakes: resolve(v, s.aoxAllowMistakes) })),
       setAoxOneByOne: (v) => set((s) => ({ aoxOneByOne: resolve(v, s.aoxOneByOne) })),
+      setAoxTimingOff: (v) => set((s) => ({ aoxTimingOff: resolve(v, s.aoxTimingOff) })),
       setDedType: (v) => set((s) => ({ dedType: resolve(v, s.dedType) })),
       setDedTimingOff: (v) => set((s) => ({ dedTimingOff: resolve(v, s.dedTimingOff) })),
       setDedScoringOff: (v) => set((s) => ({ dedScoringOff: resolve(v, s.dedScoringOff) })),

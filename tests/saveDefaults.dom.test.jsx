@@ -3,11 +3,13 @@
 // Save Defaults (Q7) + the gear "modified" indicator (Q8) — App-level behavior tests.
 //
 // Drives the real <App/> like a user: the ⚙ footer's Save Defaults button opens a centered
-// confirmation popup (portaled to #root) whose edits touch ONLY a pending snapshot; Save makes
-// that snapshot the EFFECTIVE defaults (store/userDefaults) that Reset Settings, Full Reset,
-// the gear indicator, and the Save-Defaults dim all mean by "default" from then on. The pure
-// store/helper contract is locked in tests/userDefaults.test.js; visual polish (the violet bar,
-// footer wrap) is on-device per the standing lesson.
+// confirmation popup (portaled to #root, rendering the shared DefaultsCard — Q5 round-6) whose
+// edits touch ONLY a pending snapshot; Save makes that snapshot the EFFECTIVE defaults
+// (store/userDefaults) that Reset Settings, Full Reset, the gear indicator, and the
+// Save-Defaults dim all mean by "default" from then on. The pure store/helper contract is
+// locked in tests/userDefaults.test.js; the manager half of the shared card lives in
+// tests/viewDefaults.dom.test.jsx; visual polish (the violet bar, footer wrap) is on-device
+// per the standing lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
@@ -69,6 +71,71 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(screen.getByDisplayValue('1600')).toBeInTheDocument() // the min-year text mirror
   })
 
+  // ── Q7 round-6: Reset Settings now also restores the 4 mode-screen prefs (Flash speed, both Blitz
+  // timers, AoX run length) — the exact mirror of Save Defaults over the 18-value unit the gear judges.
+  it('Reset Settings restores the 4 mode-screen prefs to the FACTORY defaults when nothing is saved (non-capturable prefs untouched)', () => {
+    const p = useModePrefs.getState()
+    p.setFlashMs(800)
+    p.setBlitzSec(120)
+    p.setBlitzQSec(20)
+    p.setAoxN('25')
+    p.setBlitzPerQ(true) // non-capturable — Reset Settings must leave it (only Full Reset restores it)
+    mountApp()
+    openSettings()
+    expect(isDimmed(btn('Reset Settings'))).toBe(false) // a mode-screen pref diverges → the button is offered
+    act(() => fireEvent.click(btn('Reset Settings')))
+    const r = useModePrefs.getState()
+    expect(r.flashMs).toBe(2000)
+    expect(r.blitzSec).toBe(60)
+    expect(r.blitzQSec).toBe(10)
+    expect(r.aoxN).toBe('10')
+    expect(r.blitzPerQ).toBe(true) // non-capturable — untouched by Reset Settings
+    expect(isDimmed(btn('Reset Settings'))).toBe(true) // …and now nothing is left to reset
+  })
+
+  it('Reset Settings restores the 4 mode-screen prefs to the SAVED personal defaults when a snapshot exists', () => {
+    const p = useModePrefs.getState()
+    p.setFlashMs(800)
+    p.setBlitzSec(120)
+    p.setBlitzQSec(20)
+    p.setAoxN('25')
+    mountApp()
+    openSettings()
+    openPopup()
+    act(() => fireEvent.click(btn('Save'))) // saved prefs = { flashMs 800, blitzSec 120, blitzQSec 20, aoxN '25' }
+    // Diverge every captured pref back to factory, then Reset Settings — it must mean the SAVED values.
+    act(() => {
+      const q = useModePrefs.getState()
+      q.setFlashMs(2000)
+      q.setBlitzSec(60)
+      q.setBlitzQSec(10)
+      q.setAoxN('10')
+    })
+    act(() => fireEvent.click(btn('Reset Settings')))
+    const r = useModePrefs.getState()
+    expect(r.flashMs).toBe(800)
+    expect(r.blitzSec).toBe(120)
+    expect(r.blitzQSec).toBe(20)
+    expect(r.aoxN).toBe('25')
+  })
+
+  it('Reset Settings clears a gear lit ONLY by a divergent mode-screen pref (the round-6 Q7 enable + restore mirror)', () => {
+    useModePrefs.getState().setFlashMs(800)
+    mountApp()
+    openSettings()
+    openPopup()
+    act(() => fireEvent.click(btn('Save'))) // saved.flashMs = 800; the ⚙ panel captured at its factory values
+    // Return the pref to factory: the PANEL now matches the saved defaults but the pref does not —
+    // exactly the case that used to strand the gear (before Q7 Reset Settings watched the panel alone).
+    act(() => useModePrefs.getState().setFlashMs(2000))
+    expect(gear()).toHaveAttribute('aria-label', 'Settings (modified)')
+    expect(isDimmed(btn('Reset Settings'))).toBe(false) // OFFERED even though the panel sits at defaults
+    act(() => fireEvent.click(btn('Reset Settings')))
+    expect(useModePrefs.getState().flashMs).toBe(800) // restored to the SAVED default, not factory
+    expect(gear()).toHaveAttribute('aria-label', 'Settings') // the violet bar goes out
+    expect(isDimmed(btn('Reset Settings'))).toBe(true) // nothing is left to reset
+  })
+
   it('Save → Full Reset pushes the 4 captured prefs; the rest of modePrefs stays factory; the snapshot survives', () => {
     const p = useModePrefs.getState()
     p.setFlashMs(800)
@@ -96,6 +163,37 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(r.blitzPerQ).toBe(MODE_PREFS_DEFAULTS.blitzPerQ) // factory, not captured
     expect(r.dedType).toBe(MODE_PREFS_DEFAULTS.dedType) // factory, not captured
     expect(useUserDefaults.getState().saved).not.toBeNull() // Full Reset never clears the snapshot
+  })
+
+  // Q8: the Blitz/AoX visual-only timing toggles (blitzTimingOff/aoxTimingOff) are NON-capturable —
+  // same family as Per Round / Allow Mistakes / the Deduction sub-type. Save Defaults never records
+  // them, the gear "modified" bar never lights for them, and Full Reset returns them to factory.
+  it('Q8: the Blitz/AoX visual timing toggles are excluded from Save Defaults and the gear bar, and reset by Full Reset', () => {
+    const p = useModePrefs.getState()
+    p.setBlitzTimingOff(true)
+    p.setAoxTimingOff(true)
+    mountApp()
+    // A divergent visual timing pref must NOT light the gear "modified" bar (it isn't in the
+    // at-defaults comparison — prefsMatchDefaults covers only the four capturable prefs).
+    expect(gear().className).not.toContain('gear-modified')
+    openSettings()
+    openPopup()
+    act(() => fireEvent.click(btn('Save')))
+    // The saved snapshot carries ONLY the four capturable prefs — never the toggles.
+    expect(useUserDefaults.getState().saved.prefs).toEqual({
+      flashMs: MODE_PREFS_DEFAULTS.flashMs,
+      blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
+      blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
+      aoxN: MODE_PREFS_DEFAULTS.aoxN,
+    })
+    // Saving leaves the live toggles untouched…
+    expect(useModePrefs.getState().blitzTimingOff).toBe(true)
+    expect(useModePrefs.getState().aoxTimingOff).toBe(true)
+    // …and Full Reset returns both to their factory (shown) launch value.
+    act(() => fireEvent.click(btn('Full Reset')))
+    act(() => fireEvent.click(btn('Confirm?')))
+    expect(useModePrefs.getState().blitzTimingOff).toBe(false)
+    expect(useModePrefs.getState().aoxTimingOff).toBe(false)
   })
 
   it('Full Reset honors + dims against the personal defaults — the freshness-literal rewiring', () => {
@@ -217,7 +315,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(gear().className).toContain('gear-modified')
   })
 
-  it('the popup carries NO clear link (footer-only, Round-4); the footer link clears while the popup is open', () => {
+  it('the popup carries NO clear link (footer-only, Round-4); the footer link clears — via its confirm — while the popup is open', () => {
     mountApp()
     openSettings()
     openPopup()
@@ -229,12 +327,15 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
     expect(within(dialog).queryByRole('button', { name: /Clear saved defaults/ })).toBeNull()
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear saved defaults' })))
+    // The link asks first now (Q5 round-6): nothing is cleared until the confirm's red-tier Clear.
+    expect(useUserDefaults.getState().saved).not.toBeNull()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' })))
     expect(useUserDefaults.getState().saved).toBeNull() // back to factory semantics
     expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // the link hides itself…
     expect(btn('Save')).toBeInTheDocument() // …and the open popup survives, still saveable
   })
 
-  it('the ⚙ footer Clear-saved-defaults link: hidden without a snapshot, reachable at steady state (Save Defaults dimmed), clears it', () => {
+  it('the ⚙ footer Clear-saved-defaults link: hidden without a snapshot, reachable at steady state (Save Defaults dimmed), clears via its confirm', () => {
     mountApp()
     openSettings()
     expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // nothing saved
@@ -243,8 +344,31 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(isDimmed(btn('Save Defaults'))).toBe(true) // …making the POPUP's clear link unreachable
     const footerLink = screen.getByRole('button', { name: 'Clear saved defaults' }) // the footer link is the escape hatch
     act(() => fireEvent.click(footerLink))
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' }))) // through the confirm popup (Q5 round-6)
     expect(useUserDefaults.getState().saved).toBeNull() // snapshot forgotten (live settings untouched)
     expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // and the link hides itself
+  })
+
+  it('the shared card in the Save popup: an edited row goes btn-solid; Cancel + Save always; no restricted-write note', () => {
+    mountApp()
+    openSettings()
+    openPopup()
+    const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
+    // An action card even while clean — never the manager's resting Close.
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(nField().className).not.toContain('btn-solid')
+    act(() => fireEvent.change(nField(), { target: { value: '25' } }))
+    expect(nField().className).toContain('btn-solid') // the dirty accent on the box (panel fill swapped out)
+    act(() => fireEvent.change(flashSlider(), { target: { value: '1200' } }))
+    expect(within(dialog).getByRole('button', { name: 'Edit Flash Speed' }).className).toContain(
+      'btn-solid', // …and on the tap-to-type readouts
+    )
+    expect(
+      within(dialog).getByRole('button', { name: 'Edit Blitz Round Timer' }).className,
+    ).not.toContain('btn-solid') // per-row, not global
+    expect(screen.queryByText('Saving here updates only these values.')).toBeNull() // manager-only note
   })
 
   it('the popup is a real modal: role=dialog + aria-modal, focus moves in on open, Tab wraps inside it', () => {

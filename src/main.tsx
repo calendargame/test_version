@@ -28,6 +28,8 @@ import { DOT_CELL } from './lib/dotLayout.js'
 import { sharedFitScale } from './lib/statFit.js'
 import { bootFlowOffset, BOOT_FLOW_FALLBACK_LEN } from './lib/bootFlow.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
+import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
+import { CHANGELOG, visibleEntries, GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot } from './changelog.js'
 import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
 import type { InputStyle, SettingsValues } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
@@ -511,7 +513,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-18T01:35:00Z');
+    const DEPLOY_TS=new Date('2026-07-19T19:52:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -521,8 +523,12 @@ interface DedOpts {
     // skips its artificial 500ms hold and shows only as long as the real boot takes. It still
     // waits for css-ready + mount, so even the manual path's genuinely network-cold boot (caches
     // wiped) can never reveal an unstyled frame — post-update, the splash always shows only real
-    // boot time. try/catch throughout: sessionStorage can throw (privacy modes) and a broken flag
-    // must never break boot.
+    // boot time. The consumed value is also shared (skipHoldConsumedRef in App) with the Q2
+    // build-change flash effect: a boot that just came through the real Updating flow lands on a
+    // changed build stamp by definition, and it must RESTAMP silently — the screen already showed,
+    // and a second one back-to-back is exactly what the flash must never add. try/catch
+    // throughout: sessionStorage can throw (privacy modes) and a broken flag must never break
+    // boot.
     const SKIP_BOOT_HOLD_KEY='cg-skip-boot-hold';
     const markSkipBootHold=()=>{try{sessionStorage.setItem(SKIP_BOOT_HOLD_KEY,'1');}catch{/* best-effort */}};
     const consumeSkipBootHold=()=>{try{const set=sessionStorage.getItem(SKIP_BOOT_HOLD_KEY)!==null;sessionStorage.removeItem(SKIP_BOOT_HOLD_KEY);return set;}catch{return false;}};
@@ -629,8 +635,10 @@ interface DedOpts {
     // BootOverlay (Q3) — the full-screen UPDATING screen: the fully-drawn W5 trace (STATIC for now —
     // the erase-from-2 / redraw-from-2 flow sweep is parked behind BOOT_TRACE_ANIMATED below; see
     // lib/bootFlow for the retained driver math + the iOS render fix) + "Updating" with a
-    // sequential three-dot pulse. Shown by the Settings "Check for updates" button AND by the
-    // auto-update-on-open SW effect in App (when a freshly-deployed version is waiting at launch).
+    // sequential three-dot pulse. Shown by the Settings "Check for updates" button, by the
+    // auto-update-on-open SW effect in App (when a freshly-deployed version is waiting at launch),
+    // and by the Q2 build-change flash effect (a cold open that detects an update already landed
+    // silently between sessions — same screen, no reload).
     // The LOADING splash is no longer rendered here — it's index.html's body-level #boot, which App
     // removes via dismissBootSplash; only the `updating` variant is ever mounted (the prop's loading
     // form is kept so the component matches the approved mockup pair, pending the deferred animation
@@ -962,6 +970,7 @@ interface DedOpts {
       const aoxN=useModePrefs(s=>s.aoxN),setAoxN=useModePrefs(s=>s.setAoxN);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.aoxAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setAoxAllowMistakes);   // persisted (mode-prefs store)
       const oneByOne=useModePrefs(s=>s.aoxOneByOne),setOneByOne=useModePrefs(s=>s.setAoxOneByOne);   // persisted (mode-prefs store)
+      const timingOff=useModePrefs(s=>s.aoxTimingOff),setTimingOff=useModePrefs(s=>s.setAoxTimingOff);   // persisted; VISUAL-ONLY (Q8) — dims the LIVE mid-run trio, but a completed run always shows its result
       const [runPhase,setRunPhase]=useState("idle");   // idle | running | done | failed (the RUN; the engine just runs the per-question loop)
       const [shown,setShown]=useState(false);           // One-by-One: is the current date revealed? (always true for non-One-by-One while running)
       const n=+normalizeAoxN(aoxN);   // the ONE 2–1000 clamp (store/userDefaults normalizeAoxN; junk → 10)
@@ -1074,9 +1083,10 @@ interface DedOpts {
       // Freshness for App's isFullyReset (the random date is excluded). aoxN compares NORMALIZED
       // against its EFFECTIVE default — the saved personal default when one exists (Q7,
       // store/userDefaults) — so a Full Reset restoring a personal N still reads fresh; the other
-      // config fields stay factory-fixed (they aren't capturable).
+      // config fields (Allow Mistakes, One-by-One, the visual-only timingOff — Q8) stay factory-fixed
+      // (they aren't capturable, and Full Reset returns them to their launch constants).
       const defAoxN=useUserDefaults(s=>effectivePrefDefaults(s.saved).aoxN);
-      const aoxIsFreshLocal=normalizeAoxN(aoxN)===normalizeAoxN(defAoxN)&&allowMistakes===false&&oneByOne===false&&runPhase==="idle"&&shown===false&&S.played===0&&S.good===0&&S.streak===0&&S.best===0&&S.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&flash===null&&Object.keys(state.persistBtns).length===0&&state.calcOpen===false&&state.canOverrideCorrect===false&&Object.keys(bests).length===0&&Object.keys(bestNew).length===0&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.countedWrong===false;
+      const aoxIsFreshLocal=normalizeAoxN(aoxN)===normalizeAoxN(defAoxN)&&allowMistakes===false&&oneByOne===false&&timingOff===false&&runPhase==="idle"&&shown===false&&S.played===0&&S.good===0&&S.streak===0&&S.best===0&&S.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&flash===null&&Object.keys(state.persistBtns).length===0&&state.calcOpen===false&&state.canOverrideCorrect===false&&Object.keys(bests).length===0&&Object.keys(bestNew).length===0&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.countedWrong===false;
       useEffect(()=>{onFreshChange?.(aoxIsFreshLocal);},[aoxIsFreshLocal,onFreshChange]);
 
       // Derived UI state.
@@ -1102,6 +1112,18 @@ interface DedOpts {
       const scoreDisplay=runPhase==="idle"?"0/0":`${doneCount}/${S.played}`;
       const accuracyDisplay=fmtAccuracyPct(doneCount,S.played);
       const date=state.date;
+      // The timing trio (Last/Average/Median) carries a VISUAL-ONLY hide toggle (Q8): tap any of the
+      // three to dim them all. There is NO engine timingOff and NO reset arm — AoX always tracks
+      // (saveStats:true above), so hiding can never desync. Hiding suppresses only the LIVE mid-run
+      // trio; a COMPLETED run (runPhase "done") always shows its result regardless (the average is the
+      // point of the run) — there the trio is a plain result readout, not a toggle. Save Stats off
+      // dims everything and drops the toggle, like the scoring trio. (Persisted as aoxTimingOff —
+      // excluded from the defaults system.)
+      const sOff=!saveStats;
+      const runComplete=runPhase==="done";
+      const timeHidden=timingOff&&!runComplete;
+      const tOff=!saveStats||timeHidden;
+      const tFn=(saveStats&&!runComplete)?(()=>setTimingOff(v=>!v)):null;
 
       // Handlers.
       const begin=()=>{eng.resetStats();currentRunIdRef.current=nextRunIdRef.current++;prevBestSnapRef.current=null;setRunPhase("running");setShown(true);};
@@ -1168,8 +1190,11 @@ interface DedOpts {
       // (done/failed) run RESETS as if Reset was pressed — its recorded Best config is now stale, so the
       // run on screen always matches the current settings — while an idle run regenerates its (hidden)
       // next date. Deferred to close so adjusting several settings doesn't churn the run/date (and the
-      // solve timer) per keystroke. (Replaces the old immediate prevAoxPopRef effect.)
-      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance],()=>{
+      // solve timer) per keystroke. (Replaces the old immediate prevAoxPopRef effect.) aoxN is in the
+      // deps because Reset Settings can now restore the run length mid-run (round-6 Q7): the N field is
+      // idle-locked (readOnly while running), so its only in-popover writer is Reset Settings, and a
+      // reset that changes N (a Best-key dimension) must reconcile the run exactly as a panel change does.
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance,aoxN],()=>{
         if(runPhase!=="idle")reset(); else eng.regenDate();
       });
 
@@ -1182,14 +1207,16 @@ interface DedOpts {
 
       return(
         <div style={{display:visible?"block":"none"}}>
-          {/* Save Stats off: all stat boxes show "—" with strikethrough labels (matches App). */}
+          {/* Save Stats off: all stat boxes show "—" with strikethrough labels (matches App). The
+              timing trio also dims on the visual-only toggle (tOff) while a run is live, and taps the
+              toggle (tFn) when Save Stats is on — see the derivations above. */}
           <div className={saveStats?"":"opacity-50"}><StatPanel stats={[
-            {label:"Score",value:scoreDisplay,off:!saveStats,fn:null},
-            {label:"Accuracy",value:accuracyDisplay,off:!saveStats,fn:null},
-            {label:"Streak",value:`${S.streak}/${S.best}`,off:!saveStats,fn:null},
-            {label:"Last",value:truncTime(calcLast(S.times)),off:!saveStats,fn:null},
-            {label:"Average",value:fmtTime(calcAvg(S.times)),off:!saveStats,fn:null},
-            {label:"Median",value:fmtTime(calcMed(S.times)),off:!saveStats,fn:null},
+            {label:"Score",value:scoreDisplay,off:sOff,fn:null},
+            {label:"Accuracy",value:accuracyDisplay,off:sOff,fn:null},
+            {label:"Streak",value:`${S.streak}/${S.best}`,off:sOff,fn:null},
+            {label:"Last",value:truncTime(calcLast(S.times)),off:tOff,fn:tFn},
+            {label:"Average",value:fmtTime(calcAvg(S.times)),off:tOff,fn:tFn},
+            {label:"Median",value:fmtTime(calcMed(S.times)),off:tOff,fn:tFn},
           ]}/></div>
           <div className="mt-3 text-xs text-(--tx-300-60)">
             <div className="flex flex-wrap items-start gap-4">
@@ -1353,6 +1380,12 @@ interface DedOpts {
       const startFlashBar=(ms: number)=>{requestAnimationFrame(()=>{if(!flashBarRef.current)return;const s=flashBarRef.current;s.style.transition="none";s.style.transform="scaleX(1)";s.getBoundingClientRect();s.style.transition=`transform ${ms}ms linear`;s.style.transform="scaleX(0)";});};
       const endFlashPhase=useCallback(()=>{setFlashPhase("hide");flashDeadlineRef.current=null;setFlashRemainMs(0);flashTimerRef.current=null;},[]);
       const stopFlash=()=>{clearTimeout(flashTimerRef.current ?? undefined);flashTimerRef.current=null;setFlashPhase("dash");flashDeadlineRef.current=null;setFlashRemainMs(flashMs);resetFlashBar();};
+      // Keep the idle countdown label + bar in step with a store-driven flashMs change that BYPASSES
+      // the slider's onChange sync — Reset Settings restoring the saved/factory Flash speed while Flash
+      // sits idle (round-6 Q7). flashRemainMs is a local mirror seeded from flashMs; a live flash owns it via
+      // the rAF countdown (and stopFlash re-seeds it on teardown), so this only re-seeds at rest. Keyed
+      // on flashMs alone — the slider path already synced, so a re-sync there is an idempotent no-op.
+      useEffect(()=>{if(!active&&flashPhase==="dash"){setFlashRemainMs(flashMs);resetFlashBar();}},[flashMs]);// eslint-disable-line react-hooks/exhaustive-deps
       // freezeFlash — Show-Codes-during-the-flash teardown. Unlike stopFlash (which RESETS the
       // bar to 100% + number to full for the idle state), this FREEZES the countdown in place:
       // it cancels the auto-hide timer, stops the rAF number countdown (setActive(false)), and
@@ -1532,6 +1565,7 @@ interface DedOpts {
     function BlitzMode({visible,genDate,minY,maxY,useJulian,saveStats,dateFormat,randomFormat,inputStyle='buttons',leapChance,janFebChance,julianChance,fmtDate,settingsOpen,clockPaused,onFreshChange}: ModeProps & { genDate: GenDate; fmtDate: FmtDate }){
       const perQ=useModePrefs(s=>s.blitzPerQ),setPerQ=useModePrefs(s=>s.setBlitzPerQ);   // persisted (mode-prefs store)
       const allowMistakes=useModePrefs(s=>s.blitzAllowMistakes),setAllowMistakes=useModePrefs(s=>s.setBlitzAllowMistakes);   // persisted (mode-prefs store)
+      const timingOff=useModePrefs(s=>s.blitzTimingOff),setTimingOff=useModePrefs(s=>s.setBlitzTimingOff);   // persisted; VISUAL-ONLY (Q8) — dims the timing trio, the engine clock never stops (no arm/reset)
       const [active,setActive]=useState(false);
       const [timerDone,setTimerDone]=useState(false);
       const [showTimerDate,setShowTimerDate]=useState(false);
@@ -1778,8 +1812,11 @@ interface DedOpts {
       // stale. This RESTORES the documented "a settings change ends an active Blitz round" behavior the
       // mode-untangle dropped (BlitzMode had no settings effect; AoX does this via its own close-effect)
       // AND applies the ended-round reset so the round on screen always matches the current settings. Idle
-      // has no live round/date to reconcile. Deferred to close (batched, no per-keystroke churn).
-      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance],()=>{
+      // has no live round/date to reconcile. Deferred to close (batched, no per-keystroke churn). The two
+      // timer lengths are in the deps because Reset Settings can now restore them mid-round (round-6 Q7):
+      // the sliders are idle-locked, so the only in-popover writer of blitzSec/qSec is Reset Settings, and a
+      // reset that lands a fresh timer must reconcile the running/ended round exactly as a panel change does.
+      useSettingsCloseEffect(settingsOpen??false,[randomFormat,dateFormat,useJulian,minY,maxY,leapChance,janFebChance,julianChance,blitzSec,qSec],()=>{
         if(active||timerDone)resetRound();
       });
 
@@ -1832,10 +1869,11 @@ interface DedOpts {
 
       // Freshness for App's isFullyReset. The two timer lengths compare against their EFFECTIVE
       // defaults — the saved personal defaults when they exist (Q7, store/userDefaults); the
-      // excluded config (perQ, allowMistakes) stays factory-fixed (not capturable).
+      // excluded config (perQ, allowMistakes, the visual-only timingOff — Q8) stays factory-fixed
+      // (not capturable), so each compares to its launch constant (Full Reset returns them all).
       const defBlitzSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzSec);
       const defBlitzQSec=useUserDefaults(s=>effectivePrefDefaults(s.saved).blitzQSec);
-      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&blitzSec===defBlitzSec&&qSec===defBlitzQSec&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&Object.keys(suddenAmBest).length===0&&flash===null;
+      const blitzIsFresh=state.stats.played===0&&state.stats.good===0&&state.stats.streak===0&&state.stats.best===0&&state.stats.times.length===0&&state.stack.length===0&&state.forwardStack.length===0&&state.backDepth===0&&state.locked===false&&state.revealed===false&&state.countedWrong===false&&state.canOverrideCorrect===false&&state.pendingWrongOverride===null&&state.overrideUsedThisQ===false&&state.calcOpen===false&&active===false&&timerDone===false&&showTimerDate===false&&perQ===false&&allowMistakes===true&&timingOff===false&&blitzSec===defBlitzSec&&qSec===defBlitzQSec&&Object.keys(blitzBest).length===0&&Object.keys(suddenBest).length===0&&Object.keys(suddenAmBest).length===0&&flash===null;
       useEffect(()=>{onFreshChange?.(blitzIsFresh);},[blitzIsFresh,onFreshChange]);
 
       const shouldShowTimerDate=active||showTimerDate;
@@ -1846,14 +1884,21 @@ interface DedOpts {
       // Streak is hidden only in per-Q sudden death: there a wrong ends the round, so streak
       // always equals score. With Allow Mistakes on it behaves exactly like per-round (C3a).
       const showStreak=!perQ||allowMistakes;
-      const sOff=!saveStats;
+      const sOff=!saveStats;   // the scoring trio (Score/Accuracy/Streak) — untoggleable, score IS the mode; dimmed only by Save Stats off
+      // The timing trio (Last/Average/Median) carries a VISUAL-ONLY hide toggle (Q8): tap any of the
+      // three to dim them all. Unlike Classic/Flash/Deduction there is NO engine timingOff and NO
+      // "Enable and Reset Stats?" arm — Blitz always tracks (saveStats:true above), so hiding can never
+      // desync (structurally desync-proof). Save Stats off dims everything and drops the toggle, exactly
+      // like the scoring trio. (Persisted as blitzTimingOff — excluded from the defaults system.)
+      const tOff=!saveStats||timingOff;
+      const tFn=saveStats?(()=>setTimingOff(v=>!v)):null;
       const statsArr=[
         {label:"Score",value:`${S.good}/${S.played}`,off:sOff,fn:null},
         {label:"Accuracy",value:fmtAccuracyPct(S.good,S.played),off:sOff,fn:null},
         ...(showStreak?[{label:"Streak",value:`${S.streak}/${S.best}`,off:sOff,fn:null}]:[]),
-        {label:"Last",value:truncTime(calcLast(S.times)),off:sOff,fn:null},
-        {label:"Average",value:fmtTime(calcAvg(S.times)),off:sOff,fn:null},
-        {label:"Median",value:fmtTime(calcMed(S.times)),off:sOff,fn:null},
+        {label:"Last",value:truncTime(calcLast(S.times)),off:tOff,fn:tFn},
+        {label:"Average",value:fmtTime(calcAvg(S.times)),off:tOff,fn:tFn},
+        {label:"Median",value:fmtTime(calcMed(S.times)),off:tOff,fn:tFn},
       ];
       const date=state.date;
       const dateText=shouldShowTimerDate?fmtDate(date.y,date.m,date.d,date._fmt):"—";
@@ -2075,6 +2120,89 @@ interface DedOpts {
       );
     }
 
+    // ============================================================
+    // DefaultsCard — the ONE shared defaults card (Q5 round-6): the Save Defaults popup and the
+    // defaults manager both render THIS dialog card, so there are never two styles editing the
+    // same four values. Parameterized by seed source alone — the Save card seeds `prefs`/`seed`
+    // from the LIVE stores at open, the manager from the SAVED/effective defaults — plus the one
+    // `manage` flag covering every deliberate difference between the two:
+    //   • the AoX row: the Save card keeps its visible input box (the shared NUM_INPUT_CLASS
+    //     idiom, Q18); the manager renders the row like the Blitz timer readouts instead — a
+    //     plain tap-to-type SliderValueEditor value with its own widest-string strut "1000",
+    //     no box (min/max/snap 2–1000/1 mirror the normalizeAoxN clamp; junk/empty reverts,
+    //     the editor's contract, rather than the box's junk→10 fallback);
+    //   • buttons: the Save card is an action card — Cancel + Save always; the manager rests
+    //     read-only (one full-width Close in the Cancel recipe) and swaps to Cancel + Save only
+    //     once something is dirty;
+    //   • the footnote slot: the manager shows `note` while clean and the restricted-write
+    //     warning ("Saving here updates only these values.") while dirty — the manager's Save
+    //     writes ONLY these four values, so the swap appears exactly when it becomes relevant;
+    //     the Save card writes the whole snapshot and needs neither.
+    // A row is DIRTY when its pending value differs from the seed (aoxN normalized on both
+    // sides, the store's defensive rule); dirty rows flag their value box/readout in the
+    // btn-solid accent tier (the AoX box swaps its panel fill for btn-solid + border-transparent
+    // so the rendered height never changes; the readouts take SliderValueEditor's accent pill).
+    // Stateless by design — the popup lifecycle (portal, scrim, Escape, Back, focus) stays with
+    // the callers in App; edits touch only the caller's pending snapshot via setPrefs.
+    // ============================================================
+    const NUM_INPUT_DIRTY_CLASS=NUM_INPUT_CLASS.replace("panel","btn-solid border border-transparent");
+    function DefaultsCard({cardRef,titleId,title,subline,note,manage=false,prefs,seed,setPrefs,onClose,onSave}:{
+      cardRef: React.RefObject<HTMLDivElement | null>
+      titleId: string
+      title: string
+      subline?: string
+      note?: string
+      manage?: boolean
+      prefs: PrefDefaults
+      seed: PrefDefaults
+      setPrefs: React.Dispatch<React.SetStateAction<PrefDefaults>>
+      onClose: ()=>void
+      onSave: ()=>void
+    }){
+      const dirtyAox=normalizeAoxN(prefs.aoxN)!==normalizeAoxN(seed.aoxN);
+      const dirtyFlash=prefs.flashMs!==seed.flashMs;
+      const dirtyBlitz=prefs.blitzSec!==seed.blitzSec;
+      const dirtyQ=prefs.blitzQSec!==seed.blitzQSec;
+      const dirty=dirtyAox||dirtyFlash||dirtyBlitz||dirtyQ;
+      const commitAoxN=()=>setPrefs(p=>({...p,aoxN:normalizeAoxN(p.aoxN)}));
+      return(
+        <div ref={cardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+          <div id={titleId} className="text-sm font-semibold text-(--tx-50)">{title}</div>
+          {subline&&<div className="text-xs text-(--tx-200-80)">{subline}</div>}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-(--tx-200-80) shrink-0">AoX Run Length</span>
+            {/* The Escape branch STOPS PROPAGATION: it blurs the field, and without the stop the
+                same native event would reach the document-level settings Escape handler AFTER the
+                blur — its input-has-focus skip no longer applies, and it would slam the whole
+                panel (and this popup) shut on what the user meant as a keyboard dismiss. */}
+            {manage
+              ?<SliderValueEditor value={+normalizeAoxN(prefs.aoxN)} min={2} max={1000} snap={1} accent={dirtyAox} inputMode="numeric" label="AoX Run Length" editLabel="AoX Run Length" format={String} toText={String} widest="1000" onCommit={v=>setPrefs(p=>({...p,aoxN:String(v)}))}/>
+              :<input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX Run Length" value={prefs.aoxN} onChange={e=>{const v=e.target.value;if(v===''||/^\d*$/.test(v))setPrefs(p=>({...p,aoxN:v}));}} onBlur={commitAoxN} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitAoxN();e.currentTarget.blur();}else if(e.key==="Escape"){e.stopPropagation();commitAoxN();e.currentTarget.blur();}}} className={`${dirtyAox?NUM_INPUT_DIRTY_CLASS:NUM_INPUT_CLASS} py-1 w-14 shrink-0`}/>}
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-(--tx-200-80)">Flash Speed</div>
+            <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash Speed" value={prefs.flashMs} onChange={e=>{const v=+e.target.value;setPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((prefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={prefs.flashMs} min={100} max={5000} snap={100} accent={dirtyFlash} inputMode="decimal" label="Flash Speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPrefs(p=>({...p,flashMs:v}))}/></div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-(--tx-200-80)">Blitz Round Timer</div>
+            <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz Round Timer" value={prefs.blitzSec} onChange={e=>{const v=+e.target.value;setPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((prefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={prefs.blitzSec} min={10} max={300} snap={5} accent={dirtyBlitz} inputMode="numeric" label="Blitz Round Timer" format={fmtBlitzT} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPrefs(p=>({...p,blitzSec:v}))}/></div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-(--tx-200-80)">Blitz Question Timer</div>
+            <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz Question Timer" value={prefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((prefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={prefs.blitzQSec} min={1} max={30} snap={0.5} accent={dirtyQ} inputMode="decimal" label="Blitz Question Timer" format={v=>v+"s"} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPrefs(p=>({...p,blitzQSec:v}))}/></div>
+          </div>
+          {manage&&(dirty
+            ?<div className="text-[11px] text-(--tx-300-60)">Saving here updates only these values.</div>
+            :note?<div className="text-[11px] text-(--tx-300-60)">{note}</div>:null)}
+          {!manage||dirty
+            ?<div className="flex gap-2 pt-1">
+              <button type="button" onClick={onClose} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Cancel</button>
+              <button type="button" onClick={onSave} className="flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium">Save</button>
+            </div>
+            :<div className="pt-1"><button type="button" onClick={onClose} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>}
+        </div>
+      );
+    }
     // ============================================================
     // App — the top-level component for the remaining fused modes
     //
@@ -2312,10 +2440,12 @@ interface DedOpts {
       // settingsOpen is declared here — above the keyboard effect that toggles it (G key) — so it's
       // not read before its declaration (the compiler flags accessing a binding before it's declared).
       const [settingsOpen,setSettingsOpen]=useState(false);
-      // Q3: the "Updating…" overlay (BootOverlay updating) — two triggers, each cleared by its reload:
-      // the Settings "Check for updates" button shows it for MIN_UPDATING_MS (so the screen registers)
-      // then runs forceReloadLatest (clear caches + reload), and the auto-update-on-open effect below
-      // shows it for at least the same hold while a WAITING new version activates.
+      // Q3: the "Updating…" overlay (BootOverlay updating) — three triggers: the Settings "Check for
+      // updates" button shows it for MIN_UPDATING_MS (so the screen registers) then runs
+      // forceReloadLatest (clear caches + reload), the auto-update-on-open effect below shows it for
+      // at least the same hold while a WAITING new version activates (both cleared by their reload),
+      // and the Q2 build-change flash effect shows it for exactly that hold — no reload — when a
+      // boot detects an update that already landed silently (cleared by its own hold-end).
       const [updating,setUpdating]=useState(false);
       const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,MIN_UPDATING_MS);},[]);
       // Q3 Loading screen: remove index.html's #boot splash once BOTH are true —
@@ -2332,13 +2462,31 @@ interface DedOpts {
       //     reveal an unstyled app: the module script is NOT CSSOM-blocked (it precedes the link), so on
       //     a SW-cached load React commits before the CSS lands. In dev/tests no preload link exists
       //     (CSS arrives through the JS module graph before mount) → the querySelector check is ready.
-      // When the auto-update path below has claimed the handoff (updateEngagedRef), finish leaves #boot
-      // alone — the Updating overlay replaces it (the updating effect), never a frame with neither.
+      // When an update-overlay path below has claimed the handoff (updateEngagedRef — the auto-update
+      // flow or the Q2 build-change flash), finish leaves #boot alone — the Updating overlay replaces
+      // it (the updating effect), never a frame with neither.
       const updateEngagedRef=useRef(false);
+      // The raw consumed cg-skip-boot-hold value, written by the boot-hold effect below (which owns
+      // the flag's one-per-boot consumption) and read by the Q2 build-change flash effect after it —
+      // same-kind effects run in declaration order, so the write is always ahead of the read.
+      const skipHoldConsumedRef=useRef(false);
+      // Set by the auto-update flow's engage(): a gated reload is coming (success or the safety net),
+      // so the Updating overlay must stay up until that navigation — the Q2 flash's hold-end checks
+      // this before revealing the app (the rare same-boot overlap: a freshly-downloaded new build
+      // AND an even newer version already waiting).
+      const updateReloadPendingRef=useRef(false);
       useEffect(()=>{
         let disposed=false;
         let cssFallbackId: number | undefined;
         const finish=()=>{if(!disposed&&!updateEngagedRef.current)dismissBootSplash();};
+        // Consume the skip flag unconditionally (it must never linger) and share the raw value with
+        // the Q2 build-change flash effect below via skipHoldConsumedRef (its silent-restamp
+        // suppression), but only HONOR it for the hold when no update attempt is pending: on the
+        // safety-retry boot (worker still waiting, attempts>0) the 500ms hold is what covers the
+        // async getRegistration→updateEngagedRef claim — skipping it there could reveal the app for
+        // a few frames before the Updating overlay paints.
+        const skippedHold=consumeSkipBootHold();
+        skipHoldConsumedRef.current=skippedHold;
         const id=window.setTimeout(()=>{
           if(disposed)return;
           if(appCssApplied())finish();
@@ -2358,11 +2506,7 @@ interface DedOpts {
               window.dispatchEvent(new Event('app-css-ready'));
             },4000);
           }
-        // Consume the skip flag unconditionally (it must never linger), but only HONOR it when no
-        // update attempt is pending: on the safety-retry boot (worker still waiting, attempts>0) the
-        // 500ms hold is what covers the async getRegistration→updateEngagedRef claim — skipping it
-        // there could reveal the app for a few frames before the Updating overlay paints.
-        },bootHoldRemaining(window.__bootShownAt,performance.now(),consumeSkipBootHold()&&readUpdateAttempts()===0));
+        },bootHoldRemaining(window.__bootShownAt,performance.now(),skippedHold&&readUpdateAttempts()===0));
         return ()=>{disposed=true;window.clearTimeout(id);if(cssFallbackId!==undefined)window.clearTimeout(cssFallbackId);window.removeEventListener('app-css-ready',finish);};
       },[]);
       // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so
@@ -2382,7 +2526,9 @@ interface DedOpts {
       // the owner never saw the screen). The gate's reload also stamps cg-skip-boot-hold, so the boot
       // it triggers skips the splash's artificial 500ms hold — the full flow: logo → Updating ≥1s →
       // reload → the splash shows only as long as the real boot takes → the app. Cold-open only — NO
-      // resume/focus re-check (owner's call). All SW behaviour is on-device. The whole flow is wrapped
+      // resume/focus re-check (owner's call). All SW behaviour is on-device. This flow only covers an
+      // update still WAITING at boot; the other half — one whose activation completed BETWEEN
+      // sessions, so nothing is waiting here — is the Q2 build-change flash effect below. The whole flow is wrapped
       // in the sessionStorage attempt counter (the loop breaker — see readUpdateAttempts): after 2
       // straight failed attempts the flow is SKIPPED, the counter cleared, and the app renders on the
       // old version instead of looping Updating→reload forever.
@@ -2409,6 +2555,7 @@ interface DedOpts {
           const engage=()=>{
             if(cancelled)return;
             writeUpdateAttempts(attempts+1);
+            updateReloadPendingRef.current=true; // the overlay is now owned through to this flow's reload — the Q2 flash's hold-end must not drop it
             setUpdating(true); // #boot comes down only after this commits (the updating effect below)
             // The reload gate (armed now, released by whichever handoff arrives): both the success
             // reload and the safety reload go through it, so both honor the min-hold, fire at most
@@ -2431,10 +2578,60 @@ interface DedOpts {
         }).catch(()=>{});
         return ()=>{cancelled=true;gate?.cancel();if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
       },[]);
-      // The update path's #boot handoff (paired with updateEngagedRef above): remove the splash only
-      // AFTER the Updating overlay has COMMITTED — effects run post-commit, so by now the overlay is in
-      // the DOM and there is never a frame with neither splash nor overlay. A no-op for the manual
-      // Check-for-updates trigger (#boot is long gone by then; dismissBootSplash is idempotent).
+      // Q2 (round 6): the cold-open build-change "Updating" flash — the visible signal for updates
+      // that land SILENTLY, with nothing waiting for the auto flow above to bridge. The primary case:
+      // closing the app releases the old worker's last client, the browser completes the waiting
+      // worker's activation in the background, and the next open is already the new version (an
+      // evicted Safari tab's fresh download reads the same). Detection is the plain-localStorage
+      // build stamp (lib/buildStamp): every boot compares the stored stamp against this build's
+      // DEPLOY_TS and then RESTAMPS — the one detection per boot, and where everything else that
+      // reacts to a build change (the Q6 update-signal dots) hooks in. On a mismatch the SAME
+      // Updating screen holds for MIN_UPDATING_MS — no reload; hold-end reveals the app — under the
+      // auto flow's exact discipline: claim the #boot handoff synchronously (the boot-hold effect
+      // must leave the splash to the overlay), engage only once the real stylesheet has applied
+      // (appCssApplied / app-css-ready — an unstyled Updating frame must never paint), and let the
+      // updating effect below take #boot down only after the overlay commits. Two boots restamp
+      // SILENTLY, with no screen: the first-ever visit (no stamp — nothing to announce) and the boot
+      // right after the REAL Updating flow (skipHoldConsumedRef — that flow already showed the
+      // screen ≥1s and its reload lands on a changed stamp by definition; without this suppression
+      // every real update would be chased by a second screen back-to-back, the exact thing the owner
+      // ruled out). If the auto flow engages during the hold (an even newer version already
+      // waiting), hold-end defers to its reload (updateReloadPendingRef) instead of revealing the
+      // app for a moment before the navigation.
+      // The two update-signal dot states (Q6) mirror the PERSISTED flags (src/changelog — the
+      // flags alone survive reloads; state is just the render mirror): the detection below marks
+      // both on every build change, opening Settings retires the gear's (the effect further down),
+      // and the first tap on the footer's Changelog link retires the link's — the two-stage
+      // breadcrumb to the changelog popup. Declared HERE, above the effect that sets them.
+      const [gearDot,setGearDot]=useState(()=>readUpdateDot(GEAR_DOT_KEY));
+      const [changelogDot,setChangelogDot]=useState(()=>readUpdateDot(CHANGELOG_DOT_KEY));
+      useEffect(()=>{
+        const current=DEPLOY_TS.toISOString();
+        const changed=buildChanged(readBuildStamp(),current);
+        writeBuildStamp(current); // restamp on EVERY boot — the stamp always names the build that last ran
+        // The changelog breadcrumb (Q6) lights on EVERY build change — including one the real
+        // Updating flow just bridged (the skip-hold boot below suppresses only the SCREEN; the
+        // changelog still has news either way). Persisted flags + the render mirrors.
+        if(changed){markUpdateDot(GEAR_DOT_KEY);markUpdateDot(CHANGELOG_DOT_KEY);setGearDot(true);setChangelogDot(true);}
+        if(!changed||skipHoldConsumedRef.current)return;
+        updateEngagedRef.current=true; // claim the #boot handoff NOW — the splash hands off to the overlay, never to the app
+        let cancelled=false;
+        let holdId: number | undefined;
+        let engageOnCss: (()=>void) | null=null;
+        const engage=()=>{
+          if(cancelled)return;
+          setUpdating(true); // #boot comes down only after this commits (the updating effect below)
+          holdId=window.setTimeout(()=>{if(!updateReloadPendingRef.current)setUpdating(false);},MIN_UPDATING_MS);
+        };
+        if(appCssApplied())engage();
+        else{engageOnCss=engage;window.addEventListener('app-css-ready',engage,{once:true});}
+        return()=>{cancelled=true;if(holdId!==undefined)window.clearTimeout(holdId);if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
+      },[]);
+      // The update paths' #boot handoff (paired with updateEngagedRef above — the auto-update flow
+      // and the Q2 build-change flash): remove the splash only AFTER the Updating overlay has
+      // COMMITTED — effects run post-commit, so by now the overlay is in the DOM and there is never
+      // a frame with neither splash nor overlay. A no-op for the manual Check-for-updates trigger
+      // (#boot is long gone by then; dismissBootSplash is idempotent).
       useEffect(()=>{if(updating)dismissBootSplash();},[updating]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
@@ -2445,10 +2642,10 @@ interface DedOpts {
         // arrow-nav handler (handleTriggerKeyDown on the trigger) sees subsequent keys.
         if(e.key==='Tab'){
           if(e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
-          // An open settings MODAL (Save Defaults / View saved defaults) owns Tab while it's up (its
-          // scrim's focus trap) — opening the mode dropdown behind an aria-modal dialog would break
-          // the modal contract. The trap already stopPropagation()s presses inside its tree; this
-          // covers presses that start outside it.
+          // An open settings MODAL (Save Defaults / the defaults manager / Clear confirm / Changelog) owns Tab while
+          // it's up (its scrim's focus trap) — opening the mode dropdown behind an aria-modal dialog
+          // would break the modal contract. The trap already stopPropagation()s presses inside its
+          // tree; this covers presses that start outside it.
           if(document.querySelector('[data-settings-modal]'))return;
           if(modeSelectRef.current){
             const trigger=modeSelectRef.current.querySelector('button');
@@ -2553,16 +2750,32 @@ interface DedOpts {
       const fullResetTimerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
       // Save Defaults (Q7) confirmation popup state. pendSettings snapshots the full 14-value
       // panel at OPEN (the popup doesn't edit panel values); pendPrefs seeds the four editable
-      // mode-screen rows from the live modePrefs store at open. Edits touch ONLY this pending
+      // mode-screen rows from the live modePrefs store at open, and pendSeed keeps that seed for
+      // the shared card's dirty-row comparison (Q5 round-6). Edits touch ONLY this pending
       // snapshot — Cancel/scrim/Back/settings-close discard it; Save commits it (aoxN normalized).
       const [saveDefaultsOpen,setSaveDefaultsOpen]=useState(false);
       const saveDefaultsCardRef=useRef<HTMLDivElement | null>(null); // the dialog card — focused on open (the modal a11y contract below)
       const pendSettingsRef=useRef<SettingsValues | null>(null);
       const [pendPrefs,setPendPrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
-      // View saved defaults (Q12) read-only popup state — the footer link's inspect twin of the
-      // Save card. No pending snapshot: it renders the EFFECTIVE saved values (defPrefs) directly.
-      const [viewDefaultsOpen,setViewDefaultsOpen]=useState(false);
-      const viewDefaultsCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
+      const [pendSeed,setPendSeed]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
+      // Defaults manager (Q12 → editable, Q5 round-6) popup state — the footer link's window onto
+      // the saved (or, with nothing saved, factory) defaults, on the SAME shared card as the Save
+      // popup. managePrefs is its pending snapshot, seeded from the EFFECTIVE defaults (defPrefs)
+      // at open; the seed itself needs no copy — defPrefs cannot change while the modal is up
+      // (this modal owns the only editor). Cancel/scrim/Back/settings-close discard edits.
+      const [manageDefaultsOpen,setManageDefaultsOpen]=useState(false);
+      const manageDefaultsCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
+      const [managePrefs,setManagePrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
+      // Clear-saved-defaults confirm popup (Q5 round-6): the footer's Clear link asks before it
+      // forgets the snapshot — a small modal in the established recipe (Cancel + a red-tier
+      // Clear), full scrim/focus/Escape/Back parity with the other settings modals.
+      const [clearConfirmOpen,setClearConfirmOpen]=useState(false);
+      const clearConfirmCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
+      // Changelog popup (Q6) — the plain-words what-changed list (src/changelog), opened from the
+      // footer's Changelog link. Its dot states (gearDot / changelogDot — the breadcrumb here)
+      // live up with the build-stamp detection that lights them.
+      const [changelogOpen,setChangelogOpen]=useState(false);
+      const changelogCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
       // aoxIsFresh — reported up from AoxMode via the onFreshChange prop. AoxMode's ~24
       // internal state fields are otherwise opaque to the App, so we mirror their combined
       // freshness state here to use in isFullyReset (the Full Reset dim/lock check below).
@@ -2676,9 +2889,10 @@ interface DedOpts {
         // Treat that as "inside" so picking a theme/mode doesn't slam the settings popover shut
         // before the selection registers.
         const inListbox=!!(target&&target.closest&&target.closest('[role="listbox"]'));
-        // The settings modals (Save Defaults Q7 / View saved defaults Q12) portal to #root with a
-        // full-screen scrim — clicks on either (scrim included) are "inside": a scrim tap cancels
-        // only the POPUP (its own onClick handler), never the settings panel beneath it.
+        // The settings modals (Save Defaults Q7 / the defaults manager Q12+Q5 / the Clear confirm
+        // Q5 / Changelog Q6) portal to #root with a full-screen scrim — clicks on any (scrim
+        // included) are "inside": a scrim tap cancels only the POPUP (its own onClick handler),
+        // never the settings panel beneath it.
         const inModal=!!(target&&target.closest&&target.closest('[data-settings-modal]'));
         if(!inBtn&&!inPop&&!inSel&&!inListbox&&!inModal){
           // Year-range inputs (and any future input in the popover) commit on blur. When closing
@@ -2706,16 +2920,25 @@ interface DedOpts {
       // Save Defaults popup lifecycle (Q7): closing Settings by ANY path closes the popup too —
       // it's a child flow of the panel (Cancel semantics; the pending snapshot is discarded).
       useEffect(()=>{if(!settingsOpen)setSaveDefaultsOpen(false);},[settingsOpen]);
-      useEffect(()=>{if(!settingsOpen)setViewDefaultsOpen(false);},[settingsOpen]);   // the View popup (Q12) is a child flow of the panel too
+      useEffect(()=>{if(!settingsOpen)setManageDefaultsOpen(false);},[settingsOpen]);   // the defaults manager (Q12/Q5) is a child flow of the panel too
+      useEffect(()=>{if(!settingsOpen)setClearConfirmOpen(false);},[settingsOpen]);   // and the Clear confirm (Q5) — its link lives in the panel's footer
+      useEffect(()=>{if(!settingsOpen)setChangelogOpen(false);},[settingsOpen]);   // and the Changelog popup (Q6) — its link lives in the panel's footer too
+      // Opening Settings by ANY path retires the gear's update dot (Q6) — the breadcrumb's first
+      // stage is done once the panel is up (the link's own dot inside keeps pointing onward). The
+      // gearDot dep also covers a detection that somehow lands while the panel is already open.
+      useEffect(()=>{if(settingsOpen&&gearDot){clearUpdateDot(GEAR_DOT_KEY);setGearDot(false);}},[settingsOpen,gearDot]);
       // Escape cancels the POPUP first — registered in the CAPTURE phase with stopPropagation so
       // the settings Escape handler above (bubble phase) never sees the same press and the panel
       // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field normalize-commits),
       // mirroring the settings handler's guard — and like it, the guard excludes type="range": the
       // popup's three sliders keep focus after an adjust and must not swallow the dismiss.
       useEffect(()=>{if(!saveDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setSaveDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[saveDefaultsOpen]);
-      // The View popup (Q12) gets the same capture-phase Escape — minus the text-entry guard: its
-      // only control is the Close button (no inputs), so nothing can ever be mid-edit.
-      useEffect(()=>{if(!viewDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setViewDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[viewDefaultsOpen]);
+      // The defaults manager (Q5 round-6) gets the same capture-phase Escape INCLUDING the
+      // text-entry guard — it renders the shared editable card now, so a tap-to-type readout can
+      // be mid-edit (the editor's own Escape reverts the edit and stops propagation).
+      useEffect(()=>{if(!manageDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setManageDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[manageDefaultsOpen]);
+      useEffect(()=>{if(!clearConfirmOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setClearConfirmOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[clearConfirmOpen]);   // the Clear confirm (Q5): input-free (two buttons), so no text-entry guard
+      useEffect(()=>{if(!changelogOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setChangelogOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[changelogOpen]);   // the Changelog popup (Q6): input-free too, so no text-entry guard either
       // The popup's modal a11y contract, part 1 of 2 (part 2 = the Tab trap on the scrim, below): on
       // open, move focus INTO the dialog — the card is tabIndex={-1} with role="dialog" +
       // aria-modal="true", so screen readers announce a modal and keyboard context starts inside it.
@@ -2723,42 +2946,80 @@ interface DedOpts {
       // keeps operating the live settings panel while commitSaveDefaults would still save the snapshot
       // captured at open — a silent divergence between what's on screen and what Save persists.
       useEffect(()=>{if(saveDefaultsOpen)saveDefaultsCardRef.current?.focus();},[saveDefaultsOpen]);
-      useEffect(()=>{if(viewDefaultsOpen)viewDefaultsCardRef.current?.focus();},[viewDefaultsOpen]);   // same contract for the View popup (Q12)
+      useEffect(()=>{if(manageDefaultsOpen)manageDefaultsCardRef.current?.focus();},[manageDefaultsOpen]);   // same contract for the defaults manager (Q12/Q5)
+      useEffect(()=>{if(clearConfirmOpen)clearConfirmCardRef.current?.focus();},[clearConfirmOpen]);   // and the Clear confirm (Q5)
+      useEffect(()=>{if(changelogOpen)changelogCardRef.current?.focus();},[changelogOpen]);   // and the Changelog popup (Q6)
       // Theme option arrays — keys match the CustomSelect API (value/label) so
       // they can be passed directly without per-render mapping.
       const DARK_THEMES=[{value:'dusk',label:'Dusk'},{value:'midnight',label:'Midnight'},{value:'nebula',label:'Nebula'}];
       const LIGHT_THEMES=[{value:'light',label:'Light'},{value:'parchment',label:'Parchment'}];
       const ALL_THEMES_LABELED=[{value:'dusk',label:'Dusk (dark)'},{value:'midnight',label:'Midnight (dark)'},{value:'nebula',label:'Nebula (dark)'},{value:'light',label:'Light (light)'},{value:'parchment',label:'Parchment (light)'}];
-      // Resets every setting in the ⚙ popover to its EFFECTIVE default — the user's saved personal
-      // defaults when they exist (Q7, store/userDefaults), the factory launch values otherwise.
-      // Stays PANEL-ONLY by design: never touches mode-specific config outside the popover (the AoX
-      // run length, timer durations, Deduction sub-types/toggles) or stats/history (Reset Stats handles that) —
-      // Full Reset alone restores the four captured mode prefs.
-      // Triggers the unified popover-settings effect, which will regenerate the current
-      // date as appropriate (Random Format / Date Format / Leap Chance are always-regen).
+      // Restores the settings the ⚙ panel owns — the 14 menu values + the 2 year-range text mirrors —
+      // AND the four capturable mode-screen prefs (Flash speed, both Blitz timers, the AoX run length)
+      // to their EFFECTIVE defaults: the user's saved personal defaults when they exist (Q7,
+      // store/userDefaults), the factory launch values otherwise. This is the exact MIRROR of Save
+      // Defaults (which copies live → the snapshot) over the same 18-value unit the gear "modified" bar
+      // judges — so one tap clears a lit gear whatever diverged (round-6 extension: it used to touch the
+      // panel alone, stranding a gear lit only by a mode-screen pref). Still leaves the NON-capturable
+      // mode config (Blitz Per-Round/Question, Allow Mistakes, One-by-One, the Deduction sub-type, the
+      // show/hide stat toggles) and stats/history untouched — Full Reset (which additionally wipes stats
+      // and remounts every mode) and Reset Stats own those. The mode-screen prefs restore straight into
+      // the live store; an ACTIVE Blitz round or AoX run reconciles to the new config on the popover
+      // close, exactly as a ⚙ panel change does (each mode's useSettingsCloseEffect now watches its own
+      // timer/run-length too). Triggers the unified popover-settings effect, which regenerates the
+      // current date as appropriate (Random Format / Date Format / Leap Chance are always-regen).
       const resetSettings=()=>{
-        // Apply the effective defaults to the 14 store-held settings in one shot (store/settings
-        // applySettings), then the 2 transient text mirrors that live locally.
+        // The 14 store-held settings in one shot (store/settings applySettings), then the 2 transient
+        // text mirrors that live locally, then the 4 capturable mode-screen prefs (store/modePrefs
+        // applyPrefs — the same call Full Reset makes; the other mode-prefs keep their live values).
         applySettingsStore(defSettings);
         setMinInputVal(String(defSettings.minY));setMaxInputVal(String(defSettings.maxY));
+        applyModePrefs(defPrefs);
       };
       // Save Defaults (Q7): open the confirmation popup, seeding the pending snapshot from the
       // LIVE stores (panel captured whole; the four mode-screen prefs become editable rows).
+      // The seed is kept alongside the pending copy for the shared card's dirty-row highlight.
       const openSaveDefaults=()=>{
         const s=useSettings.getState();
         pendSettingsRef.current=Object.fromEntries(Object.keys(SETTINGS_DEFAULTS).map(k=>[k,s[k as keyof SettingsValues]])) as SettingsValues;
         const p=useModePrefs.getState();
         const seeded={flashMs:p.flashMs,blitzSec:p.blitzSec,blitzQSec:p.blitzQSec,aoxN:normalizeAoxN(p.aoxN)};
         setPendPrefs(seeded);
+        setPendSeed(seeded);
         setSaveDefaultsOpen(true);
       };
       const closeSaveDefaults=useCallback(()=>setSaveDefaultsOpen(false),[]);
-      const closeViewDefaults=useCallback(()=>setViewDefaultsOpen(false),[]);
+      // The defaults manager (Q5 round-6): seed the pending copy from the EFFECTIVE defaults —
+      // the saved snapshot when one exists, the factory values otherwise (aoxN normalized so the
+      // readout starts on its committed form). defPrefs itself doubles as the seed prop.
+      const openManageDefaults=()=>{setManagePrefs({...defPrefs,aoxN:normalizeAoxN(defPrefs.aoxN)});setManageDefaultsOpen(true);};
+      const closeManageDefaults=useCallback(()=>setManageDefaultsOpen(false),[]);
+      const closeClearConfirm=useCallback(()=>setClearConfirmOpen(false),[]);
+      const closeChangelog=useCallback(()=>setChangelogOpen(false),[]);
+      // Opening the changelog retires the link's dot — the breadcrumb's last stop. First tap only
+      // in effect: once the flag is cleared the guard never re-fires (nothing re-marks it until
+      // the next build change).
+      const openChangelog=()=>{setChangelogOpen(true);if(changelogDot){clearUpdateDot(CHANGELOG_DOT_KEY);setChangelogDot(false);}};
       // Save commits the EDITED pending snapshot (never the live stores — they stay untouched);
       // from here on Reset Settings / Full Reset / the gear indicator mean THESE values by "default".
       const commitSaveDefaults=()=>{
         if(pendSettingsRef.current)saveUserDefaults({settings:pendSettingsRef.current,prefs:{...pendPrefs,aoxN:normalizeAoxN(pendPrefs.aoxN)}});
         setSaveDefaultsOpen(false);
+      };
+      // The manager's Save (Q5 round-6) writes ONLY the four shown values into the snapshot: the
+      // 14 ⚙-panel values pass through AS-SAVED, byte-identical (never re-captured from the live
+      // store — the owner's rule: this popup edits exactly what it shows). With nothing saved yet
+      // it CREATES the snapshot — the factory ⚙ values plus these edits, the natural flow from
+      // the factory view (the footer's Clear link appears with it).
+      const commitManageDefaults=()=>{
+        saveUserDefaults({settings:savedDefaults?savedDefaults.settings:SETTINGS_DEFAULTS,prefs:{...managePrefs,aoxN:normalizeAoxN(managePrefs.aoxN)}});
+        setManageDefaultsOpen(false);
+      };
+      // The Clear confirm's destructive half (Q5 round-6): forget the snapshot — live settings
+      // stay untouched, factory semantics take over everywhere (the effective* helpers).
+      const confirmClearDefaults=()=>{
+        clearUserDefaults();
+        setClearConfirmOpen(false);
       };
       // Full Reset — back to the launch state, where "launch" honors the user's SAVED personal
       // defaults (Q7): the ⚙ panel and the four captured mode prefs restore to the
@@ -2768,9 +3029,10 @@ interface DedOpts {
       // gameplay state (stats, history, run/round progress, config toggles, timers), so bumping
       // their *ResetKey props below remounts them and resets every per-mode value to its hook
       // default in the same render. App therefore only resets what IT owns: the current mode,
-      // the ⚙ settings (delegated to resetSettings → the Zustand store + the 2 input mirrors),
-      // the Lookup state, and the scroll position. Deliberately NOT a location.reload() — this
-      // stays the single source of truth for "back to launch" as offline/profile state is added.
+      // the ⚙ settings (delegated to resetSettings → the Zustand store, the 2 input mirrors, and
+      // — since round-6 Q7 — the 4 capturable mode prefs), the Lookup state, and the scroll position.
+      // Deliberately NOT a location.reload() — this stays the single source of truth for "back to
+      // launch" as offline/profile state is added.
       const fullReset=()=>{
         prevNonGuideModeRef.current="classic";
         setMode("classic");
@@ -2778,7 +3040,10 @@ interface DedOpts {
         setAppAtBottom(true);
         setAppScrolledFromTop(false);
         // Settings popover → EFFECTIVE defaults (14 store values incl. theme + the 2 transient
-        // input mirrors — the user's saved personal defaults when present, Q7).
+        // input mirrors — the user's saved personal defaults when present). Since round-6 Q7 this
+        // ALSO applies the 4 capturable mode prefs; the resetModePrefs()+applyModePrefs(defPrefs) pair
+        // below re-establishes them over the factory modePrefs reset, so that write is subsumed here
+        // (the net four-pref result is identical) — resetSettings keeps its standalone contract.
         resetSettings();
         // Saved gameplay progress → wiped (Stage D1): clears lifetime stats + all-time bests + Lookup
         // history in the persisted store, making Full Reset permanent. Runs BEFORE the remount-key bumps
@@ -2837,7 +3102,9 @@ interface DedOpts {
       // CustomSelect / the mode components. See components/useBackButton.
       useBackButton(settingsOpen, ()=>setSettingsOpen(false), 'settings');
       useBackButton(saveDefaultsOpen, closeSaveDefaults, 'save-defaults');   // opens after 'settings' → Back closes the popup first (LIFO)
-      useBackButton(viewDefaultsOpen, closeViewDefaults, 'view-defaults');   // ditto for the View popup (Q12)
+      useBackButton(manageDefaultsOpen, closeManageDefaults, 'manage-defaults');   // ditto for the defaults manager (Q12/Q5)
+      useBackButton(clearConfirmOpen, closeClearConfirm, 'clear-defaults');   // and the Clear confirm (Q5)
+      useBackButton(changelogOpen, closeChangelog, 'changelog');   // and the Changelog popup (Q6)
       useBackButton(mode==='guide', ()=>setMode(prevNonGuideModeRef.current||'classic'), 'guide');
       // NOTE: the "disarm when state flips to fully-reset" safety-net effect was moved to just
       // after the isFullyReset declaration below — its dependency array reads isFullyReset, which
@@ -2869,14 +3136,19 @@ interface DedOpts {
       // values otherwise. STORE values only: uncommitted year-range typing must not light the
       // gear's "modified" indicator below (it commits on blur/Enter).
       const settingsStoreAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&darkTheme===defSettings.darkTheme&&lightTheme===defSettings.lightTheme&&manualTheme===defSettings.manualTheme;
-      // The Reset Settings dim-and-lock (same pattern as Reveal/Override/etc.) ADDS the two
-      // year-range *input text* mirrors, so a dirty (uncommitted) input keeps the button active
-      // to clear it back to the default text.
+      // settingsAtDefaults = the ⚙ PANEL at its effective defaults: the store values PLUS the two
+      // year-range *input text* mirrors, so a dirty (uncommitted) input reads as diverged. Feeds
+      // isFullyReset below; the Reset Settings dim extends it with the mode-screen prefs (resetSettingsAtDefaults).
       const settingsAtDefaults=settingsStoreAtDefaults&&minInputVal===String(defSettings.minY)&&maxInputVal===String(defSettings.maxY);
       // The ⚙ gear "modified" indicator (Q8) + the Save Defaults dim: live state diverges from the
       // effective defaults in EITHER store (any menu setting, or any of the four capturable
       // mode-screen prefs). Its complement means "nothing new to save".
       const settingsModified=!(settingsStoreAtDefaults&&prefsAtDefaults);
+      // Reset Settings dims only when the FULL 18-value unit sits at the effective defaults — the ⚙
+      // panel (incl. the year-range text mirrors) AND the four capturable mode-screen prefs — so it is
+      // offered whenever the gear reads "modified", the exact mirror of the Save Defaults dim (round-6
+      // Q7). Before that it watched the panel alone, stranding a gear lit only by a divergent mode-screen pref.
+      const resetSettingsAtDefaults=settingsAtDefaults&&prefsAtDefaults;
       // Every per-mode piece of state now lives in the always-mounted mode components, which
       // each report a comprehensive freshness flag (config + stats + history + UI toggles) up
       // via onFreshChange. So isFullyReset = the launch mode (classic) + settings-at-defaults +
@@ -3030,7 +3302,7 @@ interface DedOpts {
                 a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
                 wrapping; overflow-hidden on the button contains the pre-fit paint). */}
             <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
-            <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${settingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
+            <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${resetSettingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
             <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>
@@ -3039,28 +3311,34 @@ interface DedOpts {
               ring breathing room around the text and the radius rounds its corners (vs a square outline
               hugging the glyphs); the negative margin cancels the padding so the text keeps its exact
               flow position. */}
-          {/* Saved-defaults link row (Q7 + Q12), shown only while a snapshot exists — with nothing
-              saved there's nothing to view OR clear, so both links hide together. View saved
-              defaults (non-destructive inspect — the read-only popup below) sits LEFT of Clear
-              saved defaults, matching the button trio's left→right escalation; gap-3 keeps ~4px
-              between the two press-drag rings (each ring extends px-1 past its text), flex-wrap is
-              the narrow-viewport fallback. Clear is the ONLY way back to factory semantics (the
-              Save Defaults popup's duplicate link was removed in Round-4 — one action, one home).
-              This footer row (the same muted tier as Check for updates below) is always reachable:
-              the Save Defaults button dims + locks exactly when live == saved, but the footer never
-              hides behind it. FIRST link row, directly under the button trio (Round-2): these are
-              the only actionable settings in this block, and they belong to the trio's story —
-              below it the footer decays into contact info and metadata. Clear is a plain immediate
-              action, no arm/confirm step: it only forgets the snapshot — live settings are
-              untouched, and a re-save recreates it in two taps. The row inherits the footer's
-              data-drag-stay, so a drag-release on either link acts with the panel staying open
-              (Clear's own disappearance is its visible feedback). */}
-          {savedDefaults!==null&&(<div className="flex flex-wrap gap-3"><button type="button" onClick={()=>setViewDefaultsOpen(true)} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button><button type="button" onClick={clearUserDefaults} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button></div>)}
+          {/* Saved-defaults link row (Q7 + Q12 + Q5 round-6). View saved defaults is ALWAYS
+              visible — with nothing saved it opens the defaults manager on its clearly-labelled
+              FACTORY view (there is always something to see, and to edit, now that the popup is
+              the editable manager below). Clear saved defaults still appears only while a
+              snapshot exists — with nothing saved there is nothing to clear. View sits LEFT of
+              Clear, matching the button trio's left→right escalation; gap-3 keeps ~4px between
+              the two press-drag rings (each ring extends px-1 past its text), flex-wrap is the
+              narrow-viewport fallback. Clear is the ONLY way back to factory semantics (the Save
+              Defaults popup's duplicate link was removed in Round-4 — one action, one home), and
+              it now opens a small CONFIRM modal (Cancel + a red-tier Clear, below) instead of
+              firing immediately. This footer row (the same muted tier as Check for updates below)
+              is always reachable: the Save Defaults button dims + locks exactly when live ==
+              saved, but the footer never hides behind it. FIRST link row, directly under the
+              button trio (Round-2): these are the only actionable settings in this block, and
+              they belong to the trio's story — below it the footer decays into contact info and
+              metadata. The row inherits the footer's data-drag-stay, so a drag-release on either
+              link acts with the panel staying open (each opens its modal over the panel). */}
+          <div className="flex flex-wrap gap-3"><button type="button" onClick={openManageDefaults} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button>{savedDefaults!==null&&<button type="button" onClick={()=>setClearConfirmOpen(true)} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button>}</div>
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
           <div className="flex items-center gap-2 flex-wrap">
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
             {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme. */}
             <button type="button" onClick={onCheckUpdates} className="underline select-none rounded-md px-1 -mx-1">Check for updates</button>
+            {/* Changelog (Q6), RIGHT of Check for updates — the two update-flavored links live
+                together, force-the-latest then read-what-changed. Same footer-link recipe; wears
+                the update-signal dot (index.css .update-dot) until its first tap after a build
+                change — the second stage of the breadcrumb the gear's dot starts. */}
+            <button type="button" onClick={openChangelog} className={`underline select-none rounded-md px-1 -mx-1${changelogDot?" update-dot":""}`}>Changelog</button>
           </div>
         </div>
       </div>);
@@ -3069,28 +3347,30 @@ interface DedOpts {
       // (a drag-release on popup content can never drag-dismiss the panel) and it escapes the
       // card's overflow/max-height context (a true centered modal — scrim + the popover's own
       // card/shadow language). data-settings-modal marks the whole tree (scrim included) "inside"
-      // for the settings click-outside handler above (the same marker as the View popup below —
-      // one guard covers both modals); the scrim itself cancels the POPUP only
-      // (target===currentTarget, so card clicks never do), and Escape + Android Back + any
-      // settings close also cancel (the effects above). Row labels are Title Case (the ⚙ panel's
-      // label tier, Q6) and every paired aria-label mirrors its visible text exactly — no case
-      // drift to maintain, WCAG label-in-name safe. Edits touch ONLY the pending snapshot:
-      // the three sliders mirror the mode screens' (same ranges/steps/--rng-fill, and the same
+      // for the settings click-outside handler above (the same marker as the manager, Clear
+      // confirm, and Changelog popups below — one guard covers all four modals); the scrim itself
+      // cancels the POPUP only (target===currentTarget, so card clicks never do), and Escape +
+      // Android Back + any settings close also cancel (the effects above). The card itself is the
+      // shared DefaultsCard (Q5 round-6 — the one place the four rows, their recipes, and the
+      // dirty-row accent live; see its header comment): row labels are Title Case (the ⚙ panel's
+      // label tier, Q6) with every paired aria-label mirroring its visible text exactly — no case
+      // drift to maintain, WCAG label-in-name safe. Edits touch ONLY the pending snapshot: the
+      // three sliders mirror the mode screens' (same ranges/steps/--rng-fill, and the same
       // tap-to-type SliderValueEditor readouts — the popup seeds from the LIVE prefs, so its
-      // ranges must stay a superset of every committable value) and
-      // the N field shares the AoX input's validation trio (Q18 — one idiom, one clamp): digits
-      // only while typing (the pending snapshot never holds junk), and blur, Enter
-      // and Escape all normalize-commit with the shared normalizeAoxN clamp (2–1000, fallback 10)
-      // — the AoX field's Escape likewise commits; the popup's real discard is Cancel.
-      const commitPendAoxN=()=>setPendPrefs(p=>({...p,aoxN:normalizeAoxN(p.aoxN)}));
+      // ranges must stay a superset of every committable value) and the N field shares the AoX
+      // input's validation trio (Q18 — one idiom, one clamp): digits only while typing (the
+      // pending snapshot never holds junk), and blur, Enter and Escape all normalize-commit with
+      // the shared normalizeAoxN clamp (2–1000, fallback 10) — the AoX field's Escape likewise
+      // commits; the popup's real discard is Cancel.
       // Modal a11y contract, part 2 of 2 (part 1 = the focus-on-open effects above): the card is a real
       // role="dialog" aria-modal, and the scrim's Tab handler is the focus trap — plain Tab / Shift+Tab
       // cycle the popup's own controls and WRAP at the ends (native traversal in between), never
-      // escaping to the settings panel under the scrim. Shared by BOTH settings modals (the Save
-      // Defaults card and the read-only View popup, Q12 — with the View popup's single Close button
-      // first===last, so Tab wraps in place). stopPropagation keeps the press from the
-      // app-wide Tab shortcut (which would open the mode selector behind the modal); the shortcut's own
-      // handler also bails while a modal is mounted for presses that start outside the scrim's tree.
+      // escaping to the settings panel under the scrim. Shared by ALL FOUR settings modals (the Save
+      // Defaults card, the defaults manager Q12+Q5, the Clear confirm Q5, and the Changelog popup Q6
+      // — the Changelog's single Close button is first===last, so Tab wraps in place). stopPropagation
+      // keeps the press from the app-wide Tab shortcut (which would open the mode selector behind
+      // the modal); the shortcut's own handler also bails while a modal is mounted for presses
+      // that start outside the scrim's tree.
       const trapModalTab=(e: React.KeyboardEvent<HTMLDivElement>)=>{
         if(e.key!=='Tab')return;
         e.stopPropagation();
@@ -3102,55 +3382,71 @@ interface DedOpts {
       };
       const saveDefaultsJsx=saveDefaultsOpen&&ReactDOM.createPortal(
         (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setSaveDefaultsOpen(false);}} onKeyDown={trapModalTab}>
-          <div ref={saveDefaultsCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="save-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="save-defaults-title" className="text-sm font-semibold text-(--tx-50)">Save current settings as your defaults?</div>
-            <div className="text-xs text-(--tx-200-80)">Also saved from the mode screens:</div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-(--tx-200-80) shrink-0">AoX Run Length</span>
-              {/* The Escape branch STOPS PROPAGATION: it blurs the field, and without the stop the
-                  same native event would reach the document-level settings Escape handler AFTER the
-                  blur — its input-has-focus skip no longer applies, and it would slam the whole
-                  panel (and this popup) shut on what the user meant as a keyboard dismiss. */}
-              <input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX Run Length" value={pendPrefs.aoxN} onChange={e=>{const v=e.target.value;if(v===''||/^\d*$/.test(v))setPendPrefs(p=>({...p,aoxN:v}));}} onBlur={commitPendAoxN} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitPendAoxN();e.currentTarget.blur();}else if(e.key==="Escape"){e.stopPropagation();commitPendAoxN();e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0`}/>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-(--tx-200-80)">Flash Speed</div>
-              <div className="flex items-center gap-2"><input type="range" min="100" max="5000" step="100" aria-label="Flash Speed" value={pendPrefs.flashMs} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,flashMs:v}));}} style={{"--rng-fill":Math.round((pendPrefs.flashMs-100)/4900*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.flashMs} min={100} max={5000} snap={100} inputMode="decimal" label="Flash Speed" format={fmtFlashT} toText={v=>String(v/1000)} fromText={n=>n*1000} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,flashMs:v}))}/></div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-(--tx-200-80)">Blitz Round Timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" aria-label="Blitz Round Timer" value={pendPrefs.blitzSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzSec} min={10} max={300} snap={5} inputMode="numeric" label="Blitz Round Timer" format={fmtBlitzT} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,blitzSec:v}))}/></div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-(--tx-200-80)">Blitz Question Timer</div>
-              <div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" aria-label="Blitz Question Timer" value={pendPrefs.blitzQSec} onChange={e=>{const v=+e.target.value;setPendPrefs(p=>({...p,blitzQSec:v}));}} style={{"--rng-fill":Math.round((pendPrefs.blitzQSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1"/><SliderValueEditor value={pendPrefs.blitzQSec} min={1} max={30} snap={0.5} inputMode="decimal" label="Blitz Question Timer" format={v=>v+"s"} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>setPendPrefs(p=>({...p,blitzQSec:v}))}/></div>
-            </div>
+          <DefaultsCard cardRef={saveDefaultsCardRef} titleId="save-defaults-title" title="Save current settings as your defaults?" subline="Also saved from the mode screens:" prefs={pendPrefs} seed={pendSeed} setPrefs={setPendPrefs} onClose={closeSaveDefaults} onSave={commitSaveDefaults}/>
+        </div>),
+        document.getElementById('root')!
+      );
+      // The defaults manager popup (Q12, made editable in Q5 round-6): the footer link's window
+      // onto the defaults — the same portal / scrim recipes and the same modal contract as the
+      // Save popup (focus-on-open, capture Escape with the text-entry guard, close with settings,
+      // Android Back, the shared trapModalTab + data-settings-modal marker), rendering the SAME
+      // shared DefaultsCard in manage mode. It seeds from the EFFECTIVE defaults (defPrefs —
+      // forward-merged, so a legacy snapshot missing a field shows factory, never undefined) and
+      // rests read-only (one full-width Close); edit any row and it goes dirty — Cancel + Save,
+      // the restricted-write note, the accent-tier value highlights (see DefaultsCard). Title,
+      // subline, and footnote adapt to whether a snapshot exists: with none saved the card is the
+      // clearly-labelled FACTORY view, and Save from there CREATES the snapshot.
+      const manageDefaultsJsx=manageDefaultsOpen&&ReactDOM.createPortal(
+        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setManageDefaultsOpen(false);}} onKeyDown={trapModalTab}>
+          <DefaultsCard cardRef={manageDefaultsCardRef} titleId="manage-defaults-title" manage
+            title={savedDefaults?"Your saved defaults":"Default settings"}
+            subline={savedDefaults?undefined:"These are the factory defaults — you haven't saved your own."}
+            note={savedDefaults?"Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.":undefined}
+            prefs={managePrefs} seed={defPrefs} setPrefs={setManagePrefs} onClose={closeManageDefaults} onSave={commitManageDefaults}/>
+        </div>),
+        document.getElementById('root')!
+      );
+      // Clear-saved-defaults confirm popup (Q5 round-6): the same portal / scrim / card recipes
+      // and the same modal contract (focus-on-open, capture Escape, close with settings, Android
+      // Back, the shared trapModalTab + data-settings-modal marker). Two buttons — Cancel in the
+      // shared dismiss recipe, Clear in the danger tier (RESET_BTN_CLASS, the rose fill every
+      // destructive control wears) — a real confirm modal because a link that flips its own text
+      // to confirm reads strangely (the owner's call over a two-tap arm).
+      const clearConfirmJsx=clearConfirmOpen&&ReactDOM.createPortal(
+        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setClearConfirmOpen(false);}} onKeyDown={trapModalTab}>
+          <div ref={clearConfirmCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="clear-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+            <div id="clear-defaults-title" className="text-sm font-semibold text-(--tx-50)">Clear your saved defaults?</div>
+            <div className="text-xs text-(--tx-200-80)">This only forgets the snapshot — your current settings stay as they are, and the launch defaults take over.</div>
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={closeSaveDefaults} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Cancel</button>
-              <button type="button" onClick={commitSaveDefaults} className="flex-1 px-3 py-2 rounded-xl btn-solid text-sm font-medium">Save</button>
+              <button type="button" onClick={closeClearConfirm} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Cancel</button>
+              <button type="button" onClick={confirmClearDefaults} className={`flex-1 ${RESET_BTN_CLASS}`}>Clear</button>
             </div>
           </div>
         </div>),
         document.getElementById('root')!
       );
-      // View saved defaults popup (Q12): the READ-ONLY twin of the Save card — the same portal /
-      // scrim / card recipes and the same modal contract (focus-on-open, capture Escape, close
-      // with settings, Android Back, the shared trapModalTab + data-settings-modal marker), but
-      // no pending snapshot: the four rows render the EFFECTIVE saved prefs (defPrefs — forward-
-      // merged, so a legacy snapshot missing a field shows factory, never undefined) through the
-      // SAME formatters as the Save card (normalizeAoxN / fmtFlashT / fmtBlitzT / +"s"), so the
-      // two popups always display identically. Static value spans, deliberately non-editable
-      // look; the one control is a full-width Close in the Cancel recipe.
-      const viewDefaultsJsx=viewDefaultsOpen&&ReactDOM.createPortal(
-        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setViewDefaultsOpen(false);}} onKeyDown={trapModalTab}>
-          <div ref={viewDefaultsCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="view-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="view-defaults-title" className="text-sm font-semibold text-(--tx-50)">Your saved defaults</div>
-            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">AoX Run Length</span><span className="text-sm tabular-nums text-(--tx-50)">{normalizeAoxN(defPrefs.aoxN)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Flash Speed</span><span className="text-sm tabular-nums text-(--tx-50)">{fmtFlashT(defPrefs.flashMs)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Blitz Round Timer</span><span className="text-sm tabular-nums text-(--tx-50)">{fmtBlitzT(defPrefs.blitzSec)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-xs text-(--tx-200-80)">Blitz Question Timer</span><span className="text-sm tabular-nums text-(--tx-50)">{defPrefs.blitzQSec+"s"}</span></div>
-            <div className="text-[11px] text-(--tx-300-60)">Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.</div>
-            <div className="pt-1"><button type="button" onClick={closeViewDefaults} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
+      // Changelog popup (Q6): the plain-words what-changed list (src/changelog, newest deploy
+      // first), opened from the footer's Changelog link — the same portal / scrim / card recipes
+      // and the same modal contract as the popups above (focus-on-open, capture Escape, close
+      // with settings, Android Back, the shared trapModalTab + data-settings-modal marker; the one
+      // control is a full-width Close, input-free like the Clear confirm). The list shows the latest
+      // CHANGELOG_VISIBLE deploys — the module keeps every entry forever, the popup stays a digest
+      // — inside its own scroll region (max-h + overscroll-contain, so a long history scrolls
+      // within the card without growing it off-screen). Entry dates render through the footer's
+      // Last-Updated recipe (fmt + numericFormatOf) so they follow the user's Date Format setting;
+      // the bullet list is the guide's UL idiom (list-disc + the --mut-color marker).
+      const changelogJsx=changelogOpen&&ReactDOM.createPortal(
+        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setChangelogOpen(false);}} onKeyDown={trapModalTab}>
+          <div ref={changelogCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="changelog-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+            <div id="changelog-title" className="text-sm font-semibold text-(--tx-50)">What's new</div>
+            <div className="max-h-[55vh] overflow-y-auto overscroll-contain space-y-3">
+              {visibleEntries(CHANGELOG).map(en=>{const [yy,mo,da]=en.date.split('-').map(Number);return(
+                <div key={en.date} className="space-y-1">
+                  <div className="text-xs font-semibold text-(--tx-100-80)">{fmt(yy,mo,da,numericFormatOf(dateFormat))}</div>
+                  <ul className="list-disc pl-4 space-y-1 marker:text-(--mut-color) text-xs text-(--tx-200-80)">{en.items.map((it,i)=><li key={i}>{it}</li>)}</ul>
+                </div>);})}
+            </div>
+            <div className="pt-1"><button type="button" onClick={closeChangelog} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
           </div>
         </div>),
         document.getElementById('root')!
@@ -3202,8 +3498,11 @@ interface DedOpts {
                       suppresses the trigger's click on a real press so it doesn't double-toggle.
                       gear-modified (Q8, the flush inside-bottom violet bar — index.css) marks live state ≠
                       the saved defaults while the panel is CLOSED (the open gear is solid purple, no
-                      bar); the aria-label mirrors the same boolean in both states. */}
-                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80)${settingsModified?" gear-modified":""}`}`} aria-label={settingsModified?"Settings (modified)":"Settings"}>⚙</button>
+                      bar); update-dot (Q6, the light-blue top-right-inside dot — ::before, so the two
+                      indicators coexist on the same button) marks an update landed since the panel was
+                      last opened (opening clears it — the effect above — so it too only ever shows
+                      CLOSED); the aria-label mirrors both booleans in every combination. */}
+                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80)${settingsModified?" gear-modified":""}${gearDot?" update-dot":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙</button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the
@@ -3219,7 +3518,9 @@ interface DedOpts {
             </div>
             {settingsJsx}
             {saveDefaultsJsx}
-            {viewDefaultsJsx}
+            {manageDefaultsJsx}
+            {clearConfirmJsx}
+            {changelogJsx}
           </div>
         </div>
         {/* Scroll container. Clamped modes (everything but HtP): position:absolute inset:0
