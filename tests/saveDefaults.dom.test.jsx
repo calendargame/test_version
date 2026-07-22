@@ -359,8 +359,10 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Close' })).toBeNull()
     expect(nField().className).not.toContain('btn-solid')
+    expect(nField().className).toContain('border surface-tray') // clean = the shared interactive surface (Q7 round-7)
     act(() => fireEvent.change(nField(), { target: { value: '25' } }))
-    expect(nField().className).toContain('btn-solid') // the dirty accent on the box (panel fill swapped out)
+    expect(nField().className).toContain('btn-solid') // the dirty accent on the box…
+    expect(nField().className).not.toContain('surface-tray') // …swapped in for the tray surface WHOLE (NUM_INPUT_DIRTY_CLASS)
     act(() => fireEvent.change(flashSlider(), { target: { value: '1200' } }))
     expect(within(dialog).getByRole('button', { name: 'Edit Flash Speed' }).className).toContain(
       'btn-solid', // …and on the tap-to-type readouts
@@ -369,6 +371,21 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
       within(dialog).getByRole('button', { name: 'Edit Blitz Round Timer' }).className,
     ).not.toContain('btn-solid') // per-row, not global
     expect(screen.queryByText('Saving here updates only these values.')).toBeNull() // manager-only note
+  })
+
+  it('the ⚙ Year Range pair wears the shared interactive surface (border surface-tray), never the container panel (Q7 round-7)', () => {
+    // The other two NUM_INPUT_CLASS sites (the AoX mode-screen box is pinned in
+    // tests/aox.dom.test.jsx; the popup box in the shared-card test above): the site-wide
+    // interactive-border rule puts every editable box on the sbtn-bd control tier.
+    useSettings.getState().setMinY(1600)
+    useSettings.getState().setMaxY(1900)
+    mountApp()
+    openSettings()
+    for (const year of ['1600', '1900']) {
+      const input = screen.getByDisplayValue(year) // the min/max text mirrors
+      expect(input.className).toContain('border surface-tray')
+      expect(input.className).not.toContain('panel')
+    }
   })
 
   it('the popup is a real modal: role=dialog + aria-modal, focus moves in on open, Tab wraps inside it', () => {

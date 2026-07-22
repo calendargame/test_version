@@ -178,8 +178,9 @@ export function MethodBreakdownSection({
   // While the codes panel is open, all four inputs to MethodExplanation (date,
   // displayedFormat, cellDates, useJulian) track their live values. When the panel
   // transitions from open→closed, all four are HELD at their current values for
-  // CODES_CLOSE_MS (matches the Expander's 280ms close animation + buffer), then
-  // released to the latest values after the close completes.
+  // CODES_CLOSE_MS (covers the Expander's default 280ms close animation + buffer —
+  // this panel never opts into Q8's per-toggle durationMs, so the default is its
+  // exact close time), then released to the latest values after the close completes.
   // Callers that mutate any of the four inputs MUST batch setCalcOpen(false) into
   // the same React update; otherwise this effect fires once with (open=true,
   // newInputs) and updates the frozen values immediately, defeating the freeze.
@@ -228,7 +229,7 @@ export function MethodBreakdownSection({
         type="button"
         data-key="C"
         onClick={toggle}
-        className={`w-full px-4 py-2 rounded-xl btn-solid text-sm font-medium${!hasDate ? ' opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
+        className={`w-full px-4 py-2 rounded-xl btn-solid text-sm font-medium ${!hasDate ? ' opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
         aria-disabled={!hasDate}
       >
         {open ? 'Hide Codes' : 'Show Codes'}

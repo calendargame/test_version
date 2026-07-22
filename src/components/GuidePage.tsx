@@ -1,37 +1,109 @@
-import { useState, useCallback, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import Expander from './Expander.jsx'
 import { Kbd, SectionLabel, SECTION_LABEL_CLASS } from './primitives.jsx'
 import { DAY } from '../lib/format.js'
 import { DOT_CELL } from '../lib/dotLayout.js'
 import { selectionSuppressesToggle } from '../lib/selectionGuard.js'
+import {
+  ACCORDION_EASE_CSS,
+  accordionEase,
+  accordionScrollTarget,
+  accordionToggleMs,
+} from '../lib/accordionMotion.js'
 
 // GuidePage / GuideSection — the How-to-Play tab: an accordion of documentation
 // sections (each a GuideSection wrapping an Expander) covering every observable
 // behavior on the site. GuideSection is the reusable open/close row; GuidePage
-// lays them out with Divider separators. Pure content + local open/close state.
+// lays them out with Divider separators and owns the toggle coordinator (Q8):
+// per toggle it measures both affected panels, computes one distance-scaled
+// duration for the shared clock, and — when the layout change would carry the
+// tapped section off-screen or clamp the shrinking scroll range — drives the
+// window scroll per-frame on the panels' own clock and curve, so the slide and
+// the travel read as one motion (the math lives in lib/accordionMotion).
 //
 // Extracted from main.jsx in Stage C, Step 4e. Rewritten for scannability — every
 // section now leads with a one-line summary, then tight chunks / bulleted lists;
 // no documented behavior was dropped. GuideSection is exported named; GuidePage is
 // the default export.
+
+// DOM ids for a section's two landmarks. panelDomId is first an accessibility
+// contract — the header button's aria-controls points at the panel body, which
+// carries the id — and the coordinator leans on the same ids to re-derive every
+// element it needs at tap time (the wrapper for geometry, the body for heights)
+// from nothing but the two section-id strings in state: no ref plumbing.
+const sectionDomId = (id: string) => `guide-sec-${id}`
+const panelDomId = (id: string) => `guide-panel-${id}`
+
+// startScrollWriter — the coordinator's per-frame window-scroll driver. Runs the SAME
+// clock and curve as the panel transitions: durationMs is the very value stamped into
+// --expander-ms (pre-multiplied by --motion-scale, so Reduce Motion passes 0 here), and
+// accordionEase is the numeric twin of the panels' CSS cubic-bezier. rAF callbacks fire
+// before a frame's style/paint, so the first callback lands on the same frame the CSS
+// transition first renders — treating its timestamp as t=0 keeps writer and panels in
+// step — and a 0 duration jumps straight to the end state on that first pre-paint
+// callback: the snapped layout and the corrected scroll appear together (the Reduce
+// Motion instant path, which also fixes the old teleport-past-max clamp). Any real user
+// scroll input (touchstart/wheel) cancels the writer instantly — the user always wins —
+// and the returned cancel function serves mid-flight re-toggles and guide unmount.
+function startScrollWriter(from: number, to: number, durationMs: number): () => void {
+  let raf = 0
+  let start: number | null = null
+  const cancel = () => {
+    cancelAnimationFrame(raf)
+    window.removeEventListener('touchstart', cancel)
+    window.removeEventListener('wheel', cancel)
+  }
+  window.addEventListener('touchstart', cancel, { passive: true })
+  window.addEventListener('wheel', cancel, { passive: true })
+  const step = (now: number) => {
+    if (start === null) start = now
+    const p = durationMs <= 0 ? 1 : Math.min(1, (now - start) / durationMs)
+    window.scrollTo(0, from + (to - from) * accordionEase(p))
+    if (p < 1) raf = requestAnimationFrame(step)
+    else cancel()
+  }
+  raf = requestAnimationFrame(step)
+  return cancel
+}
 export function GuideSection({
   id,
   title,
   children,
   openId,
   onToggle,
+  durationMs,
 }: {
   id: string
   title: ReactNode
   children?: ReactNode
   openId: string | null
   onToggle: (id: string) => void
+  durationMs?: number | null
 }) {
   const isOpen = openId === id
+  // The per-toggle motion clock (Q8): GuidePage's coordinator computes ONE duration per
+  // toggle — d(max of the two panels' travels, lib/accordionMotion) — and hands the same
+  // value to every section, so the closing and the opening panel of an accordion switch
+  // tween on one shared clock (only the two toggled panels actually animate). It reaches
+  // its two consumers as the --expander-ms var: the Expander stamps it on the panel (its
+  // durationMs prop), and the header button stamps it for the chevron — the button is the
+  // Expander's SIBLING, so no single placement could reach both by inheritance. The cast
+  // is the standard React custom-property escape (CSSProperties has no --* signature).
+  const motionVar =
+    durationMs == null ? undefined : ({ '--expander-ms': `${durationMs}ms` } as CSSProperties)
   return (
-    <div className="rounded-2xl panel overflow-hidden">
+    // scroll-margin-top seats the wrapper below the fixed bar (plus the panel gap) for any
+    // native scroll-into-view targeting a section — future-proofing ridden along with Q8;
+    // the coordinator computes its own bar clearance and never relies on it.
+    <div
+      id={sectionDomId(id)}
+      className="rounded-2xl panel overflow-hidden scroll-mt-[calc(var(--bar-h)+8px)]"
+    >
       <button
         type="button"
+        aria-expanded={isOpen}
+        aria-controls={panelDomId(id)}
+        style={motionVar}
         // Guide text is selectable (`select-text` on the title span + the body wrapper below) —
         // a desktop drag-select across a title fires this click on mouse-up, so skip the toggle
         // while such a selection stands (lib/selectionGuard owns the rule) rather than collapse
@@ -44,17 +116,25 @@ export function GuideSection({
       >
         <span className="text-sm font-semibold text-(--tx-50) select-text">{title}</span>
         <span
-          className={`text-[7px] text-(--tx-w90) leading-none transition-transform ease-in-out ${isOpen ? 'rotate-180' : ''}`}
-          // Match the Expander's duration EXACTLY (.expander uses the same calc) so the triangle and
-          // the panel finish together — and honor the reduce-motion --motion-scale, so both snap
-          // instantly under "Reduce Motion" instead of the panel snapping while the triangle spins.
-          style={{ transitionDuration: 'calc(0.28s * var(--motion-scale))' }}
+          className={`text-[7px] text-(--tx-w90) leading-none transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          // Read the panel's clock and curve EXACTLY (.expander declares the identical calc —
+          // same var, same .28s fallback — and the identical curve) so the triangle and the
+          // slide finish together, and honor the reduce-motion --motion-scale, so both snap
+          // instantly under "Reduce Motion" instead of the panel snapping while the triangle
+          // spins. tests/expander.dom pins all three legs of the sync.
+          style={{
+            transitionDuration: 'calc(var(--expander-ms, .28s) * var(--motion-scale))',
+            transitionTimingFunction: ACCORDION_EASE_CSS,
+          }}
         >
           ▼
         </span>
       </button>
-      <Expander open={isOpen}>
-        <div className="px-4 pb-4 pt-1 text-[13px] text-(--tx-100-90) leading-relaxed space-y-2 select-text">
+      <Expander open={isOpen} durationMs={durationMs ?? undefined}>
+        <div
+          id={panelDomId(id)}
+          className="px-4 pb-4 pt-1 text-[13px] text-(--tx-100-90) leading-relaxed space-y-2 select-text"
+        >
           {children}
         </div>
       </Expander>
@@ -142,10 +222,93 @@ function DotDiagram() {
 }
 export default function GuidePage() {
   const [open, setOpen] = useState<string | null>(null)
-  const toggle = useCallback((id: string) => setOpen((o) => (o === id ? null : id)), [])
+  // The shared per-toggle motion clock (ms), stamped onto every section (see GuideSection).
+  // null until the first toggle — pre-toggle renders never animate, so the sections simply
+  // fall back to the CSS default duration.
+  const [motionMs, setMotionMs] = useState<number | null>(null)
+  // The in-flight scroll writer's cancel function (null = none running). Canceled on any
+  // user scroll input by the writer itself, on re-toggle mid-flight by the coordinator
+  // below, and on unmount (leaving the guide) by the effect — a surviving writer would
+  // keep scrolling the next mode's page.
+  const scrollWriterRef = useRef<(() => void) | null>(null)
+  const cancelScrollWriter = useCallback(() => {
+    scrollWriterRef.current?.()
+    scrollWriterRef.current = null
+  }, [])
+  useEffect(() => cancelScrollWriter, [cancelScrollWriter])
+  // The toggle coordinator (Q8) — hooked into the single toggle callback, never pointer
+  // events. Everything is measured at tap time, pre-animation: the closing panel's
+  // RENDERED height (its grid track — a mid-flight re-toggle reads the interpolated
+  // value, so the retarget stays exact), the opening panel's remaining travel (the body's
+  // natural height minus whatever track already shows — its full height at rest), and the
+  // tapped wrapper's document position. lib/accordionMotion turns those into the shared
+  // clock d(max(hClosing, hOpening)) and the scroll target (off-screen-above rule for
+  // opens, clamp rule for shrinks, null when the current position stays coherent); the
+  // writer then glides the window on that same clock and curve. --motion-scale
+  // pre-multiplies the writer's duration exactly as the panels' CSS calc does, so Reduce
+  // Motion (scale 0) jumps instantly to the correct end state (jsdom's empty var read is
+  // NaN → treated as 1, animate).
+  const toggle = useCallback(
+    (id: string) => {
+      cancelScrollWriter()
+      const opens = open !== id
+      const tapped = document.getElementById(sectionDomId(id))
+      const closingExpander = open
+        ? (document.getElementById(panelDomId(open))?.closest<HTMLElement>('.expander') ?? null)
+        : null
+      const openingBody = opens ? document.getElementById(panelDomId(id)) : null
+      const closingH = closingExpander?.offsetHeight ?? 0
+      const openingH = openingBody
+        ? Math.max(
+            0,
+            openingBody.offsetHeight -
+              (openingBody.closest<HTMLElement>('.expander')?.offsetHeight ?? 0),
+          )
+        : 0
+      // The shared clock and the state flip depend on nothing but the panel measurements —
+      // they land unconditionally, before the scroll coordination decides anything.
+      const durationMs = accordionToggleMs(closingH, openingH)
+      setMotionMs(durationMs)
+      setOpen(opens ? id : null)
+      // Scroll coordination needs the document scroller's geometry on top (jsdom has no
+      // scrollingElement — there the panels still toggle on the shared clock, writer-less).
+      const doc = document.scrollingElement
+      if (!tapped || !doc) return
+      const scrollY = window.scrollY
+      const tappedRect = tapped.getBoundingClientRect()
+      const rootStyle = getComputedStyle(document.documentElement)
+      const motionScale = parseFloat(rootStyle.getPropertyValue('--motion-scale'))
+      const target = accordionScrollTarget({
+        scrollY,
+        viewportH: window.innerHeight,
+        barH: parseFloat(rootStyle.getPropertyValue('--bar-h')) || 0,
+        docH: doc.scrollHeight,
+        headerDocTop: tappedRect.top + scrollY,
+        closingH,
+        // A closing panel above the tapped header pulls it up by its own collapse; the
+        // tapped section's own panel sits BELOW its header, so a plain close never does.
+        closingAbove:
+          closingExpander !== null && closingExpander.getBoundingClientRect().top < tappedRect.top,
+        openingH,
+      })
+      if (target !== null)
+        scrollWriterRef.current = startScrollWriter(
+          scrollY,
+          target,
+          durationMs * (Number.isFinite(motionScale) ? motionScale : 1),
+        )
+    },
+    [open, cancelScrollWriter],
+  )
   return (
     <div className="space-y-2">
-      <GuideSection id="overview" title="What Is Calendar Game?" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="overview"
+        title="What Is Calendar Game?"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>A training tool for working out the day of the week of any date, in your head.</Lead>
         <p>
           You're given a date and must identify which weekday it falls on — as quickly and
@@ -215,7 +378,13 @@ export default function GuidePage() {
         </p>
       </GuideSection>
       <Divider label="Interface" />
-      <GuideSection id="buttons" title="Buttons" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="buttons"
+        title="Buttons"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>How tapping, dragging, and each on-screen button work.</Lead>
         <Subhead>Tapping and dragging</Subhead>
         <UL>
@@ -245,6 +414,12 @@ export default function GuidePage() {
           <li>
             Timer sliders (Flash speed and both Blitz timers) — tap the value beside the slider to
             type an exact number of seconds instead of dragging.
+          </li>
+          <li>
+            The sections of this guide open one at a time — opening a section closes the one before
+            it. When a section opens or closes, the page scrolls along with the motion whenever
+            that's needed to keep your place, so the section you tapped stays in view instead of
+            sliding off-screen.
           </li>
           <li>
             Text around the app can't be selected or highlighted, so presses and drags always
@@ -388,7 +563,7 @@ export default function GuidePage() {
           </li>
         </UL>
       </GuideSection>
-      <GuideSection id="stats" title="Stats" openId={open} onToggle={toggle}>
+      <GuideSection id="stats" title="Stats" openId={open} onToggle={toggle} durationMs={motionMs}>
         <Lead>What each stat means, how times are measured, and hiding stats.</Lead>
         <Subhead>The stats</Subhead>
         <UL>
@@ -474,7 +649,13 @@ export default function GuidePage() {
           the average is what you ran for.
         </p>
       </GuideSection>
-      <GuideSection id="keyboard" title="Keyboard Input" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="keyboard"
+        title="Keyboard Input"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>
           On any device with a hardware keyboard (typically desktop), press keys instead of tapping.
         </Lead>
@@ -628,6 +809,7 @@ export default function GuidePage() {
         title="Settings Overview"
         openId={open}
         onToggle={toggle}
+        durationMs={motionMs}
       >
         <Lead>
           The ⚙ menu groups every setting into three categories, with the Save Defaults and Reset
@@ -660,7 +842,13 @@ export default function GuidePage() {
           regenerates a date or resets a round/run.
         </p>
       </GuideSection>
-      <GuideSection id="dateformat" title="Display — Date Format" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="dateformat"
+        title="Display — Date Format"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Choose how dates are written, or roll a random format each time.</Lead>
         <p>Five real-world formats:</p>
         <UL>
@@ -715,7 +903,13 @@ export default function GuidePage() {
           with Leap shown once you've seen both the year and month.
         </p>
       </GuideSection>
-      <GuideSection id="input" title="Display — Input" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="input"
+        title="Display — Input"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Answer with labelled weekday buttons, or with the seven-dot logo layout.</Lead>
         <UL>
           <li>
@@ -741,7 +935,13 @@ export default function GuidePage() {
           calculating.
         </p>
       </GuideSection>
-      <GuideSection id="theme" title="Display — Theme" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="theme"
+        title="Display — Theme"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Five themes, with an option to follow your device's light/dark mode.</Lead>
         <UL>
           <li>
@@ -766,7 +966,13 @@ export default function GuidePage() {
           and a Light pick). Disable it to pick one theme manually.
         </p>
       </GuideSection>
-      <GuideSection id="range" title="Dates — Year Range" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="range"
+        title="Dates — Year Range"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Controls which years dates are drawn from. Defaults to 1–10000 AD.</Lead>
         <UL>
           <li>
@@ -793,7 +999,13 @@ export default function GuidePage() {
           Day and Month sub-modes work for any valid range.
         </p>
       </GuideSection>
-      <GuideSection id="julian" title="Dates — Julian Calendar" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="julian"
+        title="Dates — Julian Calendar"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>
           Treats early dates as Julian; on by default. Includes the Julian Chance frequency control.
         </Lead>
@@ -853,7 +1065,13 @@ export default function GuidePage() {
           the lock condition clears.
         </p>
       </GuideSection>
-      <GuideSection id="leap" title="Dates — Leap Year Settings" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="leap"
+        title="Dates — Leap Year Settings"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>
           Two controls for how often leap years appear and which months they're paired with.
         </Lead>
@@ -890,7 +1108,13 @@ export default function GuidePage() {
           </li>
         </UL>
       </GuideSection>
-      <GuideSection id="savestats" title="Stats — Save Stats" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="savestats"
+        title="Stats — Save Stats"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>
           On by default. When off, your answers don't update stats or saved bests, and the stats
           panel dims.
@@ -928,7 +1152,13 @@ export default function GuidePage() {
         </UL>
       </GuideSection>
       <Divider label="Data" />
-      <GuideSection id="saved-progress" title="Saved Progress" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="saved-progress"
+        title="Saved Progress"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>What persists on this device between visits — and what resets each time.</Lead>
         <p>
           The app saves the following on this device and restores them when you return — after
@@ -981,6 +1211,7 @@ export default function GuidePage() {
         title="Save Defaults, Reset Settings, and Full Reset"
         openId={open}
         onToggle={toggle}
+        durationMs={motionMs}
       >
         <Lead>
           Three buttons at the foot of the ⚙ menu — save your own defaults, restore the menu, or
@@ -1104,7 +1335,13 @@ export default function GuidePage() {
         </p>
       </GuideSection>
       <Divider label="Modes" />
-      <GuideSection id="classic" title="Classic" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="classic"
+        title="Classic"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>The main practice mode — no time pressure, answer at your own pace.</Lead>
         <UL>
           <li>Override works after both wrong and correct answers.</li>
@@ -1114,7 +1351,7 @@ export default function GuidePage() {
           </li>
         </UL>
       </GuideSection>
-      <GuideSection id="aox" title="AoX" openId={open} onToggle={toggle}>
+      <GuideSection id="aox" title="AoX" openId={open} onToggle={toggle} durationMs={motionMs}>
         <Lead>Average your times over a set number of correct solves (2–1000).</Lead>
         <p>
           The score shows correct answers out of total attempts; the run ends when correct answers
@@ -1191,7 +1428,13 @@ export default function GuidePage() {
           run you're viewing in the summary.
         </p>
       </GuideSection>
-      <GuideSection id="deduction" title="Deduction" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="deduction"
+        title="Deduction"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Identify the missing piece of a date given the rest plus the weekday.</Lead>
         <p>
           Choose Day, Month, or Year mode. The displayed date follows your selected Date Format (or
@@ -1285,7 +1528,7 @@ export default function GuidePage() {
           question, the question is kept.
         </p>
       </GuideSection>
-      <GuideSection id="flash" title="Flash" openId={open} onToggle={toggle}>
+      <GuideSection id="flash" title="Flash" openId={open} onToggle={toggle} durationMs={motionMs}>
         <Lead>The date is shown briefly, then hidden — answer from memory.</Lead>
         <UL>
           <li>
@@ -1304,7 +1547,7 @@ export default function GuidePage() {
           miss; Show Codes does the same and also opens the calculation breakdown.
         </p>
       </GuideSection>
-      <GuideSection id="blitz" title="Blitz" openId={open} onToggle={toggle}>
+      <GuideSection id="blitz" title="Blitz" openId={open} onToggle={toggle} durationMs={motionMs}>
         <Lead>Answer as many dates as possible before time runs out.</Lead>
         <p>Score shows correct answers for the current round only.</p>
         <p>
@@ -1380,7 +1623,13 @@ export default function GuidePage() {
           settings while idle resets the current round.
         </p>
       </GuideSection>
-      <GuideSection id="lookup" title="Lookup" openId={open} onToggle={toggle}>
+      <GuideSection
+        id="lookup"
+        title="Lookup"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
         <Lead>Enter any AD date to instantly see its weekday.</Lead>
         <UL>
           <li>

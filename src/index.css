@@ -122,6 +122,14 @@ html[data-doc-scroll]{overflow-y:auto}
 html[data-doc-scroll] body{overflow:visible}
 html[data-doc-scroll],html[data-doc-scroll] body{overscroll-behavior-y:contain}
 html[data-doc-scroll] #root{position:static;height:auto;overflow:visible}
+/* Q8 — the guide's accordion motion coordinator (GuidePage) drives the window scroll per-frame
+   while panels resize. Chromium and Firefox scroll anchoring would pick an anchor node during the
+   resize and counter-adjust the scroll position against the writer (Safari never anchors — the
+   engines visibly diverged). Guide-scoped only — every other mode keeps the clamped architecture
+   where anchoring never engages — and on * because anchoring is evaluated per scroller against
+   candidate anchor NODES: suppressing it at every node makes the coordinator the sole scroll
+   authority, identically on every engine. */
+html[data-doc-scroll] *{overflow-anchor:none}
 /* Disable text selection globally to prevent accidental selection during rapid
    practice taps (long-press-and-drag, double-tap, etc.). Two specific opt-ins:
    input/textarea elements (so typing/editing stays functional everywhere they
@@ -144,7 +152,11 @@ input,textarea{user-select:text;-webkit-user-select:text}
      layered section header), not to the scroll container. Cast away from the
      scroll content.
    Where both apply (e.g., bar at scroll's top edge), both stack: shadow says
-   "I'm a layered surface," fade says "and there's content extending under me." */
+   "I'm a layered surface," fade says "and there's content extending under me."
+   The scroll-REGION recipe that pairs these fades with the px-4 scrollbar lane is
+   tokenized in components/scrollRegion.ts (Q5 round-7) — new inner scrollers take
+   SCROLL_REGION_CLASS + scrollFadeClass + useScrollEdgeState from there, and
+   tests/scrollRegionGuard.test.js fails the suite on any scroller built outside it. */
 .fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black 24px);mask-image:linear-gradient(to bottom,transparent,black 24px)}
 .fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - 24px),transparent);mask-image:linear-gradient(to bottom,black calc(100% - 24px),transparent)}
 /* When a container has BOTH top and bottom fades, the two mask-images must be
@@ -373,9 +385,14 @@ html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}
    can shrink below the content's min-height) and overflow:hidden (clips while the track is smaller
    than the content — during motion and at closed rest; at open rest the track equals the content by
    layout, so nothing clips). Duration multiplies by --motion-scale (above): Reduce Motion snaps
-   instantly. The GuideSection triangle + CODES_CLOSE_MS (lib/constants) key off this .28s — keep in
-   sync (tests/expander.dom pins both). */
-.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(.28s * var(--motion-scale)) ease-in-out}
+   instantly. Q8 (round 7) split the duration into the --expander-ms var: the .28s fallback is the
+   default every non-opted panel keeps (the codes panels — CODES_CLOSE_MS in lib/constants budgets
+   against it), while the guide's motion coordinator (GuidePage) stamps a distance-scaled per-toggle
+   value inline via the Expander durationMs prop. The easing is the Material standard curve — the
+   ONE curve the panels, the GuideSection triangle, and the coordinator's scroll writer all run
+   (ACCORDION_EASE_CSS in lib/accordionMotion is the source of truth; tests/expander.dom pins the
+   sync of curve, fallback, and triangle alike). */
+.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(var(--expander-ms,.28s) * var(--motion-scale)) cubic-bezier(.2,0,0,1)}
 .expander-open{grid-template-rows:1fr}
 .expander>div{min-height:0;overflow:hidden}
 /* Strikethrough for disabled/off stat labels (StatPanel). The native CSS

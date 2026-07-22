@@ -7,7 +7,9 @@
 // (lib/sliderValue, pure math locked in tests/sliderValue.test.js); Escape reverts WITHOUT
 // committing and stops propagation (the popup/settings Escape contract); disabled follows the
 // slider's lock; the widest-string width strut (invisible + nowrap, button nowrap, input
-// min-w-0 + size 1). The finger-sized tap-target feel is on-device per the standing lesson.
+// min-w-0 + size 1); the edit input's zero-shift interactive border (border surface-tray
+// cancelled by -my-px, Q4 + Q7 round-7). The finger-sized tap-target feel is on-device per
+// the standing lesson.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import SliderValueEditor from '../src/components/SliderValueEditor.jsx'
@@ -186,5 +188,18 @@ describe('SliderValueEditor', () => {
     expect(screen.getByText('2m 55s')).toBe(strut)
     expect(field('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'w-full', 'min-w-0')
     expect(field('Flash speed')).toHaveAttribute('size', '1')
+  })
+
+  it('the edit input wears the zero-shift interactive border: border surface-tray cancelled by -my-px (Q4 + Q7 round-7)', () => {
+    render(<SliderValueEditor {...flashProps} onCommit={vi.fn()} />)
+    openEditor('Flash speed')
+    const input = field('Flash speed')
+    // surface-tray (stgl-bg + sbtn-bd) is the interactive-control surface every editable box
+    // shares — never the container .panel this input once borrowed — and the 1px border it
+    // brings would grow the strut cell 2px over the borderless display text: -my-px hands
+    // exactly that back, so the digits (and everything below the row) hold still through the
+    // tap-to-type swap. The pixel truth is on-device; the class contract is pinned here.
+    expect(input).toHaveClass('border', 'surface-tray', '-my-px', 'rounded-md')
+    expect(input.className).not.toContain('panel')
   })
 })

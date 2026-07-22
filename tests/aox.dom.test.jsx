@@ -988,6 +988,16 @@ describe('AoX — Q18 (the run-length field shares the popup N field validation 
     act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
     expect(nField().value).toBe('2') // Escape commits the clamped current value too
   })
+
+  it('the box wears the shared interactive surface (border surface-tray), never the container panel (Q7 round-7)', () => {
+    // The site-wide interactive-border rule: inputs are controls, so the box carries the same
+    // sbtn-bd border tier as its Allow Mistakes / One-by-One neighbors — NUM_INPUT_CLASS's
+    // shared token, asserted here on the mode-screen site.
+    mountApp()
+    switchToAox()
+    expect(nField().className).toContain('border surface-tray')
+    expect(nField().className).not.toContain('panel')
+  })
 })
 
 // ── Q7 round-6: Reset Settings now restores the AoX run length too, so a Reset Settings that

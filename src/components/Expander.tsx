@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 // Expander — slides its children open/closed via the CSS grid-template-rows 0fr→1fr idiom
 // (index.css: .expander / .expander-open / the min-height:0 + overflow:hidden row div).
@@ -12,18 +12,45 @@ import type { ReactNode } from 'react'
 // the track equals the content by LAYOUT, not by a measured px snapshot, so nothing can round a
 // hair short — which retires all of the old JS (the scrollHeight measure + 2px open buffer, the
 // transitionend/timeout release to `max-height:none`, the reflow-pinned close). Reduce Motion
-// needs no JS either: the CSS duration is calc(.28s * var(--motion-scale)), which collapses to 0s
+// needs no JS either: the CSS duration multiplies by var(--motion-scale), which collapses to 0s
 // under the OS setting, and a 0s transition is an instant snap — open and close alike. An
 // initially-open panel renders with .expander-open on first paint (no animation, no clip), a
 // mid-flight reversal retargets smoothly from the current interpolated height (native CSS
 // transition behavior), and content stays mounted (and queryable) in both states. Pure
 // presentational — no app state.
 //
+// durationMs (Q8, round 7) opts a panel into a per-toggle slide duration: it stamps the
+// --expander-ms CSS var inline, which the .expander transition reads with a .28s fallback —
+// so callers that never pass it (the codes panels in MethodBreakdown and main.tsx) keep the
+// historical 280ms exactly. The guide's motion coordinator (GuidePage) is the one opt-in
+// today: it computes one distance-scaled duration per toggle (lib/accordionMotion) and hands
+// the SAME value to both panels of an accordion switch, so they tween on one shared clock.
+//
 // Extracted from main.jsx in Stage C, Step 4a; rewritten from the max-height technique to the
 // grid idiom in Q4 (round 6, 2026-07-18).
-export default function Expander({ open, children }: { open: boolean; children?: ReactNode }) {
+export default function Expander({
+  open,
+  durationMs,
+  children,
+}: {
+  open: boolean
+  durationMs?: number
+  children?: ReactNode
+}) {
+  // Plain ternary, not a template literal: the old `expander${open…` form glued a class
+  // token to `${` — the bug class tests/classGlueGuard.test.js now bans (Q6, round 7) —
+  // and with only two fixed states the conditional needs no interpolation at all.
   return (
-    <div className={`expander${open ? ' expander-open' : ''}`}>
+    <div
+      className={open ? 'expander expander-open' : 'expander'}
+      // The cast is the standard React custom-property escape: CSSProperties is closed
+      // typing (no --* index signature), but setting vars through `style` is fully supported.
+      style={
+        durationMs === undefined
+          ? undefined
+          : ({ '--expander-ms': `${durationMs}ms` } as CSSProperties)
+      }
+    >
       <div>{children}</div>
     </div>
   )

@@ -1,10 +1,14 @@
 // changelog.ts — the plain-words changelog (round-6 Q6): what each deploy changed, written for
-// players, never developers. Hand-maintained: every deploy appends its entry here (a standing
+// players, never developers. Hand-maintained: every deploy adds its lines here (a standing
 // part of the deploy ritual), newest first, and the module keeps the full history forever while
-// the popup (main.tsx) displays only the latest CHANGELOG_VISIBLE deploys — a digest, not an
-// archive. Entry dates are the deploy's Pacific calendar date in ISO form (YYYY-MM-DD); the
-// popup renders them through the user's Date Format setting, so never encode a format here.
-// The list started at the round-5 deploy — earlier history is deliberately not retro-written.
+// the popup (main.tsx) displays only the latest CHANGELOG_VISIBLE days — a digest, not an
+// archive. One entry per Pacific calendar DAY, never per deploy (the round-7 owner call): a
+// second deploy on the same day merges into that day's single entry by PREPENDING its lines,
+// newest lines first — so dates stay unique, which is also the popup's per-entry React-key
+// contract (key={en.date}); changelog.dom.test pins the uniqueness. Entry dates are the
+// deploy's Pacific calendar date in ISO form (YYYY-MM-DD); the popup renders them through the
+// user's Date Format setting, so never encode a format here. The list started at the round-5
+// deploy — earlier history is deliberately not retro-written.
 //
 // Alongside the data live the two update-signal dot flags — the breadcrumb that leads a player
 // here after an update: the build-stamp detection (the Q2 effect in main.tsx) marks BOTH on
@@ -14,11 +18,23 @@
 // blocked storage (privacy modes) must never break boot, it just means no dots.
 
 export type ChangelogEntry = {
-  date: string // the deploy's date, ISO YYYY-MM-DD
+  date: string // the day's Pacific date, ISO YYYY-MM-DD (unique — same-day deploys merge)
   items: string[] // short plain-words lines, one visible change each
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    date: '2026-07-21',
+    items: [
+      'The small links at the bottom of the settings menu now share consistent spacing.',
+      'Side-swiping no longer flips the installed app through pages on iPhone.',
+      'Typing a timer value no longer nudges the slider.',
+      'Every input box now wears the same border as the buttons.',
+      'Guide panels open and close with a smooth, matched motion that keeps your place on the page.',
+      'Fixed: the Lookup page no longer scrolls as a whole — long history lists scroll inside their own box again.',
+      'This changelog and the Lookup history list now scroll the same way as the settings menu: content fades softly at the edges, and the scrollbar stays clear of the text.',
+    ],
+  },
   {
     date: '2026-07-19',
     items: [
@@ -47,7 +63,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ]
 
-// The popup shows at most this many deploys (scrolling within its own list region); the array
+// The popup shows at most this many days (scrolling within its own list region); the array
 // above keeps every entry regardless.
 export const CHANGELOG_VISIBLE = 10
 

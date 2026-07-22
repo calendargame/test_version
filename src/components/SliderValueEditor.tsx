@@ -38,7 +38,15 @@ import { commitSliderText } from '../lib/sliderValue.js'
 // disabled attribute so the readout keeps its exact resting look (the plain span never dimmed).
 // `accent` is the defaults cards' dirty state (Q5 round-6): the display readout wears the
 // btn-solid accent pill — px-1 -mx-1 (the footer-link ring idiom) so the fill extends past the
-// digits while the strut-defined column, and the digits inside it, never move.
+// digits while the strut-defined column, and the digits inside it, never move. The edit input's
+// -my-px (Q4 round-7) is that idiom's vertical twin: the input wears a 1px border (border
+// surface-tray — the sbtn-bd interactive-control surface every editable box shares, Q7 round-7;
+// the display state stays borderless bare text) that would grow the strut cell 2px and nudge
+// the slider row, and everything below it, on every tap — the −1px/−1px margins cancel the
+// border's +1px/+1px exactly, so the MARGIN box (what the grid track measures) keeps the
+// display-state height while the borders paint into the row's free vertical breathing room
+// (every host row has ≥4px, no overflow-hidden ancestors). The digits hold still through the
+// tap-to-type swap and nothing on the screen moves.
 export default function SliderValueEditor({
   value,
   min,
@@ -106,7 +114,7 @@ export default function SliderValueEditor({
         onClick={() => {
           if (!disabled) setText(toText(value))
         }}
-        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
+        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right ${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
       >
         {format(value)}
       </button>,
@@ -138,7 +146,7 @@ export default function SliderValueEditor({
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
-      className="col-start-1 row-start-1 w-full min-w-0 panel rounded-md px-1 text-right tabular-nums text-xs focus:outline-hidden focus-ring"
+      className="col-start-1 row-start-1 w-full min-w-0 -my-px border surface-tray rounded-md px-1 text-right tabular-nums text-xs focus:outline-hidden focus-ring"
     />,
   )
 }

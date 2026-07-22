@@ -23,6 +23,7 @@ import LookupCard from './components/LookupCard.jsx'
 import { MethodExplanation, MethodBreakdownSection } from './components/MethodBreakdown.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
+import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './components/scrollRegion.js'
 import { CODES_CLOSE_MS } from './lib/constants.js'
 import { DOT_CELL } from './lib/dotLayout.js'
 import { sharedFitScale } from './lib/statFit.js'
@@ -117,13 +118,32 @@ interface DedOpts {
     // Reset Stats when ARMED (first tap of the two-tap confirm, Q2): rose/danger fill — the same danger
     // colour as RESET_BTN_CLASS — so "tap again to confirm" reads as a warning, not a normal button.
     const RESET_STATS_ARMED_CLASS="w-full px-3 py-1.5 rounded-xl bg-rose-600/90 text-white border border-transparent text-sm font-medium";
-    // Boxed numeric-input shared className (Q18) — the app's second shared input idiom beside
-    // SliderValueEditor: a panel box with centered tabular digits at the text-xs control tier.
-    // Used by the AoX run-length field (mode screen + the Save Defaults popup, both appending
-    // " py-1 w-14 shrink-0") and the ⚙ Year Range pair (" py-1.5 w-16"). text-xs keeps the AoX
-    // box's rendered height flush with its Allow Mistakes / One-by-One neighbors (py-1 + the
-    // 1rem text-xs line + a 1px border on all three).
-    const NUM_INPUT_CLASS="panel rounded-xl px-2 text-center tabular-nums text-xs focus:outline-hidden focus-ring";
+    // Settings-footer link-row shared className (round-7 Q2 — one gap for both rows): the
+    // View/Clear saved-defaults row and the Last Updated / Check for updates / Changelog row
+    // are the same kind of row (a wrapping line of muted footer text links), so they share one
+    // class. gap-3 keeps ~4px of clearance between neighboring press-drag rings (each ring
+    // extends px-1 = 4px past its text — see the ring comment at the rows); the Last Updated
+    // row sat on a legacy gap-2 (rings touching at 0px clearance) until the rows were unified.
+    // items-center keeps the Last Updated caption vertically aligned with its button links (a
+    // no-op on the all-links row); flex-wrap is the narrow-viewport fallback — at normal
+    // widths each row stays one line.
+    const FOOTER_LINK_ROW_CLASS="flex items-center flex-wrap gap-3";
+    // Boxed numeric-input shared className (Q18; split base + surface Q7 round-7) — the app's
+    // second shared input idiom beside SliderValueEditor: a bordered box with centered tabular
+    // digits at the text-xs control tier. Used by the AoX run-length field (mode screen + the
+    // Save Defaults popup, both appending " py-1 w-14 shrink-0") and the ⚙ Year Range pair
+    // (" py-1.5 w-16"). text-xs keeps the AoX box's rendered height flush with its Allow
+    // Mistakes / One-by-One neighbors (py-1 + the 1rem text-xs line + a 1px border on all
+    // three). The surface is the site-wide interactive-border rule applied — border weight
+    // signals role (thin-bd dividers, panel/card-bd containers, sbtn-bd interactive controls):
+    // inputs are controls you act on, so every one wears surface-tray (stgl-bg + sbtn-bd, the
+    // no-hover interactive surface the settings segment trays share), matching the buttons —
+    // never the container .panel these boxes once borrowed. (The top-bar chrome — mode
+    // selector, gear, stat panel — deliberately STAYS .panel: the container tier, owner call.)
+    // NUM_INPUT_BASE carries the geometry alone so the DefaultsCard's dirty variant
+    // (NUM_INPUT_DIRTY_CLASS, defined beside the card) swaps the whole surface, not a token.
+    const NUM_INPUT_BASE="rounded-xl px-2 text-center tabular-nums text-xs focus:outline-hidden focus-ring";
+    const NUM_INPUT_CLASS=NUM_INPUT_BASE+" border surface-tray";
     // Presentational primitives (NewBestStar, SectionLabel, Kbd) + their class consts → src/components/primitives.jsx, imported at top.
     // buttonStateClass — picks the className for an answer-grid button based on its
     // persistent state (correct/wrong-latest/wrong-prev/override-wrong) and any active
@@ -513,7 +533,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-19T19:52:00Z');
+    const DEPLOY_TS=new Date('2026-07-22T05:52:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -1236,7 +1256,7 @@ interface DedOpts {
                 popup N field's validation trio — digits only while typing, and blur, Enter and
                 Escape all normalize-commit with the shared clamp (normalizeAoxN). text-xs on the
                 'Ao' span too, so "Ao10" reads as one flush token. */}
-            <div className="flex items-center shrink-0"><span className={`text-xs leading-none text-(--tx-200-80)${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{const v=e.target.value;if(runPhase==="idle"&&(v===''||/^\d*$/.test(v)))setAoxN(v);}} onBlur={()=>setAoxN(normalizeAoxN(aoxN))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
+            <div className="flex items-center shrink-0"><span className={`text-xs leading-none text-(--tx-200-80) ${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{const v=e.target.value;if(runPhase==="idle"&&(v===''||/^\d*$/.test(v)))setAoxN(v);}} onBlur={()=>setAoxN(normalizeAoxN(aoxN))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0 ${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
             <button type="button" onClick={()=>{if(runPhase==="idle")setAllowMistakes(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
             <button type="button" onClick={()=>{if(runPhase==="idle")setOneByOne(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${oneByOne?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>One-by-One</button>
           </div>
@@ -1911,7 +1931,7 @@ interface DedOpts {
           {perQ&&!allowMistakes&&(<div className="mt-3 text-xs text-(--tx-300-60)"><div className="flex flex-wrap items-start gap-4"><div className="min-w-[125px]">Best Score: {sScore?.score??'—'}{suddenBestNew[suddenBk]&&<NewBestStar/>}</div></div></div>)}
           <div className="mt-3 flex gap-2">
             <button type="button" onClick={toggleAllowMistakes} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
-            <button type="button" onClick={togglePerQ} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border btn-solid border-transparent${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>{perQ?"Per Question":"Per Round"}</button>
+            <button type="button" onClick={togglePerQ} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border btn-solid border-transparent ${(active||timerDone)?" opacity-60 pointer-events-none":""}`}>{perQ?"Per Question":"Per Round"}</button>
           </div>
           <div className="mt-3">{!perQ?(<div className="flex items-center gap-2"><input type="range" min="10" max="300" step="5" value={blitzSec} onChange={e=>{const v=+e.target.value;setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((blitzSec-10)/290*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={blitzSec} min={10} max={300} snap={5} disabled={active||timerDone} inputMode="numeric" label="Blitz round timer" format={fmtBlitzT} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>{setBlitzSec(v);if(!active){setBlitzRemain(v);blitzRemainRef.current=v;if(blitzTimeRef.current)blitzTimeRef.current.textContent=fmtBlitzT(v);if(blitzBarRef.current)blitzBarRef.current.style.transform="scaleX(1)";}}}/></div>):(<div className="flex items-center gap-2"><input type="range" min="1" max="30" step="0.5" value={qSec} onChange={e=>{const v=+e.target.value;setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}} disabled={active||timerDone} style={{"--rng-fill":Math.round((qSec-1)/29*100)+"%"} as React.CSSProperties} className="flex-1 disabled:opacity-40"/><SliderValueEditor value={qSec} min={1} max={30} snap={0.5} disabled={active||timerDone} inputMode="decimal" label="Blitz question timer" format={v=>v+"s"} toText={String} widest={SLIDER_READOUT_WIDEST} onCommit={v=>{setQSec(v);if(!active){setQRemain(v);if(suddenTimeRef.current)suddenTimeRef.current.textContent=v+"s";if(suddenBarRef.current)suddenBarRef.current.style.transform="scaleX(1)";}}}/></div>)}</div>
           <div className="mt-5">
@@ -2140,12 +2160,13 @@ interface DedOpts {
     //     the Save card writes the whole snapshot and needs neither.
     // A row is DIRTY when its pending value differs from the seed (aoxN normalized on both
     // sides, the store's defensive rule); dirty rows flag their value box/readout in the
-    // btn-solid accent tier (the AoX box swaps its panel fill for btn-solid + border-transparent
-    // so the rendered height never changes; the readouts take SliderValueEditor's accent pill).
+    // btn-solid accent tier (the AoX box swaps its surface-tray surface whole for btn-solid +
+    // border-transparent so the rendered height never changes; the readouts take
+    // SliderValueEditor's accent pill).
     // Stateless by design — the popup lifecycle (portal, scrim, Escape, Back, focus) stays with
     // the callers in App; edits touch only the caller's pending snapshot via setPrefs.
     // ============================================================
-    const NUM_INPUT_DIRTY_CLASS=NUM_INPUT_CLASS.replace("panel","btn-solid border border-transparent");
+    const NUM_INPUT_DIRTY_CLASS=NUM_INPUT_BASE+" btn-solid border border-transparent";
     function DefaultsCard({cardRef,titleId,title,subline,note,manage=false,prefs,seed,setPrefs,onClose,onSave}:{
       cardRef: React.RefObject<HTMLDivElement | null>
       titleId: string
@@ -2367,7 +2388,10 @@ interface DedOpts {
       // Defaults: appAtBottom true / appScrolledFromTop false (no indicators on first
       // paint before scroll state is evaluated). The listener runs on every mode change
       // so it picks up the right scroller and re-evaluates against new content. Inner
-      // scrollables (popover, lookup) track their own scroll state independently.
+      // scroll regions (popover, changelog, lookup) track theirs through the shared
+      // useScrollEdgeState (components/scrollRegion); this effect stays bespoke for the
+      // docScroll branch — the document scroller has no element to observe, so it reads
+      // document.scrollingElement and listens on window instead.
       const appScrollRef=useRef<HTMLDivElement | null>(null);
       const [appAtBottom,setAppAtBottom]=useState(true);
       const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
@@ -2802,29 +2826,20 @@ interface DedOpts {
       const [flashResetKey,setFlashResetKey]=useState(0); // ditto for FlashMode
       const [blitzResetKey,setBlitzResetKey]=useState(0); // ditto for BlitzMode
       const [deductionResetKey,setDeductionResetKey]=useState(0); // ditto for DeductionMode
-      // Scroll-state tracking for the settings popover inner scroll wrapper.
-      // Popover inner scroll state. Three flags drive the visual edge indicators:
-      //   popoverScrolledFromTop → top fade (no shadow at top — no fixed UI there)
-      //   popoverAtBottom        → bottom fade + sticky footer shadow (both signal "more below")
-      // Defaults: scrolledFromTop false, atBottom true (no indicators on first open before
-      // the listener evaluates). The two fade flags combine into fade-scroll-both when both apply.
+      // Scroll-state tracking for the two inner scroll regions this component owns — the settings
+      // popover's scroll wrapper and the changelog popup's list — both on the shared
+      // useScrollEdgeState (components/scrollRegion; the Q5 round-7 extraction of what were
+      // per-region copies of one listener). The flags drive the shared edge indicators:
+      //   …ScrolledFromTop → top fade (no shadow at the top — no fixed UI there)
+      //   …AtBottom        → bottom fade; the popover's also drives its sticky-footer shadow
+      //                      (both signal "more below" — the changelog's Close row is plain)
+      // While closed the hook holds the defaults (scrolledFromTop false, atBottom true) so
+      // reopening never flashes stale indicators; both fade flags combine into fade-scroll-both
+      // inside scrollFadeClass when both edges overflow.
       const popoverInnerScrollRef=useRef<HTMLDivElement | null>(null);
-      const [popoverAtBottom,setPopoverAtBottom]=useState(true);
-      const [popoverScrolledFromTop,setPopoverScrolledFromTop]=useState(false);
-      useEffect(()=>{
-        if(!settingsOpen){setPopoverAtBottom(true);setPopoverScrolledFromTop(false);return;}
-        const el=popoverInnerScrollRef.current;if(!el)return;
-        const evaluate=()=>{
-          const noOverflow=el.scrollHeight<=el.clientHeight+1;
-          setPopoverAtBottom(noOverflow||el.scrollTop+el.clientHeight>=el.scrollHeight-4);
-          setPopoverScrolledFromTop(!noOverflow&&el.scrollTop>0);
-        };
-        evaluate();
-        el.addEventListener('scroll',evaluate,{passive:true});
-        const ro=new ResizeObserver(evaluate);
-        ro.observe(el);
-        return()=>{el.removeEventListener('scroll',evaluate);ro.disconnect();};
-      },[settingsOpen]);
+      const {scrolledFromTop:popoverScrolledFromTop,atBottom:popoverAtBottom}=useScrollEdgeState(popoverInnerScrollRef,settingsOpen);
+      const changelogScrollRef=useRef<HTMLDivElement | null>(null);
+      const {scrolledFromTop:changelogScrolledFromTop,atBottom:changelogAtBottom}=useScrollEdgeState(changelogScrollRef,changelogOpen);
       // Footer-button caption auto-fit (Round-2) — the StatPanel value-fit pattern applied to the
       // Save Defaults / Reset Settings / Full Reset trio: on a narrow phone the three flex-1 buttons
       // can get too tight for their captions, so ONE shared font-size (never per-button — unequal
@@ -3194,8 +3209,11 @@ interface DedOpts {
       // content can never drag-dismiss the panel). The Year Range
       // inputs are data-drag-focus (release = focus for typing, panel stays open). The inner scroll
       // wrapper is data-drag-scroll — the controller's auto-scroll target + edge-band geometry.
+      // Scroll recipe (Q5 round-7): the wrapper wears SCROLL_REGION_CLASS + scrollFadeClass
+      // (components/scrollRegion) — this popover IS the reference treatment (card py-4 only, the
+      // px-4 scrollbar lane inside the scroller, edge fades) every other scroll region now shares.
       const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} id="settings-popover" data-drag-dismiss style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
-        <div ref={popoverInnerScrollRef} data-drag-scroll className={`overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4 px-4${popoverScrolledFromTop&&!popoverAtBottom?" fade-scroll-both":popoverScrolledFromTop?" fade-scroll-top":!popoverAtBottom?" fade-scroll-bottom":""}`}>
+        <div ref={popoverInnerScrollRef} data-drag-scroll className={`${SCROLL_REGION_CLASS} flex-1 min-h-0 space-y-4 ${scrollFadeClass(popoverScrolledFromTop,popoverAtBottom)}`}>
         {/* SETTINGS regrouped into 3 categories (Q2): Display (how it's shown + how you answer + theme),
             Dates (which dates get generated), Stats. Each category is a SectionLabel header; the former
             per-setting headings are now muted sub-labels (the Leap-Year header+sub-label pattern). Every
@@ -3242,7 +3260,7 @@ interface DedOpts {
           {/* Input — Buttons / Dots (the logo's 7-dot answer layout). Locks/dims in Deduction (answers
               aren't weekdays; value preserved), like Julian/Leap-Year Chance when they don't apply. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Input</div>
-          <div className={`flex gap-1.5${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
+          <div className={`flex gap-1.5 ${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
             <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='buttons'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Buttons</button>
             <button type="button" onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Dots</button>
           </div>
@@ -3288,7 +3306,7 @@ interface DedOpts {
           <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
-        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-(--bd-500-20)${!popoverAtBottom?" elev-shadow-up":""}`}>
+        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-(--bd-500-20) ${!popoverAtBottom?" elev-shadow-up":""}`}>
           <div ref={footerFitRef} className="flex gap-2">
             {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
                 full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
@@ -3301,9 +3319,9 @@ interface DedOpts {
                 the saved defaults (factory when none saved) — nothing new to save. Each caption sits in
                 a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
                 wrapping; overflow-hidden on the button contains the pre-fit paint). */}
-            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
+            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden ${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
             <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${resetSettingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
-            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
+            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>
         <div data-drag-stay className="pt-3 px-4 border-t border-(--bd-500-20) text-[11px] text-(--tx-300-60) space-y-0.5">
@@ -3316,29 +3334,34 @@ interface DedOpts {
               FACTORY view (there is always something to see, and to edit, now that the popup is
               the editable manager below). Clear saved defaults still appears only while a
               snapshot exists — with nothing saved there is nothing to clear. View sits LEFT of
-              Clear, matching the button trio's left→right escalation; gap-3 keeps ~4px between
-              the two press-drag rings (each ring extends px-1 past its text), flex-wrap is the
-              narrow-viewport fallback. Clear is the ONLY way back to factory semantics (the Save
-              Defaults popup's duplicate link was removed in Round-4 — one action, one home), and
-              it now opens a small CONFIRM modal (Cancel + a red-tier Clear, below) instead of
-              firing immediately. This footer row (the same muted tier as Check for updates below)
-              is always reachable: the Save Defaults button dims + locks exactly when live ==
-              saved, but the footer never hides behind it. FIRST link row, directly under the
-              button trio (Round-2): these are the only actionable settings in this block, and
-              they belong to the trio's story — below it the footer decays into contact info and
-              metadata. The row inherits the footer's data-drag-stay, so a drag-release on either
-              link acts with the panel staying open (each opens its modal over the panel). */}
-          <div className="flex flex-wrap gap-3"><button type="button" onClick={openManageDefaults} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button>{savedDefaults!==null&&<button type="button" onClick={()=>setClearConfirmOpen(true)} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button>}</div>
+              Clear, matching the button trio's left→right escalation; the row wears the shared
+              FOOTER_LINK_ROW_CLASS (defined up top, and worn by the Last Updated row below —
+              round-7 Q2): its gap-3 keeps ~4px between the two press-drag rings (each ring
+              extends px-1 past its text), its flex-wrap is the narrow-viewport fallback. Clear
+              is the ONLY way back to factory semantics (the Save Defaults popup's duplicate
+              link was removed in Round-4 — one action, one home), and it now opens a small
+              CONFIRM modal (Cancel + a red-tier Clear, below) instead of firing immediately.
+              This footer row (the same muted tier as Check for updates below) is always
+              reachable: the Save Defaults button dims + locks exactly when live == saved, but
+              the footer never hides behind it. FIRST link row, directly under the button trio
+              (Round-2): these are the only actionable settings in this block, and they belong
+              to the trio's story — below it the footer decays into contact info and metadata.
+              The row inherits the footer's data-drag-stay, so a drag-release on either link
+              acts with the panel staying open (each opens its modal over the panel). */}
+          <div className={FOOTER_LINK_ROW_CLASS}><button type="button" onClick={openManageDefaults} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button>{savedDefaults!==null&&<button type="button" onClick={()=>setClearConfirmOpen(true)} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button>}</div>
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className={FOOTER_LINK_ROW_CLASS}>
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
             {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme. */}
             <button type="button" onClick={onCheckUpdates} className="underline select-none rounded-md px-1 -mx-1">Check for updates</button>
             {/* Changelog (Q6), RIGHT of Check for updates — the two update-flavored links live
-                together, force-the-latest then read-what-changed. Same footer-link recipe; wears
-                the update-signal dot (index.css .update-dot) until its first tap after a build
-                change — the second stage of the breadcrumb the gear's dot starts. */}
-            <button type="button" onClick={openChangelog} className={`underline select-none rounded-md px-1 -mx-1${changelogDot?" update-dot":""}`}>Changelog</button>
+                together, force-the-latest then read-what-changed. Same footer-link recipe, in a
+                row wearing the same shared FOOTER_LINK_ROW_CLASS as the View/Clear row above
+                (round-7 Q2 — this row's legacy gap-2 left its rings touching at 0px clearance
+                vs the ~4px above); wears the update-signal dot (index.css .update-dot) until
+                its first tap after a build change — the second stage of the breadcrumb the
+                gear's dot starts. */}
+            <button type="button" onClick={openChangelog} className={`underline select-none rounded-md px-1 -mx-1 ${changelogDot?" update-dot":""}`}>Changelog</button>
           </div>
         </div>
       </div>);
@@ -3425,28 +3448,33 @@ interface DedOpts {
         </div>),
         document.getElementById('root')!
       );
-      // Changelog popup (Q6): the plain-words what-changed list (src/changelog, newest deploy
+      // Changelog popup (Q6): the plain-words what-changed list (src/changelog, newest day
       // first), opened from the footer's Changelog link — the same portal / scrim / card recipes
       // and the same modal contract as the popups above (focus-on-open, capture Escape, close
       // with settings, Android Back, the shared trapModalTab + data-settings-modal marker; the one
       // control is a full-width Close, input-free like the Clear confirm). The list shows the latest
-      // CHANGELOG_VISIBLE deploys — the module keeps every entry forever, the popup stays a digest
-      // — inside its own scroll region (max-h + overscroll-contain, so a long history scrolls
-      // within the card without growing it off-screen). Entry dates render through the footer's
-      // Last-Updated recipe (fmt + numericFormatOf) so they follow the user's Date Format setting;
-      // the bullet list is the guide's UL idiom (list-disc + the --mut-color marker).
+      // CHANGELOG_VISIBLE days — the module keeps every entry forever, the popup stays a digest
+      // — inside its own scroll region on the shared settings recipe (Q5 round-7,
+      // components/scrollRegion): the card owns py-4 only while the title, scroll region, and
+      // Close row each carry px-4, so the scroller's 1rem right padding is the text-free lane
+      // the iOS scrollbar paints in; SCROLL_REGION_CLASS + scrollFadeClass (fed by the
+      // changelogScrollRef edge listener up with the popover's) add the edge fades, and max-h
+      // keeps a long history scrolling within the card without growing it off-screen. Entry
+      // dates render through the footer's Last-Updated recipe (fmt + numericFormatOf) so they
+      // follow the user's Date Format setting; the bullet list is the guide's UL idiom
+      // (list-disc + the --mut-color marker).
       const changelogJsx=changelogOpen&&ReactDOM.createPortal(
         (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setChangelogOpen(false);}} onKeyDown={trapModalTab}>
-          <div ref={changelogCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="changelog-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="changelog-title" className="text-sm font-semibold text-(--tx-50)">What's new</div>
-            <div className="max-h-[55vh] overflow-y-auto overscroll-contain space-y-3">
+          <div ref={changelogCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="changelog-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl py-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
+            <div id="changelog-title" className="px-4 text-sm font-semibold text-(--tx-50)">What's new</div>
+            <div ref={changelogScrollRef} className={`${SCROLL_REGION_CLASS} max-h-[55vh] space-y-3 ${scrollFadeClass(changelogScrolledFromTop,changelogAtBottom)}`}>
               {visibleEntries(CHANGELOG).map(en=>{const [yy,mo,da]=en.date.split('-').map(Number);return(
                 <div key={en.date} className="space-y-1">
                   <div className="text-xs font-semibold text-(--tx-100-80)">{fmt(yy,mo,da,numericFormatOf(dateFormat))}</div>
                   <ul className="list-disc pl-4 space-y-1 marker:text-(--mut-color) text-xs text-(--tx-200-80)">{en.items.map((it,i)=><li key={i}>{it}</li>)}</ul>
                 </div>);})}
             </div>
-            <div className="pt-1"><button type="button" onClick={closeChangelog} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
+            <div className="px-4 pt-1"><button type="button" onClick={closeChangelog} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
           </div>
         </div>),
         document.getElementById('root')!
@@ -3477,7 +3505,8 @@ interface DedOpts {
             ⚠ The SPACE in `pt-5 ${` is REQUIRED — Tailwind v4's source scanner silently drops a
             utility glued directly to `${` when it appears nowhere else; without it the bar lost
             its pt-5 (20px) top padding and the whole site sat ~20px too high. Don't remove the
-            space. (Calendar Game layout bug-fix, 2026-06-01.) */}
+            space — tests/classGlueGuard.test.js now fails the suite on any glued class site.
+            (Calendar Game layout bug-fix, 2026-06-01.) */}
         <div ref={htpStickyBarRef} style={{position:'fixed',top:0,left:0,right:0,zIndex:30}} className={`htp-sticky-bar bg-(--bg1) w-full pt-5 ${mode==="guide"?" pb-2.5":""}${appScrolledFromTop?" elev-shadow-down":""}`}>
           <div className="mx-auto px-4 w-full max-w-[30rem] relative">
             <div className="flex items-center justify-between gap-2">
@@ -3502,7 +3531,7 @@ interface DedOpts {
                       indicators coexist on the same button) marks an update landed since the panel was
                       last opened (opening clears it — the effect above — so it too only ever shows
                       CLOSED); the aria-label mirrors both booleans in every combination. */}
-                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80)${settingsModified?" gear-modified":""}${gearDot?" update-dot":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙</button>
+                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}${gearDot?" update-dot":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙</button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the
@@ -3526,14 +3555,17 @@ interface DedOpts {
         {/* Scroll container. Clamped modes (everything but HtP): position:absolute inset:0
             with padding-top:var(--bar-h) so content starts immediately below the bar;
             overscroll-contain keeps rubber-band bounce LOCAL to this container (bar is
-            unaffected); the fade-scroll-* masks mark overflowing edges. Guide mode
-            (docScroll): the DOCUMENT scrolls instead — same div, same ref, same padding-top,
-            but a plain classless flow block (no clamp/overflow/mask classes; the doc-fade
-            strips below replace the masks), and the inner wrapper trades pb-3 for the same
-            0.75rem plus the safe-area inset — in document flow the 100dvh #root clamp no
+            unaffected); the fade-scroll-* masks mark overflowing edges. This is the one
+            scroller on SCROLLER_CORE_CLASS rather than SCROLL_REGION_CLASS
+            (components/scrollRegion): it fills the viewport, so its scrollbar already paints
+            at the screen edge past the content wrapper's px-4 — no inner lane needed. Guide
+            mode (docScroll): the DOCUMENT scrolls instead — same div, same ref, same
+            padding-top, but a plain classless flow block (no clamp/overflow/mask classes; the
+            doc-fade strips below replace the masks), and the inner wrapper trades pb-3 for the
+            same 0.75rem plus the safe-area inset — in document flow the 100dvh #root clamp no
             longer keeps the last panel above the iPhone home indicator. */}
-        <div ref={appScrollRef} style={{paddingTop:'var(--bar-h)'}} className={docScroll?undefined:`absolute inset-0 overflow-y-auto overscroll-contain${appScrolledFromTop&&!appAtBottom?" fade-scroll-both":appScrolledFromTop?" fade-scroll-top":!appAtBottom?" fade-scroll-bottom":""}`}>
-        <div className={`mx-auto px-4 w-full max-w-[30rem]${docScroll?" pb-[calc(0.75rem_+_env(safe-area-inset-bottom))]":" pb-3"}`}>
+        <div ref={appScrollRef} style={{paddingTop:'var(--bar-h)'}} className={docScroll?undefined:`absolute inset-0 ${SCROLLER_CORE_CLASS} ${scrollFadeClass(appScrolledFromTop,appAtBottom)}`}>
+        <div className={`mx-auto px-4 w-full max-w-[30rem] ${docScroll?" pb-[calc(0.75rem_+_env(safe-area-inset-bottom))]":" pb-3"}`}>
           {/* key={aoxResetKey} forces remount on Full Reset since AoxMode is always-mounted
               (display:none toggle on visible prop, not conditional rendering) and its internal
               state would otherwise persist across resets. See aoxResetKey declaration upstream

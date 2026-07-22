@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
 // The changelog + update-signal dots (round-6 Q6). src/changelog holds the hand-maintained
-// plain-words per-deploy entries (newest first; the module keeps every entry while the popup
-// shows the latest CHANGELOG_VISIBLE — the cap itself is pinned in changelogLimit.dom, which
-// mocks a larger data set behind the REAL slice). The two light-blue dots are the persisted
+// plain-words per-DAY entries (newest first; a second same-day deploy PREPENDS its lines to that
+// day's entry — the round-7 combine policy — so dates stay unique; the module keeps every entry
+// while the popup shows the latest CHANGELOG_VISIBLE — the cap itself is pinned in
+// changelogLimit.dom, which mocks a larger data set behind the REAL slice). The two light-blue dots are the persisted
 // breadcrumb to the popup: the Q2 build-stamp detection marks both flags on every build change
 // (including one the real Updating flow just bridged — only the SCREEN is suppressed then),
 // opening ⚙ Settings retires the gear's dot, and the first tap on the footer's Changelog link
@@ -49,7 +50,7 @@ const changelogTitle = () => screen.queryByText("What's new")
 const changelogDialog = () => screen.getByRole('dialog', { name: "What's new" })
 
 describe('changelog data (src/changelog)', () => {
-  it('every entry is an ISO-dated, non-empty plain-words list, newest first', () => {
+  it('every entry is an ISO-dated, non-empty plain-words list, newest first, one per day', () => {
     expect(CHANGELOG.length).toBeGreaterThanOrEqual(2)
     for (const en of CHANGELOG) {
       expect(en.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
@@ -57,7 +58,11 @@ describe('changelog data (src/changelog)', () => {
       for (const it of en.items) expect(it.trim().length).toBeGreaterThan(0)
     }
     const dates = CHANGELOG.map((en) => en.date)
-    expect([...dates].sort().reverse()).toEqual(dates) // strictly newest-first (ISO sorts lexically)
+    expect([...dates].sort().reverse()).toEqual(dates) // newest-first (ISO sorts lexically)
+    // One entry per Pacific day (the round-7 same-day COMBINE policy): a second same-day deploy
+    // prepends its lines instead of adding a twin-dated card. Uniqueness is what makes the
+    // ordering pin above STRICT, and it protects the popup's key={en.date} React-key contract.
+    expect(new Set(dates).size).toBe(dates.length)
   })
 
   it('history starts at the round-5 deploy and is never retro-written below it', () => {
@@ -244,11 +249,12 @@ describe('the Changelog popup (modal parity + content)', () => {
     const scrollRegion = dialog.querySelector('.overflow-y-auto')
     for (const l of lists) expect(scrollRegion.contains(l)).toBe(true)
     // The factory Date Format (Written MDY) renders numerically, the Last-Updated recipe.
-    // Each visible deploy renders its own Pacific calendar date (round-6 2026-07-19, round-5
-    // 2026-07-17), driven through the same Date Format setting.
+    // Each visible day renders its own Pacific calendar date (round-7 2026-07-21, round-6
+    // 2026-07-19, round-5 2026-07-17), driven through the same Date Format setting.
+    expect(within(dialog).getByText('7/21/2026')).toBeInTheDocument()
     expect(within(dialog).getByText('7/19/2026')).toBeInTheDocument()
     expect(within(dialog).getByText('7/17/2026')).toBeInTheDocument()
-    // Newest deploy first, each line verbatim.
+    // Newest day first, each line verbatim.
     expect(
       within(lists[0])
         .getAllByRole('listitem')
@@ -262,6 +268,43 @@ describe('the Changelog popup (modal parity + content)', () => {
     // Input-free by construction: the one control is Close.
     expect(within(dialog).queryAllByRole('textbox')).toHaveLength(0)
     expect(within(dialog).getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('wears the settings scroll recipe: py-4 card, the px-4 lane inside the scroll region, px-4 title and Close rows (round-7 Q5)', () => {
+    mountApp()
+    openPopup()
+    const dialog = changelogDialog()
+    const scrollRegion = dialog.querySelector('.overflow-y-auto')
+    // The card owns vertical padding only; the horizontal 1rem lives INSIDE the scroller (the
+    // scrollbar's text-free lane) and on the title and Close rows — components/scrollRegion.
+    expect(dialog.className).toContain('py-4')
+    expect(dialog.className.split(/\s+/)).not.toContain('p-4')
+    expect(scrollRegion.className).toContain('px-4')
+    expect(scrollRegion.className).toContain('overscroll-contain')
+    expect(dialog.querySelector('#changelog-title').className).toContain('px-4')
+    const closeRow = within(dialog).getByRole('button', { name: 'Close' }).parentElement
+    expect(closeRow.className).toContain('px-4')
+  })
+
+  it('edge fades track scroll position inside the popup (the shared scroll-state listener, round-7 Q5)', () => {
+    mountApp()
+    openPopup()
+    const region = changelogDialog().querySelector('.overflow-y-auto')
+    // jsdom has no layout — teach the region a scrollable geometry, then drive scrollTop through
+    // real scroll events against the useScrollEdgeState listener attached on open.
+    Object.defineProperties(region, {
+      scrollHeight: { configurable: true, value: 400 },
+      clientHeight: { configurable: true, value: 200 },
+    })
+    act(() => fireEvent.scroll(region)) // still at the top: content extends below only
+    expect(region.className).toContain('fade-scroll-bottom')
+    region.scrollTop = 100
+    act(() => fireEvent.scroll(region)) // mid-scroll: content past both edges
+    expect(region.className).toContain('fade-scroll-both')
+    region.scrollTop = 200
+    act(() => fireEvent.scroll(region)) // at the bottom: content extends above only
+    expect(region.className).toContain('fade-scroll-top')
+    expect(region.className).not.toContain('fade-scroll-both')
   })
 
   it('Close, scrim mousedown/click, and Escape dismiss the popup only — the settings panel survives', () => {
@@ -355,5 +398,17 @@ describe('the Changelog popup (modal parity + content)', () => {
     const link = changelogLink()
     expect(check.parentElement).toBe(link.parentElement)
     expect(check.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('both settings-footer link rows share one row class — equal link gaps (round-7 Q2)', () => {
+    mountApp()
+    openSettings()
+    // The View/Clear row and the Last Updated / Check for updates / Changelog row both wear the
+    // hoisted FOOTER_LINK_ROW_CLASS — the guard that the second row can never drift back to its
+    // legacy gap-2 (rings touching) while the first sits at gap-3 (~4px ring clearance).
+    const viewRow = screen.getByRole('button', { name: 'View saved defaults' }).parentElement
+    const updatesRow = screen.getByRole('button', { name: 'Check for updates' }).parentElement
+    expect(updatesRow.className).toBe(viewRow.className)
+    expect(viewRow.className).toContain('gap-3')
   })
 })

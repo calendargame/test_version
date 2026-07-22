@@ -2,6 +2,7 @@ import * as React from 'react'
 import { fmt, MONTH, DAY, numericFormatOf } from '../lib/format.js'
 import { dim, wday, wdayJulian, isJulianDate, isGapDate } from '../lib/calendar.js'
 import { MethodBreakdownSection, type CodeDate } from './MethodBreakdown.jsx'
+import { SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './scrollRegion.js'
 import type { FormatId } from '../lib/format.js'
 
 // A Lookup history entry: parsed date (y/m/d) + rendered label, weekday, full result.
@@ -84,31 +85,16 @@ export default function LookupCard({
   const ssid =
     typeof onSelectedHistoryIdChange === 'function' ? onSelectedHistoryIdChange : () => {}
   const cov = !!calcOpen
-  // Lookup history scroll-state tracking. Three flags drive edge indicators:
+  // Lookup history scroll-state — the shared useScrollEdgeState (components/scrollRegion,
+  // the settings-recipe edge listener). The two flags drive the edge indicators:
   //   lookupHistoryScrolledFromTop → top fade + History header shadow (down)
   //   lookupHistoryAtBottom        → bottom fade + MethodBreakdown shadow (up)
-  // Defaults: scrolledFromTop false, atBottom true. ResizeObserver covers the case
-  // where the list grows from 9→10 entries while the user is viewing it.
+  // `history` stands in as the hook's active key: the <ul> only exists with entries, so a
+  // history change re-attaches the listener to a freshly (re)mounted list; the hook's
+  // ResizeObserver covers the list growing from 9→10 entries while the user is viewing it.
   const lookupHistoryRef = React.useRef<HTMLUListElement>(null)
-  const [lookupHistoryAtBottom, setLookupHistoryAtBottom] = React.useState(true)
-  const [lookupHistoryScrolledFromTop, setLookupHistoryScrolledFromTop] = React.useState(false)
-  React.useEffect(() => {
-    const el = lookupHistoryRef.current
-    if (!el) return
-    const evaluate = () => {
-      const noOverflow = el.scrollHeight <= el.clientHeight + 1
-      setLookupHistoryAtBottom(noOverflow || el.scrollTop + el.clientHeight >= el.scrollHeight - 4)
-      setLookupHistoryScrolledFromTop(!noOverflow && el.scrollTop > 0)
-    }
-    evaluate()
-    el.addEventListener('scroll', evaluate, { passive: true })
-    const ro = new ResizeObserver(evaluate)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', evaluate)
-      ro.disconnect()
-    }
-  }, [history])
+  const { scrolledFromTop: lookupHistoryScrolledFromTop, atBottom: lookupHistoryAtBottom } =
+    useScrollEdgeState(lookupHistoryRef, history)
   // Codes-open is purely global state — it stays as-is when the user clicks through
   // history entries, only changing on (1) a manual toggle, (2) a brand-new lookup
   // via runLookup, or (3) MethodBreakdownSection's auto-close when the displayed
@@ -389,6 +375,10 @@ export default function LookupCard({
     <div className="mt-1 space-y-4">
       <div className="rounded-2xl panel p-4 space-y-4">
         <div className="flex flex-wrap items-stretch gap-2">
+          {/* The date input wears the site-wide interactive-border rule (Q7 round-7): inputs are
+              controls you act on, so it carries border surface-tray — the sbtn-bd tier its
+              Lookup/Clear button neighbors share — never the container .panel it once borrowed
+              (geometry unchanged: .panel's own 1px border became the explicit border token). */}
           <input
             ref={lookupInputRef}
             value={li}
@@ -400,7 +390,7 @@ export default function LookupCard({
               }
             }}
             placeholder={`e.g., ${inputMeta.example}`}
-            className="panel rounded-xl px-3 py-2 focus:outline-hidden focus-ring flex-1 min-w-0"
+            className="border surface-tray rounded-xl px-3 py-2 focus:outline-hidden focus-ring flex-1 min-w-0"
           />
           <button
             type="button"
@@ -426,15 +416,21 @@ export default function LookupCard({
           AD dates only, 1–10000
         </p>
       </div>
-      <div className="rounded-2xl panel p-4 space-y-4">
-        {/* History header: divider line below extends to full panel width via -mx-4
-            + px-4 (so the line cuts edge-to-edge instead of stopping short at the
-            parent's p-4). lookup-history-header class is for the box-shadow transition
+      <div className="rounded-2xl panel py-4 space-y-4">
+        {/* History panel on the shared scroll-region recipe (Q5 round-7,
+            components/scrollRegion): the panel owns py-4 only, and every child carries its
+            own px-4 — for the scrolling <ul> below that puts the 1rem right padding INSIDE
+            the scroller, the text-free lane the iOS scrollbar paints in. Content widths are
+            unchanged; the pre-Q5 p-4 parent plus -mx-4 counter-margins on the header and
+            method section produced the same geometry with the lane OUTSIDE the scroller. */}
+        {/* History header: with the panel padding vertical-only, the header's own px-4 spans
+            the full panel width, so its divider line cuts edge-to-edge on its own.
+            lookup-history-header class is for the box-shadow transition
             hook (see CSS). elev-shadow-down + the divider line together signal "fixed
             header above content scrolling below" — same pattern as the popover sticky
             footer's elev-shadow-up. */}
         <div
-          className={`lookup-history-header -mx-4 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70)${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
+          className={`lookup-history-header px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70) ${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
         >
           <span>History</span>
           {entries.length > 0 && (
@@ -443,10 +439,17 @@ export default function LookupCard({
             </button>
           )}
         </div>
+        {/* ⚠ The SPACE in `max-h-[440px] ${` is REQUIRED — Tailwind v4's source scanner
+            silently drops a utility glued directly to `${` when it appears nowhere else
+            (the same incident class as main.tsx's `pt-5 ${` bar fix); glued, the built CSS
+            carried no max-height rule at all, the list grew unbounded, and the whole Lookup
+            page scrolled once history passed ten entries. Don't remove the space —
+            tests/classGlueGuard.test.js now fails the suite on any glued class site.
+            (Q6 regression fix, 2026-07-21.) */}
         {renderedEntries.length > 0 ? (
           <ul
             ref={lookupHistoryRef}
-            className={`space-y-2 overflow-y-auto overscroll-contain max-h-[440px]${lookupHistoryScrolledFromTop && !lookupHistoryAtBottom ? ' fade-scroll-both' : lookupHistoryScrolledFromTop ? ' fade-scroll-top' : !lookupHistoryAtBottom ? ' fade-scroll-bottom' : ''}`}
+            className={`${SCROLL_REGION_CLASS} space-y-2 max-h-[440px] ${scrollFadeClass(lookupHistoryScrolledFromTop, lookupHistoryAtBottom)}`}
           >
             {renderedEntries.map((e) => (
               <li key={e.id}>
@@ -466,15 +469,15 @@ export default function LookupCard({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-(--tx-200-70)">No lookups yet</p>
+          <p className="px-4 text-sm text-(--tx-200-70)">No lookups yet</p>
         )}
-        {/* MethodBreakdownSection wrapper: -mx-4 + px-4 extends the existing border-t
-            divider full-width across the panel (was previously stopping short at the
-            parent's p-4). lookup-method-section class hooks the box-shadow transition.
+        {/* MethodBreakdownSection wrapper: its px-4 spans the vertical-only-padded panel
+            full-width, so the existing border-t divider cuts edge-to-edge on its own.
+            lookup-method-section class hooks the box-shadow transition.
             elev-shadow-up signals "fixed footer below content scrolling above." */}
         <MethodBreakdownSection
           date={cdv}
-          className={`lookup-method-section -mx-4 px-4 pt-4 border-t border-(--bd-500-40)${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
+          className={`lookup-method-section px-4 pt-4 border-t border-(--bd-500-40) ${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
           contentClassName="mt-3 rounded-2xl panel px-4 pt-[3px] pb-1.5"
           open={cov}
           onOpenChange={sco}
