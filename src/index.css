@@ -55,8 +55,13 @@
    by construction. --hist-sel/--hist-hov (the Lookup selected-history tint, ex the
    purple-500 35% selected fill + its 15% hover) had NO light design before (the old
    block missed them — the 4th-incident candidate); their light values are new — owner
-   tunes on-device. */
-:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:rgba(26,15,43,.98);--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--chip-bg:rgba(120,53,175,.25);--chip-bd:rgba(120,53,175,.45);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev:rgba(0,0,0,.5);--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent)}
+   tunes on-device.
+   --nbtn-bg (Q4 round-8) is the NEUTRAL solid button fill: the app's one non-brand solid, worn by
+   Lookup's Clear button beside the btn-solid Lookup. It was a raw zinc utility in the className —
+   the last raw colour utility outside the ramp — so no theme could ever reach it. Only the dark
+   row below defines it (zinc-700's exact value), so every theme renders EXACTLY as it does today;
+   light/parchment now have a one-line hook if that dark grey should ever lighten. */
+:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:rgba(26,15,43,.98);--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--chip-bg:rgba(120,53,175,.25);--chip-bd:rgba(120,53,175,.45);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev:rgba(0,0,0,.5);--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent);--nbtn-bg:oklch(37% .013 285.805)}
 [data-theme="dusk"]{--bg1:#0d1117;--bg2:#0d1117;--tc:#0d1117;--card-bg:rgba(13,17,23,.97);--card-bd:rgba(99,102,241,.4);--panel-bg:rgba(28,38,68,.35);--panel-bd:rgba(99,102,241,.4);--thin-bd:rgba(99,102,241,.3);--sbtn-bg:rgba(38,48,88,.38);--sbtn-bd:rgba(99,102,241,.5);--sbtn-hov:rgba(38,48,88,.55);--stgl-bg:rgba(28,38,68,.28);--stgl-hov:rgba(28,38,68,.45);--chip-bg:rgba(99,102,241,.2);--chip-bd:rgba(99,102,241,.4);--bar-bg:rgba(99,102,241,.2);--bar-bd:rgba(99,102,241,.4);--shadow-elev:rgba(0,0,0,.5);--drag-ring:rgba(129,140,248,.55)}
 [data-theme="midnight"]{--bg1:#000;--bg2:#000;--tc:#000;--card-bg:rgba(4,0,12,.93);--card-bd:rgba(139,92,246,.5);--panel-bg:rgba(45,0,90,.28);--panel-bd:rgba(139,92,246,.5);--thin-bd:rgba(139,92,246,.38);--sbtn-bg:rgba(55,0,110,.35);--sbtn-bd:rgba(139,92,246,.55);--sbtn-hov:rgba(55,0,110,.5);--stgl-bg:rgba(45,0,90,.25);--stgl-hov:rgba(45,0,90,.42);--chip-bg:rgba(139,92,246,.2);--chip-bd:rgba(139,92,246,.45);--bar-bg:rgba(139,92,246,.2);--bar-bd:rgba(139,92,246,.45);--shadow-elev:rgba(139,92,246,.18);--drag-ring:rgba(167,139,250,.55)}
 [data-theme="nebula"]{--bg1:#0b0714;--bg2:#0b0714;--tc:#0b0714}
@@ -146,7 +151,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    FADE = "content extends past this edge." Implemented as a CSS mask on the
      scroll container itself. Applied conditionally (state-driven) so it only
      appears when content actually overflows past that edge. Top and bottom
-     variants are symmetric (24px each).
+     variants are symmetric (--fade-h each).
    SHADOW (elev-shadow-down/up) = "fixed UI sits at this boundary, content
      slides under it." Applied to the fixed element (bar, sticky footer,
      layered section header), not to the scroll container. Cast away from the
@@ -157,22 +162,46 @@ input,textarea{user-select:text;-webkit-user-select:text}
    tokenized in components/scrollRegion.ts (Q5 round-7) — new inner scrollers take
    SCROLL_REGION_CLASS + scrollFadeClass + useScrollEdgeState from there, and
    tests/scrollRegionGuard.test.js fails the suite on any scroller built outside it. */
-.fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black 24px);mask-image:linear-gradient(to bottom,transparent,black 24px)}
-.fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - 24px),transparent);mask-image:linear-gradient(to bottom,black calc(100% - 24px),transparent)}
+/* ONE feather depth for every edge fade in the app — the container masks below AND the
+   guide's fixed doc-fade strips further down. Tokenized in Q6 (round 8) because the guide
+   accordion's reading line is now DERIVED from it (--seat-top below): a panel seated with
+   only the bar cleared lands under the densest part of the top feather, so the seat has to
+   clear bar + feather. A hardcoded twin beside the token would let the two drift apart and
+   silently restore that bug, so every fade site reads the token. */
+:root{--fade-h:24px}
+.fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h));mask-image:linear-gradient(to bottom,transparent,black var(--fade-h))}
+.fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent)}
 /* When a container has BOTH top and bottom fades, the two mask-images must be
    combined into a single rule so neither overrides the other (CSS doesn't stack
    mask-image declarations from separate classes). The combined gradient fades
    both edges at once. */
-.fade-scroll-both{-webkit-mask-image:linear-gradient(to bottom,transparent,black 24px,black calc(100% - 24px),transparent);mask-image:linear-gradient(to bottom,transparent,black 24px,black calc(100% - 24px),transparent)}
+.fade-scroll-both{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent)}
 /* Doc-scroll (guide mode) edge fades: the mask fades above sit ON the scroll container and
    fade its CONTENT box — meaningless when the document is the scroller (the bottom mask edge
-   would sit at the end of the whole document, off-screen). These fixed 24px strips paint the
-   same feather over the VIEWPORT edges instead: solid --bg1 → transparent, indistinguishable
+   would sit at the end of the whole document, off-screen). These fixed --fade-h strips paint
+   the same feather over the VIEWPORT edges instead: solid --bg1 → transparent, indistinguishable
    from the masks on the flat one-color --bg1 background every theme uses. pointer-events:none
    keeps them untouchable; the top strip starts under the fixed bar. JSX mounts them only in
    guide mode, toggled by the same two scroll states that drive the masks. */
-.doc-fade-top{position:fixed;top:var(--bar-h);left:0;right:0;height:24px;pointer-events:none;background:linear-gradient(to bottom,var(--bg1),transparent)}
-.doc-fade-bottom{position:fixed;bottom:0;left:0;right:0;height:24px;pointer-events:none;background:linear-gradient(to top,var(--bg1),transparent)}
+.doc-fade-top{position:fixed;top:var(--bar-h);left:0;right:0;height:var(--fade-h);pointer-events:none;background:linear-gradient(to bottom,var(--bg1),transparent)}
+.doc-fade-bottom{position:fixed;bottom:0;left:0;right:0;height:var(--fade-h);pointer-events:none;background:linear-gradient(to top,var(--bg1),transparent)}
+/* --seat-top — the guide's READING LINE, defined once (Q6, round 8). The top strip above is
+   fixed at top:var(--bar-h) and is --fade-h deep, so the first fully-legible document pixel
+   sits at viewport y = --bar-h + --fade-h. Before Q6 the accordion coordinator seated a
+   tapped panel at --bar-h with zero clearance, i.e. its top border and rounded corners
+   landed under the densest part of that same feather BY CONSTRUCTION. Both consumers now
+   read this one value: scroll-padding-top gives the native scrollport the same line (a Tab
+   into a guide header scrolls to it), and lib/accordionMotion's seatTop is read off it in JS.
+   @property REGISTRATION makes the JS read cheap: registered, the computed value is a resolved
+   <length> in px. It is NOT a guarantee, because @property itself is not universal (Safari ≤16.3,
+   Firefox <128 — Tailwind emits an @supports fallback for this very token further up this
+   stylesheet, which is the proof they're in the target set). Unregistered, the property computes
+   to its substituted token stream — the literal "calc(57px + 24px)" — so the JS reader must never
+   treat a failed parse as zero. It doesn't: GuidePage recomposes the line from --bar-h + --fade-h,
+   which parse on every engine. inherits:true so descendants can read it too; the 0px initial value
+   only ever applies outside guide mode, where nothing reads it. */
+@property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
+html[data-doc-scroll]{--seat-top:calc(var(--bar-h) + var(--fade-h));scroll-padding-top:var(--seat-top)}
 .elev-shadow-down{box-shadow:0 4px 6px -2px var(--shadow-elev)}
 .elev-shadow-up{box-shadow:0 -4px 6px -2px var(--shadow-elev)}
 /* Smooth shadow fade in/out. Selectors target the elements that conditionally
@@ -190,6 +219,31 @@ input,textarea{user-select:text;-webkit-user-select:text}
    trays): a container must not brighten as one block on hover; its unselected segments carry
    their own per-target hover (hover:bg-(--stgl-hov)) instead. */
 .surface-tray{background:var(--stgl-bg);border-color:var(--sbtn-bd)}
+/* .svalue-input — the tap-to-type edit box inside SliderValueEditor's readout cell (Q4 round-8).
+   The box is OUT OF FLOW (absolutely positioned over the cell), so it can never size that cell:
+   the always-mounted invisible strut is the only in-flow child and sizes it alone, in BOTH states.
+   The box is then inset OUTWARD by exactly its own chrome — margin-inline −(pad + border),
+   margin-block −border — so with inset:0 the absolute-positioning width/height equations solve to
+   CONTENT box == strut box on both axes: the digits land on the same pixels whether the readout is
+   resting or being typed into, and nothing on the row moves. (Round-7 tried to CANCEL the extra
+   geometry with a negative block margin on an in-flow grid item instead of removing it: Chrome
+   netted that to zero, the owner's iPhone did not — and a border-box 100% width left the CONTENT
+   box ~10px narrower than the strut, which ate the leading digit of any 3-digit value at the AoX
+   Run Length site. Retired utilities are described, never spelled, anywhere near source the
+   Tailwind scanner reads — writing one out re-emits its dead rule.)
+   The ~5px outward bleed per side is deliberate — the same idiom the accent (dirty) pill already
+   ships via px-1 -mx-1 — and paints into the row's vertical breathing room; any future host that
+   becomes a scroll region must account for it.
+   Border WIDTH + STYLE only: the COLOUR comes from .surface-tray on the same element, so the
+   `border` shorthand is deliberately avoided (it would reset border-color to currentcolor and make
+   the result depend on rule order). appearance:none turns off the native form-field treatment
+   (iOS's inner shadow + focus look) — the box declares its own border, background and radius, so
+   appearance:auto is a false declaration. Unprefixed only, exactly like Tailwind's own
+   appearance-none utility that the app's other three text inputs wear: the build's targets need
+   no -webkit- twin, and Lightning CSS strips one if written. The rule is UNLAYERED, so it beats
+   Tailwind's utilities layer outright: inset, radius, padding and margins here are NOT
+   overridable from the className. */
+.svalue-input{--svalue-pad:var(--spacing);--svalue-bd:1px;position:absolute;inset:0;border-style:solid;border-width:var(--svalue-bd);border-radius:var(--radius-md);padding-inline:var(--svalue-pad);margin-inline:calc((var(--svalue-pad) + var(--svalue-bd)) * -1);margin-block:calc(var(--svalue-bd) * -1);appearance:none}
 .btn-solid{background:#7c3aed;color:#fff;transition:background-color .2s}
 /* Hover styles guarded by hover-capable media query so touch devices (iOS, Android)
    don't get sticky-hover residual highlights after a tap. Tailwind's own hover:
@@ -277,17 +331,38 @@ button:focus,select:focus{outline:none}
 .gear-modified{position:relative}
 .gear-modified::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:9999px;background:rgba(167,139,250,.85)}
 [data-theme="light"] .gear-modified::after,[data-theme="parchment"] .gear-modified::after{background:rgba(124,58,237,.75)}
-/* Q6 — the update-signal dot: a small light-blue dot at the TOP-RIGHT INSIDE corner of its host,
-   the two-stage breadcrumb to the changelog after an update (the Q2 build-stamp detection lights
-   it). Worn by the closed ⚙ gear (cleared on opening Settings) and by the footer's Changelog link
-   (cleared on its first tap). Light blue — deliberately outside the violet "customized" and rose
-   "destructive" families: it means "news", not state or danger. ::before, NOT ::after, so it can
-   share the gear with .gear-modified's bottom bar (both at once = an update landed while settings
-   are customized); 3px inset keeps the 6px dot fully inside the gear's rounded-xl corner arc.
-   Deeper blue on the light themes for contrast (the gear-modified pattern). */
-.update-dot{position:relative}
-.update-dot::before{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:9999px;background:rgba(125,211,252,.95)}
-[data-theme="light"] .update-dot::before,[data-theme="parchment"] .update-dot::before{background:rgba(2,132,199,.8)}
+/* Q6, re-cut in round-8 Q7 — the update-signal dot: the two-stage breadcrumb to the changelog after
+   a new build lands (the Q2 build-stamp detection lights both flags). Worn by the closed ⚙ gear
+   (cleared on opening Settings) and by the ⚙ footer's Changelog link (cleared on its first tap).
+   Light blue — deliberately outside the violet "customized" and rose "destructive" families: it
+   means "news", not state or danger. Deeper blue on the light themes (the .gear-modified pattern).
+   The marker is a real element, components/UpdateDot, which is where the reuse rule is written.
+
+   TWO MOUNTINGS, ONE DOT. Round 6 had only the corner badge below and reused it on the Changelog
+   TEXT link, which reserves no room for a corner badge — so the dot sat on the word. The call site
+   now names the form; these rules are only the paint.
+
+   SIZED IN em, NOT px. The two hosts set type in different units (the gear is text-sm off the FLUID
+   root font, the ⚙ footer is a fixed 11px), so one px size is a different fraction of the text it
+   sits beside in each — and drifts again on any device whose root font differs. In em the dot is
+   the same fraction of its own host's type everywhere. */
+[data-update-dot]{width:.43em;height:.43em;border-radius:9999px;background:rgba(125,211,252,.95)}
+[data-theme="light"] [data-update-dot],[data-theme="parchment"] [data-update-dot]{background:rgba(2,132,199,.8)}
+/* Unlit keeps its box and stops painting — that is what makes the inline slot permanent (lighting
+   up must never move the link's text), and it costs the corner form nothing (it is out of flow). */
+[data-update-dot][data-lit="false"]{visibility:hidden}
+/* The corner badge. PRECONDITION, PER AXIS — the host must clear inset + size (0.64em) so the dot
+   can never reach the text. The ⚙ gear satisfies both, which is why it worked there and only there:
+     inline — padding-inline ≥ 0.64em: px-2.5 = 10px against 8.96px at the gear's 14px text
+     block  — padding-block + half-leading ≥ 0.64em: py-2's 8px + 3px of text-sm half-leading = 11px
+   Offsets resolve against the host's PADDING box, so the host's border is clearance on top of that.
+   A real child element, not a pseudo-element, so it coexists with .gear-modified's ::after bar with
+   no ordering constraint between the two (the round-6 recipe had to claim ::before to share the
+   gear). The host must also be a containing block — the gear carries a literal `relative`. */
+[data-update-dot="corner"]{position:absolute;top:.21em;right:.21em}
+/* The in-flow marker, for text links: margin-inline-start is the gap from the last glyph, in em
+   again so the gap tracks the type it trails. */
+[data-update-dot="inline"]{display:inline-block;margin-inline-start:.3em}
 /* Q3 boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
    and by the auto-update-on-open boot check when a freshly-deployed version is waiting; the LOADING
    splash is separate — index.html's body-level #boot, inline-styled there and removed by App's
@@ -385,14 +460,17 @@ html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}
    can shrink below the content's min-height) and overflow:hidden (clips while the track is smaller
    than the content — during motion and at closed rest; at open rest the track equals the content by
    layout, so nothing clips). Duration multiplies by --motion-scale (above): Reduce Motion snaps
-   instantly. Q8 (round 7) split the duration into the --expander-ms var: the .28s fallback is the
-   default every non-opted panel keeps (the codes panels — CODES_CLOSE_MS in lib/constants budgets
-   against it), while the guide's motion coordinator (GuidePage) stamps a distance-scaled per-toggle
-   value inline via the Expander durationMs prop. The easing is the Material standard curve — the
-   ONE curve the panels, the GuideSection triangle, and the coordinator's scroll writer all run
-   (ACCORDION_EASE_CSS in lib/accordionMotion is the source of truth; tests/expander.dom pins the
-   sync of curve, fallback, and triangle alike). */
-.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(var(--expander-ms,.28s) * var(--motion-scale)) cubic-bezier(.2,0,0,1)}
+   instantly. Q8 (round 7) split the duration into the --expander-ms var, which every Expander now
+   stamps inline: the guide's motion coordinator (GuidePage) a distance-scaled per-toggle value, the
+   codes panels (MethodBreakdown) the ACCORDION_MS_FLOOR that formula bottoms out at anyway. So the
+   .24s fallback here is DEFENCE, not a live path — but it is REQUIRED, because with --expander-ms
+   unset a bare calc(var(--expander-ms) * …) is invalid at computed-value time and the transition
+   would silently drop to 0s, snapping every panel. It mirrors ACCORDION_MS_FLOOR (lib/accordionMotion,
+   pinned by tests/expander.dom). The easing is the Material standard curve — the ONE curve the panels,
+   the GuideSection triangle, and the coordinator's scroll writer all run (ACCORDION_EASE_CSS in
+   lib/accordionMotion is the source of truth; tests/expander.dom pins the sync of curve, fallback,
+   and triangle alike). */
+.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(var(--expander-ms,.24s) * var(--motion-scale)) cubic-bezier(.2,0,0,1)}
 .expander-open{grid-template-rows:1fr}
 .expander>div{min-height:0;overflow:hidden}
 /* Strikethrough for disabled/off stat labels (StatPanel). The native CSS

@@ -1,21 +1,26 @@
 // @vitest-environment jsdom
 //
-// Q4 — the accordion's grid-template-rows migration; Q8 (round 7) — the motion clock split.
+// Q4 — the accordion's grid-template-rows migration; Q8 (round 7) — the motion clock split;
+// Q5 (round 8) — one duration for every accordion in the app.
 // The Expander slides open/closed by tweening its one grid row 0fr⇄1fr (index.css .expander
 // rules), replacing the old measured max-height clamp. Q8 moved the duration onto the
-// --expander-ms var (a per-toggle value the guide's coordinator stamps via the new Expander
-// durationMs prop; every non-opted panel keeps the .28s fallback) and unified the easing on
-// the Material standard curve (ACCORDION_EASE_CSS, lib/accordionMotion). These tests pin the
-// structure the CSS keys off — the grid wrapper class, the open-state modifier, the single
-// row div, and the always-mounted content contract (dotDiagram.dom relies on closed sections
-// staying queryable) — plus the index.css rules themselves (jsdom applies no stylesheets, so
-// the source is the only place to assert them), the cross-module timing contracts hung off
-// the DEFAULT duration (it must fit inside the CODES_CLOSE_MS freeze window, and the
-// GuideSection triangle must run the same var, fallback, and curve so all finish together),
-// the aria-expanded/aria-controls accordion contract, and the coordinator's shared clock
-// (one --expander-ms per toggle, stamped on every section). The motion itself is
-// layout-engine truth jsdom cannot see — verified on-device (distance-scaled speed across
-// panels of very different lengths, the scroll riding the panels' own clock).
+// --expander-ms var and unified the easing on the Material standard curve
+// (ACCORDION_EASE_CSS, lib/accordionMotion). Q5 finished the job: BOTH consumers now state
+// their duration — the guide's coordinator a distance-scaled per-toggle value, the codes
+// panel the ACCORDION_MS_FLOOR that formula returns at its size — so the CSS fallback is
+// defence only (it must still exist: an unset var makes the calc() invalid and the
+// transition would silently become 0s), and CODES_CLOSE_MS derives from that same floor.
+// These tests pin the structure the CSS keys off — the grid wrapper class, the open-state
+// modifier, the single row div, and the always-mounted content contract (dotDiagram.dom
+// relies on closed sections staying queryable) — plus the index.css rules themselves (jsdom
+// applies no stylesheets, so the source is the only place to assert them), the cross-module
+// timing contracts (the CSS fallback mirrors ACCORDION_MS_FLOOR; the codes panel's slide fits
+// inside its freeze window; the GuideSection triangle runs the same var, fallback and curve
+// so all finish together), the aria-expanded/aria-controls disclosure contract on BOTH
+// accordions, and the coordinator's shared clock (one --expander-ms per toggle, stamped on
+// every section). The motion itself is layout-engine truth jsdom cannot see — verified
+// on-device (distance-scaled speed across panels of very different lengths, the scroll
+// riding the panels' own clock).
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -23,8 +28,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Expander from '../src/components/Expander.jsx'
 import GuidePage, { GuideSection } from '../src/components/GuidePage.jsx'
-import { ACCORDION_EASE_CSS } from '../src/lib/accordionMotion.js'
-import { CODES_CLOSE_MS } from '../src/lib/constants.js'
+import { MethodBreakdownSection } from '../src/components/MethodBreakdown.jsx'
+import {
+  ACCORDION_EASE_CSS,
+  ACCORDION_MS_FLOOR,
+  CODES_CLOSE_MS,
+} from '../src/lib/accordionMotion.js'
 
 afterEach(cleanup)
 
@@ -32,6 +41,10 @@ const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css'),
   'utf8',
 )
+
+// ACCORDION_MS_FLOOR as index.css spells it: seconds, leading zero dropped (240 → ".24").
+// Built from the constant so the CSS fallback can never drift from the JS law.
+const FLOOR_S = `${ACCORDION_MS_FLOOR / 1000}`.replace(/^0/, '')
 
 // The curve with whitespace/serialization noise removed — jsdom's CSSOM may reformat an
 // inline cubic-bezier (spaces, leading zeros), and only the numbers are the contract.
@@ -94,7 +107,9 @@ describe('Expander durationMs prop (Q8 — the per-toggle --expander-ms clock)',
     )
     expect(container.firstElementChild.style.getPropertyValue('--expander-ms')).toBe('350ms')
   })
-  it('leaves the var unset without the prop, so the CSS .28s fallback governs (the codes panels)', () => {
+  it('leaves the var unset without the prop, so the CSS fallback governs', () => {
+    // No production call site takes this branch any more (Q5 — both state their duration), but
+    // the component must keep working without the prop or the fallback would be untestable.
     const { container } = render(
       <Expander open>
         <p>panel body</p>
@@ -108,7 +123,7 @@ describe('index.css expander rules (the styles the structure above keys into)', 
   it('the wrapper is a one-row grid — minmax(0,1fr) column, 0fr row, var-clocked standard-curve transition', () => {
     expect(css).toContain(
       '.expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;' +
-        `transition:grid-template-rows calc(var(--expander-ms,.28s) * var(--motion-scale)) ${ACCORDION_EASE_CSS}}`,
+        `transition:grid-template-rows calc(var(--expander-ms,${FLOOR_S}s) * var(--motion-scale)) ${ACCORDION_EASE_CSS}}`,
     )
     expect(css).toContain('.expander-open{grid-template-rows:1fr}')
   })
@@ -127,20 +142,26 @@ describe('index.css expander rules (the styles the structure above keys into)', 
   })
 })
 
-describe('cross-module timing contracts on the default (.28s fallback) duration', () => {
-  // The CSS-declared DEFAULT slide duration in ms — the --expander-ms fallback in the
-  // .expander rule itself, which every panel without the durationMs prop runs at.
+describe('cross-module timing contracts (Q5 — ACCORDION_MS_FLOOR is the one number)', () => {
+  // The CSS-declared fallback slide duration in ms — the --expander-ms fallback parsed out of
+  // the .expander rule itself. Belt-and-braces in production (both consumers stamp the var),
+  // but it is what a panel would run at if one ever stopped, so it must mirror the JS law.
   const durationMs =
     parseFloat(
       css.match(
         /\.expander\{[^}]*transition:grid-template-rows calc\(var\(--expander-ms,([\d.]+)s\) \*/,
       )[1],
     ) * 1000
-  it('the default close finishes inside the CODES_CLOSE_MS freeze window (codes panel contract)', () => {
+  it('the CSS fallback mirrors ACCORDION_MS_FLOOR', () => {
+    expect(durationMs).toBe(ACCORDION_MS_FLOOR)
+  })
+  it('the codes panel close finishes inside its CODES_CLOSE_MS freeze window', () => {
     // MethodBreakdownSection holds its frozen inputs for CODES_CLOSE_MS after Hide Codes; the
-    // slide must complete first or the panel's contents would change while still visible. The
-    // codes panels never pass durationMs, so the fallback IS their close time.
-    expect(durationMs).toBeLessThan(CODES_CLOSE_MS)
+    // slide must complete first or the panel's contents would change while still visible. It
+    // slides at ACCORDION_MS_FLOOR (asserted against the rendered var below), and
+    // CODES_CLOSE_MS is derived from that floor — so this can only fail if the buffer is
+    // removed outright.
+    expect(ACCORDION_MS_FLOOR).toBeLessThan(CODES_CLOSE_MS)
   })
   it('the GuideSection triangle runs the same var, the same fallback, and the same curve', () => {
     const { container } = render(
@@ -220,7 +241,7 @@ describe('GuideSection accordion contract (Q8 — aria + coordinator landmarks)'
     )
     expect(container.querySelector('button').getAttribute('aria-expanded')).toBe('true')
   })
-  it('the section wrapper carries the lookup id and the under-bar scroll margin', () => {
+  it('the section wrapper carries the lookup id, and no scroll margin of its own', () => {
     const { container } = render(
       <GuideSection id="overview" title="Section" openId={null} onToggle={() => {}}>
         <p>body</p>
@@ -228,7 +249,12 @@ describe('GuideSection accordion contract (Q8 — aria + coordinator landmarks)'
     )
     const wrapper = container.firstElementChild
     expect(wrapper.id).toBe('guide-sec-overview')
-    expect(wrapper.classList.contains('scroll-mt-[calc(var(--bar-h)+8px)]')).toBe(true)
+    // Q6 (round 8) deleted the scroll-mt that used to sit here. It never had a consumer:
+    // nothing in src/ calls scrollIntoView, there is no fragment navigation, and native
+    // focus scrolling targets the focused HEADER BUTTON, not this wrapper. The reading
+    // line is now declared once, as scroll-padding-top on the doc-scroll scrollport
+    // (index.css --seat-top), which the focus path DOES honour — pinned in docScroll.dom.
+    expect(wrapper.className).not.toContain('scroll-mt')
   })
 })
 
@@ -256,5 +282,62 @@ describe('GuidePage toggle coordinator (Q8 — the shared clock, exclusive open)
     expect(all.filter((h) => h.getAttribute('aria-expanded') === 'true')).toHaveLength(1)
     fireEvent.click(all[3])
     expect(all.filter((h) => h.getAttribute('aria-expanded') === 'true')).toHaveLength(0)
+  })
+})
+
+describe('MethodBreakdownSection wiring into the Expander (Q5 — the codes panel)', () => {
+  const DATE = { y: 2024, m: 3, d: 15 }
+  const mount = (date = DATE) =>
+    render(<MethodBreakdownSection date={date} className="" contentClassName="codes-body" />)
+
+  it('states its duration: ACCORDION_MS_FLOOR, the same clock the guide bottoms out at', () => {
+    // Not the CSS fallback by omission (that was the pre-Q5 coincidence of 280ms vs 240ms) —
+    // the codes panel opts in, so the agreement with CODES_CLOSE_MS is derived, not hoped for.
+    const { container } = mount()
+    expect(container.querySelector('.expander').style.getPropertyValue('--expander-ms')).toBe(
+      `${ACCORDION_MS_FLOOR}ms`,
+    )
+  })
+
+  it('the toggle announces state and points at the codes body it controls', () => {
+    const { container } = mount()
+    const button = container.querySelector('button')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    const panel = document.getElementById(button.getAttribute('aria-controls'))
+    expect(panel).not.toBeNull()
+    expect(panel.className).toBe('codes-body')
+    // The controlled region is the panel body INSIDE the slider, matching the guide's shape.
+    expect(panel.closest('.expander')).not.toBeNull()
+  })
+
+  it('aria-expanded tracks the open state through a toggle', () => {
+    const { container } = mount()
+    const button = container.querySelector('button')
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('.expander').classList.contains('expander-open')).toBe(true)
+  })
+
+  it('with no date the toggle is disabled AND reports itself collapsed', () => {
+    const { container } = mount(null)
+    const button = container.querySelector('button')
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('every mounted copy gets its own panel id (all six live in the tree at once)', () => {
+    // The game modes are always mounted (display:none when inactive), so a shared literal id
+    // would put five duplicates in the document — hence useId rather than a caller-supplied id.
+    const { container } = render(
+      <>
+        <MethodBreakdownSection date={DATE} className="" contentClassName="codes-body" />
+        <MethodBreakdownSection date={DATE} className="" contentClassName="codes-body" />
+      </>,
+    )
+    const ids = [...container.querySelectorAll('button')].map((b) =>
+      b.getAttribute('aria-controls'),
+    )
+    expect(ids.filter(Boolean)).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
   })
 })

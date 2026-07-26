@@ -1,10 +1,16 @@
 // tests/accordionMotion.test.js — the pure math behind the HTP accordion motion
 // coordinator (Q8, round 7): the distance-scaled duration formula and its clamps, the
 // twin-toggle shared clock, the numeric twin of the Material standard easing curve, and
-// the scroll-target rules (the open-lands-off-screen rule, the shrinking-max-scroll
-// clamp rule, and the null "stay put" cases). GuidePage feeds these functions measured
-// DOM geometry; everything HERE is arithmetic, so it runs in Node with no rendering.
+// the scroll-target rules (the opened-header-lands-above-the-reading-line rule, the
+// shrinking-max-scroll clamp rule, the sub-pixel epsilon, and the null "stay put" cases).
+// GuidePage feeds these functions measured DOM geometry; everything HERE is arithmetic, so
+// it runs in Node with no rendering.
 // The felt motion itself — panels and scroll riding one clock — is on-device truth.
+//
+// Every fixture below uses seatTop: 81 — the real reading line on the owner's device,
+// --bar-h 57 + --fade-h 24 (index.css registers --seat-top as exactly that sum). Q6
+// (round 8) renamed the input from barH and widened it by the feather: seating a header
+// at the bar alone parked its top border under the densest part of the top fade.
 import { describe, it, expect } from 'vitest'
 import {
   ACCORDION_EASE_CSS,
@@ -93,29 +99,29 @@ describe('accordionEase — the numeric twin of cubic-bezier(.2,0,0,1)', () => {
 })
 
 describe('accordionScrollTarget — scenario A (a panel opens)', () => {
-  it('compensates when the closing panel above pulls the tapped header past the fold', () => {
+  it('compensates when the closing panel above pulls the tapped header past the reading line', () => {
     // A tall open panel above collapses (600px) while the tapped one opens (400px): the
-    // header would land 500px into the document, 557px above the settled fold line
-    // (scrollY 1000 + bar 57) → glide to seat it right below the bar: 500 − 57 = 443.
+    // header would land 500px into the document, 581px above the settled reading line
+    // (scrollY 1000 + seat 81) → glide to seat it ON the line: 500 − 81 = 419.
     expect(
       accordionScrollTarget({
         scrollY: 1000,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1100,
         closingH: 600,
         closingAbove: true,
         openingH: 400,
       }),
-    ).toBe(443)
+    ).toBe(419)
   })
   it('declines when the opened panel start stays on-screen (opening only pushes content down)', () => {
     expect(
       accordionScrollTarget({
         scrollY: 1000,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1100,
         closingH: 0,
@@ -124,46 +130,66 @@ describe('accordionScrollTarget — scenario A (a panel opens)', () => {
       }),
     ).toBeNull()
   })
-  it('uses a STRICT inequality: a header landing exactly at the bar line needs no glide', () => {
+  it('uses a STRICT inequality: a header landing exactly on the reading line needs no glide', () => {
     const g = {
       scrollY: 1000,
       viewportH: 800,
-      barH: 57,
+      seatTop: 81,
       docH: 3000,
       closingH: 600,
       closingAbove: true,
       openingH: 400,
     }
-    // finalHeaderTop = headerDocTop − 600; the fold line sits at 1000 + 57.
-    expect(accordionScrollTarget({ ...g, headerDocTop: 1657 })).toBeNull() // exactly at it
-    expect(accordionScrollTarget({ ...g, headerDocTop: 1656 })).toBe(999) // one px above
+    // finalHeaderTop = headerDocTop − 600; the reading line sits at 1000 + 81. The second
+    // case is also the epsilon's lower boundary: a one-pixel glide is the smallest that
+    // still runs (see the sub-pixel test below for the first one that doesn't).
+    expect(accordionScrollTarget({ ...g, headerDocTop: 1681 })).toBeNull() // exactly on it
+    expect(accordionScrollTarget({ ...g, headerDocTop: 1680 })).toBe(999) // one px above
+  })
+  it('declines a sub-pixel correction rather than animate a third of a pixel', () => {
+    // Fractional rects make a resting position differ from its own recomputed seat by a
+    // fraction: finalHeaderTop 1080.5 clears the reading line 1081 by half a pixel, so A
+    // fires and computes 999.5 — half a pixel from where the page already sits. Running a
+    // 240ms glide for that is visible motion with no visible correction.
+    expect(
+      accordionScrollTarget({
+        scrollY: 1000,
+        viewportH: 800,
+        seatTop: 81,
+        docH: 3000,
+        headerDocTop: 1680.5,
+        closingH: 600,
+        closingAbove: true,
+        openingH: 400,
+      }),
+    ).toBeNull()
   })
   it('measures against the SETTLED scroll (clamped into the final range), not the raw scrollY', () => {
     // A net-shrinking switch: scrollY 2500 will clamp to the final max-scroll 1714, so the
-    // fold line the header must clear is 1714 + 57 — NOT raw 2500 + 57. The header's final
-    // 1300 sits above it → A fires and seats the header under the bar (1300 − 57).
+    // reading line the header must clear is 1714 + 81 — NOT raw 2500 + 81. The header's
+    // final 1300 sits above it → A fires and seats the header on the line (1300 − 81).
     expect(
       accordionScrollTarget({
         scrollY: 2500,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1900,
         closingH: 600,
         closingAbove: true,
         openingH: 114,
       }),
-    ).toBe(1243) // finalDocH 2514 → max 1714; header 1300 < 1714 + 57 → 1300 − 57
+    ).toBe(1219) // finalDocH 2514 → max 1714; header 1300 < 1714 + 81 → 1300 − 81
   })
   it('floors the target at 0 and returns null when that is already the position', () => {
     // Opening the first section at the very top: the header sits 20px into the document,
-    // inside the bar's 57px — the un-floored target would be negative, and the floored
+    // inside the seat's 81px — the un-floored target would be negative, and the floored
     // one equals the current scroll, so nothing needs to move.
     expect(
       accordionScrollTarget({
         scrollY: 0,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 1000,
         headerDocTop: 20,
         closingH: 0,
@@ -177,7 +203,7 @@ describe('accordionScrollTarget — scenario A (a panel opens)', () => {
       accordionScrollTarget({
         scrollY: -50,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 1000,
         headerDocTop: 30,
         closingH: 0,
@@ -195,7 +221,7 @@ describe('accordionScrollTarget — scenario B (the shrinking max-scroll would c
       accordionScrollTarget({
         scrollY: 2500,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1800,
         closingH: 600,
@@ -209,7 +235,7 @@ describe('accordionScrollTarget — scenario B (the shrinking max-scroll would c
       accordionScrollTarget({
         scrollY: 500,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1800,
         closingH: 600,
@@ -223,7 +249,7 @@ describe('accordionScrollTarget — scenario B (the shrinking max-scroll would c
       accordionScrollTarget({
         scrollY: 100,
         viewportH: 900,
-        barH: 57,
+        seatTop: 81,
         docH: 800,
         headerDocTop: 200,
         closingH: 300,
@@ -232,15 +258,32 @@ describe('accordionScrollTarget — scenario B (the shrinking max-scroll would c
       }),
     ).toBe(0)
   })
+  it('has NO sub-pixel epsilon: an out-of-range position is moving whatever we do', () => {
+    // Half a pixel past the final max-scroll. Unlike scenario A's sub-pixel case, this
+    // position is invalid — the browser clamps it the instant the panel finishes — so the
+    // only choice is whether the move rides the panels' clock or snaps in one frame.
+    expect(
+      accordionScrollTarget({
+        scrollY: 1600.5,
+        viewportH: 800,
+        seatTop: 81,
+        docH: 3000,
+        headerDocTop: 1800,
+        closingH: 600,
+        closingAbove: false,
+        openingH: 0,
+      }),
+    ).toBe(1600)
+  })
   it('also guards a net-shrinking SWITCH when scenario A declines (closing panel below)', () => {
     // A big panel below the tapped header closes (800px) while a small one opens (100px):
-    // the header never moves (closingAbove false, 1900 ≥ 1557), but the doc shrinks past
+    // the header never moves (closingAbove false, 1900 ≥ 1581), but the doc shrinks past
     // the current position — finalDocH 2300 → max-scroll 1500 < 2000.
     expect(
       accordionScrollTarget({
         scrollY: 2000,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 3000,
         headerDocTop: 1900,
         closingH: 800,
@@ -257,7 +300,7 @@ describe('accordionScrollTarget — the stay-put default', () => {
       accordionScrollTarget({
         scrollY: 200,
         viewportH: 800,
-        barH: 57,
+        seatTop: 81,
         docH: 1500,
         headerDocTop: 600,
         closingH: 0,

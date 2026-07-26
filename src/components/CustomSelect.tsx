@@ -20,14 +20,10 @@ import { useBackButton } from './useBackButton.js'
 // geometry but are device-sensitive — ALWAYS re-verify on iPhone Safari
 // (browser + PWA) after editing anything here.
 //
-// Props: value, onChange, options [{value,label}], className (trigger),
-// wrapperClassName (outer relative div), ariaLabel, wrapperRef (forwarded to the
-// wrapper so callers can treat it like the old <select> ref), showChevron,
-// pressDrag (press-drag-select, documented at the prop below), and
-// menuTextClassName (option-row text size, documented at the prop below), and
-// forceDown (skip the auto-flip, documented at the prop below). Instances
-// without forceDown use the space-based auto-flip: down when the panel fits
-// below, up only when it doesn't and there's more room above.
+// Props: value, onChange, options [{value,label}], className (trigger), ariaLabel,
+// wrapperRef (forwarded to the wrapper so callers can treat it like the old <select>
+// ref), showChevron, and pressDrag (press-drag-select, documented at the prop below).
+// The panel opens DOWN unless it doesn't fit below AND does fit above — see handleToggle.
 //
 // Extracted from main.jsx in Stage C, Step 4d (verbatim; the only change is
 // ReactDOM.createPortal → the directly-imported createPortal — same function).
@@ -49,19 +45,15 @@ export default function CustomSelect({
   onChange,
   options,
   className,
-  wrapperClassName,
   ariaLabel,
   wrapperRef,
   showChevron = false,
   pressDrag = false,
-  menuTextClassName = 'text-[15px]',
-  forceDown = false,
 }: {
   value: string
   onChange: (value: string) => void
   options: CustomSelectOption[]
   className?: string
-  wrapperClassName?: string
   ariaLabel?: string
   wrapperRef?: RefObject<HTMLDivElement | null>
   showChevron?: boolean
@@ -72,15 +64,6 @@ export default function CustomSelect({
   // its click is suppressed there to avoid a double-toggle. A quick tap still toggles; keyboard (the Tab
   // shortcut's .click(), arrows, Enter) is unaffected — those clicks have no preceding pointer gesture.
   pressDrag?: boolean
-  // Text-size class for the PORTALED option rows (Round-3 font normalization). Defaults to the
-  // original text-[15px]; the settings theme selects pass text-xs so their menu text matches
-  // their text-xs trigger, while the bar's mode selector keeps the default.
-  menuTextClassName?: string
-  // The MODE-SELECTOR hardcode (Round-4, explicit owner intent): always open DOWNWARD, skipping
-  // the space-based auto-flip. The mode menu's trigger lives in the fixed top bar, so the panel
-  // always fits below it — passed ONLY by the bar's mode selector; the settings theme selects
-  // keep the auto-flip.
-  forceDown?: boolean
 }) {
   const [open, setOpen] = useState(false)
   // activeIdx tracks the keyboard-highlighted option (≠ selected value). -1 when nothing is
@@ -138,26 +121,30 @@ export default function CustomSelect({
     else setPanelPos({ right, top: rect.bottom + 6 + window.scrollY })
   }
   // Toggle handler measures available space the moment the dropdown opens.
-  // Each option button is ~45px tall (py-3 + the default text-[15px] menu text;
-  // a smaller menuTextClassName makes this an overestimate, which only errs
-  // toward flipping up early — safe) plus a small panel margin. If space below
-  // the trigger in the viewport isn't enough AND there's
-  // more space above, flip upward. visualViewport height is used (it excludes
-  // Safari's bottom toolbar) so bottom-of-screen dropdowns don't open down into
-  // toolbar-covered space. The 16px buffer keeps the panel off the edge.
+  // Each option button is ~45px tall (py-3 + the text-[15px] menu text) plus a small panel
+  // margin, so estimatedHeight is what the panel needs. DOWN is the default; the panel flips
+  // UP only when it does NOT fit below and DOES fit above. visualViewport height is used (it
+  // excludes Safari's bottom toolbar) so bottom-of-screen dropdowns don't open down into
+  // toolbar-covered space. The 16px buffer keeps the panel off the bottom edge.
   // Measurement only happens on open (close is cheap).
+  // ⚠ ROUND-8 FIX — the flip used to compare space-above against space-BELOW and never checked
+  // that the panel actually fits above, so a long list with cramped room on both sides flipped
+  // up into a space that couldn't hold it. Two corrections: the fit test is now spaceAbove vs
+  // estimatedHeight, and the ceiling above is the FIXED BAR (--bar-h), not the screen edge — a
+  // panel that clears the viewport but paints over the title/gear/mode selector is not
+  // "fitting". The 6px mirrors measurePanel's gap. The old "spaceAbove > spaceBelow" term is
+  // redundant under the new test (spaceAbove >= est > spaceBelow implies it) and is gone.
+  // Downward geometry is untouched — it is the iOS-QA-confirmed path.
   const handleToggle = () => {
     if (!open && ref.current) {
       const rect = ref.current.getBoundingClientRect()
       const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight
+      const barH =
+        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 0
       const spaceBelow = vh - rect.bottom - 16
-      const spaceAbove = rect.top - 16
+      const spaceAbove = rect.top - barH - 6
       const estimatedHeight = options.length * 45 + 10
-      // forceDown (the mode-selector hardcode — see the prop) pins the panel downward regardless
-      // of the measured space; every other instance keeps the auto-flip.
-      openUpwardRef.current = forceDown
-        ? false
-        : spaceBelow < estimatedHeight && spaceAbove > spaceBelow
+      openUpwardRef.current = spaceBelow < estimatedHeight && spaceAbove >= estimatedHeight
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the
@@ -307,7 +294,7 @@ export default function CustomSelect({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   return (
-    <div ref={ref} className={`relative ${wrapperClassName || ''}`}>
+    <div ref={ref} className="relative">
       <button
         ref={triggerRef}
         type="button"
@@ -390,16 +377,15 @@ export default function CustomSelect({
                   onChange(opt.value)
                   closeAndFocus()
                 }}
-                className={`w-full text-left rounded-xl pl-4 pr-4 py-3 ${menuTextClassName} flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
+                className={`w-full text-left rounded-xl pl-4 pr-4 py-3 text-[15px] flex items-center gap-2.5 ${i === activeIdx ? 'bg-black/10' : 'cs-option-press'}`}
                 style={{ color: '#1a1a1a', whiteSpace: 'nowrap' }}
               >
                 <span
                   style={{
                     display: 'inline-block',
                     // The reserved check column stays a fixed 14px so row indents never shift,
-                    // but the ✓ glyph scales WITH the row's text tier (1em) — a text-xs menu
-                    // (the theme selects) gets a 12px check, the default menu ~15px. A fixed
-                    // 14px check read oversized once the Round-3 normalization shrank the rows.
+                    // but the ✓ glyph scales WITH the row's text tier (1em, so ~15px today) —
+                    // a hardcoded 14px check would read wrong the moment the tier moves.
                     width: '14px',
                     color: '#1a1a1a',
                     fontSize: '1em',

@@ -147,7 +147,7 @@ describe('pointerGestures.resolveTriggerRelease — press-drag menu release', ()
       dismiss: false,
     })
   })
-  it('member inside a [data-drag-stay] container → click, no dismiss (theme selects / footer rows)', () => {
+  it('member inside a [data-drag-stay] container → click, no dismiss (the footer rows)', () => {
     const menu = domEl('div', { 'data-drag-dismiss': '' })
     const stay = domEl('div', { 'data-drag-stay': '' }, menu)
     const opt = domEl('button', {}, stay)

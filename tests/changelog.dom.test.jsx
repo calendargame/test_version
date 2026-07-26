@@ -2,17 +2,23 @@
 //
 // The changelog + update-signal dots (round-6 Q6). src/changelog holds the hand-maintained
 // plain-words per-DAY entries (newest first; a second same-day deploy PREPENDS its lines to that
-// day's entry — the round-7 combine policy — so dates stay unique; the module keeps every entry
-// while the popup shows the latest CHANGELOG_VISIBLE — the cap itself is pinned in
-// changelogLimit.dom, which mocks a larger data set behind the REAL slice). The two light-blue dots are the persisted
+// day's entry — the round-7 combine policy — so dates stay unique). Round-8 Q8 made that array the
+// published set exactly: the popup renders CHANGELOG as-is, so the ten-day cap is enforced at
+// SOURCE (pinned below) and the oldest entry moves to CHANGELOG-ARCHIVE.md instead of piling up
+// here. That retired the render-time slice, and with it the separate changelogLimit.dom file which
+// mocked a larger data set behind that slice — the popup can no longer discard anything, so the
+// cap can no longer be a rendering question. The two light-blue dots are the persisted
 // breadcrumb to the popup: the Q2 build-stamp detection marks both flags on every build change
 // (including one the real Updating flow just bridged — only the SCREEN is suppressed then),
 // opening ⚙ Settings retires the gear's dot, and the first tap on the footer's Changelog link
 // (right of Check for updates) retires the link's. The popup follows the established settings-
 // modal contract (focus-on-open, capture Escape, close-with-settings, Android Back, the shared
-// Tab trap, the [data-settings-modal] marker). Visual truth — the dot's placement inside the
-// gear's rounded corner, coexistence with the violet bar, themes — is on-device territory per
-// the standing lesson; these tests pin the logic and the DOM-level rendering.
+// Tab trap, the [data-settings-modal] marker). Round-8 Q7 split the one dot into the two forms
+// its two hosts can actually carry (components/UpdateDot: a corner badge for the ⚙ icon button,
+// an in-flow marker for the text link), so the assertions below read the marker element's own
+// data-update-dot / data-lit attributes — the host's className no longer says anything about it.
+// Visual truth — where the dot lands, coexistence with the violet bar, themes — is on-device
+// territory per the standing lesson; these tests pin the logic and the DOM-level rendering.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
@@ -23,8 +29,6 @@ import { useProgress } from '../src/store/progress.js'
 import { BUILD_STAMP_KEY, writeBuildStamp } from '../src/lib/buildStamp.js'
 import {
   CHANGELOG,
-  CHANGELOG_VISIBLE,
-  visibleEntries,
   GEAR_DOT_KEY,
   CHANGELOG_DOT_KEY,
   readUpdateDot,
@@ -44,8 +48,15 @@ function mountApp() {
 }
 const gear = () => screen.getByRole('button', { name: /^Settings/ })
 const openSettings = () => act(() => fireEvent.click(gear()))
-const changelogLink = () => screen.getByRole('button', { name: 'Changelog' })
+// Prefix match, exactly like the gear's: the link's accessible name GROWS to 'Changelog, update'
+// while its dot is lit (an sr-only word — the marker element itself is aria-hidden). The exact
+// names are asserted in both states below; this helper just has to find the button in either.
+const changelogLink = () => screen.getByRole('button', { name: /^Changelog/ })
 const openChangelog = () => act(() => fireEvent.click(changelogLink()))
+// The two update markers, found by the attribute components/UpdateDot publishes — never by a class
+// on the host. That is the round-8 Q7 contract: the hosts mount DIFFERENT forms of the same dot.
+const gearMark = () => gear().querySelector('[data-update-dot]')
+const linkMark = () => changelogLink().querySelector('[data-update-dot]')
 const changelogTitle = () => screen.queryByText("What's new")
 const changelogDialog = () => screen.getByRole('dialog', { name: "What's new" })
 
@@ -65,15 +76,10 @@ describe('changelog data (src/changelog)', () => {
     expect(new Set(dates).size).toBe(dates.length)
   })
 
-  it('history starts at the round-5 deploy and is never retro-written below it', () => {
-    expect(CHANGELOG[CHANGELOG.length - 1].date).toBe('2026-07-17')
-  })
-
-  it('visibleEntries caps at CHANGELOG_VISIBLE, newest first, and passes shorter sets through whole', () => {
-    const fake = Array.from({ length: 14 }, (_, i) => ({ date: `d${i}`, items: ['x'] }))
-    expect(CHANGELOG_VISIBLE).toBe(10)
-    expect(visibleEntries(fake)).toEqual(fake.slice(0, 10)) // the latest 10 of a larger set
-    expect(visibleEntries(CHANGELOG)).toEqual(CHANGELOG) // today's real set is under the cap
+  it('holds at most ten days — the cap is the DATA, not the rendering (round-8 Q8)', () => {
+    // Trimmed at source: the popup renders the array as-is, so an eleventh day would SHIP; move
+    // the oldest entry to CHANGELOG-ARCHIVE.md when adding a new day.
+    expect(CHANGELOG.length).toBeLessThanOrEqual(10)
   })
 })
 
@@ -141,12 +147,17 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
 
   it('a build change lights BOTH persisted dots: the closed gear and the Changelog link', () => {
     bootAfterUpdate()
-    expect(gear().className).toContain('update-dot')
+    expect(gearMark()).toHaveAttribute('data-lit', 'true')
     expect(gear()).toHaveAttribute('aria-label', 'Settings (update)')
     expect(localStorage.getItem(GEAR_DOT_KEY)).toBe('1')
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
     openSettings() // the link only exists inside the panel (this also retires the gear's dot)
-    expect(changelogLink().className).toContain('update-dot')
+    expect(linkMark()).toHaveAttribute('data-lit', 'true')
+    // Both markers are aria-hidden, so each host states the news in its own accessible name: the
+    // gear folds it into aria-label (asserted above), the link adds an sr-only word. The comma is
+    // load-bearing — name-from-content trims each child before joining, so a separator written as
+    // leading whitespace disappears and the two words run together.
+    expect(screen.getByRole('button', { name: 'Changelog, update' })).toBe(changelogLink())
   })
 
   it('first-ever visit: no stamp, no dots', () => {
@@ -156,10 +167,35 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     })
     expect(localStorage.getItem(GEAR_DOT_KEY)).toBeNull()
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBeNull()
-    expect(gear().className).not.toContain('update-dot')
+    expect(gearMark()).toHaveAttribute('data-lit', 'false')
     expect(gear()).toHaveAttribute('aria-label', 'Settings')
     openSettings()
-    expect(changelogLink().className).not.toContain('update-dot')
+    // Unlit is a STATE, not an absence: the marker element is in the DOM either way, so the link's
+    // text can never move when a build lands (index.css hides the unlit box with visibility, which
+    // jsdom cannot lay out — the node's presence plus data-lit is the whole testable contract).
+    expect(linkMark()).toHaveAttribute('data-lit', 'false')
+    expect(screen.getByRole('button', { name: 'Changelog' })).toBe(changelogLink())
+  })
+
+  it('the two hosts mount DIFFERENT forms of the one marker (round-8 Q7)', () => {
+    bootAfterUpdate()
+    // The ⚙ icon button gets the corner badge, and is the marker's containing block by its OWN
+    // literal class — not by whichever of the two indicator classes happens to be applied.
+    expect(gearMark()).toHaveAttribute('data-update-dot', 'corner')
+    expect(gearMark().parentElement).toBe(gear())
+    expect(gear().className.split(/\s+/)).toContain('relative')
+    // The round-6 recipe shared one class between both hosts; nothing may wear it again.
+    expect(gear().className).not.toContain('update-dot')
+    openSettings()
+    const link = changelogLink()
+    // The text link gets the in-flow marker — a sibling of the text, never on top of it — and the
+    // underline sits on the text span alone so the rule cannot paint across the gap to the dot.
+    expect(linkMark()).toHaveAttribute('data-update-dot', 'inline')
+    expect(linkMark().parentElement).toBe(link)
+    expect(link.className).not.toContain('underline')
+    const text = link.querySelector('span')
+    expect(text.textContent).toBe('Changelog')
+    expect(text.className).toContain('underline')
   })
 
   it('the post-update suppression boot (cg-skip-boot-hold) still lights the dots — only the screen is suppressed', () => {
@@ -169,14 +205,16 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     expect(document.querySelector('.boot-updating')).toBeNull() // no second screen back-to-back…
     expect(localStorage.getItem(GEAR_DOT_KEY)).toBe('1') // …but the changelog still has news
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
-    expect(gear().className).toContain('update-dot')
+    expect(gearMark()).toHaveAttribute('data-lit', 'true')
   })
 
-  it('the gear can wear the update dot and the violet modified bar at once (both classes, combined aria-label)', () => {
+  it('the gear can wear the update dot and the violet modified bar at once (both marks, combined aria-label)', () => {
     act(() => useModePrefs.getState().setFlashMs(800)) // live state ≠ defaults → gear-modified
     bootAfterUpdate()
+    // A real child element and a ::after pseudo-element coexist with no ordering constraint — the
+    // round-6 recipe had to claim ::before to fit alongside .gear-modified's bar.
     expect(gear().className).toContain('gear-modified')
-    expect(gear().className).toContain('update-dot')
+    expect(gearMark()).toHaveAttribute('data-lit', 'true')
     expect(gear()).toHaveAttribute('aria-label', 'Settings (modified, update)')
   })
 
@@ -185,9 +223,9 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     openSettings()
     expect(localStorage.getItem(GEAR_DOT_KEY)).toBeNull()
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
-    expect(changelogLink().className).toContain('update-dot')
+    expect(linkMark()).toHaveAttribute('data-lit', 'true')
     openSettings() // close again — the gear renders its closed-state classes, now dotless
-    expect(gear().className).not.toContain('update-dot')
+    expect(gearMark()).toHaveAttribute('data-lit', 'false')
     expect(gear()).toHaveAttribute('aria-label', 'Settings')
   })
 
@@ -196,12 +234,16 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     openSettings()
     openSettings() // close (gear dot now retired, link dot untouched)
     openSettings() // reopen
-    expect(changelogLink().className).toContain('update-dot')
+    expect(linkMark()).toHaveAttribute('data-lit', 'true')
+    // With the gear's dot already retired, the link's sr-only word is the ONLY update signal a
+    // screen reader still has — the reason the marker is not left silently decorative.
+    expect(screen.getByRole('button', { name: 'Changelog, update' })).toBe(changelogLink())
     openChangelog() // the first tap: opens the popup AND retires the link's dot
     expect(changelogTitle()).toBeInTheDocument()
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBeNull()
     act(() => fireEvent.click(within(changelogDialog()).getByRole('button', { name: 'Close' })))
-    expect(changelogLink().className).not.toContain('update-dot')
+    expect(linkMark()).toHaveAttribute('data-lit', 'false')
+    expect(screen.getByRole('button', { name: 'Changelog' })).toBe(changelogLink())
   })
 
   it('the dots persist across boots via the flags (a later same-build boot re-lights nothing but loses nothing)', () => {
@@ -214,9 +256,9 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(localStorage.getItem(BUILD_STAMP_KEY)).toBe(current)
-    expect(gear().className).toContain('update-dot') // …the flags alone carried the dots over
+    expect(gearMark()).toHaveAttribute('data-lit', 'true') // …the flags alone carried the dots over
     openSettings()
-    expect(changelogLink().className).toContain('update-dot')
+    expect(linkMark()).toHaveAttribute('data-lit', 'true')
   })
 })
 
@@ -237,20 +279,22 @@ describe('the Changelog popup (modal parity + content)', () => {
     openChangelog()
   }
 
-  it('renders every visible entry — dates through the user Date Format setting, items as the plain-words list', () => {
+  it('renders EVERY entry — dates through the user Date Format setting, items as the plain-words list', () => {
     mountApp()
     openPopup()
     const dialog = changelogDialog()
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
-    // One bulleted list per visible entry, all inside the popup's own scroll region.
+    // One bulleted list per entry, all inside the popup's own scroll region. Nothing is held back:
+    // round-8 Q8 removed the render-time slice, so the whole array draws and the ten-day cap is the
+    // data-shape guard above instead.
     const lists = within(dialog).getAllByRole('list')
-    expect(lists).toHaveLength(visibleEntries(CHANGELOG).length)
+    expect(lists).toHaveLength(CHANGELOG.length)
     const scrollRegion = dialog.querySelector('.overflow-y-auto')
     for (const l of lists) expect(scrollRegion.contains(l)).toBe(true)
     // The factory Date Format (Written MDY) renders numerically, the Last-Updated recipe.
-    // Each visible day renders its own Pacific calendar date (round-7 2026-07-21, round-6
-    // 2026-07-19, round-5 2026-07-17), driven through the same Date Format setting.
+    // Each day renders its own Pacific calendar date (round-7 2026-07-21, round-6 2026-07-19,
+    // round-5 2026-07-17), driven through the same Date Format setting.
     expect(within(dialog).getByText('7/21/2026')).toBeInTheDocument()
     expect(within(dialog).getByText('7/19/2026')).toBeInTheDocument()
     expect(within(dialog).getByText('7/17/2026')).toBeInTheDocument()
@@ -284,6 +328,28 @@ describe('the Changelog popup (modal parity + content)', () => {
     expect(dialog.querySelector('#changelog-title').className).toContain('px-4')
     const closeRow = within(dialog).getByRole('button', { name: 'Close' }).parentElement
     expect(closeRow.className).toContain('px-4')
+  })
+
+  it('the ten-day policy notice sits in the card CHROME, between the scroll region and Close (round-8 Q8)', () => {
+    mountApp()
+    openPopup()
+    const dialog = changelogDialog()
+    const note = within(dialog).getByText('Shows the last ten days with updates.')
+    const scrollRegion = dialog.querySelector('.overflow-y-auto')
+    const closeRow = within(dialog).getByRole('button', { name: 'Close' }).parentElement
+    // A direct child of the card, on the same px-4 lane as the title and Close — NOT the last item
+    // of the list, which at ten entries is several screens deep and reaches almost nobody.
+    expect(note.parentElement).toBe(dialog)
+    expect(scrollRegion.contains(note)).toBe(false)
+    expect(note.previousElementSibling).toBe(scrollRegion)
+    expect(note.nextElementSibling).toBe(closeRow)
+    expect(note.className).toContain('px-4')
+    // The app's quiet-note tier — a step below the entry bullets (text-xs --tx-200-80) in every
+    // theme, including light/parchment where --tx-200-* collapse onto one another.
+    expect(note.className).toContain('text-[11px]')
+    expect(note.className).toContain('text-(--tx-300-60)')
+    // Not focusable, so the single-button Tab trap below still sees Close as first===last.
+    expect(within(dialog).getAllByRole('button')).toHaveLength(1)
   })
 
   it('edge fades track scroll position inside the popup (the shared scroll-state listener, round-7 Q5)', () => {

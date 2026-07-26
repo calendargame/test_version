@@ -723,3 +723,66 @@ describe('Deduction — Q14: both-crosses 2-option Year sizer overlay', () => {
     expect(sizerOf(grid)).toBe(null)
   })
 })
+
+// ── Q4 round-8: the three sub-modes' answer buttons are ONE height tier ────────
+// Deduction's options are years / month-code boxes / day numbers, so its answer buttons sit one
+// text tier below the weekday grids' BASE_BTN. Day and Year used to append that smaller size per
+// grid and Month did not, which left Month's answers 4.2px taller (the text-base→text-sm
+// line-height step at the fluid root) — and left the two that were right resolving correctly only
+// because of which of two stacked text sizes CSS happened to emit last. The size is derived once
+// now. jsdom cannot measure, so what is pinned is the class contract that decides the height:
+// every option button in every sub-mode carries the SAME single text-size token.
+describe('Deduction — Q4 round-8: Day / Month / Year answer buttons share one text size', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const sizeTokens = (el) =>
+    el.className.split(/\s+/).filter((c) => /^text-(xs|sm|base|lg|xl)$/.test(c))
+
+  it('one text-size token per button, identical across all three sub-modes', () => {
+    pin()
+    mountApp()
+    switchToDeduction()
+    const seen = new Set()
+    for (const sub of ['Day', 'Month', 'Year']) {
+      clickCtrl(sub)
+      const btns = optButtons()
+      expect(btns.length).toBeGreaterThan(0)
+      for (const b of btns) {
+        // Exactly one — a second, stacked size is the ambiguity this replaced, not a style.
+        expect(sizeTokens(b)).toHaveLength(1)
+        seen.add(sizeTokens(b)[0])
+      }
+    }
+    // …and it is the same one everywhere, so the three grids render at one height.
+    expect([...seen]).toEqual(['text-sm'])
+  })
+
+  it('the both-crosses Year sizer strut tracks the real buttons — same size token, no drift', () => {
+    pin({ minY: 1500, maxY: 1650, useJulian: true })
+    mountApp()
+    switchToDeduction()
+    clickCtrl('Year')
+    clickCtrl('ab Cross')
+    clickCtrl('Jul Cross')
+    let checked = false
+    for (let k = 0; k < 120 && !checked; k++) {
+      const grid = visibleAnswerGrid()
+      const prev = grid.previousElementSibling
+      if (prev && prev.getAttribute('aria-hidden') === 'true') {
+        // The strut reserves the 5-layout's height, so a size mismatch would reserve the wrong one.
+        for (const cell of prev.children) expect(sizeTokens(cell)).toEqual(['text-sm'])
+        checked = true
+      }
+      clickCtrl('New')
+    }
+    expect(checked).toBe(true)
+  })
+})

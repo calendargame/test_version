@@ -19,12 +19,14 @@ import type { CSSProperties, ReactNode } from 'react'
 // transition behavior), and content stays mounted (and queryable) in both states. Pure
 // presentational — no app state.
 //
-// durationMs (Q8, round 7) opts a panel into a per-toggle slide duration: it stamps the
-// --expander-ms CSS var inline, which the .expander transition reads with a .28s fallback —
-// so callers that never pass it (the codes panels in MethodBreakdown and main.tsx) keep the
-// historical 280ms exactly. The guide's motion coordinator (GuidePage) is the one opt-in
-// today: it computes one distance-scaled duration per toggle (lib/accordionMotion) and hands
-// the SAME value to both panels of an accordion switch, so they tween on one shared clock.
+// durationMs (Q8, round 7) sets the slide duration: it stamps the --expander-ms CSS var
+// inline, which the .expander transition reads with a .24s fallback. BOTH consumers state
+// it now (Q5, round 8) — the guide's motion coordinator (GuidePage) computes one
+// distance-scaled duration per toggle (lib/accordionMotion) and hands the SAME value to both
+// panels of an accordion switch so they tween on one shared clock; the codes panel
+// (MethodBreakdown) states the ACCORDION_MS_FLOOR that formula returns for panels its size.
+// The CSS fallback therefore governs nothing in practice, but it must stay: without the var
+// the calc() is invalid at computed-value time and the transition would silently become 0s.
 //
 // Extracted from main.jsx in Stage C, Step 4a; rewritten from the max-height technique to the
 // grid idiom in Q4 (round 6, 2026-07-18).

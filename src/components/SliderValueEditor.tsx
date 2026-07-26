@@ -18,17 +18,28 @@ import { commitSliderText } from '../lib/sliderValue.js'
 //     revert — without the stop the same native event would bubble on and slam the panel shut on
 //     what the user meant as a typing dismiss (the AoX popup field's contract).
 //
-// Width: both modes render in a single-cell inline-grid over an always-mounted invisible strut
-// span holding `widest` — the column locks to the widest POSSIBLE readout measured in the
-// device's OWN font, identical across sites and constant at runtime (Round-4's hand-measured
-// w-[3.3em] was Segoe UI's 3.18em; iOS's SF Pro renders "2m 55s" wider, and the overflow wrapped
-// at the space). The button adds whitespace-nowrap (nothing else forbade that wrap); the input
-// takes w-full min-w-0 size={1} — BOTH intrinsic sizes are MANDATORY collapses, because the
-// auto-sized grid column tracks its items' max-content as well as their min-content: min-w-0
-// neutralizes the min-content floor, and size={1} the max-content one (the size attribute
-// defaults to ~20 characters — wider than any readout — so without it the column grew to the
-// input the moment editing started, squeezing the slider; the Round-5 staging bug jsdom could
-// not see). With both collapsed the input simply fills the strut-defined cell.
+// Width + zero shift (Q4 round-8): the cell is a `relative inline-block` whose ONLY in-flow child
+// is an always-mounted invisible block strut holding `widest`, so the cell locks to the widest
+// POSSIBLE readout measured in the device's OWN font — identical across sites and constant at
+// runtime (Round-4's hand-measured arbitrary width was Segoe UI's 3.18em; iOS's SF Pro renders
+// "2m 55s" wider, and the overflow wrapped at the space). NOTE — every RETIRED utility below is
+// described rather than written out: Tailwind v4's scanner reads .tsx comments as plain text
+// (verified by probe), so spelling a dead class here would resurrect its rule in the shipped CSS.
+// Only classes something still wears are named. BOTH live controls are taken OUT of flow on top
+// of that strut, so neither can ever contribute to the cell's size:
+//   • the display button is `absolute inset-0` — its border box is the strut box exactly. Its
+//     `accent` (dirty) variant (Q5 round-6) wears the btn-solid pill via px-1 -mx-1, the
+//     footer-link ring idiom: the fill bleeds 4px past the digits while the padding cancels back
+//     to a CONTENT box equal to the strut, so the digits themselves never move.
+//   • the edit input is `.svalue-input` (index.css, beside .surface-tray) — the same idiom on both
+//     axes, inset outward by its own 1px border + 1×--spacing padding so its CONTENT box also
+//     equals the strut. It therefore fits the full widest string exactly (the AoX Run Length site
+//     types up to "1000"), and the digits hold still through the tap-to-type swap.
+// Round-7 instead left the input IN flow and CANCELLED its extra geometry with a negative
+// block margin; Chrome netted that to zero, the owner's iPhone did not, and the horizontal half
+// was never handled at all. Nothing here relies on intrinsic input sizing any more, so the old
+// w-full / min-w-0 / size={1} collapses are gone with it (those two utilities are safe to name —
+// other elements still wear them).
 //
 // The user always types SECONDS — Flash converts ×1000 to ms via fromText; milliseconds are never
 // exposed (the readout label is already seconds everywhere). The ONE non-seconds site is the
@@ -36,17 +47,9 @@ import { commitSliderText } from '../lib/sliderValue.js'
 // `editLabel` to replace the default "(seconds)"-suffixed input name. `disabled` mirrors the
 // slider's own condition (mid-round lock); pointer-events-none + the aria flag rather than the
 // disabled attribute so the readout keeps its exact resting look (the plain span never dimmed).
-// `accent` is the defaults cards' dirty state (Q5 round-6): the display readout wears the
-// btn-solid accent pill — px-1 -mx-1 (the footer-link ring idiom) so the fill extends past the
-// digits while the strut-defined column, and the digits inside it, never move. The edit input's
-// -my-px (Q4 round-7) is that idiom's vertical twin: the input wears a 1px border (border
-// surface-tray — the sbtn-bd interactive-control surface every editable box shares, Q7 round-7;
-// the display state stays borderless bare text) that would grow the strut cell 2px and nudge
-// the slider row, and everything below it, on every tap — the −1px/−1px margins cancel the
-// border's +1px/+1px exactly, so the MARGIN box (what the grid track measures) keeps the
-// display-state height while the borders paint into the row's free vertical breathing room
-// (every host row has ≥4px, no overflow-hidden ancestors). The digits hold still through the
-// tap-to-type swap and nothing on the screen moves.
+// The input wears `surface-tray` (stgl-bg + sbtn-bd — the interactive-control surface every
+// editable box shares, Q7 round-7; the display state stays borderless bare text) for its colours;
+// .svalue-input owns the geometry.
 export default function SliderValueEditor({
   value,
   min,
@@ -93,13 +96,10 @@ export default function SliderValueEditor({
       inputRef.current?.select()
     }
   }, [editing])
-  // The single-cell grid from the width note above: strut + live control overlay in one cell.
+  // The cell from the width note above: the in-flow strut sizes it, the live control overlays it.
   const cell = (control: ReactNode) => (
-    <span className="inline-grid shrink-0">
-      <span
-        aria-hidden="true"
-        className="col-start-1 row-start-1 invisible whitespace-nowrap tabular-nums text-xs"
-      >
+    <span className="relative inline-block shrink-0">
+      <span aria-hidden="true" className="block invisible whitespace-nowrap tabular-nums text-xs">
         {widest}
       </span>
       {control}
@@ -114,7 +114,7 @@ export default function SliderValueEditor({
         onClick={() => {
           if (!disabled) setText(toText(value))
         }}
-        className={`col-start-1 row-start-1 whitespace-nowrap tabular-nums text-xs text-right ${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
+        className={`absolute inset-0 whitespace-nowrap tabular-nums text-xs text-right ${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
       >
         {format(value)}
       </button>,
@@ -129,7 +129,6 @@ export default function SliderValueEditor({
     <input
       ref={inputRef}
       type="text"
-      size={1}
       inputMode={inputMode}
       aria-label={editLabel ?? `${label} (seconds)`}
       value={text}
@@ -146,7 +145,7 @@ export default function SliderValueEditor({
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
-      className="col-start-1 row-start-1 w-full min-w-0 -my-px border surface-tray rounded-md px-1 text-right tabular-nums text-xs focus:outline-hidden focus-ring"
+      className="svalue-input surface-tray text-right tabular-nums text-xs focus:outline-hidden focus-ring"
     />,
   )
 }

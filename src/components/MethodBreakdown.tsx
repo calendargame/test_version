@@ -1,12 +1,13 @@
 import * as React from 'react'
 import Expander from './Expander.jsx'
 import { computeMethodSummary } from '../lib/method.js'
-import { CODES_CLOSE_MS } from '../lib/constants.js'
+import { ACCORDION_MS_FLOOR, CODES_CLOSE_MS } from '../lib/accordionMotion.js'
 import type { FormatId } from '../lib/format.js'
 
-// MethodExplanation + MethodBreakdownSection — the "Show Codes" panel.
+// MethodBreakdownSection — the "Show Codes" panel. The file's ONE export (beside the CodeDate
+// shape its callers pass): every consumer mounts the section, never the body inside it.
 //
-// MethodExplanation renders the five code cells (Month / Day / ab / cd / Leap)
+// MethodExplanation, module-local, renders the five code cells (Month / Day / ab / cd / Leap)
 // plus the calendar-system line for a date, ordered to match the date format's
 // reading order. When given cellDates (Deduction 1582 month cell spanning both
 // calendars) it collapses each code across interpretations, slash-joining any
@@ -14,7 +15,26 @@ import type { FormatId } from '../lib/format.js'
 // in an Expander, with the freeze contract that holds the panel's inputs steady
 // for CODES_CLOSE_MS while it slides shut. Shared by App, AoxMode, and LookupCard.
 //
-// Extracted from main.jsx in Stage C, Step 4g (verbatim).
+// Extracted from main.jsx in Stage C, Step 4g (verbatim). Q5 (round 8) folded AoxMode's
+// hand-rolled copy of the toggle + freeze onto this component, so all SIX codes panels
+// (Classic, Blitz, Flash, Deduction, AoX, Lookup) are now literally this one implementation.
+
+// The Show/Hide Codes toggle's className. Every one of the six sites reaches it through this
+// component, so the six can no longer drift — which they had (Q4 round-8 found AoX's inline
+// copy missing the aria-disabled and cursor-not-allowed the other five carried; Q5 round-8
+// removed that copy outright). Module-local: nothing outside this file renders the button.
+// `border border-transparent` completes the button's RENDERED height. It is a solid fill, so it
+// carries no visible border, but every control it is measured against does (Reveal / Override /
+// New wear `border surface-button`, the settings tier's toggles and pill housings a 1px border),
+// and a border counts toward rendered height — without it this button sits 2px shorter than its
+// tier everywhere it is not stretched by a grid row. (Round-4's lesson, applied at four other
+// sites; NOT pushed down into .btn-solid itself, because the date-format segments are deliberately
+// borderless inside their own concentric housing.)
+const CODES_BTN_CLASS =
+  'w-full px-4 py-2 rounded-xl btn-solid border border-transparent text-sm font-medium'
+// Appended while there is no date to show codes for. Pairs with aria-disabled on the button, so
+// the visual and the accessible state can never disagree.
+const CODES_BTN_DISABLED_CLASS = 'opacity-60 cursor-not-allowed pointer-events-none'
 
 // The minimal date a code panel reads (the question's y/m/d). Callers pass richer
 // objects (full questions / puzzles); only these three fields are consumed.
@@ -26,7 +46,13 @@ export interface CodeDate {
 // The per-date code summary shape, taken from computeMethodSummary's inferred return.
 type MethodSummary = NonNullable<ReturnType<typeof computeMethodSummary>>
 
-export function MethodExplanation({
+// Module-local, exactly like CODES_BTN_CLASS above: until Q5 (round 8) AoxMode imported this
+// directly to hand-roll its own toggle, and that import was its last one — the fold left the
+// export behind with no consumer anywhere in the repo. Nothing outside this file renders the
+// codes body; it is reached only through MethodBreakdownSection, which owns the freeze contract
+// that keeps the body's inputs steady while the panel slides shut. Exporting it again would be
+// re-opening the door that let the six panels drift apart in the first place.
+function MethodExplanation({
   date,
   useJulian = false,
   displayedFormat = 'written-mdy',
@@ -110,17 +136,25 @@ export function MethodBreakdownSection({
   date?: CodeDate | null
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  className?: string
-  contentClassName?: string
+  // Both are REQUIRED: every call site states its own wrapper and panel classes (the wrapper is
+  // "" in the four game modes, a divider + shadow row in Lookup), so a default here would be
+  // unreachable code that only invites a future site to skip the decision.
+  className: string
+  contentClassName: string
   useJulian?: boolean
   displayedFormat?: FormatId
   cellDates?: CodeDate[] | null
 }) {
+  // The panel's DOM id, for the button's aria-controls. useId, not a prop: all six codes
+  // panels are mounted at once (the game modes are display:none, never unmounted), so a
+  // caller-supplied id would be one more thing six sites must agree to keep unique.
+  const panelId = React.useId()
   const isControlled = typeof controlledOpen === 'boolean' && typeof onOpenChange === 'function'
   const [internalOpen, setInternalOpen] = React.useState(false)
   // Frozen values for the codes panel — kept in lockstep so MethodExplanation sees a
-  // self-consistent snapshot during the close animation (no prop leaks during the 310ms
-  // CODES_CLOSE_MS window).
+  // self-consistent snapshot during the close animation (no prop leaks during the
+  // CODES_CLOSE_MS window). ALL FOUR are frozen, not just the date: format and Julian can
+  // change under a settings edit made while the panel is sliding shut.
   const [frozenDate, setFrozenDate] = React.useState(date)
   const [frozenDisplayedFormat, setFrozenDisplayedFormat] = React.useState(displayedFormat)
   const [frozenCellDates, setFrozenCellDates] = React.useState(cellDates)
@@ -141,10 +175,11 @@ export function MethodBreakdownSection({
   })
   const wasOpenRef = React.useRef(isControlled ? !!controlledOpen : false)
   // closingRef is true between the moment the panel begins closing and the moment the
-  // CODES_CLOSE_MS timer fires. While true, dep changes (e.g. user clicks Forward within
-  // 310ms of Hide Codes) re-arm the timer rather than falling into the else branch, which
-  // would otherwise snap frozen values to the live ones mid-animation — visible as the
-  // panel's contents changing while the panel is still sliding shut.
+  // CODES_CLOSE_MS timer fires. While true, dep changes (e.g. user clicks Forward inside
+  // that window after Hide Codes) re-arm the timer rather than falling into the else branch,
+  // which would otherwise snap frozen values to the live ones mid-animation — visible as the
+  // panel's contents changing while the panel is still sliding shut. (AoX's now-deleted
+  // private copy of this effect lacked the ref and shipped exactly that bug.)
   const closingRef = React.useRef(false)
   const key = date ? `${date.y}-${date.m}-${date.d}` : ''
   React.useEffect(() => {
@@ -178,9 +213,9 @@ export function MethodBreakdownSection({
   // While the codes panel is open, all four inputs to MethodExplanation (date,
   // displayedFormat, cellDates, useJulian) track their live values. When the panel
   // transitions from open→closed, all four are HELD at their current values for
-  // CODES_CLOSE_MS (covers the Expander's default 280ms close animation + buffer —
-  // this panel never opts into Q8's per-toggle durationMs, so the default is its
-  // exact close time), then released to the latest values after the close completes.
+  // CODES_CLOSE_MS (= ACCORDION_MS_FLOOR + buffer; the Expander below is handed that
+  // same floor as its durationMs, so the hold provably outlasts the slide), then
+  // released to the latest values after the close completes.
   // Callers that mutate any of the four inputs MUST batch setCalcOpen(false) into
   // the same React update; otherwise this effect fires once with (open=true,
   // newInputs) and updates the frozen values immediately, defeating the freeze.
@@ -224,18 +259,28 @@ export function MethodBreakdownSection({
   }, [open, date, displayedFormat, useJulian, cellDatesKey])
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   return (
-    <div className={className ?? 'mt-5'}>
+    <div className={className}>
       <button
         type="button"
         data-key="C"
         onClick={toggle}
-        className={`w-full px-4 py-2 rounded-xl btn-solid text-sm font-medium ${!hasDate ? ' opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
+        className={`${CODES_BTN_CLASS} ${!hasDate ? CODES_BTN_DISABLED_CLASS : ''}`}
         aria-disabled={!hasDate}
+        // The same disclosure contract the guide's accordion headers got in round 7 (Q8) and
+        // this toggle did not: state announced, and a pointer at the region it opens. `open`
+        // already folds in hasDate, so a disabled toggle reports itself collapsed.
+        aria-expanded={open}
+        aria-controls={panelId}
       >
         {open ? 'Hide Codes' : 'Show Codes'}
       </button>
-      <Expander open={open && hasDate}>
-        <div className={contentClassName ?? 'mt-3 rounded-2xl panel p-4 pb-1'}>
+      {/* durationMs is stated, not inherited: the codes panel runs the accordion duration
+          FLOOR — the same value the guide's distance-scaled formula returns for every panel
+          this size — and CODES_CLOSE_MS is derived from that floor. Passing it makes the
+          agreement explicit rather than a coincidence of two literals (Q5 round-8); the
+          .expander var fallback in index.css is now pure defense and never a live path. */}
+      <Expander open={open && hasDate} durationMs={ACCORDION_MS_FLOOR}>
+        <div id={panelId} className={contentClassName}>
           <MethodExplanation
             date={frozenDate}
             useJulian={frozenUseJulian}

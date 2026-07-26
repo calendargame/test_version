@@ -125,13 +125,16 @@ describe('Settings → Input toggle', () => {
       fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
     })
     expect(useSettings.getState().inputStyle).toBe('buttons')
-    fireEvent.click(screen.getByRole('button', { name: 'Dots' }))
+    // The picker is a radiogroup of two radios (round-8 a11y pass) — same buttons, richer role.
+    fireEvent.click(screen.getByRole('radio', { name: 'Dots' }))
     expect(useSettings.getState().inputStyle).toBe('dots')
-    fireEvent.click(screen.getByRole('button', { name: 'Buttons' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Buttons' }))
     expect(useSettings.getState().inputStyle).toBe('buttons')
-    expect(screen.getByRole('button', { name: 'Dots' }).parentElement.className).not.toContain(
+    expect(screen.getByRole('radio', { name: 'Dots' }).parentElement.className).not.toContain(
       'pointer-events-none',
     )
+    expect(screen.getByRole('radio', { name: 'Buttons' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('radio', { name: 'Dots' }).getAttribute('aria-checked')).toBe('false')
   })
 
   it('is locked (dimmed, value preserved) in Deduction', () => {
@@ -143,7 +146,7 @@ describe('Settings → Input toggle', () => {
     act(() => {
       fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
     })
-    const dotsBtn = screen.getByRole('button', { name: 'Dots' })
+    const dotsBtn = screen.getByRole('radio', { name: 'Dots' })
     expect(dotsBtn.parentElement.className).toContain('pointer-events-none')
     // The onClick guard keeps the value even if a click is dispatched at it.
     fireEvent.click(dotsBtn)

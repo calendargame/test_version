@@ -102,7 +102,7 @@ describe('CustomSelect — active-cursor highlight', () => {
   })
 })
 
-// ── Portal geometry: the doc-scroll coordinate term + forceDown (Round-4) + the
+// ── Portal geometry: the doc-scroll coordinate term + the auto-flip fit test (round-8) + the
 //    document-scroll close (Q2) ─────────────────────────────────────────────────────────────
 //
 // The option panel portals into #root with position:absolute. In APP mode #root is
@@ -111,12 +111,17 @@ describe('CustomSelect — active-cursor highlight', () => {
 // #root goes static and the document becomes the scroller — the panel's containing block then
 // anchors at the DOCUMENT origin, so measurePanel must add window.scrollY or a scrolled-down
 // page paints the menu scrollY px above its trigger, sliding off the top of the screen (the
-// Round-4 "mode menu opens upward + clipped in How-to-Play" report). forceDown is the
-// mode-selector hardcode: its trigger lives in the fixed bar, so it always opens downward.
+// Round-4 "mode menu opens upward + clipped in How-to-Play" report).
+// The AUTO-FLIP (round-8 root-cause fix, replacing the mode selector's forceDown hardcode):
+// the panel opens DOWN unless it does not fit below AND does fit above. "Above" is measured to
+// the FIXED BAR (--bar-h), not the screen edge — clearing the viewport while painting over the
+// title/gear/mode selector is not fitting. The old test compared space-above to space-BELOW and
+// never checked the panel fit above at all, so a long list with cramped room on both sides
+// flipped up into a space too small for it; the last two cases here pin both halves of the fix.
 // While open, captured scrolls split by TARGET (Q2): an ELEMENT scroll (the settings
 // popover's inner wrapper) repositions the panel; a DOCUMENT scroll (guide mode's page pan)
 // CLOSES it with outside-tap semantics — no trigger refocus.
-describe('CustomSelect — portal position math (doc-scroll term + forceDown + doc-scroll close)', () => {
+describe('CustomSelect — portal position math (doc-scroll term + auto-flip fit + doc-scroll close)', () => {
   let rectSpy
   // All triggers share one mocked rect — only the CustomSelect wrapper's rect is read while
   // these tests run (jsdom's real getBoundingClientRect is all-zeros, useless for geometry).
@@ -140,6 +145,7 @@ describe('CustomSelect — portal position math (doc-scroll term + forceDown + d
     rectSpy?.mockRestore()
     rectSpy = undefined
     setScrollY(0) // jsdom never scrolls on its own; pin the mock back to the app-mode value
+    document.documentElement.style.removeProperty('--bar-h') // back to the 0 the app never sets in jsdom
     cleanup()
     document.getElementById('root')?.remove()
   })
@@ -163,24 +169,53 @@ describe('CustomSelect — portal position math (doc-scroll term + forceDown + d
     expect(panel().style.bottom).toBe('') // opening down — top-positioned only
   })
 
-  it('a bottom-of-screen trigger still auto-flips up (the theme selects); the same rect with forceDown opens down', () => {
-    // spaceBelow (innerHeight − rect.bottom − 16 = 12) is far under the 3×45+10 estimate and
-    // spaceAbove is larger → the auto-flip fires and the panel is bottom-positioned.
-    const rect = {
-      top: window.innerHeight - 68,
-      bottom: window.innerHeight - 28,
+  // The rect both flip cases share: a trigger near the bottom edge, so spaceBelow
+  // (innerHeight − rect.bottom − 16 = 12) is far under the 3×45+10 = 145 estimate. Whether the
+  // panel flips then turns entirely on whether it FITS above — which the next two tests drive
+  // from opposite sides using this one fixture.
+  const bottomEdgeRect = {
+    top: window.innerHeight - 68,
+    bottom: window.innerHeight - 28,
+    left: 200,
+    right: 300,
+  }
+
+  it('a bottom-of-screen trigger auto-flips up when the panel FITS above', () => {
+    mockRect(bottomEdgeRect)
+    fireEvent.click(mount())
+    // spaceAbove = rect.top − barH(0 in jsdom) − 6 = 694 ≥ 145 → flip.
+    expect(panel().style.bottom).toBe(`${window.innerHeight - bottomEdgeRect.top + 6}px`) // − scrollY (0) — the term is symmetric
+    expect(panel().style.top).toBe('')
+  })
+
+  it('does NOT flip when the panel fits NEITHER below nor above (the round-8 bug: a tall list, cramped both sides)', () => {
+    // The exact shape the old spaceAbove > spaceBelow test got wrong. 16 options need
+    // 16×45+10 = 730px; the trigger sits low enough that space below (212) is hopeless and
+    // space above (494) is merely LARGER — not large enough. The old test read "more room
+    // above" and flipped up into a gap that could not hold the panel; the fit test keeps it
+    // down, where an over-tall panel at least starts at the trigger and runs off the bottom
+    // instead of off the top.
+    const tall = Array.from({ length: 16 }, (_, i) => ({ value: `v${i}`, label: `Option ${i}` }))
+    mockRect({
+      top: window.innerHeight - 268,
+      bottom: window.innerHeight - 228,
       left: 200,
       right: 300,
-    }
-    mockRect(rect)
+    })
+    fireEvent.click(mount({ options: tall, value: 'v0' }))
+    expect(panel().style.top).toBe(`${window.innerHeight - 228 + 6}px`)
+    expect(panel().style.bottom).toBe('')
+  })
+
+  it('measures the space above to the FIXED BAR, not the screen edge — a tall --bar-h keeps the same rect down', () => {
+    // Same fixture as the flip case above; ONLY --bar-h changes. Raw rect.top is still a roomy
+    // 700px, but the bar owns the first 600 of it, leaving 700 − 600 − 6 = 94 < 145. A panel
+    // that clears the viewport by painting over the title/gear/mode selector is not "fitting",
+    // so it stays down. (jsdom loads no CSS, so --bar-h is absent → 0 → the flip case above.)
+    document.documentElement.style.setProperty('--bar-h', '600px')
+    mockRect(bottomEdgeRect)
     fireEvent.click(mount())
-    expect(panel().style.bottom).toBe(`${window.innerHeight - rect.top + 6}px`) // − scrollY (0) — the term is symmetric
-    expect(panel().style.top).toBe('')
-    cleanup()
-    document.getElementById('root')?.remove()
-    // forceDown (the mode-selector hardcode): identical geometry, but the flip never fires.
-    fireEvent.click(mount({ forceDown: true }))
-    expect(panel().style.top).toBe(`${rect.bottom + 6}px`)
+    expect(panel().style.top).toBe(`${bottomEdgeRect.bottom + 6}px`)
     expect(panel().style.bottom).toBe('')
   })
 

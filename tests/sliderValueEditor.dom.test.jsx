@@ -6,13 +6,24 @@
 // onChange regex; blur/Enter commit through the parse → convert → snap → clamp pipeline
 // (lib/sliderValue, pure math locked in tests/sliderValue.test.js); Escape reverts WITHOUT
 // committing and stops propagation (the popup/settings Escape contract); disabled follows the
-// slider's lock; the widest-string width strut (invisible + nowrap, button nowrap, input
-// min-w-0 + size 1); the edit input's zero-shift interactive border (border surface-tray
-// cancelled by -my-px, Q4 + Q7 round-7). The finger-sized tap-target feel is on-device per
-// the standing lesson.
+// slider's lock; and the Q4 round-8 zero-shift geometry — the invisible widest-string strut is
+// the ONLY in-flow child of the cell, both live controls sit on top of it out of flow, and
+// .svalue-input's outward inset exactly matches its own chrome so the input's CONTENT box lands
+// on the strut. jsdom cannot lay out, so the pixels are an on-device check per the standing
+// lesson; what is pinned here is the class contract plus the .svalue-input rule's own algebra,
+// read straight out of src/index.css.
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import SliderValueEditor from '../src/components/SliderValueEditor.jsx'
+
+const CSS = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css'),
+  'utf8',
+)
+const SVALUE_RULE = /\.svalue-input\{([^}]*)\}/.exec(CSS)?.[1] ?? ''
 
 // The three production configs (main.tsx call sites), minus the app-side onCommit wiring.
 const flashProps = {
@@ -25,7 +36,7 @@ const flashProps = {
   format: (v) => (v / 1000).toFixed(1) + 's',
   toText: (v) => String(v / 1000),
   fromText: (n) => n * 1000,
-  widest: '2m 55s', // the widest-possible strut string (all six production sites pass SLIDER_READOUT_WIDEST)
+  widest: '2m 55s', // the widest-possible strut string (six of the seven sites pass SLIDER_READOUT_WIDEST)
 }
 const roundProps = {
   value: 60,
@@ -48,6 +59,22 @@ const perQProps = {
   format: (v) => v + 's',
   toText: String,
   widest: '2m 55s',
+}
+
+// The one non-timer site: the defaults manager's AoX run-length row, which types a plain count
+// and struts its own "1000" — the widest string any editor mounts, and the site the round-7
+// geometry broke (its content box was ~10px under the strut, so a 3rd digit lost the leading one).
+const aoxProps = {
+  value: 12,
+  min: 2,
+  max: 1000,
+  snap: 1,
+  inputMode: 'numeric',
+  label: 'AoX Run Length',
+  editLabel: 'AoX Run Length',
+  format: String,
+  toText: String,
+  widest: '1000',
 }
 
 const readout = (label) => screen.getByRole('button', { name: `Edit ${label}` })
@@ -168,38 +195,73 @@ describe('SliderValueEditor', () => {
     expect(onCommit).not.toHaveBeenCalled()
   })
 
-  it('the width strut sizes both modes: invisible nowrap widest string, nowrap button, min-w-0 size-1 input', () => {
+  it('only the invisible widest-string strut is in flow — both live controls sit on top of it', () => {
     render(<SliderValueEditor {...flashProps} onCommit={vi.fn()} />)
-    // The strut is always mounted, invisible, hidden from the a11y tree, and single-line — it
-    // holds the shared single-cell grid at the widest POSSIBLE readout width in the live font.
+    // The strut is always mounted, invisible, hidden from the a11y tree, block-level (so the cell
+    // takes ITS height, not an inherited line box) and single-line — it alone holds the cell at
+    // the widest POSSIBLE readout width in the live font.
     const strut = screen.getByText('2m 55s')
-    expect(strut).toHaveClass('invisible', 'whitespace-nowrap', 'tabular-nums', 'text-xs')
+    expect(strut).toHaveClass('block', 'invisible', 'whitespace-nowrap', 'tabular-nums', 'text-xs')
     expect(strut).toHaveAttribute('aria-hidden', 'true')
-    expect(strut.parentElement).toHaveClass('inline-grid')
-    // The display button overlays the strut's cell and must never wrap at the "2m 55s" space
-    // (the Round-4 iOS bug: SF Pro outgrew the hand-measured width and the readout broke lines).
-    expect(readout('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'whitespace-nowrap')
+    const cell = strut.parentElement
+    expect(cell).toHaveClass('relative', 'inline-block', 'shrink-0')
+    // The display button overlays the strut and must never wrap at the "2m 55s" space (the
+    // Round-4 iOS bug: SF Pro outgrew the hand-measured width and the readout broke lines).
+    expect(readout('Flash speed')).toHaveClass('absolute', 'inset-0', 'whitespace-nowrap')
     openEditor('Flash speed')
-    // The strut stays mounted through the swap; the input fills the cell but MUST collapse BOTH
-    // of its intrinsic sizes — min-w-0 kills the min-content floor, and size={1} the ~20-char
-    // default max-content (the auto grid column tracks max-content too, so without it the cell
-    // blew open and squeezed the slider the moment editing started — the Round-5 staging bug
-    // jsdom's layout-less DOM could not catch; the fixed layout itself stays an on-device check).
+    // The strut stays mounted through the swap, and the input takes its geometry from
+    // .svalue-input (position:absolute) — so neither control can size the cell in either state.
     expect(screen.getByText('2m 55s')).toBe(strut)
-    expect(field('Flash speed')).toHaveClass('col-start-1', 'row-start-1', 'w-full', 'min-w-0')
-    expect(field('Flash speed')).toHaveAttribute('size', '1')
+    expect(field('Flash speed')).toHaveClass('svalue-input')
+    expect(cell.children).toHaveLength(2)
   })
 
-  it('the edit input wears the zero-shift interactive border: border surface-tray cancelled by -my-px (Q4 + Q7 round-7)', () => {
+  it('the edit box carries NO in-flow sizing left over from the grid cell it used to be', () => {
     render(<SliderValueEditor {...flashProps} onCommit={vi.fn()} />)
     openEditor('Flash speed')
     const input = field('Flash speed')
+    // Round-7's cell was an inline-grid whose input was an in-flow item: it needed w-full to fill
+    // the track, min-w-0 + size={1} to stop its intrinsic sizes blowing the track open, and -my-px
+    // to CANCEL the border it added to the track's height. Out of flow, every one of those is not
+    // just unnecessary but actively wrong — w-full in particular over-constrains left/right and
+    // kills the inset that makes the content box match the strut.
+    for (const dead of ['col-start-1', 'row-start-1', 'w-full', 'min-w-0', '-my-px', 'rounded-md'])
+      expect(input.className.split(' ')).not.toContain(dead)
+    expect(input).not.toHaveAttribute('size')
     // surface-tray (stgl-bg + sbtn-bd) is the interactive-control surface every editable box
-    // shares — never the container .panel this input once borrowed — and the 1px border it
-    // brings would grow the strut cell 2px over the borderless display text: -my-px hands
-    // exactly that back, so the digits (and everything below the row) hold still through the
-    // tap-to-type swap. The pixel truth is on-device; the class contract is pinned here.
-    expect(input).toHaveClass('border', 'surface-tray', '-my-px', 'rounded-md')
+    // shares — never the container .panel this input once borrowed. It supplies the COLOURS only;
+    // .svalue-input owns width, border and radius.
+    expect(input).toHaveClass('surface-tray')
     expect(input.className).not.toContain('panel')
+  })
+
+  it('.svalue-input insets outward by exactly its own chrome, so the content box lands on the strut', () => {
+    // The AoX Run Length site is the proof case: widest "1000", and under round-7's w-full +
+    // border-box the content box was ~10px NARROWER than that strut, so typing a 4th digit
+    // scrolled the leading one out of view. The rendered pixels are on-device truth; the algebra
+    // is not, and it is what fixes the bug — so it is pinned here straight from the stylesheet.
+    expect(SVALUE_RULE).not.toBe('')
+    // Out of flow: it cannot contribute to the cell's size in either axis, at any value.
+    expect(SVALUE_RULE).toContain('position:absolute')
+    expect(SVALUE_RULE).toContain('inset:0')
+    // Inline axis: padding-inline IN by (pad), border by (bd), margin-inline OUT by (pad + bd).
+    // With left:0/right:0 and width:auto the positioning equation then solves to
+    // content width == cell width == strut width. Exactly, at every widest string.
+    expect(SVALUE_RULE).toContain('padding-inline:var(--svalue-pad)')
+    expect(SVALUE_RULE).toContain('border-width:var(--svalue-bd)')
+    expect(SVALUE_RULE).toContain('margin-inline:calc((var(--svalue-pad) + var(--svalue-bd)) * -1)')
+    // Block axis: no padding, so the outward inset is the border alone.
+    expect(SVALUE_RULE).toContain('margin-block:calc(var(--svalue-bd) * -1)')
+    expect(SVALUE_RULE).not.toContain('padding-block')
+    // The colour must keep coming from .surface-tray: the `border` SHORTHAND would reset
+    // border-color to currentcolor and leave the result depending on rule order.
+    expect(SVALUE_RULE).not.toMatch(/(^|;)border:/)
+    // Native form-field treatment off (Q4 round-8 Part B) — the box declares its own chrome.
+    expect(SVALUE_RULE).toContain('appearance:none')
+    // And the class really is what the widest-strut site mounts.
+    render(<SliderValueEditor {...aoxProps} onCommit={vi.fn()} />)
+    expect(screen.getByText('1000')).toHaveClass('invisible')
+    act(() => fireEvent.click(readout('AoX Run Length')))
+    expect(screen.getByRole('textbox', { name: 'AoX Run Length' })).toHaveClass('svalue-input')
   })
 })

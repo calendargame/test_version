@@ -92,13 +92,7 @@ export function GuideSection({
   const motionVar =
     durationMs == null ? undefined : ({ '--expander-ms': `${durationMs}ms` } as CSSProperties)
   return (
-    // scroll-margin-top seats the wrapper below the fixed bar (plus the panel gap) for any
-    // native scroll-into-view targeting a section — future-proofing ridden along with Q8;
-    // the coordinator computes its own bar clearance and never relies on it.
-    <div
-      id={sectionDomId(id)}
-      className="rounded-2xl panel overflow-hidden scroll-mt-[calc(var(--bar-h)+8px)]"
-    >
+    <div id={sectionDomId(id)} className="rounded-2xl panel overflow-hidden">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -118,12 +112,12 @@ export function GuideSection({
         <span
           className={`text-[7px] text-(--tx-w90) leading-none transition-transform ${isOpen ? 'rotate-180' : ''}`}
           // Read the panel's clock and curve EXACTLY (.expander declares the identical calc —
-          // same var, same .28s fallback — and the identical curve) so the triangle and the
+          // same var, same .24s fallback — and the identical curve) so the triangle and the
           // slide finish together, and honor the reduce-motion --motion-scale, so both snap
           // instantly under "Reduce Motion" instead of the panel snapping while the triangle
           // spins. tests/expander.dom pins all three legs of the sync.
           style={{
-            transitionDuration: 'calc(var(--expander-ms, .28s) * var(--motion-scale))',
+            transitionDuration: 'calc(var(--expander-ms, .24s) * var(--motion-scale))',
             transitionTimingFunction: ACCORDION_EASE_CSS,
           }}
         >
@@ -228,21 +222,36 @@ export default function GuidePage() {
   const [motionMs, setMotionMs] = useState<number | null>(null)
   // The in-flight scroll writer's cancel function (null = none running). Canceled on any
   // user scroll input by the writer itself, on re-toggle mid-flight by the coordinator
-  // below, and on unmount (leaving the guide) by the effect — a surviving writer would
-  // keep scrolling the next mode's page.
+  // below, and by the effect on two occasions: unmount (leaving the guide — a surviving
+  // writer would keep scrolling the next mode's page) and the app being BACKGROUNDED.
+  // The hide case matters because rAF stops firing while hidden: a writer caught mid-flight
+  // would resume on return against a timestamp gap, snapping the page to a target computed
+  // for a tap the reader has long since forgotten. Cancelling leaves the panels to finish
+  // their CSS transition and the browser to hold position (the guide-scoped
+  // overflow-anchor:none in index.css guarantees "hold"). Nothing is re-armed on return:
+  // foregrounding is not a navigation and must never move the reading position.
   const scrollWriterRef = useRef<(() => void) | null>(null)
   const cancelScrollWriter = useCallback(() => {
     scrollWriterRef.current?.()
     scrollWriterRef.current = null
   }, [])
-  useEffect(() => cancelScrollWriter, [cancelScrollWriter])
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') cancelScrollWriter()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      cancelScrollWriter()
+    }
+  }, [cancelScrollWriter])
   // The toggle coordinator (Q8) — hooked into the single toggle callback, never pointer
   // events. Everything is measured at tap time, pre-animation: the closing panel's
   // RENDERED height (its grid track — a mid-flight re-toggle reads the interpolated
   // value, so the retarget stays exact), the opening panel's remaining travel (the body's
   // natural height minus whatever track already shows — its full height at rest), and the
   // tapped wrapper's document position. lib/accordionMotion turns those into the shared
-  // clock d(max(hClosing, hOpening)) and the scroll target (off-screen-above rule for
+  // clock d(max(hClosing, hOpening)) and the scroll target (above-the-reading-line rule for
   // opens, clamp rule for shrinks, null when the current position stays coherent); the
   // writer then glides the window on that same clock and curve. --motion-scale
   // pre-multiplies the writer's duration exactly as the panels' CSS calc does, so Reduce
@@ -277,11 +286,26 @@ export default function GuidePage() {
       const scrollY = window.scrollY
       const tappedRect = tapped.getBoundingClientRect()
       const rootStyle = getComputedStyle(document.documentElement)
+      const cssPx = (name: string) => parseFloat(rootStyle.getPropertyValue(name))
       const motionScale = parseFloat(rootStyle.getPropertyValue('--motion-scale'))
+      const seatTop = cssPx('--seat-top')
       const target = accordionScrollTarget({
         scrollY,
         viewportH: window.innerHeight,
-        barH: parseFloat(rootStyle.getPropertyValue('--bar-h')) || 0,
+        // The guide's READING LINE (index.css). --seat-top is registered with @property, so on
+        // engines that implement @property this read is already a resolved px length. On engines
+        // that DON'T — Safari ≤16.3 and Firefox <128, both inside this build's target set, which
+        // is exactly why Tailwind emits its own @supports fallback for the same token into the
+        // same stylesheet — an unregistered custom property computes to its substituted token
+        // stream, i.e. the literal "calc(57px + 24px)", which parseFloats to NaN. Defaulting that
+        // NaN to 0 would seat every tapped panel at viewport y = 0, UNDER the fixed bar: a worse
+        // bug than the one this token exists to fix, and a silent one. So the fallback recomposes
+        // the line from the two plain px tokens it is made of, which parse everywhere. jsdom
+        // applies no stylesheets and returns '' for all three, landing on 0 — there the panels
+        // still toggle on the shared clock, writer-less.
+        seatTop: Number.isFinite(seatTop)
+          ? seatTop
+          : (cssPx('--bar-h') || 0) + (cssPx('--fade-h') || 0),
         docH: doc.scrollHeight,
         headerDocTop: tappedRect.top + scrollY,
         closingH,
@@ -358,11 +382,14 @@ export default function GuidePage() {
           To see what an update actually changed, the <b>Changelog</b> link right next to Check for
           updates opens a plain-words list of what recent updates changed, each entry dated and
           listed newest first — the dates use the numeric form of your selected format, and the list
-          scrolls within the popup once it grows long. After an update, a small{' '}
-          <b>light-blue dot</b> points the way there: it appears at the top-right corner of the gear
-          button (⚙) until you open the menu, and on the Changelog link itself until the first time
-          you open the changelog. The gear's dot is separate from the small violet bar that marks
-          modified settings (see the Save Defaults section), and the two can show at once.
+          scrolls within the popup once it grows long. Each dated entry covers a whole day: if a day
+          brought more than one update, that day's changes are gathered under the one date. The list
+          shows the ten most recent days that had an update — anything older than that is no longer
+          listed. After an update, a small <b>light-blue dot</b> points the way there: it appears in
+          the top-right corner of the gear button (⚙) until you open the menu, and just after the
+          Changelog link's own text until the first time you open the changelog. The gear's dot is
+          separate from the small violet bar that marks modified settings (see the Save Defaults
+          section), and the two can show at once.
         </p>
         <Subhead>The book and contact</Subhead>
         <p>
@@ -408,8 +435,8 @@ export default function GuidePage() {
             So does the Settings gear (⚙): press it and drag straight into the panel — it
             auto-scrolls when you drag near its top or bottom edge — then release on a setting to
             change it; the panel closes and the change applies. Releasing on a Year Range field
-            opens the keyboard to type instead, and the theme pickers and the buttons at the foot of
-            the panel keep the panel open.
+            opens the keyboard to type instead, and the buttons at the foot of the panel keep the
+            panel open.
           </li>
           <li>
             Timer sliders (Flash speed and both Blitz timers) — tap the value beside the slider to
@@ -418,8 +445,8 @@ export default function GuidePage() {
           <li>
             The sections of this guide open one at a time — opening a section closes the one before
             it. When a section opens or closes, the page scrolls along with the motion whenever
-            that's needed to keep your place, so the section you tapped stays in view instead of
-            sliding off-screen.
+            that's needed to keep your place: instead of sliding off-screen, the section you tapped
+            comes to rest just clear of the bar at the top, with its title fully readable.
           </li>
           <li>
             Text around the app can't be selected or highlighted, so presses and drags always
@@ -961,9 +988,14 @@ export default function GuidePage() {
           </li>
         </UL>
         <p>
-          Accessible from the ⚙ menu in any tab. Enable <b>Use System Settings</b> to match your
-          device's light/dark mode automatically, with separate theme choices for each (a Dark pick
-          and a Light pick). Disable it to pick one theme manually.
+          Accessible from the ⚙ menu in any tab, where the five themes sit as buttons in two
+          labelled rows — <b>Dark</b> (Dusk, Midnight, Nebula) and <b>Light</b> (Light, Parchment).
+          Both rows are always shown, so the menu never changes height. Enable{' '}
+          <b>Use System Settings</b> to match your device's light/dark mode automatically: each row
+          then holds its own separate pick, and your device decides which of the two is in use.
+          Disable it to pick one theme manually — now it is a single choice across both rows, so
+          only the theme you picked stays lit. Turning Use System Settings off keeps whichever theme
+          is already on screen, so the look never changes on you as you flip the switch.
         </p>
       </GuideSection>
       <GuideSection
@@ -1287,7 +1319,9 @@ export default function GuidePage() {
           <li>Year range 1–10000</li>
           <li>Leap Year Chance Random, Jan/Feb Chance Random</li>
           <li>Save Stats on</li>
-          <li>Theme back to Use System Settings with Dusk (dark) and Light (light)</li>
+          <li>
+            Theme back to Use System Settings, with Dusk on the Dark row and Light on the Light row
+          </li>
         </UL>
         <p>
           …plus the same four mode-screen values Save Defaults captures: the AoX run length, the
@@ -1642,8 +1676,19 @@ export default function GuidePage() {
             Show Codes is available for all results and stays open as you browse your history.
           </li>
           <li>
-            The history panel shows up to 10 entries before scrolling and re-renders live when you
-            change the Date Format.
+            The answer line below the input always keeps its space, so nothing on the page shifts as
+            answers come and go. With nothing to report — before your first lookup, or after Clear —
+            it simply invites you to enter a date.
+          </li>
+          <li>
+            The history panel keeps your last twenty lookups. It scrolls within its own box whenever
+            the list is taller than the room available.
+          </li>
+          <li>
+            Nothing in Lookup is frozen at the moment you look it up: the answer line and every
+            history row are worked out afresh from the date itself, so changing the Date Format or
+            the Julian Calendar setting updates the answer and the whole list together — an older
+            entry can never disagree with the one above it.
           </li>
           <li>
             October 5–14, 1582 never existed and will appear in history as "Does Not Exist" with

@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Stats } from '../engine/gameReducer.js'
-import type { LookupEntry } from '../components/LookupCard.jsx'
 import { captureError } from '../observability/sentry.js'
 import { checkStatsInvariants } from '../engine/invariants.js'
 import { useSettings } from './settings.js'
@@ -20,7 +19,8 @@ import { useSettings } from './settings.js'
 //     sudden death (score only), per-question with Allow Mistakes (score/streak, C3a),
 //     and AoX (average/median). These already lived as component state; the store
 //     now owns them (and their types).
-//   • Lookup history (the last 20 lookups).
+//   • Lookup history (the last 20 lookups) — see LookupEntry below: the INPUTS only, never
+//     the rendered text (that is derived at paint time from the live settings).
 //
 // WHAT DOES *NOT* PERSIST (intentionally — mid-run/round state is discarded):
 //   • The engine's live question, history stacks, locked/revealed flags, etc.
@@ -53,6 +53,21 @@ export interface SuddenBest {
   roundId: number | null
 }
 
+// A saved Lookup history entry — the persisted shape, owned HERE (the store is what versions and
+// migrates it; it used to be declared in the LookupCard UI component and imported backwards).
+// It carries only what the user actually supplied: the parsed date, a stable id for selection, and
+// the Oct 5–14, 1582 gap marker. Everything the card SHOWS — the formatted label, the weekday, the
+// full result sentence — is derived from y/m/d against the LIVE Date Format / Julian settings, so
+// changing either re-renders every row and the result line together. (Before v3 the rendered text
+// was stored too, and a format change left an old-format result sentence above a new-format row.)
+export interface LookupEntry {
+  id: string
+  y: number
+  m: number
+  d: number
+  isGap?: boolean
+}
+
 // The five lifetime-stats silos: the continuous modes plus Deduction's three sub-modes.
 export type StatsKey = 'classic' | 'flash' | 'dedDay' | 'dedMonth' | 'dedYear'
 
@@ -63,8 +78,8 @@ export type ProgressValues = {
   // Per-question + Allow Mistakes bests (C3a): the same BlitzBest {score, streak} shape as
   // per-round, keyed by the SAME per-question key string as suddenBest — for per-question,
   // AM-ness is the MAP split (the two variants' record shapes differ), not a key segment.
-  // Added as a fresh key space, so no migration: an older payload simply lacks the key and
-  // zustand's shallow merge leaves the default {} standing (`version` stays 2).
+  // Added as a fresh key space, so no migration and no version bump of its own: an older payload
+  // simply lacks the key and zustand's shallow merge leaves the default {} standing.
   suddenAmBest: Record<string, BlitzBest>
   aoxBest: Record<string, AoxBest>
   lookupHistory: LookupEntry[]
@@ -141,6 +156,42 @@ export function migrateAoxBestKeys(
   return out
 }
 
+// The lookup-history normalizer, and the ONLY thing that decides what shape a stored entry has.
+//
+// SHAPE (v3): an entry is {id, y, m, d, isGap?} and nothing else. It used to also carry three
+// RENDERED fields (label/weekday/result) — snapshots of how the date read at lookup time, so after
+// a Date Format change the result sentence on screen disagreed with the history row right below
+// it. LookupCard derives all three now, which makes the stored copies not just redundant but
+// wrong, so this drops them. Lossless: y/m/d have been on the entry since the app's first commit
+// in this repo, long before the persist store existed (Stage D1).
+//
+// VALIDATION: the filter asserts exactly what the consumers dereference. LookupCard carries no
+// per-field guards of its own any more — the store owns the shape, so the store has to guarantee
+// it, or a truncated/tampered payload reaches the card as {id} alone and renders MONTH[NaN] and a
+// blank weekday, or trips the mode error boundary. An entry that can't answer "which date?" has
+// nothing to show and is dropped.
+//
+// This runs on EVERY rehydrate (see `merge` below), not just the v2→v3 upgrade: a v3 payload is
+// read from the same untrusted localStorage as a v2 one. Exported for tests.
+export function normalizeLookupEntries(entries: unknown): LookupEntry[] {
+  if (!Array.isArray(entries)) return []
+  return entries
+    .filter(
+      (e): e is LookupEntry =>
+        !!e &&
+        typeof e === 'object' &&
+        typeof e.id === 'string' &&
+        Number.isFinite(e.y) &&
+        Number.isFinite(e.m) &&
+        Number.isFinite(e.d),
+    )
+    .map((e) =>
+      e.isGap
+        ? { id: e.id, y: e.y, m: e.m, d: e.d, isGap: true }
+        : { id: e.id, y: e.y, m: e.m, d: e.d },
+    )
+}
+
 export const useProgress = create<ProgressState>()(
   persist(
     (set) => ({
@@ -165,8 +216,15 @@ export const useProgress = create<ProgressState>()(
     }),
     {
       name: 'cg-progress-v1', // localStorage key (fixed — the `version` field below gates migrations)
-      version: 2,
-      // Saved-shape migrations (run once at hydrate when the stored version is older).
+      // v3 = the slim lookup-entry shape. The bump still records that shape change even though
+      // `merge` below re-asserts it on every load: it is what tells a FUTURE migration which
+      // payloads it is looking at.
+      version: 3,
+      // Saved-shape migrations — the version-gated REWRITES, run once at hydrate when the stored
+      // version is older. Only aoxBest needs one: its keys gained a dimension, information a later
+      // read cannot reconstruct. (The lookup-history shape is NOT here; it is normalized
+      // unconditionally in `merge`, because a v3 payload is read from the same untrusted storage
+      // as a v2 one and version-gating it would leave the go-forward path unguarded.)
       migrate: (persisted, version) => {
         const state = persisted as Partial<ProgressValues>
         if (version < 2 && state?.aoxBest && typeof state.aoxBest === 'object') {
@@ -180,6 +238,18 @@ export const useProgress = create<ProgressState>()(
       // Persist only the data values, never the setter functions.
       partialize: (state) =>
         Object.fromEntries(PERSISTED_KEYS.map((k) => [k, state[k]])) as Partial<ProgressState>,
+      // The default shallow merge (persisted over defaults) PLUS the one shape guarantee the app
+      // depends on: lookupHistory is normalized here rather than in `migrate` so it covers every
+      // load at every version, which is what makes LookupCard's guard-free rendering safe. Runs
+      // after migrate, so a v1/v2 payload arrives already rewritten.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<ProgressValues>
+        return {
+          ...current,
+          ...saved,
+          lookupHistory: normalizeLookupEntries(saved.lookupHistory),
+        }
+      },
       // Tripwire: after the saved copy loads, verify it. Corrupt saved progress (good>played from an
       // old bug, or storage truncation/tampering on a real device) is a silent integrity problem —
       // report it to Sentry (prod only, via captureError). Report-only: behavior is unchanged (the

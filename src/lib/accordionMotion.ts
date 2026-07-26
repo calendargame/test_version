@@ -1,13 +1,19 @@
-// lib/accordionMotion.ts — the HTP accordion motion coordinator's pure math (Q8).
+// lib/accordionMotion.ts — the pure math of every accordion in the app (Q8; Q5 round-8).
 //
 // Kept apart from the component (components/GuidePage.tsx) for the lib/selectionGuard
 // reasons: the component file only exports components (the react-refresh rule), and every
 // decision here is trivially unit-testable without rendering anything. GuidePage owns the
-// DOM reads (rendered heights, rects, the --bar-h / --motion-scale vars) and the rAF
+// DOM reads (rendered heights, rects, the --seat-top / --motion-scale vars) and the rAF
 // scroll writer; this module owns what the numbers MEAN: how long a toggle takes, the
 // curve the panels and the writer both run, and where the window scroll must land.
+//
+// Q5 (round 8) widened it from "the HTP coordinator's math" to the ONE motion law: the
+// codes panel (components/MethodBreakdown) now runs the same duration floor and the same
+// curve, and its freeze window is derived here rather than hand-synced in a file of its
+// own. The scroll math below stays guide-only — the codes panel is the last element in a
+// scroll column and moves nothing above itself, so it has nothing to compensate for.
 
-// ── Duration: d(h) = clamp(180ms + 0.14ms/px × h, 240ms, 440ms) ──────────────────────
+// ── Duration: d(h) = clamp(180ms + 0.14ms/px × h, ACCORDION_MS_FLOOR, 440ms) ─────────
 // h = the animated content height in px. The guide's panel heights span an 18.5:1 range,
 // far too wide for either one fixed duration (giants blur) or a pure per-px rate (giants
 // crawl); the 180ms base + shallow 0.14ms/px slope + [240, 440] clamp compress the felt
@@ -15,8 +21,31 @@
 // giants stay under half a second (440ms cap, Material long1 territory: Deduction,
 // Save Defaults, Buttons; Julian ≈ 329ms sits mid-slope). Rounded to whole ms: the value
 // is stamped into inline styles and test pins, and sub-ms precision is imperceptible.
+//
+// The FLOOR is the only clamp with consumers outside this curve, so it is the only one
+// named: the app's OTHER accordion — the codes panel (components/MethodBreakdown) — runs
+// at exactly this duration by passing it as Expander's durationMs, CODES_CLOSE_MS below
+// derives its freeze window from it, and index.css carries it as the --expander-ms
+// fallback. One number, one home. (Before Q5 the codes panel ran 280ms and the guide's
+// short panels 240ms — two hand-tuned literals that happened to be close; the guide's
+// formula returns this floor for anything under ~429px, and the codes panel is ~72-97px,
+// so the two were only ever going to be the same value. Now they ARE the same value.)
+// The 440ms cap has no consumer beyond this formula and stays a literal.
+export const ACCORDION_MS_FLOOR = 240
 export const accordionMs = (heightPx: number): number =>
-  Math.round(Math.min(440, Math.max(240, 180 + 0.14 * heightPx)))
+  Math.round(Math.min(440, Math.max(ACCORDION_MS_FLOOR, 180 + 0.14 * heightPx)))
+
+// CODES_CLOSE_MS — how long the codes panel holds its FROZEN inputs (date, format,
+// cellDates, Julian) after Hide Codes before releasing them to the latest values, so the
+// panel's contents cannot change while it is still sliding shut. Derived, not hand-synced:
+// the panel's slide IS ACCORDION_MS_FLOOR (it opts in explicitly), plus a 30ms buffer for
+// the gap between the CSS transition ending and the timer firing. Owned by
+// MethodBreakdownSection, which is the single implementation behind all six codes toggles.
+// One caveat the arithmetic hides: under prefers-reduced-motion the slide is INSTANT
+// (--motion-scale multiplies the CSS duration to 0s) while this timeout still runs its full
+// length. Harmless — the panel is already closed, so the release is invisible either way —
+// but the derivation is only tight at --motion-scale: 1.
+export const CODES_CLOSE_MS = ACCORDION_MS_FLOOR + 30
 
 // The twin-toggle shared clock: an exclusive-open accordion switch animates TWO panels
 // (one closing, one opening) whose travels differ. One duration — d of the LARGER travel
@@ -54,7 +83,11 @@ export const accordionEase = (t: number): number => {
 // All inputs are pre-computed geometry, fully known at tap time (before any animation):
 //   scrollY       window scroll at the tap (may sit negative mid rubber-band)
 //   viewportH     window.innerHeight
-//   barH          the fixed top bar's height (--bar-h)
+//   seatTop       the reading line: viewport y of the first fully-legible document pixel,
+//                 = the fixed bar's height PLUS the top fade's depth (--seat-top, registered
+//                 in index.css as --bar-h + --fade-h). NOT the bar alone: the top feather is
+//                 painted over the --fade-h immediately below the bar, so a header seated at
+//                 --bar-h lands inside the fade — on screen by arithmetic, unreadable in fact.
 //   docH          the document's current scrollHeight
 //   headerDocTop  the tapped section wrapper's current document-space top
 //   closingH      the closing panel's current RENDERED height (0 when nothing closes;
@@ -66,7 +99,7 @@ export const accordionEase = (t: number): number => {
 export interface AccordionToggleGeometry {
   scrollY: number
   viewportH: number
-  barH: number
+  seatTop: number
   docH: number
   headerDocTop: number
   closingH: number
@@ -80,11 +113,17 @@ export interface AccordionToggleGeometry {
 // overflow-anchor:none rule in index.css guarantees "holds still" on every engine).
 //
 // Scenario A — a panel OPENS (owner rule): compensate ONLY when the opened panel's start
-// (its header) would land off-screen above the fold. The comparison baseline is where the
+// (its header) would land above the reading line. The comparison baseline is where the
 // browser will have settled AFTER the toggle — scrollY clamped into the final scroll
-// range — plus the bar the header must clear. Target: the header seated right below the
-// bar. (The final-range clamps on the target are pure defense: A's own inequality already
-// bounds it below the settled position.)
+// range — plus the seat the header must clear. Target: the header seated exactly on the
+// reading line. (The final-range clamps on the target are pure defense: A's own inequality
+// already bounds it below the settled position.) A returns null when the glide would be
+// under a pixel: the target is built from fractional rects, so a rest position can differ
+// from its own recomputed seat by a fraction, and running a 240-440ms animation to erase
+// a third of a pixel is visible motion for no visible correction. Scenario B has no such
+// epsilon on purpose — there the current position is genuinely OUT of the final scroll
+// range, so the browser is going to move it whatever we do; the only question is whether
+// the move rides the panels' clock or snaps in one frame.
 //
 // Scenario B — the toggle SHRINKS the document past the current position: the browser
 // would clamp scrollY the instant the panel finished, flinging the page in a single
@@ -97,9 +136,9 @@ export const accordionScrollTarget = (g: AccordionToggleGeometry): number | null
   if (g.openingH > 0) {
     const finalHeaderTop = g.headerDocTop - (g.closingAbove ? g.closingH : 0)
     const settledY = Math.min(Math.max(g.scrollY, 0), finalMaxScroll)
-    if (finalHeaderTop < settledY + g.barH) {
-      const target = Math.min(Math.max(finalHeaderTop - g.barH, 0), finalMaxScroll)
-      return target === g.scrollY ? null : target
+    if (finalHeaderTop < settledY + g.seatTop) {
+      const target = Math.min(Math.max(finalHeaderTop - g.seatTop, 0), finalMaxScroll)
+      return Math.abs(target - g.scrollY) < 1 ? null : target
     }
   }
   if (g.scrollY > finalMaxScroll) return finalMaxScroll

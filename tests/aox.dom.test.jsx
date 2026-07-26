@@ -1115,3 +1115,77 @@ describe('AoX — Q8 visual-only timing hide', () => {
     expect(statValue('Median')).toMatch(/^\d+\.\d{2}s$/)
   })
 })
+
+// ── Q4 round-8 / Q5 round-8: Show Codes is ONE button in six places ───────────
+// AoX used to render its own Show Codes button + Expander instead of a MethodBreakdownSection
+// (it froze the displayed date itself), so its copy of the button was a hand-duplicated string
+// — and it had already drifted, losing the aria-disabled and cursor-not-allowed the other five
+// carried. Q4 (round 8) pulled both back onto the shared class consts; Q5 (round 8) deleted the
+// duplicate outright, so all six toggles are now literally the same component. The class also
+// carries `border border-transparent`: it is a solid fill measured against controls that all
+// carry a 1px border, and a border counts toward rendered height, so without it the button sat
+// 2px under its tier wherever nothing stretched it. Rendered pixels are on-device; the shared
+// contract is pinned here — and all six copies live in ONE mounted tree (the modes are
+// always-mounted, display:none), so parity is a direct comparison.
+describe('AoX — round-8: the Show Codes button is shared with the other five sites', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // Every Show Codes / Hide Codes toggle in the tree, visible or not.
+  const codesButtons = () =>
+    Array.from(document.querySelectorAll('button[data-key="C"]')).filter((b) =>
+      /^(Show|Hide) Codes$/.test(b.textContent.trim()),
+    )
+
+  it('all copies carry the same base classes, including the height-completing transparent border', () => {
+    mountApp()
+    switchToAox()
+    const btns = codesButtons()
+    expect(btns.length).toBeGreaterThan(1) // AoX's own copy + the always-mounted modes' sections
+    const base = [
+      'w-full',
+      'px-4',
+      'py-2',
+      'rounded-xl',
+      'btn-solid',
+      'border',
+      'border-transparent',
+      'text-sm',
+      'font-medium',
+    ]
+    for (const b of btns) {
+      const tokens = b.className.split(/\s+/).filter(Boolean)
+      for (const t of base) expect(tokens).toContain(t)
+      // The accessible disabled state is stated on EVERY copy — the divergence that existed.
+      expect(b.hasAttribute('aria-disabled')).toBe(true)
+    }
+  })
+
+  it('AoX idle: no date yet, so its Show Codes is disabled in the aria tree AND to the pointer', () => {
+    mountApp()
+    switchToAox()
+    const btn = ctrl('Show Codes')
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
+    for (const t of ['opacity-60', 'cursor-not-allowed', 'pointer-events-none'])
+      expect(btn.className.split(/\s+/)).toContain(t)
+  })
+
+  it('AoX with a live date: the same button reports itself enabled and drops the disabled classes', () => {
+    mountApp()
+    switchToAox()
+    setN(2)
+    click('Begin')
+    const btn = ctrl('Show Codes')
+    expect(btn.getAttribute('aria-disabled')).toBe('false')
+    for (const t of ['opacity-60', 'cursor-not-allowed', 'pointer-events-none'])
+      expect(btn.className.split(/\s+/)).not.toContain(t)
+  })
+})

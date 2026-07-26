@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useProgress, makeProgressDefaults, migrateAoxBestKeys } from '../src/store/progress.js'
+import {
+  useProgress,
+  makeProgressDefaults,
+  migrateAoxBestKeys,
+  normalizeLookupEntries,
+} from '../src/store/progress.js'
 
 // progress.test.js — the saved-progress store (Stage D1). Mirrors settings.test.js.
 // Locks the contract: (1) empty defaults (blank stats for all five silos, empty
@@ -79,7 +84,7 @@ describe('progress store', () => {
   })
 
   it('setLookupHistory accepts direct + functional updaters', () => {
-    const e = { id: 'a', label: 'x', weekday: 'Thursday', result: 'r', y: 1776, m: 7, d: 4 }
+    const e = { id: 'a', y: 1776, m: 7, d: 4 }
     useProgress.getState().setLookupHistory([e])
     expect(useProgress.getState().lookupHistory).toHaveLength(1)
     useProgress.getState().setLookupHistory((prev) => [{ ...e, id: 'b' }, ...prev])
@@ -92,7 +97,7 @@ describe('progress store', () => {
     g().setModeStats('classic', { played: 9, good: 9, streak: 9, best: 9, times: [9] })
     g().setBlitzBest({ k: { score: 1, streak: 1, scoreRoundId: 1, streakRoundId: 1 } })
     g().setSuddenAmBest({ k: { score: 1, streak: 1, scoreRoundId: 1, streakRoundId: 1 } })
-    g().setLookupHistory([{ id: 'a', label: 'x', weekday: 'w', result: 'r', y: 1, m: 1, d: 1 }])
+    g().setLookupHistory([{ id: 'a', y: 1, m: 1, d: 1 }])
     g().resetProgress()
     const s = g()
     expect(s.stats.classic).toEqual(blank)
@@ -148,5 +153,73 @@ describe('progress store — migrateAoxBestKeys (v1 → v2)', () => {
 
   it('empty map → empty map', () => {
     expect(migrateAoxBestKeys({}, 'random')).toEqual({})
+  })
+})
+
+// ── the lookup-history normalizer: shape + validation (Q2) ───────────────────────
+// label/weekday/result were snapshots of how the date read at lookup time; the card derives all
+// three now, so the stored copies were not merely redundant but WRONG after a Date Format change.
+// The VALIDATION half matters just as much: LookupCard carries no per-field guards any more, so an
+// entry that survives this filter is one the card can render. The pure function is unit-tested
+// here; the localStorage → rehydrate path (where it runs on EVERY version) is in progress.dom.
+describe('progress store — normalizeLookupEntries', () => {
+  it('keeps the date and the id, drops the rendered text', () => {
+    expect(
+      normalizeLookupEntries([
+        { id: 'a', label: 'July 4, 1776', weekday: 'Thursday', result: 'r', y: 1776, m: 7, d: 4 },
+      ]),
+    ).toEqual([{ id: 'a', y: 1776, m: 7, d: 4 }])
+  })
+
+  it('keeps the gap marker — it is an input, not a rendering', () => {
+    expect(
+      normalizeLookupEntries([
+        {
+          id: 'g',
+          label: 'x',
+          weekday: 'Does Not Exist',
+          result: 'r',
+          y: 1582,
+          m: 10,
+          d: 10,
+          isGap: true,
+        },
+      ]),
+    ).toEqual([{ id: 'g', y: 1582, m: 10, d: 10, isGap: true }])
+  })
+
+  it('is idempotent on an already-v3 entry, and passes an empty history through', () => {
+    const v3 = [{ id: 'a', y: 1776, m: 7, d: 4 }]
+    expect(normalizeLookupEntries(v3)).toEqual(v3)
+    expect(normalizeLookupEntries([])).toEqual([])
+  })
+
+  it('drops junk elements instead of throwing (it reads untrusted localStorage)', () => {
+    expect(
+      normalizeLookupEntries([null, { id: 'a', y: 1, m: 1, d: 1 }, undefined, 'nope']),
+    ).toEqual([{ id: 'a', y: 1, m: 1, d: 1 }])
+  })
+
+  // The guard the card leans on. A truncated write, an interrupted serialize or a hand-edited key
+  // can leave an object that IS an object but can't answer "which date?" — it must not reach the
+  // render, where it would produce MONTH[NaN] and a blank weekday.
+  it('drops entries missing or corrupting any of id/y/m/d', () => {
+    expect(
+      normalizeLookupEntries([
+        { id: 'x' }, // truncated: no date at all
+        { id: 'y', y: 1776, m: 7 }, // partial date
+        { id: 'z', y: 1776, m: 'seven', d: 4 }, // wrong type
+        { id: 'n', y: NaN, m: 7, d: 4 }, // NaN is a number and still unusable
+        { y: 1776, m: 7, d: 4 }, // no id — the React key and the selection handle
+        { id: 'ok', y: 1776, m: 7, d: 4 },
+      ]),
+    ).toEqual([{ id: 'ok', y: 1776, m: 7, d: 4 }])
+  })
+
+  // It is the sole owner of the shape, so it also owns "there is no history".
+  it('returns an empty history for a non-array payload', () => {
+    expect(normalizeLookupEntries(undefined)).toEqual([])
+    expect(normalizeLookupEntries(null)).toEqual([])
+    expect(normalizeLookupEntries('nope')).toEqual([])
   })
 })

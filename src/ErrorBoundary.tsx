@@ -131,7 +131,7 @@ export class ModeErrorBoundary extends Component<ModeErrorBoundaryProps, ErrorBo
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="px-4 py-2 rounded-xl btn-solid border border-transparent text-white text-sm font-medium"
+          className="px-4 py-2 rounded-xl btn-solid border border-transparent text-sm font-medium"
         >
           Reload
         </button>

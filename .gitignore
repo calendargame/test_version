@@ -29,3 +29,15 @@ dist-ssr
 # Private working doc (plan + rules + backlog) — local only, not published
 PROJECT.md
 .gstack/
+
+# Local scratch — batch plans, specs, throwaway scripts, source material, agent notes.
+# BOTH repos are PUBLIC, so anything here that isn't the app must be unstageable by accident:
+# a single `git add -A` is all it takes to publish it permanently.
+# ⚠ ROOT-ANCHORED (leading /) on purpose: an unanchored `_*.md` also swallows real tracked repo
+# files like design/icons/_README.md. The scratch all lives at the repo root — keep it that way.
+/_*.md
+/_*.cjs
+/_*.mjs
+/_*.js
+/*.docx
+/skill-observations/

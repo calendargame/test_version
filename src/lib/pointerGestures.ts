@@ -27,7 +27,7 @@
 //     (typing can start) instead of clicking. After a click-activation, a menu marked data-drag-dismiss
 //     is asked to close via a bubbling "drag-dismiss" CustomEvent from the member (App listens and closes
 //     Settings — its apply-on-close pass then runs naturally) unless the member sits inside a
-//     [data-drag-stay] opt-out container (the theme selects + both footer rows, which must stay open).
+//     [data-drag-stay] opt-out container (both footer rows, which must stay open).
 //     For a menu taller than its viewport, dragging near its scroller's ([data-drag-scroll] wrapper, else
 //     the menu itself) top/bottom edge AUTO-SCROLLS it so options below the fold are reachable in the one
 //     gesture (autoScroll, below). Because the trigger toggles on pointerdown, its click is ALWAYS
@@ -97,7 +97,7 @@ export function nextHilite(
 // action, and whether the menu should be dismissed afterwards. Focus targets never dismiss (the whole
 // point is leaving the panel open to type); click targets dismiss only when the menu opted in
 // (data-drag-dismiss) and the member has no [data-drag-stay] ancestor opt-out (closest, so a container
-// exempts its whole region — the theme selects + the footer rows).
+// exempts its whole region — the footer rows).
 export function resolveTriggerRelease(
   menu: Element | null,
   releaseEl: Element | null,

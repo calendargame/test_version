@@ -10,8 +10,20 @@
 // (document.scrollingElement + window in guide mode, the container otherwise). The FEEL —
 // the real status-bar tap, rubber-band over --bg1, Safari toolbar collapse, home-indicator
 // clearance — is on-device staging territory per the standing lesson.
+//
+// Q6 (round 8) added the resume contract. Making the document a real scroller retroactively
+// armed a visibilitychange→scrollTo(0,0) listener that had been a harmless no-op since the
+// day it was written, so backgrounding the app and returning threw the reader back to the
+// top of How to Play. The listener is gone; these tests hold the line from both sides —
+// a resume moves NOTHING (guide or clamped, scroll position and open panel alike) while
+// pageshow still re-asserts the clamped-layout root invariant on a BFCache restore. The
+// reading line the accordion seats panels on (--seat-top) is pinned here too, since it is
+// derived from the same doc-scroll fade geometry.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 
@@ -38,6 +50,19 @@ function scrollContainer(container) {
   return [...container.querySelectorAll('div')].find((d) => d.style.paddingTop === 'var(--bar-h)')
 }
 
+// A backgrounding round trip: jsdom always reports 'visible', so the state is overridden for
+// the duration of each event (afterEach deletes the own property, restoring the prototype
+// getter). Deliberately WITHOUT a pageshow — foregrounding is not a navigation, and the
+// distinction between the two is the whole point of the tests below.
+function resumeFromBackground() {
+  for (const state of ['hidden', 'visible']) {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+    act(() => {
+      fireEvent(document, new Event('visibilitychange'))
+    })
+  }
+}
+
 describe('document scroll for How-to-Play (data-doc-scroll)', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -46,9 +71,12 @@ describe('document scroll for How-to-Play (data-doc-scroll)', () => {
   afterEach(() => {
     cleanup()
     document.getElementById('root')?.remove()
-    // Safety: never leak the attribute or a mocked root scroller into the next test.
+    // Safety: never leak the attribute, a mocked root scroller, a forced visibility state or
+    // a stray root scrollTop into the next test.
     document.documentElement.removeAttribute('data-doc-scroll')
     delete document.scrollingElement
+    delete document.visibilityState
+    document.documentElement.scrollTop = 0
   })
 
   it('stamps data-doc-scroll on <html> in guide mode only, removing it on switch and unmount', () => {
@@ -174,5 +202,161 @@ describe('document scroll for How-to-Play (data-doc-scroll)', () => {
     })
     expect(bar.className).not.toContain('elev-shadow-down')
     expect(el.className).toContain('fade-scroll-bottom')
+  })
+})
+
+describe('resume from background never moves anything (Q6, round 8)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    document.getElementById('root')?.remove()
+    document.documentElement.removeAttribute('data-doc-scroll')
+    delete document.scrollingElement
+    delete document.visibilityState
+    document.documentElement.scrollTop = 0
+  })
+
+  it('leaves the guide reading position exactly where it was', () => {
+    mountApp()
+    pressKey('H') // → guide: the document is the scroller here
+    document.documentElement.scrollTop = 640 // jsdom persists the raw value
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    resumeFromBackground()
+    // Not "scrolled back to 640" — never touched. A single scrollTo would be the bug.
+    expect(scrollToSpy).not.toHaveBeenCalled()
+    expect(document.documentElement.scrollTop).toBe(640)
+    scrollToSpy.mockRestore()
+  })
+
+  it("leaves a clamped mode's container scroll exactly where it was", () => {
+    const { container } = mountApp() // launch mode: Classic, clamped
+    const el = scrollContainer(container)
+    el.scrollTop = 77
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    resumeFromBackground()
+    expect(scrollToSpy).not.toHaveBeenCalled()
+    expect(el.scrollTop).toBe(77)
+    scrollToSpy.mockRestore()
+  })
+
+  it('leaves an open guide section open', () => {
+    const { container } = mountApp()
+    pressKey('H')
+    const header = container.querySelector('#guide-sec-overview button')
+    act(() => {
+      fireEvent.click(header)
+    })
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    resumeFromBackground()
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it("cancels the guide's in-flight scroll glide when the app is backgrounded", () => {
+    // The one thing a resume genuinely has to deal with. rAF stops firing while hidden, so a
+    // writer caught mid-flight would wake up against a stale clock and fling the page to a
+    // target computed for a tap the reader has long since forgotten. rAF is driven BY HAND
+    // here so "mid-flight" is an exact moment rather than a timing race — and stubbed only
+    // after the app is mounted and in guide mode, so the boot's own frames run for real.
+    const { container } = mountApp()
+    pressKey('H')
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb)) // id = the new length
+    vi.stubGlobal('cancelAnimationFrame', (id) => {
+      frames[id - 1] = null
+    })
+    // Scenario B geometry. jsdom implements no document.scrollingElement (the coordinator
+    // deliberately no-ops without one), so the root scroller is mocked with a zero-height
+    // document: any positive scrollY then sits past the final max-scroll and the
+    // coordinator glides back to 0.
+    Object.defineProperty(document, 'scrollingElement', {
+      configurable: true,
+      get: () => ({ scrollHeight: 0 }),
+    })
+    const realScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 500 })
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    act(() => {
+      fireEvent.click(container.querySelector('#guide-sec-overview button'))
+    })
+    const step = frames.at(-1)
+    expect(step).toBeTypeOf('function') // the writer scheduled its first frame
+    act(() => step(0)) // t = 0 → one write, and the next frame is scheduled
+    expect(scrollToSpy).toHaveBeenCalledTimes(1)
+    const pendingId = frames.length
+    resumeFromBackground()
+    expect(frames[pendingId - 1]).toBeNull() // cancelled on hide …
+    expect(frames.length).toBe(pendingId) // … and never re-armed on the way back
+    expect(scrollToSpy).toHaveBeenCalledTimes(1)
+    scrollToSpy.mockRestore()
+    Object.defineProperty(window, 'scrollY', realScrollY)
+  })
+
+  it('STILL zeroes a bogus root scroll on a BFCache restore (pageshow), unlike a resume', () => {
+    // The other half of the contract: pageshow IS a navigation event, and a restore into the
+    // clamped layout can hand back a non-zero root scrollTop that would permanently offset
+    // the fixed #root. Deleting the resume listener must not cost us this guard.
+    const { container } = mountApp() // Classic — clamped
+    const el = scrollContainer(container)
+    el.scrollTop = 77
+    document.documentElement.scrollTop = 310
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    act(() => {
+      fireEvent(window, new Event('pageshow'))
+    })
+    expect(scrollToSpy).toHaveBeenCalledWith(0, 0)
+    expect(document.documentElement.scrollTop).toBe(0)
+    expect(el.scrollTop).toBe(0)
+    scrollToSpy.mockRestore()
+  })
+})
+
+// The reading line the accordion coordinator seats a tapped panel on. jsdom applies no
+// stylesheets, so index.css itself is the only place these can be asserted.
+const css = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css'),
+  'utf8',
+)
+const ruleBody = (re) => {
+  const m = css.match(re)
+  expect(m, `index.css: no rule matched ${re}`).not.toBeNull()
+  return m[1]
+}
+
+describe('index.css — the feather token and the derived reading line (--seat-top)', () => {
+  it('feathers every scroll edge from the one --fade-h token, with no hardcoded twin', () => {
+    const fadeRules = [
+      /\.fade-scroll-top\{([^}]*)\}/,
+      /\.fade-scroll-bottom\{([^}]*)\}/,
+      /\.fade-scroll-both\{([^}]*)\}/,
+      /\.doc-fade-top\{([^}]*)\}/,
+      /\.doc-fade-bottom\{([^}]*)\}/,
+    ]
+    for (const re of fadeRules) {
+      const body = ruleBody(re)
+      expect(body).toContain('var(--fade-h)')
+      expect(body).not.toContain('24px')
+    }
+    // The single home of the value every one of those rules reads.
+    expect(css).toContain(':root{--fade-h:24px}')
+  })
+
+  it('REGISTERS --seat-top as a <length> so JS reads a resolved px value, not a calc string', () => {
+    // Load-bearing, not decorative: unregistered, getComputedStyle hands back the literal
+    // "calc(…)" string → parseFloat NaN → the reader's `|| 0` → zero clearance, i.e. a
+    // silent failure back to seating panels under the fade. GuidePage depends on this rule.
+    const prop = ruleBody(/@property --seat-top\{([^}]*)\}/)
+    expect(prop).toContain('syntax:"<length>"')
+    expect(prop).toContain('inherits:true')
+    expect(prop).toContain('initial-value:0px')
+  })
+
+  it('defines the line as bar + feather and hands the same value to the native scrollport', () => {
+    const body = ruleBody(/html\[data-doc-scroll\]\{--seat-top:([^}]*)\}/)
+    expect(body).toContain('calc(var(--bar-h) + var(--fade-h))')
+    expect(body).toContain('scroll-padding-top:var(--seat-top)')
   })
 })

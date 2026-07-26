@@ -4,19 +4,11 @@ import { dim, wday, wdayJulian, isJulianDate, isGapDate } from '../lib/calendar.
 import { MethodBreakdownSection, type CodeDate } from './MethodBreakdown.jsx'
 import { SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './scrollRegion.js'
 import type { FormatId } from '../lib/format.js'
+// The history entry's persisted shape lives with the store that versions and migrates it
+// (store/progress) — it is {id, y, m, d, isGap?} and nothing else. Everything shown on screen is
+// derived from those inputs by the three helpers below, against the LIVE settings.
+import type { LookupEntry } from '../store/progress.js'
 
-// A Lookup history entry: parsed date (y/m/d) + rendered label, weekday, full result.
-// isGap marks an Oct 5-14, 1582 gap (Does Not Exist) entry.
-export interface LookupEntry {
-  id: string
-  label: string
-  weekday: string
-  result: string
-  y: number
-  m: number
-  d: number
-  isGap?: boolean
-}
 interface LookupCardProps {
   history?: LookupEntry[]
   onAddHistory?: (entry: LookupEntry) => void
@@ -47,11 +39,54 @@ function makeEntryId() {
 // history isn't an array — a fresh [] each render would change the memos/effects that read it.
 const NO_ENTRIES: LookupEntry[] = []
 
+// The standing prompt in the result slot before anything has been looked up. RENDER-TIME ONLY —
+// it must never be written into the lookupOutput state, which App reads as "" to decide the Full
+// Reset button is dimmed/locked (isFullyReset); storing the hint would silently unlock it.
+const LOOKUP_HINT = 'Enter a date to see its weekday.'
+// The Oct 5–14, 1582 answer, deliberately SHORT: the result slot is two lines tall and the full
+// story (why ten days vanished when the Gregorian calendar was adopted) is already told in the
+// How-to-Play guide's Julian Calendar section — one canonical copy, not two.
+const GAP_MSG = 'October 5–14, 1582 never existed — 10 days skipped in the Gregorian switch.'
+
+// ── Derived-from-the-entry helpers ──────────────────────────────────────────────────────────
+// A history entry stores INPUTS only ({id, y, m, d, isGap?}); its label, weekday and result
+// sentence are computed here, at paint time, from the live Date Format / Julian settings. That is
+// what makes a format change re-render the whole card consistently — the result line above and
+// every row below move together, because there is only one source of truth for all of them.
+
+// The formatted date, exactly as the history row and the result sentence both show it.
+const entryLabel = (e: LookupEntry, fmtDate?: (y: number, m: number, d: number) => string) =>
+  fmtDate ? fmtDate(e.y, e.m, e.d) : `${MONTH[e.m - 1]} ${e.d}, ${e.y}`
+
+// The weekday name. Gap entries have none; for a Julian-eligible date the answer depends on the
+// user's Julian Calendar setting, which is why it can't be frozen at lookup time.
+const entryWeekday = (e: LookupEntry, useJulian: boolean) => {
+  if (e.isGap) return 'Does Not Exist'
+  const julian = useJulian && isJulianDate(e.y, e.m, e.d)
+  return DAY[julian ? wdayJulian(e.y, e.m, e.d) : wday(e.y, e.m, e.d)]
+}
+
+// The full sentence shown in the result slot. Julian-eligible dates name the calendar they were
+// read under, so the answer is never ambiguous across a settings change.
+const entryResult = (
+  e: LookupEntry,
+  fmtDate: ((y: number, m: number, d: number) => string) | undefined,
+  useJulian: boolean,
+) => {
+  if (e.isGap) return GAP_MSG
+  const sentence = `${entryLabel(e, fmtDate)} is a ${entryWeekday(e, useJulian)}`
+  return isJulianDate(e.y, e.m, e.d)
+    ? `${sentence} (${useJulian ? 'Julian' : 'Gregorian'}).`
+    : `${sentence}.`
+}
+
 // LookupCard — the Lookup-mode card: a numeric date input (format follows the
-// active dateFormat), a scrollable history list (up to 10 before scrolling, with
-// edge-fade indicators), and the shared Show Codes panel. All state is lifted to
-// the parent and passed via props/callbacks, so this component is presentational
-// + input-parsing only. Recognizes the Oct 5–14, 1582 gap ("Does Not Exist").
+// active dateFormat), a two-line result slot, a history list that scrolls once it
+// runs out of screen (with edge-fade indicators), and the shared Show Codes panel.
+// All state is lifted to the parent and passed via props/callbacks, so this
+// component is presentational + input-parsing only, and it OWNS no rendered text:
+// labels, weekdays and result sentences are all derived from the stored {y,m,d}
+// against the live settings. Recognizes the Oct 5–14, 1582 gap ("Does Not Exist").
 //
 // Extracted from main.jsx in Stage C, Step 4f (verbatim). Uses module-level
 // helpers now imported from lib/* (isLeap/dim/wday/numericFormatOf etc.) — no
@@ -91,7 +126,8 @@ export default function LookupCard({
   //   lookupHistoryAtBottom        → bottom fade + MethodBreakdown shadow (up)
   // `history` stands in as the hook's active key: the <ul> only exists with entries, so a
   // history change re-attaches the listener to a freshly (re)mounted list; the hook's
-  // ResizeObserver covers the list growing from 9→10 entries while the user is viewing it.
+  // ResizeObserver covers the list being resized under the user — which now happens on every
+  // screen-size change too, since the list's height is measured rather than capped.
   const lookupHistoryRef = React.useRef<HTMLUListElement>(null)
   const { scrolledFromTop: lookupHistoryScrolledFromTop, atBottom: lookupHistoryAtBottom } =
     useScrollEdgeState(lookupHistoryRef, history)
@@ -105,7 +141,6 @@ export default function LookupCard({
     typeof onCalcOpenChange === 'function'
       ? (next: boolean) => onCalcOpenChange?.(!!next)
       : () => {}
-  const lastLookupRef = React.useRef<string | null>(null)
   const lookupInputRef = React.useRef<HTMLInputElement>(null)
   // LookupCard uses module-level isLeap/dim/wday/numericFormatOf — no local duplicates.
   // Map any selected dateFormat to its corresponding Numeric format for input parsing.
@@ -118,21 +153,35 @@ export default function LookupCard({
       return { label: 'd.m.y', example: '14.3.1592', sep: '.', orderType: 'dmy' }
     return { label: 'y-m-d', example: '1592-3-14', sep: '-', orderType: 'ymd' }
   })()
-  // Clear the input when the format changes (silently keeping it would be confusing since it might no longer parse).
-  // Use a ref to skip the initial mount so navigating to Lookup doesn't wipe the user's existing input.
+  // `entries` is `history` (stable per parent render) or the stable NO_ENTRIES const — never a
+  // fresh [] — so the memos/effects that read it don't churn. Declared here, above the first
+  // effect that reads it, rather than beside its heaviest consumer further down.
+  const entries = Array.isArray(history) ? history : NO_ENTRIES
+  // A Date Format change RE-FORMATS the card; it does not reset it. The selection survives,
+  // because every string on screen — the answer line and every history row alike — is derived
+  // from the stored {y,m,d} against the live format, so they all re-render in the new format
+  // together. (That is the contract the How-to-Play guide and the changelog both state out loud;
+  // clearing the selection here used to break it by making the answer line VANISH on a format
+  // change rather than update.) The input is the one thing that has to be rewritten, since it is
+  // always NUMERIC and its separator and field order just changed. With nothing selected there is
+  // no date to rewrite, so the box is cleared instead — half-typed text in the old format would
+  // no longer parse — along with any error message, which names the old format and is now wrong.
+  // A ref, not a dep, so the initial mount doesn't wipe an input the user arrived with.
   const prevFormatRef = React.useRef(dateFormat)
   React.useEffect(() => {
-    if (prevFormatRef.current !== dateFormat) {
-      sli('')
-      slo('')
-      ssid(null)
-      scd(null)
-      sco(false)
-      lastLookupRef.current = null
-      prevFormatRef.current = dateFormat
+    if (prevFormatRef.current === dateFormat) return
+    prevFormatRef.current = dateFormat
+    const selected = entries.find((e) => e.id === sid)
+    if (selected) {
+      sli(fmt(selected.y, selected.m, selected.d, numericFmtForInput))
+      return
     }
+    sli('')
+    slo('')
     // Fire on dateFormat change only (the prevFormatRef guard also skips the initial mount). The
-    // setters are re-created each render; excluding them keeps this from running every render.
+    // setters are re-created each render; excluding them keeps this from running every render,
+    // and `entries`/`sid` are read at fire time on purpose — they are inputs to the rewrite, not
+    // triggers for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFormat])
   function runLookup() {
@@ -175,35 +224,24 @@ export default function LookupCard({
       lookupInputRef.current?.focus()
       return
     }
+    // Every SUCCESSFUL path below clears lookupOutput and selects the entry instead: the sentence
+    // on screen is derived from the selection (see displayNote), so lookupOutput is now purely the
+    // transient "couldn't answer" message — leaving a stale error behind it would be dead state.
     const existing = entries.find((e) => e.y === yy && e.m === mm && e.d === dd)
     if (existing) {
       if (onMoveHistory) onMoveHistory(existing.id)
-      slo(existing.result)
+      slo('')
       ssid(existing.id)
       if (existing.isGap) {
         scd(null)
         sco(false)
       } else scd({ y: yy, m: mm, d: dd })
-      lastLookupRef.current = s
       lookupInputRef.current?.blur()
       return
     }
     if (isGapDate(yy, mm, dd)) {
-      const gapMsg =
-        'October 5–14, 1582 never existed. When the Gregorian calendar was adopted, 10 days were skipped to correct accumulated calendar drift.'
-      const displayDate = fmtDate ? fmtDate(yy, mm, dd) : `${MONTH[mm - 1]} ${dd}, ${yy}`
-      const entry = {
-        id: makeEntryId(),
-        label: displayDate,
-        weekday: 'Does Not Exist',
-        result: gapMsg,
-        y: yy,
-        m: mm,
-        d: dd,
-        isGap: true,
-      }
-      lastLookupRef.current = s
-      slo(gapMsg)
+      const entry = { id: makeEntryId(), y: yy, m: mm, d: dd, isGap: true }
+      slo('')
       scd(null)
       ssid(entry.id)
       sco(false)
@@ -219,21 +257,8 @@ export default function LookupCard({
       lookupInputRef.current?.focus()
       return
     }
-    const wd = julian ? wdayJulian(yy, mm, dd) : wday(yy, mm, dd)
-    const d = DAY[wd]
-    const displayDate = fmtDate ? fmtDate(yy, mm, dd) : `${MONTH[mm - 1]} ${dd}, ${yy}`
-    const rt = `${displayDate} is a ${d}.`
-    const entry = {
-      id: makeEntryId(),
-      label: displayDate,
-      weekday: d,
-      result: rt,
-      y: yy,
-      m: mm,
-      d: dd,
-    }
-    lastLookupRef.current = s
-    slo(rt)
+    const entry = { id: makeEntryId(), y: yy, m: mm, d: dd }
+    slo('')
     scd({ y: yy, m: mm, d: dd })
     ssid(entry.id)
     sco(false)
@@ -246,11 +271,7 @@ export default function LookupCard({
     scd(null)
     ssid(null)
     sco(false)
-    lastLookupRef.current = null
   }
-  // `entries` is `history` (stable per parent render) or the stable NO_ENTRIES const — never a
-  // fresh [] — so the memos/effects that read it don't churn.
-  const entries = Array.isArray(history) ? history : NO_ENTRIES
   React.useEffect(() => {
     if (!sid) return
     if (!entries.some((e) => e.id === sid)) {
@@ -270,20 +291,18 @@ export default function LookupCard({
   // with that date — convenient for re-running a lookup or editing it. The input is always
   // numeric (per the input's contract; the displayed history label may be written), so
   // populate using the numeric form of the selected dateFormat regardless of how the
-  // history row reads.
+  // history row reads. The result sentence follows from the selection itself (displayNote), so
+  // this only has to clear any error message the selection replaces.
   const selEntry = (entry: LookupEntry) => {
     if (!entry) return
     ssid(entry.id)
-    slo(entry?.result || '')
+    slo('')
     if (entry.isGap) {
       scd(null)
-      lastLookupRef.current = null
     } else {
-      if (typeof entry.y === 'number') scd({ y: entry.y, m: entry.m, d: entry.d })
+      scd({ y: entry.y, m: entry.m, d: entry.d })
     }
-    const renderedLabel =
-      typeof entry.y === 'number' ? fmt(entry.y, entry.m, entry.d, numericFmtForInput) : entry.label
-    if (typeof renderedLabel === 'string') sli(renderedLabel)
+    sli(fmt(entry.y, entry.m, entry.d, numericFmtForInput))
     if (document.activeElement) (document.activeElement as HTMLElement).blur()
   }
   const clearHist = () => {
@@ -292,46 +311,15 @@ export default function LookupCard({
     scd(null)
     slo('')
     sco(false)
-    lastLookupRef.current = null
   }
+  // The result line: the selected entry's sentence, derived fresh, else the live output (which is
+  // now only ever an error message or ""). One rule, no Julian special case — entryResult covers
+  // it. fmtDate closes over dateFormat and is re-created when it changes, so it alone is the
+  // correct dependency; listing dateFormat too would be redundant.
   const displayNote = React.useMemo(() => {
     const selectedEntry = entries.find((e) => e.id === sid)
-    if (
-      selectedEntry &&
-      !selectedEntry.isGap &&
-      typeof selectedEntry.y === 'number' &&
-      isJulianDate(selectedEntry.y, selectedEntry.m, selectedEntry.d)
-    ) {
-      const isJul = useJulian
-      const wd = isJul
-        ? wdayJulian(selectedEntry.y, selectedEntry.m, selectedEntry.d)
-        : wday(selectedEntry.y, selectedEntry.m, selectedEntry.d)
-      const displayDate = fmtDate
-        ? fmtDate(selectedEntry.y, selectedEntry.m, selectedEntry.d)
-        : `${MONTH[selectedEntry.m - 1]} ${selectedEntry.d}, ${selectedEntry.y}`
-      return `${displayDate} is a ${DAY[wd]} (${isJul ? 'Julian' : 'Gregorian'}).`
-    }
-    return lo
+    return selectedEntry ? entryResult(selectedEntry, fmtDate, useJulian) : lo
   }, [sid, entries, useJulian, fmtDate, lo])
-  const getEntryWeekday = (e: LookupEntry) => {
-    if (e.isGap) return 'Does Not Exist'
-    if (typeof e.y === 'number' && isJulianDate(e.y, e.m, e.d)) {
-      const wd = useJulian ? wdayJulian(e.y, e.m, e.d) : wday(e.y, e.m, e.d)
-      return DAY[wd]
-    }
-    return e.weekday
-  }
-  // History entries are stored as {y,m,d} so changing dateFormat re-renders labels live. fmtDate
-  // itself closes over dateFormat (and is re-created when it changes), so it alone is the correct
-  // dependency — listing dateFormat too is redundant.
-  const renderedEntries = React.useMemo(
-    () =>
-      entries.map((e) => {
-        if (e.isGap || typeof e.y !== 'number') return e
-        return { ...e, label: fmtDate ? fmtDate(e.y, e.m, e.d) : e.label }
-      }),
-    [entries, fmtDate],
-  )
   // Keyboard navigation for the Lookup card when no input has focus:
   //   ArrowDown/ArrowUp — move highlighted history entry; selecting populates input.
   //   Backspace/Delete  — clear the Lookup input box (matches the Clear button).
@@ -344,21 +332,24 @@ export default function LookupCard({
         ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
       if (inInput) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (renderedEntries.length === 0) return
+        if (entries.length === 0) return
         e.preventDefault()
-        const idx = renderedEntries.findIndex((x) => x.id === sid)
+        const idx = entries.findIndex((x) => x.id === sid)
         const next =
           e.key === 'ArrowDown'
-            ? Math.min(renderedEntries.length - 1, (idx < 0 ? -1 : idx) + 1)
-            : Math.max(0, (idx < 0 ? renderedEntries.length : idx) - 1)
-        selEntry(renderedEntries[next])
+            ? Math.min(entries.length - 1, (idx < 0 ? -1 : idx) + 1)
+            : Math.max(0, (idx < 0 ? entries.length : idx) - 1)
+        selEntry(entries[next])
         return
       }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         // Clear the Lookup input box (matching what the Clear button does), NOT the history.
         // Only fires when the input doesn't have focus — when it does, Backspace/Delete edit
         // the input character-by-character as normal.
-        if (!li && !lo && !cdv) return
+        // The guard asks "is there anything for Clear to undo?" — and since the answer sentence
+        // now comes from the SELECTION rather than from lookupOutput, `sid` is part of that
+        // question (lookupOutput holds an error message or nothing at all).
+        if (!li && !lo && !cdv && !sid) return
         e.preventDefault()
         clearLookup()
         return
@@ -370,15 +361,28 @@ export default function LookupCard({
     // are body functions re-created each render but behavior-stable; excluding them avoids
     // re-subscribing the keydown listener on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedEntries, sid, li, lo, cdv])
+  }, [entries, sid, li, lo, cdv])
   return (
-    <div className="mt-1 space-y-4">
-      <div className="rounded-2xl panel p-4 space-y-4">
+    // The Lookup screen is a FIT-TO-SCREEN column, not a growing page: this root fills the height
+    // its wrapper was given (main.tsx), the top card keeps its natural size, and the history panel
+    // absorbs whatever is left — so the list scrolls INSIDE the panel and the page itself never
+    // does. (space-y-4 → gap-4 because the root is a flex column now; and the old mt-1 is gone —
+    // it used to margin-collapse into the wrapper's mt-5 and would have become a real 4px gap the
+    // moment that wrapper turned into a flex container.)
+    <div className="flex flex-col gap-4 flex-auto min-h-0">
+      <div className="rounded-2xl panel p-4 space-y-4 shrink-0">
         <div className="flex flex-wrap items-stretch gap-2">
           {/* The date input wears the site-wide interactive-border rule (Q7 round-7): inputs are
               controls you act on, so it carries border surface-tray — the sbtn-bd tier its
               Lookup/Clear button neighbors share — never the container .panel it once borrowed
-              (geometry unchanged: .panel's own 1px border became the explicit border token). */}
+              (geometry unchanged: .panel's own 1px border became the explicit border token).
+              text-base is DELIBERATE and states the tier out loud: this is the page's primary
+              text-entry field, a size up from the compact text-sm steppers elsewhere, and it kept
+              that size only by inheriting the root font. Same rendered size as before (1rem /
+              line-height 1.5 is exactly what it inherited) — now it can't drift by accident.
+              appearance-none (Q4 round-8) is the same kind of statement for behaviour: the box
+              declares its own border, background and radius, so appearance:auto would be a false
+              declaration that also leaves iOS's native inner shadow and focus treatment live. */}
           <input
             ref={lookupInputRef}
             value={li}
@@ -390,7 +394,7 @@ export default function LookupCard({
               }
             }}
             placeholder={`e.g., ${inputMeta.example}`}
-            className="border surface-tray rounded-xl px-3 py-2 focus:outline-hidden focus-ring flex-1 min-w-0"
+            className="appearance-none border surface-tray rounded-xl px-3 py-2 text-base focus:outline-hidden focus-ring flex-1 min-w-0"
           />
           <button
             type="button"
@@ -400,23 +404,44 @@ export default function LookupCard({
           >
             Lookup
           </button>
+          {/* Clear is the row's NEUTRAL solid, deliberately not the brand fill Lookup wears. The
+              grey now comes from --nbtn-bg (Q4 round-8, index.css) instead of a raw zinc utility,
+              so a theme can reach it; text-white stays because this fill is a raw colour, not one
+              of the theme-aware surfaces that set their own text colour. (Naming the retired
+              utility in prose would re-emit its dead rule — the v4 scanner reads comments too.) */}
           <button
             type="button"
             onClick={clearLookup}
             onMouseDown={(e) => e.preventDefault()}
-            className="px-4 py-2 rounded-xl bg-zinc-700 text-white text-sm font-medium"
+            className="px-4 py-2 rounded-xl bg-(--nbtn-bg) text-white text-sm font-medium"
           >
             Clear
           </button>
         </div>
-        {displayNote && <div className="text-sm text-(--tx-100-90)">{displayNote}</div>}
+        {/* The result slot is ALWAYS rendered, at a constant two-line height, so the card below it
+            never jumps. Two lines is the exact ceiling of every string that can land here: the
+            1582 gap message is two, the "(Gregorian)" answer variant is one line on a 430px screen
+            and two on a 393px one, and every error and ordinary answer is one. A one-line reserve
+            would still jump ~21px on the tall cases. min-h-10 (2.5rem) is two text-sm line boxes
+            and, being a standard scale utility, tracks the fluid root font instead of freezing a
+            pixel height. Top-aligned on purpose — centering would shift the first line as the
+            second appears. Empty state shows the hint, in the dimmer text tone. */}
+        <div
+          className={`text-sm min-h-10 ${displayNote ? 'text-(--tx-100-90)' : 'text-(--tx-200-70)'}`}
+        >
+          {displayNote || LOOKUP_HINT}
+        </div>
         <p className="text-xs text-(--tx-100-90)">
           Format: <b>{inputMeta.label}</b>
           <br />
           AD dates only, 1–10000
         </p>
       </div>
-      <div className="rounded-2xl panel py-4 space-y-4">
+      {/* The history panel takes its natural height and SHRINKS to fit when the column runs out
+          of room (min-h-0 lets it; the <ul> inside absorbs the shrink and scrolls) — it does not
+          grow, so with one entry the card still hugs its content instead of stretching to the
+          bottom of the screen. space-y-4 → gap-4 now that it's a flex column. */}
+      <div className="rounded-2xl panel py-4 gap-4 flex flex-col min-h-0">
         {/* History panel on the shared scroll-region recipe (Q5 round-7,
             components/scrollRegion): the panel owns py-4 only, and every child carries its
             own px-4 — for the scrolling <ul> below that puts the 1rem right padding INSIDE
@@ -430,7 +455,7 @@ export default function LookupCard({
             header above content scrolling below" — same pattern as the popover sticky
             footer's elev-shadow-up. */}
         <div
-          className={`lookup-history-header px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70) ${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
+          className={`lookup-history-header shrink-0 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70) ${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
         >
           <span>History</span>
           {entries.length > 0 && (
@@ -439,19 +464,17 @@ export default function LookupCard({
             </button>
           )}
         </div>
-        {/* ⚠ The SPACE in `max-h-[440px] ${` is REQUIRED — Tailwind v4's source scanner
-            silently drops a utility glued directly to `${` when it appears nowhere else
-            (the same incident class as main.tsx's `pt-5 ${` bar fix); glued, the built CSS
-            carried no max-height rule at all, the list grew unbounded, and the whole Lookup
-            page scrolled once history passed ten entries. Don't remove the space —
-            tests/classGlueGuard.test.js now fails the suite on any glued class site.
-            (Q6 regression fix, 2026-07-21.) */}
-        {renderedEntries.length > 0 ? (
+        {/* The list is the part that gives: it takes the room the header and the method section
+            below it don't need, and scrolls past that. It used to carry a fixed 440-pixel
+            max-height — one number, too tall on a small phone and leaving screen unused on a big
+            one, and the fluid-root font system had no way to scale it. Measured layout replaces
+            it; tests/heightGuard.test.js keeps pixel heights from creeping back. */}
+        {entries.length > 0 ? (
           <ul
             ref={lookupHistoryRef}
-            className={`${SCROLL_REGION_CLASS} space-y-2 max-h-[440px] ${scrollFadeClass(lookupHistoryScrolledFromTop, lookupHistoryAtBottom)}`}
+            className={`${SCROLL_REGION_CLASS} space-y-2 flex-auto min-h-0 ${scrollFadeClass(lookupHistoryScrolledFromTop, lookupHistoryAtBottom)}`}
           >
-            {renderedEntries.map((e) => (
+            {entries.map((e) => (
               <li key={e.id}>
                 <button
                   type="button"
@@ -459,10 +482,10 @@ export default function LookupCard({
                   className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-(--acc) bg-(--hist-sel)' : 'hist-unsel hover:bg-(--hist-hov)'}`}
                 >
                   <span className="block text-[13px] font-medium text-(--tx-100-90)">
-                    {e.label}
+                    {entryLabel(e, fmtDate)}
                   </span>
                   <span className="text-[12px] font-semibold text-(--tx-200-80)">
-                    {getEntryWeekday(e)}
+                    {entryWeekday(e, useJulian)}
                   </span>
                 </button>
               </li>
@@ -477,7 +500,7 @@ export default function LookupCard({
             elev-shadow-up signals "fixed footer below content scrolling above." */}
         <MethodBreakdownSection
           date={cdv}
-          className={`lookup-method-section px-4 pt-4 border-t border-(--bd-500-40) ${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
+          className={`lookup-method-section shrink-0 px-4 pt-4 border-t border-(--bd-500-40) ${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
           contentClassName="mt-3 rounded-2xl panel px-4 pt-[3px] pb-1.5"
           open={cov}
           onOpenChange={sco}

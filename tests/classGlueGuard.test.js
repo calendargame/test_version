@@ -6,8 +6,9 @@
 // Incident one: the HtP sticky bar lost its pt-5 and the whole site sat ~20px too high (fixed
 // next day, 2026-06-01 — the ⚠ REQUIRED-SPACE comment in main.tsx). Incident two survived a
 // month and a half because it only showed at 11+ Lookup history entries: `max-h-[440px]` never
-// reached the CSS, the list grew unbounded, and the whole Lookup page scrolled (found in
-// round-7, fixed 2026-07-21 — the twin comment in LookupCard.tsx). This guard makes the bug
+// reached the CSS, the list grew unbounded, and the whole Lookup page scrolled (found in round-7,
+// fixed 2026-07-21; that cap has since been replaced by measured flex layout, so LookupCard no
+// longer carries the twin of this note — see tests/heightGuard.test.js). This guard makes the bug
 // class UNSHIPPABLE: on any className/_CLASS line in src *.tsx/*.jsx or index.html, a class
 // token character (lowercase letter, digit, `)`, `]`) immediately followed by `${` fails the
 // suite, listing the exact file:line sites. The fix is always one SPACE before the `${` —
