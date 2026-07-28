@@ -37,7 +37,12 @@ const gear = () => screen.getByRole('button', { name: /^Settings/ })
 const openSettings = () => act(() => fireEvent.click(gear()))
 const btn = (name) => screen.getByRole('button', { name })
 const openManager = () => act(() => fireEvent.click(btn('View saved defaults')))
-const savedTitle = () => screen.queryByText('Your saved defaults')
+// "The manager is open on the SAVED view" — asked of the dialog itself, by its accessible name,
+// rather than of the title text. A text query cannot answer it any more: How to Play is
+// always-mounted since Q6 (round 9), so its display:none copy of the guide is in the DOM on every
+// screen, and the guide names "Your saved defaults" in prose. Role queries skip display:none
+// subtrees, and the dialog is what every one of these assertions actually means.
+const savedManager = () => screen.queryByRole('dialog', { name: 'Your saved defaults' })
 const managerDialog = (name = 'Your saved defaults') => screen.getByRole('dialog', { name })
 // Save a snapshot through the UI (settings must be open): Save Defaults → Save.
 const saveSnapshot = () => {
@@ -166,7 +171,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     // Cancel discards: reopening seeds fresh from the saved defaults, back at rest.
     act(() => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     openManager()
     const dialog2 = managerDialog()
     expect(readout(dialog2, 'Flash Speed').textContent).toBe('0.8s')
@@ -190,7 +195,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
       }),
     )
     act(() => fireEvent.click(btn('Save')))
-    expect(savedTitle()).toBeNull() // Save closes the manager
+    expect(savedManager()).toBeNull() // Save closes the manager
     const saved = useUserDefaults.getState().saved
     expect(saved.prefs.flashMs).toBe(1200) // the edited value landed
     expect(saved.prefs.blitzSec).toBe(MODE_PREFS_DEFAULTS.blitzSec) // untouched rows unchanged
@@ -221,7 +226,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
       fireEvent.keyDown(input2, { key: 'Escape' })
     })
     expect(readout(dialog, 'AoX Run Length').textContent).toBe('1000')
-    expect(savedTitle()).toBeInTheDocument()
+    expect(savedManager()).toBeInTheDocument()
     expect(btn('Reset Settings')).toBeInTheDocument()
   })
 
@@ -248,7 +253,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     })
     expect(btn('Clear saved defaults')).toBeInTheDocument() // the Clear link appears with the snapshot
     openManager()
-    expect(savedTitle()).toBeInTheDocument() // and the manager now opens on the saved view
+    expect(savedManager()).toBeInTheDocument() // and the manager now opens on the saved view
   })
 
   it('SHARED-CARD PARITY: both popups render the same rows, sliders, and readouts — the AoX box is the one difference', () => {
@@ -341,7 +346,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     saveSnapshot()
     openManager()
     act(() => fireEvent.click(btn('Close')))
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument()
     openManager()
     // The settings click-outside handler must treat the scrim as "inside" — the shared
@@ -351,11 +356,11 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     expect(btn('Reset Settings')).toBeInTheDocument()
     // …and a scrim CLICK cancels only the popup.
     act(() => fireEvent.click(scrim))
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument()
     openManager()
     act(() => fireEvent.keyDown(document.body, { key: 'Escape' })) // capture-phase popup handler wins
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument()
   })
 
@@ -365,9 +370,9 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     openSettings()
     saveSnapshot()
     openManager()
-    expect(savedTitle()).toBeInTheDocument()
+    expect(savedManager()).toBeInTheDocument()
     act(() => fireEvent.click(gear())) // any settings close counts
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reset Settings' })).toBeNull()
   })
 
@@ -393,7 +398,7 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
     // guard) — the mode dropdown must not open behind the aria-modal dialog.
     act(() => fireEvent.keyDown(window, { key: 'Tab' }))
     expect(screen.queryByRole('listbox')).toBeNull()
-    expect(savedTitle()).toBeInTheDocument()
+    expect(savedManager()).toBeInTheDocument()
   })
 
   it('Android Back closes the manager first, then Settings (LIFO overlay stack)', async () => {
@@ -420,9 +425,9 @@ describe('The defaults manager (Q12 + Q5 round-6)', () => {
       window.removeEventListener('popstate', count)
     })
     openManager()
-    expect(savedTitle()).toBeInTheDocument()
+    expect(savedManager()).toBeInTheDocument()
     act(() => window.dispatchEvent(new PopStateEvent('popstate')))
-    expect(savedTitle()).toBeNull()
+    expect(savedManager()).toBeNull()
     expect(btn('Reset Settings')).toBeInTheDocument() // settings survived the first Back
     act(() => window.dispatchEvent(new PopStateEvent('popstate')))
     expect(screen.queryByRole('button', { name: 'Reset Settings' })).toBeNull()

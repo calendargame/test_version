@@ -18,7 +18,10 @@
 // a resume moves NOTHING (guide or clamped, scroll position and open panel alike) while
 // pageshow still re-asserts the clamped-layout root invariant on a BFCache restore. The
 // reading line the accordion seats panels on (--seat-top) is pinned here too, since it is
-// derived from the same doc-scroll fade geometry.
+// scoped to this same html[data-doc-scroll] rule; Q5 (round 9) re-derived it from the guide's
+// panel gap instead of the top feather, and both halves of that derivation are pinned below.
+// Q6 (round 9) then extended the resume contract to mode switching — its own describe block,
+// third from the top.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -314,6 +317,132 @@ describe('resume from background never moves anything (Q6, round 8)', () => {
   })
 })
 
+// Q6 (round 9) — the other half of the resume contract, from the owner reversing his own round-8
+// spec after living with it: a detour into a game mode has to preserve exactly what backgrounding
+// preserves. How to Play was the one conditionally-rendered screen, so leaving it UNMOUNTED the
+// component and the open panel went with it, while a mode-change effect zeroed the scrollers.
+// It is always-mounted now like the five game modes, and one layout effect owns "where should this
+// screen be scrolled" — restore for the guide, top for everything else. What follows pins the
+// three cases that must not blur into each other: mode switch RESTORES, a fresh mount does NOT,
+// and a hidden guide contributes no box to the screens it is hiding behind.
+describe('How to Play survives a mode switch (Q6, round 9)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+    document.documentElement.removeAttribute('data-doc-scroll')
+    delete document.scrollingElement
+    document.documentElement.scrollTop = 0
+  })
+
+  // The guide's own root — the element that carries both the display toggle and the margin.
+  const guideRoot = (container) =>
+    [...container.querySelectorAll('div')].find((d) =>
+      d.className.includes('space-y-(--guide-panel-gap)'),
+    )
+  const headers = (container) => [...container.querySelectorAll('#guide-sec-overview button')]
+
+  it('keeps the open panel through a detour into a game mode', () => {
+    const { container } = mountApp()
+    pressKey('H')
+    const header = container.querySelector('#guide-sec-overview button')
+    act(() => {
+      fireEvent.click(header)
+    })
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    pressKey('K') // → Classic: the guide is hidden, NOT unmounted …
+    expect(guideRoot(container).style.display).toBe('none')
+    expect(container.querySelector('#guide-sec-overview button')).toBe(header) // same node
+    pressKey('H') // … so coming back finds the same panel still open
+    expect(guideRoot(container).style.display).toBe('block')
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('re-applies the reading position captured AT THE SWITCH, not one read later', () => {
+    // The load-bearing detail of the whole item. A real engine collapses the document the moment
+    // React hides the guide and clamps its scroll offset to ~0, so anything that reads the
+    // position from an effect gets a zero. jsdom lays nothing out and would hand back the honest
+    // 640 either way — so the test forces the point instead: scrollY is moved AFTER the switch,
+    // and the restore must still use the value the switch itself captured.
+    const { container } = mountApp()
+    pressKey('H')
+    const realScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 640 })
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    pressKey('K') // leave: zero the document while it is still unclamped
+    expect(scrollToSpy).toHaveBeenCalledWith(0, 0)
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 12345 })
+    scrollToSpy.mockClear()
+    pressKey('H') // return
+    // The LAST write, not merely one of them — the whole item is that no later effect overwrites
+    // the restore. `toHaveBeenCalledWith` would still pass if someone re-added a mode-change
+    // window.scrollTo(0,0) after this one, which is exactly the effect this round deleted.
+    expect(scrollToSpy.mock.calls).toEqual([[0, 640]])
+    expect(guideRoot(container).style.display).toBe('block')
+    scrollToSpy.mockRestore()
+    Object.defineProperty(window, 'scrollY', realScrollY)
+  })
+
+  it('gives the game modes no scroll memory — each one opens at its own top', () => {
+    const { container } = mountApp() // Classic
+    const el = scrollContainer(container)
+    el.scrollTop = 77
+    pressKey('F') // → Flash: same container, new content, back to the top
+    expect(el.scrollTop).toBe(0)
+    el.scrollTop = 120
+    pressKey('K')
+    expect(el.scrollTop).toBe(0)
+  })
+
+  it('starts a FRESH mount at the top with every panel closed — nothing is persisted', () => {
+    // Requirement C. Nothing here is enforced by a guard: the app never stores which mode you
+    // were in (mode useState("classic")), the reading position lives in a ref, and the open panel
+    // lives in GuidePage's own useState — so a refresh, a cold start or an update reload gets a
+    // new App and all three are simply gone. A second mount is exactly that.
+    const first = mountApp()
+    pressKey('H')
+    act(() => {
+      fireEvent.click(first.container.querySelector('#guide-sec-overview button'))
+    })
+    const realScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 400 })
+    pressKey('K') // saves 400 into THIS app instance
+    first.unmount()
+    document.getElementById('root').remove()
+    const { container } = mountApp() // a cold start: new instance, same stubbed scrollY
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    pressKey('H')
+    expect(scrollToSpy).toHaveBeenCalledWith(0, 0)
+    expect(scrollToSpy).not.toHaveBeenCalledWith(0, 400)
+    expect(headers(container).every((h) => h.getAttribute('aria-expanded') === 'false')).toBe(true)
+    scrollToSpy.mockRestore()
+    Object.defineProperty(window, 'scrollY', realScrollY)
+  })
+
+  it('leaves the other screens pixel-identical — the hidden guide generates no box', () => {
+    // The trap in always-mounting this one: its mt-2.5 must ride on the SAME element as the
+    // display toggle. Hang the toggle one level down and the margin stays in App's flex column on
+    // every other screen — 10px of invisible content that lengthens each of them past the
+    // viewport, for a phantom bottom fade and a scrollbar on modes that used to fit exactly.
+    // display:none generates no box, margins included.
+    const { container } = mountApp() // Classic
+    const root = guideRoot(container)
+    expect(root.className).toContain('mt-2.5')
+    expect(root.style.display).toBe('none')
+    // …and nothing sits between it and the flex column, which is the only way that holds.
+    const column = scrollContainer(container).firstElementChild
+    expect(root.parentElement).toBe(column)
+    // Every always-mounted screen is either the one on show or display:none — no third state.
+    const screens = [...column.children]
+    expect(screens.length).toBe(6) // 5 game modes + the guide (Lookup is still conditional)
+    expect(screens.filter((c) => c.style.display === 'block')).toHaveLength(1)
+    expect(screens.filter((c) => c.style.display === 'none')).toHaveLength(5)
+  })
+})
+
 // The reading line the accordion coordinator seats a tapped panel on. jsdom applies no
 // stylesheets, so index.css itself is the only place these can be asserted.
 const css = readFileSync(
@@ -328,6 +457,8 @@ const ruleBody = (re) => {
 
 describe('index.css — the feather token and the derived reading line (--seat-top)', () => {
   it('feathers every scroll edge from the one --fade-h token, with no hardcoded twin', () => {
+    // --fade-h is shared with the settings popover, the changelog and the Lookup scrollers,
+    // which is why Q5 (round 9) had to move the reading line OFF it rather than retune it.
     const fadeRules = [
       /\.fade-scroll-top\{([^}]*)\}/,
       /\.fade-scroll-bottom\{([^}]*)\}/,
@@ -346,17 +477,39 @@ describe('index.css — the feather token and the derived reading line (--seat-t
 
   it('REGISTERS --seat-top as a <length> so JS reads a resolved px value, not a calc string', () => {
     // Load-bearing, not decorative: unregistered, getComputedStyle hands back the literal
-    // "calc(…)" string → parseFloat NaN → the reader's `|| 0` → zero clearance, i.e. a
-    // silent failure back to seating panels under the fade. GuidePage depends on this rule.
+    // "calc(…)" token stream → parseFloat NaN. GuidePage survives that (it re-reads the same
+    // declaration through the resolved scroll-padding-top, which every engine gives in absolute
+    // px), but this registration is what makes the direct read exact on every engine that has
+    // @property — i.e. the owner's — and it is the only reason the reader can trust a number
+    // it got from a custom property at all.
     const prop = ruleBody(/@property --seat-top\{([^}]*)\}/)
     expect(prop).toContain('syntax:"<length>"')
     expect(prop).toContain('inherits:true')
     expect(prop).toContain('initial-value:0px')
   })
 
-  it('defines the line as bar + feather and hands the same value to the native scrollport', () => {
+  it('defines the line as bar + ONE PANEL GAP and hands the same value to the native scrollport', () => {
+    // The gap, not the feather (Q5 round 9). The fixed bar hides everything above --bar-h, so
+    // seating the tapped panel one panel-gap below it lands the bottom edge of the panel above
+    // exactly on the bar's underside — out of frame. bar + --fade-h overshot by 24 − 8.46 =
+    // 15.5px and left that much of the previous panel showing, which is the bug this fixes.
     const body = ruleBody(/html\[data-doc-scroll\]\{--seat-top:([^}]*)\}/)
-    expect(body).toContain('calc(var(--bar-h) + var(--fade-h))')
+    expect(body).toContain('calc(var(--bar-h) + var(--guide-panel-gap))')
+    expect(body).not.toContain('--fade-h')
     expect(body).toContain('scroll-padding-top:var(--seat-top)')
+  })
+
+  it('keeps ONE home for the panel gap — the token the guide lays out with and the seat derives from', () => {
+    // The whole point of the token: the gap the reader sees and the gap the scroll math
+    // assumes are the same declaration. A literal space-y-2 back on the guide's section list
+    // would silently restore the Q5 bug the next time either number moved, so the utility has
+    // to read the token, and no hardcoded twin of the value may sit beside it.
+    expect(css).toContain(':root{--guide-panel-gap:calc(var(--spacing) * 2)}')
+    const guide = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'components', 'GuidePage.tsx'),
+      'utf8',
+    )
+    expect(guide).toContain('className="mt-2.5 space-y-(--guide-panel-gap)"')
+    expect(guide).not.toContain('space-y-2"')
   })
 })

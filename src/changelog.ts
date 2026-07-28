@@ -32,6 +32,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-07-28',
+    items: [
+      'Input, Julian Chance, Leap Year Chance and Jan/Feb Chance are now drawn as one connected strip of buttons in the settings menu, matching Date Format and the themes.',
+      'A greyed-out setting now greys out all in one piece, instead of fading button by button.',
+      'Date Format now stacks Written above Numeric instead of placing them side by side, so every option has the full width of the menu to itself.',
+      'Opening a How to Play section no longer leaves a sliver of the section above it peeking out under the bar — except right at the bottom of the guide, where there is no page left to scroll.',
+      'How to Play keeps your place while the app is open: leave for a mode, play, and come back and the same section is still open at the same point on the page. Closing the app and launching it again, reloading it, or a Full Reset starts it fresh at the top; switching to another app and back keeps your place as before.',
+      'In Deduction, the answer buttons are spaced the same in all three sub-modes — the day and year grids were a little tighter than the month one, so they no longer shift as you switch.',
+      'In AoX, the run length box now stands exactly as tall as the Allow Mistakes and One-by-One buttons beside it.',
+      'With a keyboard: click one option of a setting and the arrow keys then move along that setting, choosing each option as you land on it — without stepping the date behind the menu.',
+      'The changelog popup is back to just the list and Close; the small grey note under it is gone, since How to Play already explains how far back the list goes.',
+    ],
+  },
+  {
     date: '2026-07-26',
     items: [
       'The Lookup page no longer scrolls as a whole — only the history list moves, and it now uses whatever room your screen has instead of stopping at a fixed height.',

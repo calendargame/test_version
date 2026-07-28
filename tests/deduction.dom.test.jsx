@@ -89,6 +89,10 @@ function visibleAnswerGrid() {
   )
 }
 const flashGoodCount = () => visibleAnswerGrid().querySelectorAll('.flash-good').length
+// Gap utilities on a grid element. Used by the Q4 round-9 gutter tests below: jsdom cannot measure,
+// so the class token IS the contract. Returns an array so "exactly one gap token" is assertable —
+// two stacked gaps would leave the gutter up to CSS emission order.
+const gapTokens = (el) => el.className.split(/\s+/).filter((c) => /^gap-/.test(c))
 
 const MON3 = {
   Jan: 1,
@@ -698,6 +702,19 @@ describe('Deduction — Q14: both-crosses 2-option Year sizer overlay', () => {
         expect(sizer.hasAttribute('data-answer-grid')).toBe(false)
         expect(sizer.children.length).toBe(5) // the five 5-layout strut cells…
         expect(sizer.querySelectorAll('button').length).toBe(0) // …inert DIVs, never buttons
+        // Strut and real grid draw their gutter from the one ANSWER_GRID_GAP, so the height the
+        // strut reserves is the height the 5-layout actually takes. A drift here is invisible in
+        // jsdom and on-screen alike — it just leaves a dead band or a jump (Q4 round-9).
+        expect(gapTokens(sizer)).toEqual(gapTokens(grid))
+        expect(gapTokens(sizer)).toHaveLength(1)
+        // The 5-layout's col-spans are derived from the same yearGridLayout the real grid uses.
+        expect(Array.from(sizer.children, (c) => /col-span-\d/.exec(c.className)?.[0])).toEqual([
+          'col-span-2',
+          'col-span-2',
+          'col-span-2',
+          'col-span-3',
+          'col-span-3',
+        ])
         checked2 = true
       } else {
         expect(optButtons().length).toBe(5)
@@ -784,5 +801,61 @@ describe('Deduction — Q4 round-8: Day / Month / Year answer buttons share one 
       clickCtrl('New')
     }
     expect(checked).toBe(true)
+  })
+})
+
+// ── Q4 round-9: one gutter across the sub-modes AND the weekday grid ──────────
+// The owner saw the space between Deduction's answer buttons CHANGE with the sub-mode: Month ran
+// gap-3 while Day and Year ran gap-2 (12.69px vs 8.46px at his 16.92px fluid root). Day and Year
+// were widened onto gap-3 — the value Month already had, and the one the weekday grid has always
+// had (Classic/Flash/Blitz/AoX all render the single WeekdayAnswer, so there is exactly one of
+// those to check) — never the reverse. All of them now read one ANSWER_GRID_GAP, which as a bonus
+// puts them on a shared column lattice: at a common gap g a 6-col col-span-2 is exactly (W−2g)/3,
+// a 3-col column, and a col-span-3 is exactly (W−g)/2, a 2-col column, so the sub-modes' invisible
+// column edges line up instead of missing by a few px.
+// NOT asserted here: the 7-dot input. It carries the same data-answer-grid marker but is a square
+// 3×3 place-items:center cluster spaced by --dot-frac, so it holds no gap token at all — a guard
+// phrased as "every [data-answer-grid] wears the gutter" would fail the moment Settings → Input →
+// Dots is picked. Scoping to the labelled grids keeps this honest. The strut is covered too, in
+// the Q14 sizer test above (it has the reroll loop needed to reach a both-crosses N=2 puzzle).
+describe('Deduction — Q4 round-9: every labelled answer grid shares one gutter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('one gutter token, identical across Day / Month / Year and the weekday grid', () => {
+    pin()
+    mountApp()
+    // Mount lands in Classic with the factory buttons input — the weekday reference grid.
+    const weekdayGrid = visibleAnswerGrid()
+    expect(weekdayGrid.className).toContain('grid-cols-2') // the labelled grid, not the dot cluster
+    // Exactly one token everywhere — two stacked gaps would hand the gutter to CSS emission order,
+    // which is the same ambiguity the text-size fix above removed.
+    expect(gapTokens(weekdayGrid)).toHaveLength(1)
+    const seen = new Set(gapTokens(weekdayGrid))
+    switchToDeduction()
+    for (const sub of ['Day', 'Month', 'Year']) {
+      clickCtrl(sub)
+      expect(readPuzzle().type).toBe(sub.toLowerCase()) // the visible grid really is this sub-mode's
+      const grid = visibleAnswerGrid()
+      expect(gapTokens(grid)).toHaveLength(1)
+      seen.add(gapTokens(grid)[0])
+    }
+    expect([...seen]).toEqual(['gap-3'])
+  })
+
+  it('the dot input is exempt by construction: same marker, no gap utility at all', () => {
+    pin()
+    useSettings.getState().setInputStyle('dots')
+    mountApp()
+    const dots = visibleAnswerGrid()
+    expect(dots.className).toContain('dot-cluster')
+    expect(gapTokens(dots)).toEqual([]) // spacing is --dot-frac in index.css, not a gap
   })
 })

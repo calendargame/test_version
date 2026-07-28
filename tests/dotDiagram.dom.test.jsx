@@ -28,7 +28,7 @@ const CANONICAL_CELLS = [
 // GuideSection content sits inside an always-mounted Expander (collapsed 0fr grid row, never
 // unmounted), so the diagram is queryable without opening its section.
 const renderDiagram = () => {
-  const { container } = render(<GuidePage />)
+  const { container } = render(<GuidePage visible />)
   const svg = container.querySelector('svg[role="img"]')
   expect(svg).not.toBeNull()
   return svg

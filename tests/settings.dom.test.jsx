@@ -1,18 +1,40 @@
 // @vitest-environment jsdom
 //
-// ⚙ Settings → Display — DOM tests for the segmented pill trays and the radio-group a11y pass
-// (round-8). What jsdom CAN prove, and does here:
+// ⚙ Settings — DOM tests for the segmented pill trays and the radio-group a11y pass (round-8),
+// extended in round-9 to pin THE PICKER RULE across the whole panel. What jsdom CAN prove, and
+// does here:
 //
-//   • PillTray (components/PillTray) renders the date-format and theme groups as role="radio"
-//     segments, and its `disabled` prop both publishes the lock (aria-disabled) and GUARDS
-//     onChange — so a click that slips past the wrapper's pointer-events-none cannot change the
-//     value. (The visible dim itself is the caller's wrapper class, asserted as a class string.)
+//   • THE PICKER RULE: the panel holds exactly two kinds of control, and each has exactly one
+//     treatment. A SWITCH (on/off) is one On/Off button beside its label. A PICKER (choose among
+//     named alternatives) is ONE merged tray — Input and the three chance rows joined Date Format
+//     and Theme in round-9, so the housing finally MEANS "these options are mutually exclusive"
+//     instead of being a per-group decoration. Both halves are pinned: every picker is a tray,
+//     every switch is not, and no role="radio" exists anywhere outside a tray.
+//   • The conditionally-locked pickers keep their exact lock conditions through the conversion —
+//     Input in Deduction, Julian Chance unless the range straddles 1582, Leap Year Chance unless a
+//     leap year is reachable — with the dim on the GROUP, aria-disabled on every segment, the
+//     onChange guard behind it, and the selected value preserved for when the lock clears. Jan/Feb
+//     Chance is the control case: it has no lock branch at all.
+//
+//   • PillTray (components/PillTray) renders every group as role="radio" segments, and ONE
+//     boolean — the enclosing PillGroup's `disabled` — is the whole lock: the dim class on the
+//     group, aria-disabled on each segment, the onChange guard (so a click slipping past
+//     pointer-events-none cannot change the value) and the missing tab stop all come from it.
+//     Each of those four is asserted, and the dim is asserted as an exact class string.
 //   • The five themes are two ALWAYS-PRESENT rows, not the two/three dropdowns they replaced.
 //     The same rows render in both Use-System states — that is what stops the panel reflowing
 //     when the switch is flipped — and only the SELECTION semantics differ: two independent
 //     picks when the OS decides, exactly one pick across both rows when it doesn't.
 //   • Flipping Use System Settings OFF seeds the manual theme from what is ALREADY on screen, so
 //     the switch never jumps the user to a different look (the round-8 bug).
+//   • THE KEYBOARD CONTRACT that role="radiogroup" promises, added in round-9 (Q2) and owned by
+//     PillGroup (components/PillGroup): each group is ONE tab stop — the selected pill — with
+//     Right/Down, Left/Up, Home and End moving the choice WITHIN it and wrapping, and a locked
+//     group inert (no tab stop, no arrow handling — pointer-events-none stops only pointers).
+//     The group, not the tray, has to own it, because two of these groups span two trays: the
+//     arrow walks straight from the last Written format into the first Numeric one, and the five
+//     themes are one tab stop across two rows whenever Use System is off. This is also the layer
+//     the owner cannot check on a phone — there is no keyboard — so these tests ARE the pass.
 //   • Every mutually-exclusive group in the panel is a role="radiogroup" of role="radio" buttons,
 //     and A GROUP IS A CHOICE, NOT A ROW. Where two trays share one setting the radiogroup spans
 //     both of them — the five date formats always, and the two theme rows while Use System is off
@@ -26,6 +48,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
+import { PillGroup } from '../src/components/PillGroup.jsx'
+import { PillTray } from '../src/components/PillTray.jsx'
 import { useSettings } from '../src/store/settings.js'
 
 function mountApp() {
@@ -38,6 +62,13 @@ function mountApp() {
   })
   return utils
 }
+// Every TEXT query in this file is scoped to the ⚙ popover, never to the whole document, and that
+// is load-bearing: How to Play is always-mounted like the game modes (Q6, round 9), so its copy of
+// the guide is in the DOM under display:none on every screen — and the guide names half of this
+// panel's controls in prose ("Use System Settings", "Random Format", the theme rows). A global
+// getByText matches those sentences as readily as the control. ROLE queries need no such scoping:
+// they skip display:none subtrees by default, which is why the radiogroup accessors below don't.
+const panel = () => within(document.getElementById('settings-popover'))
 // Every group under test is a labelled radiogroup, so one scoped accessor serves them all.
 const group = (name) => within(screen.getByRole('radiogroup', { name }))
 const pills = (name) => group(name).getAllByRole('radio')
@@ -48,9 +79,13 @@ const checked = (name) =>
 const labels = (name) => pills(name).map((b) => b.textContent.trim())
 // A visual ROW, found by its caption instead of by a role — which is the point: which radiogroup
 // owns a theme row depends on Use System, but the row itself is there either way. The caption is
-// the SectionLabel DIV, so this never catches the same-named 'Light' pill (a BUTTON).
-const rowOf = (caption) =>
-  within(screen.getAllByText(caption).find((el) => el.tagName === 'DIV').parentElement)
+// the SectionLabel DIV, so this never catches the same-named 'Light' pill (a BUTTON). rowEl gives
+// the raw element (the shape assertions need to compare identities); rowOf wraps it for queries.
+const rowEl = (caption) =>
+  panel()
+    .getAllByText(caption)
+    .find((el) => el.tagName === 'DIV').parentElement
+const rowOf = (caption) => within(rowEl(caption))
 const rowPills = (caption) => rowOf(caption).getAllByRole('radio')
 const rowLabels = (caption) => rowPills(caption).map((b) => b.textContent.trim())
 const rowChecked = (caption) =>
@@ -58,9 +93,31 @@ const rowChecked = (caption) =>
     .filter((b) => b.getAttribute('aria-checked') === 'true')
     .map((b) => b.textContent.trim())
 const st = () => useSettings.getState()
+// A PillTray segment, recognised STRUCTURALLY rather than by a copied class list: the housing
+// draws the frame (surface-tray + the single border) and each segment is borderless, carrying the
+// concentric radius instead of a plain rounded-xl. A flat picker button — what Input and the three
+// chance rows shipped as before round-9 — wore its own `border` and had no housing, so all three
+// clauses flip together. Class strings are all jsdom can see; the geometry is on-device only.
+const isTraySegment = (b) =>
+  b.className.includes('rounded-[calc(var(--radius-xl)-1px)]') &&
+  !/(^|\s)border(\s|$)/.test(b.className) &&
+  b.parentElement.className.includes('surface-tray')
+// Every choice-among-alternatives in the panel, by radiogroup name, with Use System ON — so the
+// theme rows are two groups. Input and the three chance rows shipped as flat gap-separated
+// buttons until round-9; the housing meant nothing while that was true. Turning Use System OFF
+// swaps 'Dark theme' + 'Light theme' for the single 'Theme' group that spans both rows.
+const PICKERS = [
+  'Date Format',
+  'Dark theme',
+  'Light theme',
+  'Input',
+  'Julian Chance',
+  'Leap Year Chance',
+  'Jan/Feb Chance on Leap Years',
+]
 // The On/Off switches sit in a label+button row and all read "On"/"Off", so they are found by
 // their LABEL's row rather than by an accessible name that would match every one of them.
-const toggle = (label) => screen.getByText(label).parentElement.querySelector('button')
+const toggle = (label) => panel().getByText(label).parentElement.querySelector('button')
 const clickToggle = (label) =>
   act(() => {
     fireEvent.click(toggle(label))
@@ -92,7 +149,10 @@ describe('Settings → Display — theme pill rows', () => {
   // headers and would out-rank the "Theme" sub-label these sit under.
   it('captions read Dark / Light and stay centered in both Use-System states', () => {
     mountApp()
-    const caption = (text) => screen.getAllByText(text).find((el) => el.tagName === 'DIV')
+    const caption = (text) =>
+      panel()
+        .getAllByText(text)
+        .find((el) => el.tagName === 'DIV')
     for (const pass of ['system on', 'system off']) {
       expect(caption('Dark').className).toContain('text-center')
       expect(caption('Light').className).toContain('text-center')
@@ -306,6 +366,174 @@ describe('Settings → Display — date-format trays', () => {
     })
     expect(st().dateFormat).toBe('written-dmy')
   })
+
+  // Round-9: the two trays STACK instead of sharing one flex row. Side-by-side gave each half
+  // half the panel — the one picker in the ⚙ whose rows didn't line up with everything else, and
+  // the tightest labels on the narrowest phone. Stacked, Date Format is structurally the SAME
+  // block as Theme, which is what this asserts: same wrapper spacing token, same per-row shape.
+  it('is TWO STACKED captioned trays — the same shape as the Theme block', () => {
+    mountApp()
+    const dateGroup = screen.getByRole('radiogroup', { name: 'Date Format' })
+    expect(dateGroup.className).toContain('space-y-2')
+    expect(dateGroup.className).not.toContain('flex') // the old side-by-side row is gone
+    expect(dateGroup.children).toHaveLength(2)
+    expect(dateGroup.children[0]).toBe(rowEl('Written'))
+    expect(dateGroup.children[1]).toBe(rowEl('Numeric'))
+    // The theme rows' shared wrapper spaces its rows with the same token.
+    expect(rowEl('Dark').parentElement.className).toContain('space-y-2')
+    // …and all four rows are caption-then-tray, nothing else.
+    for (const row of [rowEl('Written'), rowEl('Numeric'), rowEl('Dark'), rowEl('Light')]) {
+      expect(row.className).toContain('space-y-1.5')
+      expect(row.children).toHaveLength(2)
+      expect(row.children[0].className).toContain('text-center') // the centred family caption
+      expect(row.children[1].className).toContain('surface-tray') // the tray housing
+    }
+  })
+})
+
+// ── Part G: THE PICKER RULE — one treatment per control kind, and the locks survive it ───────
+describe('Settings — THE PICKER RULE', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // Every on/off setting, by the label text its row is found through.
+  const SWITCHES = [
+    'Random Format',
+    'Use System Settings',
+    'Julian Calendar (pre-Oct 15, 1582)',
+    'Save Stats',
+  ]
+
+  it('every PICKER is one merged tray', () => {
+    mountApp()
+    for (const name of PICKERS) {
+      expect(pills(name).length).toBeGreaterThan(1)
+      pills(name).forEach((b) => expect(isTraySegment(b)).toBe(true))
+    }
+  })
+
+  // The clause that keeps the rule from rotting: a picker added later as loose buttons would still
+  // carry role="radio", so it fails here even though nobody thought to list it above. Counting the
+  // radios against the listed pickers is what makes the sweep exhaustive rather than a spot check.
+  it('no radio is drawn anywhere outside a tray', () => {
+    mountApp()
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(PICKERS.flatMap((name) => pills(name)).length)
+    radios.forEach((b) => expect(isTraySegment(b)).toBe(true))
+  })
+
+  it('every SWITCH stays one On/Off button — not a tray, not a radio', () => {
+    mountApp()
+    for (const label of SWITCHES) {
+      const btns = [...panel().getByText(label).parentElement.querySelectorAll('button')]
+      expect(btns).toHaveLength(1) // a switch is not a choice among alternatives
+      expect(btns[0].textContent.trim()).toMatch(/^(On|Off)$/)
+      expect(btns[0].getAttribute('role')).toBeNull()
+      expect(isTraySegment(btns[0])).toBe(false)
+    }
+  })
+
+  // The lock is published four ways and this reads all four: the dim on the GROUP (so the housing
+  // greys as one piece rather than five separately-dimmed buttons, which is what changed in
+  // round-9), aria-disabled on every segment, PillTray's onChange guard behind them, and — the
+  // Q2 addition — no tab stop at all, since pointer-events-none locks out pointers and nothing
+  // else. All four now come from ONE `disabled` on the PillGroup, so they cannot drift apart;
+  // asserting them together is what proves that.
+  const expectLock = (name, locked) => {
+    const g = screen.getByRole('radiogroup', { name })
+    expect(g.className.includes('opacity-60')).toBe(locked)
+    expect(g.className.includes('pointer-events-none')).toBe(locked)
+    pills(name).forEach((b) => expect(b.getAttribute('aria-disabled')).toBe(locked ? 'true' : null))
+    expect(pills(name).filter((b) => b.tabIndex === 0)).toHaveLength(locked ? 0 : 1)
+  }
+
+  it('Input: live in a weekday mode, locked in Deduction, value preserved', () => {
+    mountApp()
+    expectLock('Input', false)
+    act(() => {
+      fireEvent.click(group('Input').getByRole('radio', { name: 'Dots' }))
+    })
+    expect(st().inputStyle).toBe('dots')
+    act(() => {
+      fireEvent.keyDown(window, { key: 'D' }) // → Deduction, which also closes the popover
+    })
+    act(() => {
+      fireEvent.keyDown(window, { key: 'G' }) // reopen it
+    })
+    expectLock('Input', true)
+    expect(checked('Input')).toEqual(['Dots']) // still shown as the pick, so it survives the lock
+    act(() => {
+      fireEvent.click(group('Input').getByRole('radio', { name: 'Buttons' }))
+    })
+    expect(st().inputStyle).toBe('dots') // the guard held
+    act(() => {
+      fireEvent.keyDown(window, { key: 'K' }) // back to Classic
+    })
+    act(() => {
+      fireEvent.keyDown(window, { key: 'G' })
+    })
+    expectLock('Input', false)
+  })
+
+  // Julian Chance needs a range that STRADDLES 1582 — the factory 1–10000 does, 1900–10000 does
+  // not — and needs the Julian Calendar switch on.
+  it('Julian Chance: locked unless the range straddles 1582, and by the Julian switch', () => {
+    mountApp()
+    expectLock('Julian Chance', false)
+    act(() => {
+      fireEvent.click(group('Julian Chance').getByRole('radio', { name: '75%' }))
+    })
+    expect(st().julianChance).toBe('75')
+    act(() => st().setMinY(1900)) // all-Gregorian: nothing for the setting to do
+    expectLock('Julian Chance', true)
+    expect(checked('Julian Chance')).toEqual(['75%']) // preserved while locked
+    act(() => {
+      fireEvent.click(group('Julian Chance').getByRole('radio', { name: 'Random' }))
+    })
+    expect(st().julianChance).toBe('75') // the guard held
+    act(() => st().setMinY(1))
+    expectLock('Julian Chance', false) // and it comes back live, still on 75%
+    expect(checked('Julian Chance')).toEqual(['75%'])
+    clickToggle('Julian Calendar (pre-Oct 15, 1582)') // the other half of the condition
+    expect(st().useJulian).toBe(false)
+    expectLock('Julian Chance', true)
+  })
+
+  // 1900 is not a leap year under either rule, so a range of exactly [1900,1900] reaches none.
+  it('Leap Year Chance: locked when no leap year is reachable; Jan/Feb Chance never locks', () => {
+    mountApp()
+    expectLock('Leap Year Chance', false)
+    act(() => {
+      fireEvent.click(group('Leap Year Chance').getByRole('radio', { name: '100%' }))
+    })
+    expect(st().leapChance).toBe('100')
+    act(() => {
+      st().setMinY(1900)
+      st().setMaxY(1900)
+    })
+    expectLock('Leap Year Chance', true)
+    expect(checked('Leap Year Chance')).toEqual(['100%'])
+    act(() => {
+      fireEvent.click(group('Leap Year Chance').getByRole('radio', { name: 'Random' }))
+    })
+    expect(st().leapChance).toBe('100') // the guard held
+    // Jan/Feb still applies to whatever leap years a range does contain, so it has no lock branch
+    // at all — the control case for the two rows above.
+    expectLock('Jan/Feb Chance on Leap Years', false)
+    act(() => {
+      fireEvent.click(group('Jan/Feb Chance on Leap Years').getByRole('radio', { name: '50%' }))
+    })
+    expect(st().janFebChance).toBe('50')
+    act(() => st().setMaxY(10000))
+    expectLock('Leap Year Chance', false)
+    expect(checked('Leap Year Chance')).toEqual(['100%']) // restored, not reset
+  })
 })
 
 // ── Parts E + F: identical semantics everywhere, and the dropdowns are gone ──────────────────
@@ -341,6 +569,15 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
       pills(name).forEach((b) => expect(b.tagName).toBe('BUTTON'))
       expect(checked(name)).toHaveLength(1)
     }
+    // The same sweep the Use-System-off case gets below: no group anywhere in the panel announces
+    // itself as an unmade choice. Both states are pinned because the theme GROUPING follows the
+    // switch, so each state is a different set of groups to be wrong about.
+    screen.getAllByRole('radiogroup').forEach((g) => {
+      const lit = within(g)
+        .getAllByRole('radio')
+        .filter((b) => b.getAttribute('aria-checked') === 'true')
+      expect(lit).toHaveLength(1)
+    })
   })
 
   // The same invariant with the switch off, where the theme rows collapse into one choice. No
@@ -377,5 +614,294 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
       .filter((b) => b.getAttribute('aria-haspopup') === 'listbox')
     expect(triggers).toHaveLength(1)
     expect(triggers[0].getAttribute('aria-label')).toBe('Mode')
+  })
+})
+
+// ── Part H: the KEYBOARD CONTRACT role="radiogroup" promises (round-9 Q2) ────────────────────
+// Round-8 announced the convention; this is the half that keeps it. Everything here is invisible
+// — no pixel moves — so unlike the rest of this file there is no on-device pass to fall back on:
+// the owner's phone has no keyboard. These tests are the whole verification.
+describe('Settings — the radiogroup keyboard contract', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const press = (el, key) =>
+    act(() => {
+      fireEvent.keyDown(el, { key })
+    })
+  // What the keyboard is pointing at, by the same accessible name the queries use.
+  const activeName = () =>
+    document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim()
+  // ONE tab stop per group, and it is the pill that holds the value — the definition of a roving
+  // tabindex. Read through the GROUP, which is the point: two of these groups span two trays.
+  const expectOneTabStop = (name) => {
+    const stops = pills(name).filter((b) => b.tabIndex === 0)
+    expect(stops).toHaveLength(1)
+    expect(stops[0].getAttribute('aria-checked')).toBe('true')
+  }
+
+  // Before this, every pill in the panel was its own tab stop — 26 of them — while the markup
+  // told assistive tech there were seven groups.
+  it('every group is ONE tab stop, on the selected pill, in both Use-System states', () => {
+    mountApp()
+    PICKERS.forEach(expectOneTabStop)
+    // The five pills the group spans include a whole tray with nothing selected in it: the tab
+    // stop is a property of the CHOICE, so the empty tray contributes none.
+    expect(pills('Date Format').map((b) => b.tabIndex)).toEqual([0, -1, -1, -1, -1])
+    clickToggle('Use System Settings')
+    // The theme rows collapse into one choice, so they collapse into one tab stop with it. Every
+    // other group is re-swept by name rather than by hand, so the sweep stays exhaustive as
+    // PICKERS grows.
+    ;[...PICKERS.filter((n) => n !== 'Dark theme' && n !== 'Light theme'), 'Theme'].forEach(
+      expectOneTabStop,
+    )
+    expect(pills('Theme')).toHaveLength(5)
+    expect(pills('Theme').filter((b) => b.tabIndex === 0)).toHaveLength(1)
+  })
+
+  // Selection follows focus: a radio group is a single choice, so arriving at a pill is choosing
+  // it. Both axes move — the vertical pair is not decoration here, since Date Format and Theme
+  // stack two trays — and both wrap.
+  it('Right/Down and Left/Up move the choice and wrap', () => {
+    mountApp()
+    const start = pills('Date Format')[0]
+    start.focus()
+    press(start, 'ArrowRight')
+    expect(activeName()).toBe('Written DMY')
+    expect(st().dateFormat).toBe('written-dmy')
+    expect(checked('Date Format')).toEqual(['DMY']) // aria-checked followed the arrow
+    expectOneTabStop('Date Format') // …and so did the tab stop
+    press(document.activeElement, 'ArrowLeft')
+    expect(activeName()).toBe('Written MDY')
+    expect(st().dateFormat).toBe('written-mdy')
+    // Backwards off the front wraps to the last pill of the last tray, forwards off the end
+    // comes back to the first.
+    press(document.activeElement, 'ArrowLeft')
+    expect(activeName()).toBe('Numeric YMD')
+    expect(st().dateFormat).toBe('numeric-ymd')
+    press(document.activeElement, 'ArrowRight')
+    expect(activeName()).toBe('Written MDY')
+    expect(st().dateFormat).toBe('written-mdy')
+    // Down/Up are the same walk on the other axis.
+    press(document.activeElement, 'ArrowDown')
+    expect(activeName()).toBe('Written DMY')
+    press(document.activeElement, 'ArrowUp')
+    expect(activeName()).toBe('Written MDY')
+  })
+
+  // THE reason the contract lives on the group: a tray-scoped implementation would stop dead at
+  // the end of the tray it was asked about, and hand these two groups two tab stops each.
+  it('the arrows cross from one tray into the next — the group is the unit, not the tray', () => {
+    mountApp()
+    const lastWritten = pills('Date Format')[1]
+    lastWritten.focus()
+    expect(rowPills('Written')).toContain(lastWritten) // it really is the end of the first tray
+    press(lastWritten, 'ArrowDown')
+    expect(activeName()).toBe('Numeric MDY')
+    expect(rowPills('Numeric')).toContain(document.activeElement)
+    expect(st().dateFormat).toBe('numeric-mdy')
+    expectOneTabStop('Date Format') // the stop moved trays with it; the Written tray now has none
+    expect(rowPills('Written').filter((b) => b.tabIndex === 0)).toHaveLength(0)
+    // Same shape for the themes, where the two rows are one choice only while Use System is off.
+    clickToggle('Use System Settings')
+    const lastDark = rowPills('Dark')[2]
+    lastDark.focus()
+    press(lastDark, 'ArrowRight')
+    expect(activeName()).toBe('Light')
+    expect(st().manualTheme).toBe('light')
+    expect(rowChecked('Dark')).toEqual([])
+  })
+
+  it('Home and End jump to the ends of the group', () => {
+    mountApp()
+    const start = pills('Date Format')[2]
+    start.focus()
+    press(start, 'End')
+    expect(activeName()).toBe('Numeric YMD')
+    expect(st().dateFormat).toBe('numeric-ymd')
+    press(document.activeElement, 'Home')
+    expect(activeName()).toBe('Written MDY')
+    expect(st().dateFormat).toBe('written-mdy')
+  })
+
+  // The dim's pointer-events-none stops POINTERS. Nothing stopped a keyboard, so a locked picker
+  // was still operable by anyone using one — which is exactly the gap the group's inertness fills.
+  it('a locked group has no tab stop, ignores the arrows, and SWALLOWS them', () => {
+    mountApp()
+    const spy = vi.fn()
+    window.addEventListener('keydown', spy)
+    try {
+      clickToggle('Random Format')
+      pills('Date Format').forEach((b) => expect(b.tabIndex).toBe(-1))
+      // Focus is forced in — the point is that the HANDLER refuses, not merely that Tab can't get
+      // there. A locked group must not act on a key even when something has parked focus inside it.
+      const pill = pills('Date Format')[0]
+      pill.focus()
+      press(pill, 'ArrowRight')
+      expect(document.activeElement).toBe(pill)
+      expect(st().dateFormat).toBe('written-mdy')
+      // …and refusing to ACT is only half of inert. Returning early without consuming the key
+      // would hand it straight to App's global handler, which maps ArrowLeft/ArrowRight to the
+      // game's history buttons — so a locked picker would step the puzzle behind the open panel.
+      expect(spy).not.toHaveBeenCalled()
+      // Unlocking restores the stop with no interaction at all — the effect re-asserts it.
+      clickToggle('Random Format')
+      expectOneTabStop('Date Format')
+    } finally {
+      window.removeEventListener('keydown', spy)
+    }
+  })
+
+  // App's global handler maps ArrowLeft/ArrowRight to the game's history back/forward buttons, so
+  // an arrow the group has consumed has to stop at the group — otherwise walking between pills
+  // would also step the puzzle behind the panel.
+  it('an arrow the group consumed never reaches the window', () => {
+    mountApp()
+    const spy = vi.fn()
+    window.addEventListener('keydown', spy)
+    try {
+      const pill = pills('Date Format')[0]
+      pill.focus()
+      press(pill, 'ArrowRight')
+      expect(spy).not.toHaveBeenCalled()
+      // The control, which is what makes the assertion above mean anything: the same key from
+      // outside any group still reaches the global handler.
+      press(document.body, 'ArrowRight')
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('keydown', spy)
+    }
+  })
+
+  // THE ENTRY PATH. With Tab bound to the mode selector app-wide, clicking a pill is the only way
+  // focus gets into a group — and a <button> is not focused by its own click on Safari (macOS and
+  // iOS both), so without PillTray focusing the segment it activates, everything above was
+  // unreachable there while working on Chrome and Firefox. The guide and the changelog both
+  // promise "click an option, then arrow along the setting"; this is what makes that true
+  // everywhere. No manual .focus() anywhere in this test — that is the whole point of it.
+  it('clicking a pill puts the keyboard inside its group — the arrows work straight after', () => {
+    mountApp()
+    const mdy = group('Date Format').getAllByRole('radio')[0]
+    act(() => {
+      fireEvent.click(mdy)
+    })
+    expect(document.activeElement).toBe(mdy)
+    press(document.activeElement, 'ArrowRight')
+    expect(activeName()).toBe('Written DMY')
+    expect(st().dateFormat).toBe('written-dmy')
+    // A locked group hands focus to nobody: the click guard returns before the focus, so a
+    // synthetic click past the dim's pointer-events-none cannot park the keyboard inside it.
+    clickToggle('Random Format')
+    document.activeElement.blur()
+    act(() => {
+      fireEvent.click(pills('Date Format')[3])
+    })
+    expect(document.activeElement).toBe(document.body)
+    expect(st().dateFormat).toBe('written-dmy')
+  })
+
+  // The lock, said once at group scope too. A screen reader entering a locked picker used to be
+  // told it was live and only found out one element in, at the first segment's aria-disabled.
+  it('a locked group announces its own lock, not just its pills', () => {
+    mountApp()
+    const g = (name) => screen.getByRole('radiogroup', { name })
+    expect(g('Date Format').getAttribute('aria-disabled')).toBeNull()
+    clickToggle('Random Format')
+    expect(g('Date Format').getAttribute('aria-disabled')).toBe('true')
+    clickToggle('Random Format')
+    expect(g('Date Format').getAttribute('aria-disabled')).toBeNull()
+  })
+
+  // The degenerate case no tray can see from inside itself: a value matching no option anywhere
+  // in the group — a setting saved by an older build, say. Nothing is checked, so nothing is
+  // tabbable, and the group would drop out of the tab order entirely; PillGroup falls back to the
+  // first radio. Rendered bare, because the app's own stores can't currently produce the state.
+  //
+  // The SECOND half is why the group appoints the tab stop instead of each segment declaring its
+  // own: recovering from that state has to take the fallback stop back. A segment that rendered
+  // its own tabIndex would leave React holding "-1" for the fallback pill — unchanged, therefore
+  // never written — and the recovered group would carry TWO tab stops for the rest of its life.
+  it('a group whose value matches no option still exposes one tab stop — and gives it back', () => {
+    const tray = (value) => (
+      <PillGroup label="Orphan">
+        <PillTray
+          value={value}
+          onChange={() => {}}
+          options={[
+            { value: 'a', label: 'A' },
+            { value: 'b', label: 'B' },
+          ]}
+        />
+      </PillGroup>
+    )
+    const { rerender } = render(tray('retired-id'))
+    const radios = screen.getAllByRole('radio')
+    expect(radios.map((b) => b.tabIndex)).toEqual([0, -1])
+    expect(radios.filter((b) => b.getAttribute('aria-checked') === 'true')).toHaveLength(0)
+    rerender(tray('b'))
+    expect(screen.getAllByRole('radio').map((b) => b.tabIndex)).toEqual([-1, 0])
+  })
+
+  // ★ THE OWNER'S GATE ON THIS ROUND: zero visual change. tabindex and key handlers carry no
+  // pixels, so every class string in the panel's pickers must be byte-for-byte what round-8 and
+  // the tray conversion shipped. Written out in full rather than read back from the component,
+  // which would agree with itself no matter what it emitted.
+  const SEGMENT = 'flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium'
+  const SELECTED = SEGMENT + ' btn-solid'
+  const UNSELECTED = SEGMENT + ' text-(--tx-100-80) hover:bg-(--stgl-hov)'
+  const TRAY = 'flex gap-0.5 border surface-tray rounded-xl'
+  const expectUnmovedPixels = () =>
+    screen.getAllByRole('radio').forEach((b) => {
+      expect(b.className).toBe(b.getAttribute('aria-checked') === 'true' ? SELECTED : UNSELECTED)
+      expect(b.parentElement.className).toBe(TRAY)
+    })
+
+  it('moved no class on any pill, in any state', () => {
+    mountApp()
+    expectUnmovedPixels()
+    clickToggle('Use System Settings')
+    expectUnmovedPixels()
+    clickToggle('Random Format') // a locked group is dimmed by its housing, never by its pills
+    expectUnmovedPixels()
+  })
+
+  // The housings themselves, including the lock's dim — which moved from four hand-written call
+  // sites into PillGroup during this pass and therefore has to be pinned as an exact string.
+  it('moved no class on any housing, locked or not', () => {
+    mountApp()
+    const cls = (name) => screen.getByRole('radiogroup', { name }).className
+    expect(cls('Date Format')).toBe('space-y-2')
+    expect(cls('Input')).toBe('')
+    expect(cls('Jan/Feb Chance on Leap Years')).toBe('')
+    expect(rowEl('Dark').parentElement.className).toBe('space-y-2')
+    expect(cls('Dark theme')).toBe('space-y-1.5')
+    clickToggle('Random Format')
+    expect(cls('Date Format')).toBe('space-y-2 opacity-60 pointer-events-none')
+    act(() => st().setMinY(1900)) // all-Gregorian: the Julian row locks, and it has no own class
+    expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
+  })
+
+  // …and it is drawn ONCE. opacity multiplies down the tree, so a nested wrapper that re-applied
+  // the dim would render the group at 0.36 instead of 0.6. Rendered bare because the Theme block
+  // is the app's only nesting and it carries no lock — this is the trap one `disabled=` prop away
+  // from it. An inherited lock still reaches the segments; only the paint stops at the declarer.
+  it('the lock draws its dim once — an inherited lock never re-dims', () => {
+    render(
+      <PillGroup label="Outer" disabled className="space-y-2">
+        <PillGroup className="space-y-1.5">
+          <PillTray value="a" onChange={() => {}} options={[{ value: 'a', label: 'A' }]} />
+        </PillGroup>
+      </PillGroup>,
+    )
+    const outer = screen.getByRole('radiogroup', { name: 'Outer' })
+    expect(outer.className).toBe('space-y-2 opacity-60 pointer-events-none')
+    expect(outer.firstElementChild.className).toBe('space-y-1.5')
+    expect(screen.getByRole('radio').getAttribute('aria-disabled')).toBe('true')
   })
 })

@@ -17,6 +17,7 @@ import StatPanel from './components/StatPanel.jsx'
 import SliderValueEditor from './components/SliderValueEditor.jsx'
 import { NewBestStar, SectionLabel } from './components/primitives.jsx'
 import { PillTray } from './components/PillTray.jsx'
+import { PillGroup } from './components/PillGroup.jsx'
 import { UpdateDot } from './components/UpdateDot.jsx'
 import CustomSelect from './components/CustomSelect.jsx'
 import GuidePage from './components/GuidePage.jsx'
@@ -113,8 +114,9 @@ interface DedOpts {
     // Settings-footer variant (Round-3 font normalization, Round-4 one-height tier): the ⚙
     // popover's Reset Settings / Full Reset buttons rest at the popover control tier in BOTH
     // font (text-xs) and height (py-1.5) — same button in every other way, so it's derived.
-    // The tier's other controls (toggles, chance chips, the date-format + theme pill housings) all
-    // carry a 1px border, which this pair now inherits from RESET_BTN_CLASS rather than appending.
+    // The tier's other controls (the On/Off switches and every PillTray housing — the only two
+    // kinds the panel has, per THE PICKER RULE) all carry a 1px border, which this pair now
+    // inherits from RESET_BTN_CLASS rather than appending.
     // The game-mode Reset buttons keep text-sm/py-2.
     const FOOTER_RESET_BTN_CLASS=RESET_BTN_CLASS.replace("text-sm","text-xs").replace("py-2","py-1.5");
     // Compact Reset Stats button variant (smaller py + col-span fit for stats panel).
@@ -136,9 +138,13 @@ interface DedOpts {
     // second shared input idiom beside SliderValueEditor: a bordered box with centered tabular
     // digits at the text-xs control tier. Used by the AoX run-length field (mode screen + the
     // Save Defaults popup, both appending " py-1 w-14 shrink-0") and the ⚙ Year Range pair
-    // (" py-1.5 w-16"). text-xs keeps the AoX box's rendered height flush with its Allow
-    // Mistakes / One-by-One neighbors (py-1 + the 1rem text-xs line + a 1px border on all
-    // three). The surface is the site-wide interactive-border rule applied — border weight
+    // (" py-1.5 w-16"). These boxes NEVER declare a height — the engine derives one from the inner
+    // line box — and an <input> derives it through different machinery than a <button> does, landing
+    // ~2px apart in WebKit even when every class, padding and border matches. So a box is only ever
+    // flush with button neighbors because its ROW STRETCHES it (the AoX run-length row, items-stretch),
+    // never because the token strings agree. Anywhere that rule is dropped the box sits visibly proud;
+    // three rounds of trying to prove the derived heights match instead all failed on device.
+    // The surface is the site-wide interactive-border rule applied — border weight
     // signals role (thin-bd dividers, panel/card-bd containers, sbtn-bd interactive controls):
     // inputs are controls you act on, so every one wears surface-tray (stgl-bg + sbtn-bd, the
     // no-hover interactive surface the settings segment trays share), matching the buttons —
@@ -174,6 +180,21 @@ interface DedOpts {
     // BASE_BTN — the shared answer-button className. Worn as-is by every weekday grid; Deduction
     // derives its own text-sm variant from it (see `baseBtn` in DeductionMode).
     const BASE_BTN="w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none";
+    // ANSWER_GRID_GAP — the ONE gutter every gap-spaced answer grid wears: the weekday grid below
+    // (worn by Classic/Flash/Blitz/AoX through the single WeekdayAnswer) and all three Deduction
+    // sub-mode grids plus the Year sizer strut. Deduction's Day and Year used to run gap-2 while
+    // Month and the weekday grid ran gap-3, so the gutter visibly CHANGED as you switched Deduction
+    // sub-mode (Q4 round-9); they were widened onto this token, never the reverse. Sharing it also
+    // puts every layout on ONE column lattice: at a common gap g, a 6-col grid's col-span-2 is
+    // exactly a 3-col column ((W−2g)/3) and its col-span-3 exactly a 2-col column ((W−g)/2), so
+    // Deduction's 2-/3-/6-col grids and the weekday 2-col grid share invisible column edges —
+    // an identity that mixed gaps broke by a few px.
+    // NOT a rule about "every answer grid": the Dots input is not gap-spaced at all (a square 3×3
+    // place-items:center cluster whose spacing is --dot-frac), so it carries no gap token — see
+    // .dot-cluster in index.css. ⚠ That same block's --ans-h (the dot box's height, which must equal
+    // the 4-row weekday grid's) spells "3 × gap-3 0.75rem" into its own arithmetic; changing this
+    // token means changing --ans-h with it.
+    const ANSWER_GRID_GAP="gap-3";
     // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts (shared with
     // HtP's DotDiagram, which derives its diagram from the same array), imported at top.
     // WeekdayAnswer — the Sun..Sat answer grid shared by the four weekday modes (Classic/Flash/Blitz/
@@ -222,7 +243,7 @@ interface DedOpts {
         );
       }
       return(
-        <div className="mt-4 grid grid-cols-2 gap-3" data-answer-grid="true">
+        <div className={`mt-4 grid grid-cols-2 ${ANSWER_GRID_GAP}`} data-answer-grid="true">
           {DAY.map((nm,i)=>{const o=opt(i);const last=i===DAY.length-1?"col-span-2":"";return(<button key={nm} type="button" onClick={o.onClick} className={`${BASE_BTN} ${o.bCls} ${o.inert?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""} ${last}`}>{nm}</button>);})}
         </div>
       );
@@ -231,18 +252,27 @@ interface DedOpts {
     // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
     // that replaced the native <select>). Order here = order shown in the dropdown.
     const MODE_LABELS=[{value:'classic',label:'Classic'},{value:'aox',label:'AoX'},{value:'deduction',label:'Deduction'},{value:'flash',label:'Flash'},{value:'blitz',label:'Blitz'},{value:'lookup',label:'Lookup'},{value:'guide',label:'How to Play'}];
-    // The ⚙ Display section's four PillTray option arrays (components/PillTray). Order here =
-    // left→right segment order. Written/Numeric are the two halves of the single five-value
-    // Date Format setting — whichever half doesn't hold the active id simply shows no selected
-    // segment. Dark/Light are the theme rows: two independent picks under Use System Settings,
-    // one pick ACROSS both rows when it's off (see the Theme block in the popover).
-    // The five date formats: two trays, ONE radiogroup (they share one setting). Because both
-    // trays are in that group, 'MDY' and 'DMY' each appear twice — so every pill states its half
-    // in its accessible name, while the visible label stays the bare initialism.
+    // ⚙ Settings PICKER option arrays — one array per PillTray tray (components/PillTray), and
+    // this is ALL of them, because round-9 made the tray the treatment for every picker in the
+    // panel (THE PICKER RULE, stated once at the Display section in the popover below). Order
+    // here = left→right segment order.
+    // Date Format — five ids across TWO trays but ONE setting and ONE radiogroup, so whichever
+    // half doesn't hold the active id simply shows no selected segment. Sharing a group is also
+    // why 'MDY' and 'DMY' each appear twice: every pill states its half in its accessible name
+    // while the visible label stays the bare initialism.
     const WRITTEN_FORMATS: {value: FormatId; label: string; ariaLabel: string}[]=[{value:'written-mdy',label:'MDY',ariaLabel:'Written MDY'},{value:'written-dmy',label:'DMY',ariaLabel:'Written DMY'}];
     const NUMERIC_FORMATS: {value: FormatId; label: string; ariaLabel: string}[]=[{value:'numeric-mdy',label:'MDY',ariaLabel:'Numeric MDY'},{value:'numeric-dmy',label:'DMY',ariaLabel:'Numeric DMY'},{value:'numeric-ymd',label:'YMD',ariaLabel:'Numeric YMD'}];
+    // Input — the day-of-week answer layout. Both names are unique in the panel, so no ariaLabel.
+    const INPUT_STYLES: {value: InputStyle; label: string}[]=[{value:'buttons',label:'Buttons'},{value:'dots',label:'Dots'}];
+    // Theme — two independent picks under Use System Settings, one pick ACROSS both rows when
+    // it's off (see the Theme block in the popover).
     const DARK_THEMES=[{value:'dusk',label:'Dusk'},{value:'midnight',label:'Midnight'},{value:'nebula',label:'Nebula'}];
     const LIGHT_THEMES=[{value:'light',label:'Light'},{value:'parchment',label:'Parchment'}];
+    // The Dates section's chance weights. Julian and Jan/Feb offer the same five; Leap Year drops
+    // 25% because ~1-in-4 IS its natural rate — a "25%" weight there would force nothing. Values
+    // are the store's own strings ('random' | the percentage), so no mapping is needed anywhere.
+    const chanceOptions=(...steps: string[])=>steps.map(v=>({value:v,label:v==='random'?'Random':v+'%'}));
+    const CHANCE_OPTIONS=chanceOptions('random','25','50','75','100'),LEAP_CHANCE_OPTIONS=chanceOptions('random','50','75','100');
     // Method-code maps + the per-date code summary (METHOD_*, JULIAN_AB_MAP, normalizeMod7,
     // canonicalizeMod, calcDayCode, calcCdCode, yearParts, computeMethodSummary) → src/lib/method.js,
     // imported at top. (computeMethodSummary is the only one used here; the rest are its internals.)
@@ -254,6 +284,14 @@ interface DedOpts {
     // the literal-4 window [1,2,3,4] inline since that's the only valid layout there (codes
     // 1-4 repeat at days 15-18).
     const YEAR_OPTION_DEFAULT=5,DAY_OPTION_COUNT=7;
+    // yearGridLayout(n) — the Year sub-mode's answer-grid geometry for an n-option puzzle, and the
+    // ONE source both the real grid and its invisible sizer strut render from (the strut used to
+    // hand-copy the n=5 classes, which is exactly how a copy drifts; it now CALLS this with
+    // YEAR_OPTION_DEFAULT — see the strut note in DeductionMode). n=5, the normal window, is two
+    // rows on a 6-column grid: three thirds over two halves. n=3 and the Oct-1582-straddle n=2 are
+    // plain equal columns and span nothing. Combined with ANSWER_GRID_GAP every one of those lands
+    // on the same column edges as Month's 2-col and Day's 3-col grids.
+    const yearGridLayout=(n: number)=>({gridCls:n===2?"grid-cols-2":n===5?"grid-cols-6":"grid-cols-3",colSpanFor:(idx: number)=>n===5?(idx<3?"col-span-2":"col-span-3"):""});
     // Month deduction boxes — 7 fixed boxes grouping months by shared doomsday code
     // Each box: {label:displayed text, months:[month numbers in that box]}
     const MONTH_BOXES_COMMON=[
@@ -560,7 +598,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-26T22:52:00Z');
+    const DEPLOY_TS=new Date('2026-07-28T15:52:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -1266,12 +1304,21 @@ interface DedOpts {
               {bestData.avgRoundId!=null&&bestData.medRoundId!=null&&<span className="shrink-0 ml-auto">{bestData.avgRoundId===bestData.medRoundId?"Same Round":"Different Rounds"}</span>}
             </div>
           </div>
-          <div className="mt-3 flex items-center gap-2 flex-nowrap">
+          {/* items-stretch, NOT items-center (Q3 round-9) — this is the app's ONLY flex row that puts an
+              <input> beside a <button>, and neither declares a height: each derives one from its own inner
+              line box, and WebKit's machinery for a text control lands ~2px away from its machinery for a
+              button. Under items-center that split rendered symmetrically — the box sitting ~1px proud
+              above AND below its neighbors on the owner's iPhone. Matching class strings can't fix it
+              (they already match exactly, which is why two earlier attempts failed): the row is made even
+              by STRETCHING the shorter items to the tallest, not by arguing the derived heights agree.
+              The wrapper below restates it so the input inherits the row's height through it; the 'Ao'
+              span opts back out with self-center (a stretched span rides its text at the top). */}
+          <div className="mt-3 flex items-stretch gap-2 flex-nowrap">
             {/* The run-length field (Q18): the shared boxed-numeric idiom (NUM_INPUT_CLASS) + the
                 popup N field's validation trio — digits only while typing, and blur, Enter and
                 Escape all normalize-commit with the shared clamp (normalizeAoxN). text-xs on the
                 'Ao' span too, so "Ao10" reads as one flush token. */}
-            <div className="flex items-center shrink-0"><span className={`text-xs leading-none text-(--tx-200-80) ${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{const v=e.target.value;if(runPhase==="idle"&&(v===''||/^\d*$/.test(v)))setAoxN(v);}} onBlur={()=>setAoxN(normalizeAoxN(aoxN))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0 ${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
+            <div className="flex items-stretch shrink-0"><span className={`self-center text-xs leading-none text-(--tx-200-80) ${runPhase!=="idle"?" opacity-60":""}`}>Ao</span><input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="AoX run length" readOnly={runPhase!=="idle"} value={aoxN} onChange={e=>{const v=e.target.value;if(runPhase==="idle"&&(v===''||/^\d*$/.test(v)))setAoxN(v);}} onBlur={()=>setAoxN(normalizeAoxN(aoxN))} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}else if(e.key==="Escape"){setAoxN(normalizeAoxN(aoxN));e.currentTarget.blur();}}} className={`${NUM_INPUT_CLASS} py-1 w-14 shrink-0 ${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}/></div>
             <button type="button" onClick={()=>{if(runPhase==="idle")setAllowMistakes(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${allowMistakes?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>Allow Mistakes</button>
             <button type="button" onClick={()=>{if(runPhase==="idle")setOneByOne(v=>!v);}} className={`flex-1 px-2 py-1 rounded-xl text-xs font-medium border ${oneByOne?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${runPhase!=="idle"?" opacity-60 pointer-events-none":""}`}>One-by-One</button>
           </div>
@@ -2145,17 +2192,21 @@ interface DedOpts {
                   weekday modes' keyed WeekdayAnswer (Q9; see its doc comment). */}
               <div key={state.gridEpoch} className="mt-4">
                 {/* Both-crosses 2-option Year (Q14): overlay the real grid on an invisible inert
-                    5-layout sizer (five DIVs mirroring the N===5 grid/col-span classes) so the
-                    answer panel holds the 5-layout's height — the New/‹›/Reveal/Override row must
-                    not move a pixel as puzzles alternate 2↔5. The real grid self-centers in that
-                    space (the 5-layout's visual centroid; top/bottom-aligned reads as a dead band).
-                    A strut, not a calc(): it tracks the real button metrics by construction.
+                    full-window sizer so the answer panel holds that layout's height — the New/‹›/
+                    Reveal/Override row must not move a pixel as puzzles alternate 2↔5. The real
+                    grid self-centers in that space (the 5-layout's visual centroid; top/bottom-
+                    aligned reads as a dead band). A strut, not a calc(): it tracks the real button
+                    metrics by construction. It is also DERIVED, not copied (Q4 round-9) — cell
+                    COUNT from YEAR_OPTION_DEFAULT, grid + col-spans from yearGridLayout, gutter
+                    from ANSWER_GRID_GAP, cell chrome from the same baseBtn the real buttons wear.
+                    It used to hand-copy the n=5 classes, so every one of those was a place the two
+                    could silently disagree; there is now no second set of classes to keep in sync.
                     abCrossOnly&&julCrossOnly is trustworthy (the auto-clear effects above drop a
                     stale toggle the moment its prerequisites break); any other 2-option Year (the
                     rare no-toggle Julian straddle) keeps the tight single-row layout. */}
-                {date&&date.type==="year"&&(()=>{const N=date.options.length;const gridCls=N===2?"grid-cols-2":N===5?"grid-cols-6":"grid-cols-3";const colSpanFor=(idx: number)=>N===5?(idx<3?"col-span-2":"col-span-3"):"";const reserve=abCrossOnly&&julCrossOnly&&N===2;const answerGrid=(<div className={`grid gap-2 ${gridCls}${reserve?" col-start-1 row-start-1 self-center":""}`} data-answer-grid="true">{date.options.map((y,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${colSpanFor(idx)}`}>{fmtYear(y)}</button>);})}</div>);return reserve?(<div className="grid"><div className="col-start-1 row-start-1 invisible pointer-events-none grid gap-2 grid-cols-6" aria-hidden="true">{[0,1,2,3,4].map(i=>(<div key={i} className={`${baseBtn} ${i<3?"col-span-2":"col-span-3"}`}>&nbsp;</div>))}</div>{answerGrid}</div>):answerGrid;})()}
-                {date&&date.type==="month"&&(<div className="grid grid-cols-2 gap-3" data-answer-grid="true">{date.options.map((mv,idx)=>{const last=idx===date.options.length-1?"col-span-2":"";const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{mv}</button>);})}</div>)}
-                {date&&date.type==="day"&&(<div className="grid grid-cols-3 gap-2" data-answer-grid="true">{date.options.map((dv,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${centerLastOpt(idx,date.options.length)}`}>{dv}</button>);})}</div>)}
+                {date&&date.type==="year"&&(()=>{const N=date.options.length;const {gridCls,colSpanFor}=yearGridLayout(N);const reserve=abCrossOnly&&julCrossOnly&&N===2;const answerGrid=(<div className={`grid ${ANSWER_GRID_GAP} ${gridCls}${reserve?" col-start-1 row-start-1 self-center":""}`} data-answer-grid="true">{date.options.map((y,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${colSpanFor(idx)}`}>{fmtYear(y)}</button>);})}</div>);if(!reserve)return answerGrid;const sizer=yearGridLayout(YEAR_OPTION_DEFAULT);return(<div className="grid"><div className={`col-start-1 row-start-1 invisible pointer-events-none grid ${ANSWER_GRID_GAP} ${sizer.gridCls}`} aria-hidden="true">{Array.from({length:YEAR_OPTION_DEFAULT},(_,i)=>(<div key={i} className={`${baseBtn} ${sizer.colSpanFor(i)}`}>&nbsp;</div>))}</div>{answerGrid}</div>);})()}
+                {date&&date.type==="month"&&(<div className={`grid grid-cols-2 ${ANSWER_GRID_GAP}`} data-answer-grid="true">{date.options.map((mv,idx)=>{const last=idx===date.options.length-1?"col-span-2":"";const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${last}`}>{mv}</button>);})}</div>)}
+                {date&&date.type==="day"&&(<div className={`grid grid-cols-3 ${ANSWER_GRID_GAP}`} data-answer-grid="true">{date.options.map((dv,idx)=>{const ps=state.persistBtns[idx];const isFlashing=!!(gridFlash&&gridFlash.idx===idx);const bCls=buttonStateClass(ps,isFlashing,gridFlash?.type==="good",idleBtn);const perLocked=!!ps;const shouldDim=optionsDisabled&&!ps&&!isFlashing;return(<button key={idx} type="button" onClick={()=>{if(perLocked)return;onAnswer(idx);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();}} className={`${baseBtn} ${bCls} ${(perLocked||optionsDisabled)?"pointer-events-none":""} ${shouldDim?"opacity-60":""} ${centerLastOpt(idx,date.options.length)}`}>{dv}</button>);})}</div>)}
               </div>
             </div>
             <div className="mt-4 rounded-2xl panel p-3 space-y-3">
@@ -2381,16 +2432,32 @@ interface DedOpts {
       // guide mode vs none in game modes, or content reflows). Writing to a CSS
       // variable instead of JS-applying padding directly keeps the styling
       // declarative and avoids React state churn for a value that's not part of
-      // application logic.
+      // application logic. syncBarHeight is the ONE writer of the variable, shared with the
+      // scroll-ownership effect below: on a mode change the bar's height and the guide's scroll
+      // range change in the SAME commit, and a ResizeObserver callback lands only after every
+      // layout effect has run — so a scroll restore that trusted the observer would clamp against
+      // a document 10px too short. Calling it directly reads the post-commit truth (offsetHeight
+      // forces layout), which is why it's a callback rather than a closure inside the effect.
+      // ⚠ THE THREE EFFECTS BELOW ARE ONE ORDERED CHAIN, and the order is the declaration order:
+      // React runs layout effects top-down, so this one measures the bar, the scroll-ownership
+      // effect positions against a document sized by that measurement, and the edge-indicator
+      // effect evaluates against the position that left. All three are LAYOUT effects for the same
+      // reason — a passive one anywhere in the chain runs after the whole chain and after paint,
+      // which is one wrong frame. That is why this is useLayoutEffect and not useEffect: as a
+      // passive effect it landed AFTER the edge evaluation, which then measured the first frame of
+      // every cold start against index.css's placeholder --bar-h:57px.
       const htpStickyBarRef=useRef<HTMLDivElement | null>(null);
-      useEffect(()=>{
+      const syncBarHeight=useCallback(()=>{const el=htpStickyBarRef.current;if(el)document.documentElement.style.setProperty('--bar-h',`${el.offsetHeight}px`);},[]);
+      useLayoutEffect(()=>{
         const el=htpStickyBarRef.current;if(!el)return;
-        const updateBarH=()=>{document.documentElement.style.setProperty('--bar-h',`${el.offsetHeight}px`);};
-        updateBarH();
-        const ro=new ResizeObserver(updateBarH);
+        syncBarHeight();
+        // Mounted once ([] via the stable callback), so it catches every LATER height change —
+        // a font/safe-area shift, a reflow. A mode change is not one of those: it lands in the
+        // same commit as the scroll work below, which is why that effect re-syncs directly.
+        const ro=new ResizeObserver(syncBarHeight);
         ro.observe(el);
         return()=>ro.disconnect();
-      },[]);
+      },[syncBarHeight]);
       // Q3 document scroll — HtP ONLY. iOS's tap-the-status-bar-to-scroll-to-top targets the
       // ROOT scroller exclusively; an inner overflow-y div can never receive it (no JS event
       // exists to intercept the tap), so it was a no-op on every page. In guide mode — the one
@@ -2399,15 +2466,64 @@ interface DedOpts {
       // to those clamps in index.css) so the DOCUMENT becomes the scroller and the native
       // affordance works. All other modes keep the locked fit-to-screen architecture, and the
       // bar stays position:fixed throughout (the iOS status-bar tint sampling depends on it).
-      // useLayoutEffect because the ORDER on leave matters: zero the window scroll FIRST, then
-      // remove the attribute (= re-clamp) — otherwise a residual document scrollTop would
-      // permanently offset the re-clamped fixed layout.
       const docScroll=mode==="guide";
+      const appScrollRef=useRef<HTMLDivElement | null>(null);
+      const [appAtBottom,setAppAtBottom]=useState(true);
+      const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
+      // The guide's reading position, in document scroll units — the app's ONLY per-mode scroll
+      // memory (the game modes always open at their own top; only the guide is a reading page).
+      // A ref because nothing renders from it, and deliberately NOT persisted anywhere: a refresh
+      // or a cold start opens Classic with a fresh ref and a fresh GuidePage, which is the whole
+      // of "a new launch starts at the top with every panel closed".
+      const guideScrollYRef=useRef(0);
+      // switchMode — the ONE door every mode change goes through. It exists to take the guide's
+      // scroll reading at the only moment the number can be trusted: synchronously inside the
+      // event that switches the mode, BEFORE React re-renders and hides the guide. Read it one
+      // commit later — from an effect cleanup, the obvious place — and a real engine has already
+      // collapsed the document to a screenful and clamped its scroll offset to ~0, so the reader
+      // silently loses their place; jsdom lays nothing out, so no test could ever catch that.
+      // Hence a door rather than a guard. The condition is <html data-doc-scroll>, not
+      // mode==='guide': the effect below owns that attribute, so it states exactly what the
+      // reading needs — "the DOCUMENT is the scroller right now, so window.scrollY is this
+      // screen's position". Stable identity ([] deps) because the keyboard effect depends on it.
+      const switchMode=useCallback((next: React.SetStateAction<string>)=>{
+        if(document.documentElement.hasAttribute('data-doc-scroll'))guideScrollYRef.current=window.scrollY;
+        setMode(next);
+      },[]);
+      // Scroll ownership on a mode change — ONE effect, no second opinion. Every scroll position
+      // the app sets when you switch screens is set here, and the whole policy is two rules:
+      //   • guide → RESTORE the reader's place (switchMode saved it on the way out). The attribute
+      //     releases the clamps so the document can scroll at all, and only then does the offset
+      //     land — it is clamped against the document's height on the way in.
+      //   • every other mode → TOP, by resetting the inner container. Without it, leaving a
+      //     scrolled screen would show the next mode from the middle.
+      // syncBarHeight comes FIRST and applies to BOTH branches, because the bar's guide-only
+      // pb-2.5 makes a mode change a bar-height change in EITHER direction: entering, --bar-h feeds
+      // the container's padding-top, i.e. the document's height, i.e. what the restored offset gets
+      // clamped against; leaving, a --bar-h left 10px too tall pads the game screen it hands over
+      // to, and the edge-indicator effect below would read that inflated scrollHeight and paint a
+      // bottom fade on a mode with nothing to scroll. The bar's own ResizeObserver cannot cover
+      // either case — it fires after every layout effect has run, i.e. a frame late. It can sit
+      // ahead of the attribute because the bar does not care about it: the bar is position:fixed
+      // against the viewport, so releasing #root's clamps changes nothing about its height. What
+      // IS load-bearing is that both land before window.scrollTo — the attribute because the
+      // document cannot scroll without it, the measurement because it sets the height the offset
+      // is clamped against.
+      // A LAYOUT effect so all of that happens before the browser paints the new mode, and on
+      // leave the window is zeroed BEFORE the attribute comes off — a residual document scrollTop
+      // would permanently offset the re-clamped fixed layout. That leave-zero is also the only
+      // one needed: the document cannot scroll in a clamped mode, so the game-mode branch has no
+      // window reset to make. Nothing else in the app moves a scroller on a mode change, which is
+      // what makes the restore safe — there is no later effect left to overwrite it.
       useLayoutEffect(()=>{
-        if(!docScroll)return;
-        document.documentElement.setAttribute('data-doc-scroll','');
-        return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
-      },[docScroll]);
+        syncBarHeight();
+        if(docScroll){
+          document.documentElement.setAttribute('data-doc-scroll','');
+          window.scrollTo(0,guideScrollYRef.current);
+          return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
+        }
+        const el=appScrollRef.current;if(el)el.scrollTop=0;
+      },[mode,docScroll,syncBarHeight]);
       // App-wide scroll-state tracking. Two states drive the shared edge indicators —
       //   appScrolledFromTop → bar's elev-shadow-down + the top fade
       //   appAtBottom         → the bottom fade
@@ -2427,10 +2543,12 @@ interface DedOpts {
       // useScrollEdgeState (components/scrollRegion); this effect stays bespoke for the
       // docScroll branch — the document scroller has no element to observe, so it reads
       // document.scrollingElement and listens on window instead.
-      const appScrollRef=useRef<HTMLDivElement | null>(null);
-      const [appAtBottom,setAppAtBottom]=useState(true);
-      const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
-      useEffect(()=>{
+      // A LAYOUT effect, and the LAST of the three declared above, so React runs it third: the
+      // first evaluate() of a mode therefore measures a bar already re-synced and a position
+      // already applied, and the indicators are right on the FIRST painted frame. As a passive
+      // effect it would evaluate after the paint, so returning to a scrolled guide flashed one
+      // frame with no bar shadow and no top fade.
+      useLayoutEffect(()=>{
         if(docScroll){
           const evaluate=()=>{
             const se=document.scrollingElement;if(!se)return;
@@ -2461,17 +2579,11 @@ interface DedOpts {
         ro.observe(el);
         return()=>{el.removeEventListener('scroll',evaluate);ro.disconnect();};
       },[mode,docScroll]);
-      // Mode-change effect: reset BOTH scrollers to top on every mode switch. Without this,
-      // switching from HtP (where the user scrolled) into a game mode would leave the
-      // container at its previous scrollTop, hiding the top of the mode's content. The window
-      // reset is belt-and-braces alongside the docScroll layout-effect cleanup (which already
-      // zeroes the window BEFORE re-clamping); in the clamped modes the document can't scroll,
-      // so it's a no-op. Runs after evaluate() above to ensure a clean visual transition.
-      useEffect(()=>{const el=appScrollRef.current;if(el)el.scrollTop=0;window.scrollTo(0,0);},[mode]);
       // Root-scroll invariant on MOUNT and on BFCache restore — nothing else. The division of
       // labour, stated explicitly because this effect used to overreach (Q6, round 8):
-      //   • mode change owns the scroll position on a mode switch (the effect above zeroes
-      //     both scrollers), and fullReset owns it on a reset (it zeroes them inline).
+      //   • the scroll-ownership layout effect above owns the position on a mode switch (restore
+      //     for the guide, top for everything else), and fullReset owns it on a reset (it zeroes
+      //     both scrollers inline, and clears the guide's saved position with them).
       //   • THIS effect owns only the clamped-layout root invariant: the app mounts in Classic
       //     (the current tab is never persisted, so a cold start or refresh ALWAYS lands there)
       //     where html/body/#root are clamped and a non-zero root scrollTop would permanently
@@ -2488,8 +2600,8 @@ interface DedOpts {
       //     back, lose your place in How to Play"). Removed rather than special-cased to the guide:
       //     foregrounding an app is not a navigation, the browser runs no scroll restoration for
       //     it, so there was never a root-scroll invariant for this listener to defend — in EVERY
-      //     mode. The guide's in-flight scroll writer is cancelled on hide by GuidePage itself,
-      //     which is where that concern belongs.
+      //     mode. The guide's in-flight scroll writer is cancelled when the app is backgrounded
+      //     by GuidePage itself, which is where that concern belongs.
       useEffect(()=>{const reset=()=>{window.scrollTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=()=>{reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
       // Keyboard input — desktop convenience, mobile-no-op.
       // Three categories of keys are handled, all subject to the same gates: not in
@@ -2751,11 +2863,11 @@ interface DedOpts {
         else if(k==='ArrowRight')dataKey='ArrowRight';
         else if(k.length===1){const upper=k.toUpperCase();if(upper>='A'&&upper<='Z')dataKey=upper;}
         if(!dataKey)return;
-        // Category 3a: mode switching — direct setMode (no DOM button per mode)
+        // Category 3a: mode switching — direct switchMode (no DOM button per mode)
         const MODE_KEYS: Record<string, string>={K:'classic',F:'flash',B:'blitz',A:'aox',D:'deduction',L:'lookup'};
-        if(MODE_KEYS[dataKey]){e.preventDefault();setMode(MODE_KEYS[dataKey]);setSettingsOpen(false);return;}
+        if(MODE_KEYS[dataKey]){e.preventDefault();switchMode(MODE_KEYS[dataKey]);setSettingsOpen(false);return;}
         // Category 3b: H — toggle to/from guide, preserving previous non-guide mode
-        if(dataKey==='H'){e.preventDefault();setMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');setSettingsOpen(false);return;}
+        if(dataKey==='H'){e.preventDefault();switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');setSettingsOpen(false);return;}
         // Category 3c: G — toggle settings popover
         if(dataKey==='G'){e.preventDefault();setSettingsOpen(v=>!v);return;}
         // Category 2: data-key DOM walk for game-loop letters and arrows
@@ -2768,7 +2880,7 @@ interface DedOpts {
           btn.click();
           return;
         }
-      };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[]);
+      };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[switchMode]);
       // Q4: install the global press-drag-release input controller (slide-off-to-cancel on every button
       // + answer-grid drag-to-select). One set of document pointer listeners; cleanup on unmount.
       useEffect(()=>installPointerGestures(),[]);
@@ -2786,7 +2898,7 @@ interface DedOpts {
       //   dateFormat: 'written-mdy'|'written-dmy'|'numeric-mdy'|'numeric-dmy'|'numeric-ymd'.
       //   randomFormat overrides the selected format for game-mode dates only (Lookup + DEPLOY_TS ignore it).
       //   leap/janFeb/julianChance: Option-A date-generation biases (apply to all game modes; Lookup unaffected).
-      //   julianChance's 5-button row is locked when useJulian is off OR the year range is all-Gregorian
+      //   julianChance's picker is locked when useJulian is off OR the year range is all-Gregorian
       //   (minY>=1583) or all-Julian (maxY<=1581); year 1582 is mixed so any range including it is unlocked.
       // FORMAT_IDS and rollFormat are defined at module scope (see top of file)
       // so the dateByMode useState initializer can also use them.
@@ -2876,6 +2988,10 @@ interface DedOpts {
       const [flashResetKey,setFlashResetKey]=useState(0); // ditto for FlashMode
       const [blitzResetKey,setBlitzResetKey]=useState(0); // ditto for BlitzMode
       const [deductionResetKey,setDeductionResetKey]=useState(0); // ditto for DeductionMode
+      // ditto for GuidePage, whose one piece of state is the open panel (Q6, round 9 — it joined
+      // the always-mounted screens so that panel, and the reading position, survive a detour into
+      // a game mode; Full Reset is the one thing that must still close it).
+      const [guideResetKey,setGuideResetKey]=useState(0);
       // Scroll-state tracking for the two inner scroll regions this component owns — the settings
       // popover's scroll wrapper and the changelog popup's list — both on the shared
       // useScrollEdgeState (components/scrollRegion; the Q5 round-7 extraction of what were
@@ -3086,8 +3202,9 @@ interface DedOpts {
       // store/userDefaults snapshot when one exists, everything else to factory (and the snapshot
       // itself survives — clearing it is the Save Defaults popup's job, never Full Reset's).
       // The five always-mounted mode components own ALL
-      // gameplay state (stats, history, run/round progress, config toggles, timers), so bumping
-      // their *ResetKey props below remounts them and resets every per-mode value to its hook
+      // gameplay state (stats, history, run/round progress, config toggles, timers) and the sixth
+      // always-mounted screen, How to Play, owns its open panel, so bumping their *ResetKey props
+      // below remounts them and resets every per-screen value to its hook
       // default in the same render. App therefore only resets what IT owns: the current mode,
       // the ⚙ settings (delegated to resetSettings → the Zustand store, the 2 input mirrors, and
       // — since round-6 Q7 — the 4 capturable mode prefs), the Lookup state, and the scroll position.
@@ -3095,7 +3212,7 @@ interface DedOpts {
       // launch" as offline/profile state is added.
       const fullReset=()=>{
         prevNonGuideModeRef.current="classic";
-        setMode("classic");
+        switchMode("classic");
         setSettingsOpen(false);
         setAppAtBottom(true);
         setAppScrolledFromTop(false);
@@ -3109,8 +3226,10 @@ interface DedOpts {
         // history in the persisted store, making Full Reset permanent. Runs BEFORE the remount-key bumps
         // below, so the continuous modes re-hydrate from the now-empty store (blank stats).
         resetProgress();
-        // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, last mode) → launch
-        // defaults. Runs BEFORE the remount-key bumps so the modes re-read the now-default prefs.
+        // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, the stat-visibility
+        // toggles) → launch defaults. Runs BEFORE the remount-key bumps so the modes re-read the
+        // now-default prefs. The store holds no "last mode" and never has — WHICH mode you were on
+        // is plain useState in App, which is the whole reason a cold start always opens Classic.
         resetModePrefs();
         // …then push the four SAVED personal defaults (Flash speed, both Blitz timers, the AoX run length — Q7,
         // store/userDefaults, which deliberately SURVIVES Full Reset) back over that factory reset,
@@ -3121,16 +3240,23 @@ interface DedOpts {
         // Lookup input/output are transient local state (the history itself was cleared by resetProgress).
         setLookupInput("");setLookupOutput("");
         setLookupCalcDate(null);setLookupSelectedHistoryId(null);setLookupCalcOpen(false);
-        // Remount all five mode components → their internal state resets to launch defaults.
+        // Remount all six always-mounted screens → their internal state resets to launch defaults.
+        // How to Play is in the list for its ONE piece of state, the open panel: it used to be
+        // conditionally rendered, so leaving it dropped that for free — now that it stays mounted
+        // (Q6, round 9), a reset that left a panel hanging open would not be the launch state.
         setAoxResetKey(k=>k+1);
         setClassicResetKey(k=>k+1);
         setFlashResetKey(k=>k+1);
         setBlitzResetKey(k=>k+1);
         setDeductionResetKey(k=>k+1);
+        setGuideResetKey(k=>k+1);
         // Scroll window + app container to top (synchronous, avoids a visual flash before the
-        // mode-change effect would do it; window.scrollTo is defense-in-depth, body can't scroll).
+        // scroll-ownership effect would do it; window.scrollTo is defense-in-depth, body can't
+        // scroll). The guide's saved reading position goes with them — switchMode above captured
+        // it on the way out, and a Full Reset means there is nothing to come back to.
         if(typeof window!=="undefined")window.scrollTo(0,0);
         if(appScrollRef.current)appScrollRef.current.scrollTop=0;
+        guideScrollYRef.current=0;
       };
       // Two-tap-to-confirm wrapper. Tap 1 arms (label flips to "Confirm?", button gets a ring).
       // Tap 2 within the arm window fires the reset and disarms. Auto-disarm via timer (3s),
@@ -3165,7 +3291,7 @@ interface DedOpts {
       useBackButton(manageDefaultsOpen, closeManageDefaults, 'manage-defaults');   // ditto for the defaults manager (Q12/Q5)
       useBackButton(clearConfirmOpen, closeClearConfirm, 'clear-defaults');   // and the Clear confirm (Q5)
       useBackButton(changelogOpen, closeChangelog, 'changelog');   // and the Changelog popup (Q6)
-      useBackButton(mode==='guide', ()=>setMode(prevNonGuideModeRef.current||'classic'), 'guide');
+      useBackButton(mode==='guide', ()=>switchMode(prevNonGuideModeRef.current||'classic'), 'guide');
       // NOTE: the "disarm when state flips to fully-reset" safety-net effect was moved to just
       // after the isFullyReset declaration below — its dependency array reads isFullyReset, which
       // is declared later, so keeping it here would read isFullyReset before initialization (a TDZ
@@ -3278,36 +3404,54 @@ interface DedOpts {
           <SectionLabel>Display</SectionLabel>
           <div className="text-xs text-(--tx-200-80)">Date Format</div>
           <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{randomFormat?"On":"Off"}</button></div>
-          {/* The Written/Numeric date-format groups sit in shared pill housings (owner call,
-              Round-3; rebuilt FLUSH Round-4; extracted to components/PillTray round-8, where the
-              full concentric-housing rationale now lives). Segment trays are for the date-format
-              and theme groups ONLY, per the owner — the Input picker below and the chance rows
-              keep the flat chance-row pattern (individually rounded gap-separated buttons).
-              Both halves read and write the SAME dateFormat setting, so the half that doesn't
-              hold the active id simply shows no selected segment; the shared dim wrapper covers
-              the captions too, and `disabled` publishes that lock to assistive tech.
-              ONE radiogroup spans BOTH trays, on the wrapper that already exists to hold them:
-              five ids, one pick. Two groups would each report "nothing selected" whenever the
-              live format lived in the other half — a group is a CHOICE, not a row. Written /
-              Numeric stay plain captions; the halves are carried in the pills' accessible names
-              (WRITTEN_FORMATS/NUMERIC_FORMATS), which is what keeps the two 'MDY's apart. */}
-          <div className={`flex gap-2 ${randomFormat?"opacity-60 pointer-events-none":""}`} role="radiogroup" aria-label="Date Format">
-            <div className="flex-1 space-y-1.5">
+          {/* ★ THE PICKER RULE (round-9) — the panel has exactly TWO kinds of control, and each
+              gets exactly ONE treatment. State it here, obey it everywhere below:
+                • SWITCH — a setting that is simply on/off (Random Format, Use System Settings,
+                  Julian Calendar, Save Stats): label left, ONE On/Off button right.
+                • PICKER — a choice among named alternatives: ONE merged PillTray tray
+                  (components/PillTray, where the concentric-housing recipe lives). Where the
+                  alternatives fall into named families, each family gets its own centred caption
+                  and the trays STACK.
+              The housing is what says "these options are mutually exclusive", so it cannot be a
+              per-group decoration: a picker drawn as loose gap-separated buttons reads exactly
+              like the in-game rows that are genuinely INDEPENDENT toggles (Allow Mistakes,
+              One-by-One), which is the confusion the rule exists to remove. Round-8 had trays on
+              Date Format and Theme only; round-9 converted the two hold-outs (Input, and the
+              three chance rows) — so the panel is now trays and switches, nothing else.
+              Caption hierarchy (already correct, don't disturb it): the setting NAME is a
+              left-aligned sentence-case sub-label; FAMILY captions are centred uppercase
+              SectionLabels. Name → optional family captions → tray(s).
+              Date Format is the family case: five ids in two trays, both reading and writing the
+              SAME setting, so the half that doesn't hold the active id shows no selected segment.
+              The trays STACK (round-9) — Written above, Numeric below, matching Theme's shape;
+              side-by-side halved the width available to each and made this the one picker whose
+              rows didn't line up with the rest of the panel. ONE PillGroup spans BOTH trays,
+              on the wrapper that already exists to hold them: a group is a CHOICE, not a row, and
+              two groups would each report "nothing selected" whenever the live format lived in
+              the other half — and would also split one keyboard choice into two tab stops that
+              refuse to arrow into each other. That wrapper is also the dim, so the lock provably
+              covers the captions. Written / Numeric stay plain captions — the halves ride in the
+              pills' accessible names (WRITTEN_FORMATS/NUMERIC_FORMATS), which keeps the two
+              'MDY's apart. Every picker below states its lock ONCE, as PillGroup's `disabled`:
+              the dim, aria-disabled, the onChange guard and the tab stops all follow from it. */}
+          <PillGroup label="Date Format" disabled={randomFormat} className="space-y-2">
+            <div className="space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
-              <PillTray value={dateFormat} onChange={setDateFormat} options={WRITTEN_FORMATS} disabled={randomFormat}/>
+              <PillTray value={dateFormat} onChange={setDateFormat} options={WRITTEN_FORMATS}/>
             </div>
-            <div className="flex-1 space-y-1.5">
+            <div className="space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
-              <PillTray value={dateFormat} onChange={setDateFormat} options={NUMERIC_FORMATS} disabled={randomFormat}/>
+              <PillTray value={dateFormat} onChange={setDateFormat} options={NUMERIC_FORMATS}/>
             </div>
-          </div>
-          {/* Input — Buttons / Dots (the logo's 7-dot answer layout). Locks/dims in Deduction (answers
-              aren't weekdays; value preserved), like Julian/Leap-Year Chance when they don't apply. */}
+          </PillGroup>
+          {/* Input — Buttons / Dots (the logo's 7-dot answer layout). A picker with no families,
+              so: one tray, no captions. Locks/dims in Deduction (answers aren't weekdays; the
+              value is preserved), like Julian/Leap-Year Chance when they don't apply — the lock
+              sits on the GROUP, so the housing greys as one piece. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Input</div>
-          <div role="radiogroup" aria-label="Input" className={`flex gap-1.5 ${mode==='deduction'?" opacity-60 pointer-events-none":""}`}>
-            <button type="button" role="radio" aria-checked={inputStyle==='buttons'} onClick={()=>{if(mode!=='deduction')setInputStyle('buttons');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='buttons'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Buttons</button>
-            <button type="button" role="radio" aria-checked={inputStyle==='dots'} onClick={()=>{if(mode!=='deduction')setInputStyle('dots');}} aria-disabled={mode==='deduction'} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${inputStyle==='dots'?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>Dots</button>
-          </div>
+          <PillGroup label="Input" disabled={mode==='deduction'}>
+            <PillTray value={inputStyle} onChange={setInputStyle} options={INPUT_STYLES}/>
+          </PillGroup>
           <div className="text-xs text-(--tx-200-80) pt-1">Theme</div>
           {/* Flipping Use System Settings OFF seeds the manual theme from what is ALREADY on
               screen (activeTheme), so the switch never jumps the user to a different look — the
@@ -3335,19 +3479,23 @@ interface DedOpts {
               the same reason the date-format trays share one group: a group is a CHOICE. Use
               System ON = two independent picks = two groups. OFF = one pick across both rows = ONE
               group spanning them, so the row that doesn't hold manualTheme isn't announced as an
-              empty choice of its own. The shared wrapper is not an element added to carry a role —
-              it is also what supplies the 8px between the rows that the section's space-y-2 gave
-              them as siblings. All five theme names are distinct, so no pill needs an ariaLabel. */}
-          <div className="space-y-2" {...(useSystem?{}:{role:"radiogroup","aria-label":"Theme"})}>
-            <div className="space-y-1.5" {...(useSystem?{role:"radiogroup","aria-label":"Dark theme"}:{})}>
+              empty choice of its own — and one pick answers to one tab stop and one arrow walk.
+              The shared wrapper is not an element added to carry a role — it is also what supplies
+              the 8px between the rows that the section's space-y-2 gave them as siblings. Which of
+              the three wrappers is the real group is exactly which of them is NAMED: an unnamed
+              PillGroup is just the div (a radiogroup must have a name to be one), so the switch
+              moves the role, the keyboard and nothing else. All five theme names are distinct, so
+              no pill needs an ariaLabel. */}
+          <PillGroup className="space-y-2" label={useSystem?undefined:"Theme"}>
+            <PillGroup className="space-y-1.5" label={useSystem?"Dark theme":undefined}>
               <SectionLabel className="text-center">Dark</SectionLabel>
               <PillTray value={useSystem?darkTheme:manualTheme} onChange={useSystem?setDarkTheme:setManualTheme} options={DARK_THEMES}/>
-            </div>
-            <div className="space-y-1.5" {...(useSystem?{role:"radiogroup","aria-label":"Light theme"}:{})}>
+            </PillGroup>
+            <PillGroup className="space-y-1.5" label={useSystem?"Light theme":undefined}>
               <SectionLabel className="text-center">Light</SectionLabel>
               <PillTray value={useSystem?lightTheme:manualTheme} onChange={useSystem?setLightTheme:setManualTheme} options={LIGHT_THEMES}/>
-            </div>
-          </div>
+            </PillGroup>
+          </PillGroup>
         </div>
         <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
           <SectionLabel>Dates</SectionLabel>
@@ -3358,25 +3506,35 @@ interface DedOpts {
             <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
           </div>
           <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
-          {/* Julian Chance: locked unless the active year range straddles 1582 (= mixed Julian+Gregorian:
-              minY<=1582<=maxY). Year 1582 itself spans both calendars. When locked, the selected value
-              stays visually selected so it's restored when the range becomes mixed again. */}
+          {/* The three chance rows are pickers, so they are trays (THE PICKER RULE, Display above)
+              — round-9 converted them from the flat gap-separated buttons they shipped as. The
+              conversion costs no height: these rows already captioned ABOVE their control, and
+              the tray's ~2px seams are tighter than the ~6px gaps they replace, so every label
+              gained room. Each row's LOCK now sits on the GROUP instead of on every button, so
+              the housing greys as one piece; the caption stays lit, as it always did.
+              Julian Chance: locked unless the active year range straddles 1582 (= mixed
+              Julian+Gregorian: minY<=1582<=maxY). Year 1582 itself spans both calendars. When
+              locked the selected value stays visually selected, so it's restored when the range
+              becomes mixed again. The condition is written straight into `disabled` because one
+              boolean is now all the lock takes — the IIFEs these two rows used to need existed
+              only to hand the same derived boolean to a dim class as well. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Julian Chance</div>
-          <div role="radiogroup" aria-label="Julian Chance" className="flex gap-1.5">
-            {(() => { const julianMixed=useJulian&&minY<=1582&&maxY>=1582; return ['random','25','50','75','100'].map(v=>(<button key={v} type="button" role="radio" aria-checked={julianChance===v} onClick={()=>{if(!julianMixed)return;setJulianChance(v);}} aria-disabled={!julianMixed} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${julianChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${!julianMixed?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
-          </div>
+          <PillGroup label="Julian Chance" disabled={!(useJulian&&minY<=1582&&maxY>=1582)}>
+            <PillTray value={julianChance} onChange={setJulianChance} options={CHANCE_OPTIONS}/>
+          </PillGroup>
           {/* Leap Year Chance: locked when the active range/calendar has no leap years; the selected value
               is preserved + restored when a leap year becomes reachable again. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Leap Year Chance</div>
-          <div role="radiogroup" aria-label="Leap Year Chance" className="flex gap-1.5">
-            {(() => { const leapReachable=rangeHasLeapYear(minY,maxY,useJulian); return ['random','50','75','100'].map(v=>(<button key={v} type="button" role="radio" aria-checked={leapChance===v} onClick={()=>{if(!leapReachable)return;setLeapChance(v);}} aria-disabled={!leapReachable} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${leapChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}${!leapReachable?" opacity-60 pointer-events-none":""}`}>{v==='random'?'Random':v+'%'}</button>)); })()}
-          </div>
+          <PillGroup label="Leap Year Chance" disabled={!rangeHasLeapYear(minY,maxY,useJulian)}>
+            <PillTray value={leapChance} onChange={setLeapChance} options={LEAP_CHANCE_OPTIONS}/>
+          </PillGroup>
           {/* Jan/Feb Chance: the listed % is the exact probability a leap-year date lands on Jan/Feb
-              (Random = natural ~17%). Stays unlocked even when leap years aren't currently reachable. */}
+              (Random = natural ~17%). Stays unlocked even when leap years aren't currently reachable,
+              so it is the one chance row with no lock branch at all. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Jan/Feb Chance on Leap Years</div>
-          <div role="radiogroup" aria-label="Jan/Feb Chance on Leap Years" className="flex gap-1.5">
-            {['random','25','50','75','100'].map(v=>(<button key={v} type="button" role="radio" aria-checked={janFebChance===v} onClick={()=>setJanFebChance(v)} className={`flex-1 px-1.5 py-1.5 rounded-xl text-xs font-medium border ${janFebChance===v?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{v==='random'?'Random':v+'%'}</button>))}
-          </div>
+          <PillGroup label="Jan/Feb Chance on Leap Years">
+            <PillTray value={janFebChance} onChange={setJanFebChance} options={CHANCE_OPTIONS}/>
+          </PillGroup>
         </div>
         <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
           <SectionLabel>Stats</SectionLabel>
@@ -3551,13 +3709,13 @@ interface DedOpts {
       // keeps a long history scrolling within the card without growing it off-screen. Entry
       // dates render through the footer's Last-Updated recipe (fmt + numericFormatOf) so they
       // follow the user's Date Format setting; the bullet list is the guide's UL idiom
-      // (list-disc + the --mut-color marker). Between the scroller and the Close row sits the
-      // one-line cap notice — CARD CHROME, on the px-4 lane with the title and Close, NOT the last
-      // item of the list: at ten days that list is several screens deep, so a footnote inside it
-      // reaches almost nobody. It wears the app's quiet-note tier (text-[11px] --tx-300-60, the
-      // "Saving here updates only these values." recipe), a step below the bullets in every theme,
-      // and is a plain div — not focusable, so the single-button Tab trap above still has Close as
-      // first===last.
+      // (list-disc + the --mut-color marker). The card is title → list → Close and NOTHING else:
+      // round-8 Q8 added a one-line "Shows the last ten days with updates." notice between the
+      // scroller and Close, and the owner removed it (round-9) on the rule that this popup answers
+      // WHAT CHANGED, while how the app keeps its history is documentation — so the ten-day cap is
+      // explained in How to Play (the Updates section) and nowhere else. Don't re-add it here.
+      // The one-control card is also what keeps the single-button Tab trap above valid, with Close
+      // as first===last.
       const changelogJsx=changelogOpen&&ReactDOM.createPortal(
         (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setChangelogOpen(false);}} onKeyDown={trapModalTab}>
           <div ref={changelogCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="changelog-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl py-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
@@ -3569,7 +3727,6 @@ interface DedOpts {
                   <ul className="list-disc pl-4 space-y-1 marker:text-(--mut-color) text-xs text-(--tx-200-80)">{en.items.map((it,i)=><li key={i}>{it}</li>)}</ul>
                 </div>);})}
             </div>
-            <div className="px-4 text-[11px] text-(--tx-300-60)">Shows the last ten days with updates.</div>
             <div className="px-4 pt-1"><button type="button" onClick={closeChangelog} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
           </div>
         </div>),
@@ -3593,11 +3750,13 @@ interface DedOpts {
             Full width (no max-w) so theme bg + elevation shadow span edge-to-edge on
             screens wider than 480px; inner max-w-[30rem] wrapper holds the title row.
             elev-shadow-down appears when the scroll container is past top.
-            HtP-only bar pb-2.5: absorbs half (10px) of the 20px gap that normally sits
-            between the title row and the first GuidePage panel. The <GuidePage/> wrapper
-            also drops mt-5 → mt-2.5 to compensate, so the total gap stays 20px — but the
-            visual "lock line" is centered between title row and first panel rather than
-            sitting right at the title row's bottom edge.
+            HtP-only bar pb-2.5: absorbs half (10px) of the 20px gap that sits between the title
+            row and the first GuidePage panel. That gap used to be one mt-5 on the guide's
+            wrapper; GuidePage's own root now carries the matching mt-2.5 instead, so the total
+            stays 20px — but the visual "lock line" is centered between title row and first panel
+            rather than sitting right at the title row's bottom edge. It is a GUIDE number, not an
+            app-wide one: the game modes open on StatPanel's own mt-4 and Lookup on an mt-5
+            wrapper, neither of which this pb-2.5 applies to.
             ⚠ The SPACE in `pt-5 ${` is REQUIRED — Tailwind v4's source scanner silently drops a
             utility glued directly to `${` when it appears nowhere else; without it the bar lost
             its pt-5 (20px) top padding and the whole site sat ~20px too high. Don't remove the
@@ -3644,7 +3803,7 @@ interface DedOpts {
                     trigger sits in the fixed bar, so the auto-flip's fit check (round-8) finds
                     the whole panel fits below it and never even considers the space above —
                     which, being the bar itself, could not hold the panel anyway. */}
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{setMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
             </div>
             {settingsJsx}
@@ -3671,7 +3830,7 @@ interface DedOpts {
             definite height, so "at least a screenful" gives a mode that wants to FIT the screen
             (Lookup) a definite box to fill, while a mode taller than the screen still grows
             normally and keeps its pb-3 under the content. Every child is a plain non-growing flex
-            item pinned to the top, so the four always-mounted modes look exactly as before (the
+            item pinned to the top, so the six always-mounted screens look exactly as before (the
             hidden ones are display:none and drop out of flex layout entirely). In guide mode the
             scroller is a classless auto-height block, so min-height:100% resolves against an
             indefinite height and is INERT there — the document scrolls as it always did. */}
@@ -3709,13 +3868,23 @@ interface DedOpts {
               the parent stays at its min-height (one screenful), and flex-auto grows this back to
               fill it. Rests on the same definite-height #root the clamped scroller already needs. */}
           {mode==="lookup"&&(<ModeErrorBoundary mode="Lookup" active={true}><div className="mt-5 flex flex-col flex-auto h-0 min-h-0"><LookupCard history={lookupHistory} onAddHistory={pushLookupHistory} onMoveHistory={moveHistoryEntryToTop} onClearHistory={clearLookupHistory} inputValue={lookupInput} onInputChange={setLookupInput} outputValue={lookupOutput} onOutputChange={setLookupOutput} calcDate={lookupCalcDate} onCalcDateChange={setLookupCalcDate} selectedHistoryId={lookupSelectedHistoryId} onSelectedHistoryIdChange={setLookupSelectedHistoryId} calcOpen={lookupCalcOpen} onCalcOpenChange={setLookupCalcOpen} fmtDate={fmtDate} dateFormat={dateFormat} useJulian={useJulian}/></div></ModeErrorBoundary>)}
-          {mode==="guide"&&(<ModeErrorBoundary mode="How to Play" active={true}><div className="mt-2.5"><GuidePage/></div></ModeErrorBoundary>)}
+          {/* How to Play is always-mounted like the five game modes (Q6, round 9), and for the same
+              reason they are: leaving a screen must not destroy what you had set up on it. It used
+              to be conditionally rendered, which is why a detour into a game mode closed whichever
+              panel you had open — the component was unmounted and its state went with it. The
+              display toggle lives on GuidePage's OWN root, where its mt-2.5 also lives: a wrapper
+              here would keep that 10px margin in the flex column on every OTHER screen, silently
+              lengthening them past the viewport (a phantom bottom fade and a scrollbar on modes
+              that used to fit exactly). display:none generates no box at all, so the other five
+              modes are untouched. `visible` also tells GuidePage to drop any in-flight scroll
+              glide — with no unmount to do it, that is now the component's own job. */}
+          <ModeErrorBoundary key={"guide-"+guideResetKey} mode="How to Play" active={mode==="guide"}><GuidePage visible={mode==="guide"}/></ModeErrorBoundary>
         </div>
         </div>
         {/* Doc-scroll edge fades (guide mode only): the fade-scroll-* masks live ON the scroll
             container and fade its CONTENT box — meaningless once the document scrolls (the
             mask's bottom edge would sit at the end of the whole document, off-screen). These
-            fixed, untouchable strips paint the same 24px feather over the VIEWPORT edges
+            fixed, untouchable strips paint the same --fade-h feather over the VIEWPORT edges
             instead (see index.css), driven by the same two scroll states as the masks.
             position:fixed is correct here — this is the real app viewport, not a transformed
             portal; the top strip tucks under the fixed bar at --bar-h, the bottom strip hugs

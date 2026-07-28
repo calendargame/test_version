@@ -330,28 +330,6 @@ describe('the Changelog popup (modal parity + content)', () => {
     expect(closeRow.className).toContain('px-4')
   })
 
-  it('the ten-day policy notice sits in the card CHROME, between the scroll region and Close (round-8 Q8)', () => {
-    mountApp()
-    openPopup()
-    const dialog = changelogDialog()
-    const note = within(dialog).getByText('Shows the last ten days with updates.')
-    const scrollRegion = dialog.querySelector('.overflow-y-auto')
-    const closeRow = within(dialog).getByRole('button', { name: 'Close' }).parentElement
-    // A direct child of the card, on the same px-4 lane as the title and Close — NOT the last item
-    // of the list, which at ten entries is several screens deep and reaches almost nobody.
-    expect(note.parentElement).toBe(dialog)
-    expect(scrollRegion.contains(note)).toBe(false)
-    expect(note.previousElementSibling).toBe(scrollRegion)
-    expect(note.nextElementSibling).toBe(closeRow)
-    expect(note.className).toContain('px-4')
-    // The app's quiet-note tier — a step below the entry bullets (text-xs --tx-200-80) in every
-    // theme, including light/parchment where --tx-200-* collapse onto one another.
-    expect(note.className).toContain('text-[11px]')
-    expect(note.className).toContain('text-(--tx-300-60)')
-    // Not focusable, so the single-button Tab trap below still sees Close as first===last.
-    expect(within(dialog).getAllByRole('button')).toHaveLength(1)
-  })
-
   it('edge fades track scroll position inside the popup (the shared scroll-state listener, round-7 Q5)', () => {
     mountApp()
     openPopup()

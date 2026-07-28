@@ -119,20 +119,23 @@ describe('Settings → Input toggle', () => {
     document.getElementById('root')?.remove()
   })
 
+  // The picker is a radiogroup of two radios (round-8 a11y pass), and the LOCK lives on that
+  // GROUP element — not on the pills. Round-9 moved the pills into a PillTray housing (⚙ pickers
+  // are all trays now), so a pill's parentElement is the tray, and reading the dim off it would
+  // silently stop testing anything. Ask for the group by name instead.
+  const inputGroup = () => screen.getByRole('radiogroup', { name: 'Input' })
+
   it('flips inputStyle between Buttons and Dots in a weekday mode, and is not locked', () => {
     mountApp() // opens in Classic (a weekday mode)
     act(() => {
       fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
     })
     expect(useSettings.getState().inputStyle).toBe('buttons')
-    // The picker is a radiogroup of two radios (round-8 a11y pass) — same buttons, richer role.
     fireEvent.click(screen.getByRole('radio', { name: 'Dots' }))
     expect(useSettings.getState().inputStyle).toBe('dots')
     fireEvent.click(screen.getByRole('radio', { name: 'Buttons' }))
     expect(useSettings.getState().inputStyle).toBe('buttons')
-    expect(screen.getByRole('radio', { name: 'Dots' }).parentElement.className).not.toContain(
-      'pointer-events-none',
-    )
+    expect(inputGroup().className).not.toContain('pointer-events-none')
     expect(screen.getByRole('radio', { name: 'Buttons' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('radio', { name: 'Dots' }).getAttribute('aria-checked')).toBe('false')
   })
@@ -146,10 +149,9 @@ describe('Settings → Input toggle', () => {
     act(() => {
       fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
     })
-    const dotsBtn = screen.getByRole('radio', { name: 'Dots' })
-    expect(dotsBtn.parentElement.className).toContain('pointer-events-none')
-    // The onClick guard keeps the value even if a click is dispatched at it.
-    fireEvent.click(dotsBtn)
+    expect(inputGroup().className).toContain('pointer-events-none')
+    // The PillTray onChange guard keeps the value even if a click is dispatched at a segment.
+    fireEvent.click(screen.getByRole('radio', { name: 'Dots' }))
     expect(useSettings.getState().inputStyle).toBe('buttons')
   })
 })

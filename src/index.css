@@ -163,11 +163,11 @@ input,textarea{user-select:text;-webkit-user-select:text}
    SCROLL_REGION_CLASS + scrollFadeClass + useScrollEdgeState from there, and
    tests/scrollRegionGuard.test.js fails the suite on any scroller built outside it. */
 /* ONE feather depth for every edge fade in the app — the container masks below AND the
-   guide's fixed doc-fade strips further down. Tokenized in Q6 (round 8) because the guide
-   accordion's reading line is now DERIVED from it (--seat-top below): a panel seated with
-   only the bar cleared lands under the densest part of the top feather, so the seat has to
-   clear bar + feather. A hardcoded twin beside the token would let the two drift apart and
-   silently restore that bug, so every fade site reads the token. */
+   guide's fixed doc-fade strips further down. Tokenized in Q6 (round 8) so no fade site can
+   carry a hardcoded twin that drifts from the rest. It is deliberately NOT part of the guide's
+   reading line any more (--seat-top below derives from the panel gap instead, Q5 round 9):
+   --fade-h is shared with the settings popover, the changelog and the Lookup scrollers, so it
+   can never be retuned to serve the accordion alone. */
 :root{--fade-h:24px}
 .fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h));mask-image:linear-gradient(to bottom,transparent,black var(--fade-h))}
 .fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent)}
@@ -185,23 +185,48 @@ input,textarea{user-select:text;-webkit-user-select:text}
    guide mode, toggled by the same two scroll states that drive the masks. */
 .doc-fade-top{position:fixed;top:var(--bar-h);left:0;right:0;height:var(--fade-h);pointer-events:none;background:linear-gradient(to bottom,var(--bg1),transparent)}
 .doc-fade-bottom{position:fixed;bottom:0;left:0;right:0;height:var(--fade-h);pointer-events:none;background:linear-gradient(to top,var(--bg1),transparent)}
-/* --seat-top — the guide's READING LINE, defined once (Q6, round 8). The top strip above is
-   fixed at top:var(--bar-h) and is --fade-h deep, so the first fully-legible document pixel
-   sits at viewport y = --bar-h + --fade-h. Before Q6 the accordion coordinator seated a
-   tapped panel at --bar-h with zero clearance, i.e. its top border and rounded corners
-   landed under the densest part of that same feather BY CONSTRUCTION. Both consumers now
-   read this one value: scroll-padding-top gives the native scrollport the same line (a Tab
-   into a guide header scrolls to it), and lib/accordionMotion's seatTop is read off it in JS.
+/* --guide-panel-gap — the vertical gap between How-to-Play accordion panels, and the ONE home
+   of that number. components/GuidePage lays its section list out with space-y-(--guide-panel-gap)
+   and --seat-top below derives the accordion's reading line from the same token, so the gap the
+   reader sees and the gap the scroll math assumes cannot drift apart. The value is byte-for-byte
+   what the `space-y-2` utility it replaced produced — Tailwind spacing step 2 — which keeps the
+   guide on the same fluid rem scale as every other gap in the app (index.css already reads
+   --spacing directly for .svalue-input). 0.5rem = 8.46px at the owner's 16.92px fluid root. */
+:root{--guide-panel-gap:calc(var(--spacing) * 2)}
+/* --seat-top — the guide's READING LINE, defined once (Q6 round 8; re-derived Q5 round 9). The
+   fixed bar owns viewport y 0…--bar-h, so any panel edge at or above --bar-h is hidden by it.
+   Seating the TAPPED panel at --bar-h + --guide-panel-gap therefore lands the BOTTOM edge of the
+   panel above it exactly on the bar's underside: the reader sees the tapped panel and no sliver
+   of its predecessor. That is the whole rule.
+
+   Round 8 seated at --bar-h + --fade-h instead, on the theory that the line should clear the top
+   feather. It overshot by --fade-h − --guide-panel-gap = 24 − 8.46 = 15.5px, and that is exactly
+   how much of the previous panel stayed in frame (the owner's Q5 report). Neither of the two
+   obvious repairs is available: widening every panel gap to the feather's depth would add ~357px
+   (~30%) to the guide, and --fade-h is shared with the settings popover, the changelog and the
+   Lookup scrollers so it cannot shrink. Accepted consequence: the tapped panel's top corners now
+   sit inside the feather and soften slightly, while its title glyphs land ~25px down, clear of it.
+   That softening is intended — do not "fix" it.
+
+   Both consumers want that same line and both read this one value: scroll-padding-top gives the
+   native scrollport the identical seat (a Tab into a guide header lands where a tap lands), and
+   lib/accordionMotion's seatTop is read off it in JS.
    @property REGISTRATION makes the JS read cheap: registered, the computed value is a resolved
    <length> in px. It is NOT a guarantee, because @property itself is not universal (Safari ≤16.3,
    Firefox <128 — Tailwind emits an @supports fallback for this very token further up this
    stylesheet, which is the proof they're in the target set). Unregistered, the property computes
-   to its substituted token stream — the literal "calc(57px + 24px)" — so the JS reader must never
-   treat a failed parse as zero. It doesn't: GuidePage recomposes the line from --bar-h + --fade-h,
-   which parse on every engine. inherits:true so descendants can read it too; the 0px initial value
-   only ever applies outside guide mode, where nothing reads it. */
+   to its substituted token stream — the literal "calc(var(--bar-h) + var(--guide-panel-gap))" —
+   so the JS reader must never treat a failed parse as zero. It doesn't: GuidePage reads a LADDER
+   — this token, then the resolved scroll-padding-top on this very rule (the same declaration seen
+   through a standard property, which every engine we can test resolves to absolute px), then
+   --bar-h, which is a literal px token and so cannot fail to parse anywhere. The last rung seats
+   one panel gap shallow and nothing worse; the ladder is written out in full at the read site.
+   ⚠ Whatever fed the seat must stay parseable in isolation — do not fold --guide-panel-gap into
+   --bar-h to "simplify", or the floor becomes a calc() and NaNs with everything above it.
+   inherits:true so descendants can read it too; the 0px initial value only ever applies outside
+   guide mode, where nothing reads it. */
 @property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
-html[data-doc-scroll]{--seat-top:calc(var(--bar-h) + var(--fade-h));scroll-padding-top:var(--seat-top)}
+html[data-doc-scroll]{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
 .elev-shadow-down{box-shadow:0 4px 6px -2px var(--shadow-elev)}
 .elev-shadow-up{box-shadow:0 -4px 6px -2px var(--shadow-elev)}
 /* Smooth shadow fade in/out. Selectors target the elements that conditionally
@@ -215,9 +240,10 @@ html[data-doc-scroll]{--seat-top:calc(var(--bar-h) + var(--fade-h));scroll-paddi
 .thin{border:1px solid var(--thin-bd)}
 .surface-button{background:var(--sbtn-bg);border-color:var(--sbtn-bd);transition:background-color .2s}
 .surface-toggle{background:var(--stgl-bg);border-color:var(--sbtn-bd);transition:background-color .2s}
-/* The toggle surface WITHOUT the hover lift — for non-button housings (the date-format pill
-   trays): a container must not brighten as one block on hover; its unselected segments carry
-   their own per-target hover (hover:bg-(--stgl-hov)) instead. */
+/* The toggle surface WITHOUT the hover lift — for non-button housings, i.e. every PillTray tray
+   (round-9: that is now every picker in the ⚙ panel, not just the date-format pair): a container
+   must not brighten as one block on hover; its unselected segments carry their own per-target
+   hover (hover:bg-(--stgl-hov)) instead. */
 .surface-tray{background:var(--stgl-bg);border-color:var(--sbtn-bd)}
 /* .svalue-input — the tap-to-type edit box inside SliderValueEditor's readout cell (Q4 round-8).
    The box is OUT OF FLOW (absolutely positioned over the cell), so it can never size that cell:
@@ -314,11 +340,15 @@ button:focus,select:focus{outline:none}
    the logo positions come from inline grid-row/column. Idle/flash/persist colours reuse the button
    state classes (surface-button / flash-* / btn-*-persist); .dot-btn only adds the circular shape +
    border WIDTH (no background/border-colour, so the state class wins those). --ans-h must equal
-   baseBtn's metrics so the two layouts match height: 4 rows × (text-base 1.5rem line + py-3 1.5rem +
+   BASE_BTN's metrics so the two layouts match height: 4 rows × (text-base 1.5rem line + py-3 1.5rem +
    1px×2 border) + 3 × gap-3 0.75rem = 14.25rem + 8px (the rem part tracks the fluid root, so the dot
-   box scales with the buttons across devices). The .dot-btn.drag-target ring is a box-shadow (follows
-   the circle, unlike the square outline). On-device knobs: --ans-h (box height) + --dot-frac (dot
-   diameter as a % of its grid cell). */
+   box scales with the buttons across devices). ⚠ That gap-3 term is main.tsx's ANSWER_GRID_GAP, and
+   this is the ONLY place the answer-grid gutter is spelled outside that constant (a Tailwind class
+   can't be read from CSS) — if ANSWER_GRID_GAP changes, this arithmetic changes with it. The dot
+   layout has no gutter of its OWN: the cluster is a square 3×3 place-items:center grid spaced by
+   --dot-frac, so unlike the labelled grid it wears no gap utility at all. The .dot-btn.drag-target
+   ring is a box-shadow (follows the circle, unlike the square outline). On-device knobs: --ans-h
+   (box height) + --dot-frac (dot diameter as a % of its grid cell). */
 .dot-box{--ans-h:calc(14.25rem + 8px);block-size:var(--ans-h);display:grid;place-items:center}
 .dot-cluster{--dot-frac:72%;inline-size:min(var(--ans-h),100%);aspect-ratio:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);place-items:center}
 .dot-btn{inline-size:var(--dot-frac);aspect-ratio:1;border-radius:50%;border-width:1px;border-style:solid}
@@ -417,7 +447,14 @@ button:focus,select:focus{outline:none}
    dropdown (see App keydown handler), no other element is reachable via
    keyboard focus, so a visible focus indicator on those elements is dead
    weight. The .focus-ring class is left on element classNames as a no-op
-   so future re-enablement is a one-line CSS change rather than a sweep. */
+   so future re-enablement is a one-line CSS change rather than a sweep.
+   ⚠ ONE EXCEPTION since round-9 (Q2): the ⚙ Settings pickers now implement
+   the radiogroup keyboard contract (components/PillGroup), so once focus is
+   inside a group — placed by a click or an AT activation, since Tab still
+   can't get there — the arrows walk it from pill to pill with nothing drawn
+   to say where it is. Whether those pills should show a ring is a real open
+   question, not an oversight: Q2's brief was ZERO visual change, and a ring
+   is a visual change. */
 .hist-unsel{border-left-color:var(--panel-bd)}
 .bar{height:6px;border-radius:6px;overflow:hidden;background:var(--bar-bg);border:1px solid var(--bar-bd)}
 /* The fill is full-width (width:100% set inline) and animated with transform:scaleX(1->0),

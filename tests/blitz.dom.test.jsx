@@ -60,6 +60,16 @@ const tick = (ms) =>
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
 const isDisabled = (btn) => btn.className.includes('pointer-events-none')
+// A text match on the VISIBLE screen, and the reason a plain screen.getByText won't do: every
+// screen but Lookup is always-mounted — the five game modes, and How to Play since Q6 (round 9) —
+// so their markup sits in the DOM under display:none while another mode is up. The guide's Blitz
+// section names the "Same Round" tag in prose, which a global query matches as readily as the tag
+// itself. Same visibility filter statValue and hasStat use, in the shape getByText has.
+const visibleText = (text) => {
+  const els = screen.getAllByText(text).filter((el) => !isHidden(el))
+  if (els.length !== 1) throw new Error(`expected one visible "${text}", found ${els.length}`)
+  return els[0]
+}
 // Find a stat cell via its label <span>, scoped to the visible panel (the hidden Classic/Flash/
 // AoX panels also contain "Score" spans). The value is the cell's last <span>. The scoring trio
 // (Score/Accuracy/Streak) cells are <div>s; the timing trio (Last/Average/Median) cells are
@@ -887,7 +897,7 @@ describe('Blitz — Per Question + Allow Mistakes (C3a)', () => {
     act(() => fireEvent.click(ctrl('Reveal'))) // give up → the round ends 2/3
     expect(screen.getByText(/Best Score: 2\b/).textContent).toContain('★')
     expect(screen.getByText(/Best Streak: 2\b/).textContent).toContain('★')
-    expect(screen.getByText('Same Round')).toBeInTheDocument() // both set by this round
+    expect(visibleText('Same Round')).toBeInTheDocument() // both set by this round
     clickText('Reset')
     begin()
     click(correctName(readDate()))
@@ -896,7 +906,7 @@ describe('Blitz — Per Question + Allow Mistakes (C3a)', () => {
     act(() => fireEvent.click(ctrl('Reveal')))
     expect(screen.getByText(/Best Score: 3\b/).textContent).toContain('★') // re-flagged
     expect(screen.getByText(/Best Streak: 3\b/).textContent).toContain('★')
-    expect(screen.getByText('Same Round')).toBeInTheDocument()
+    expect(visibleText('Same Round')).toBeInTheDocument()
   })
 
   it('a post-round Override rolls the per-Q + AM Best back (same-round rollback)', () => {

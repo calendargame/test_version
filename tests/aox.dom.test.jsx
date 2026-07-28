@@ -1189,3 +1189,135 @@ describe('AoX — round-8: the Show Codes button is shared with the other five s
       expect(btn.className.split(/\s+/)).not.toContain(t)
   })
 })
+
+// ── Q3 round-9: the run-length row equalizes by STRETCHING ──────────────────────────────────
+// These are CLASS-CONTRACT tests, not height tests — jsdom has no layout engine, so it can no more
+// measure the defect than it could have measured the two rounds of "prove the heights match" fixes
+// that preceded this one. What they pin is the RULE that replaced those attempts:
+//
+//   the run-length <input> and its Allow Mistakes / One-by-One <button> neighbors never declare a
+//   height; each derives one from its own inner line box, and WebKit's machinery for a text control
+//   lands ~2px from its machinery for a button even when every class, padding and border matches
+//   (they already did — that was never the question). Under items-center the row split that 2px
+//   evenly and the box sat ~1px proud above AND below. items-stretch makes the shorter items grow
+//   to the tallest instead, so the derived heights never have to agree.
+//
+// The direction doesn't matter to the fix: on the owner's iPhone the input is the taller one, so the
+// buttons grow and the input keeps its natural height, but stretch equalizes either way.
+const cls = (el) => (el.getAttribute('class') || '').split(/\s+/).filter(Boolean)
+describe('AoX — Q3 round-9 (the run-length row equalizes by stretch, not by matched heights)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const nField = () => screen.getByRole('textbox', { name: 'AoX run length' })
+
+  it('the control row stretches its items — items-stretch, never items-center', () => {
+    mountApp()
+    switchToAox()
+    const row = nField().parentElement.parentElement
+    // Anchor the assertion to the real row: the input's wrapper AND both pills are its children.
+    expect(row.contains(ctrl('Allow Mistakes'))).toBe(true)
+    expect(row.contains(ctrl('One-by-One'))).toBe(true)
+    expect(cls(row)).toContain('flex')
+    expect(cls(row)).toContain('items-stretch')
+    expect(cls(row)).not.toContain('items-center')
+  })
+
+  it('the input wrapper restates it, so the row height reaches the input through it', () => {
+    // Without this the wrapper would size to the input and stop: a row stretch would grow the
+    // wrapper and leave the input centered inside it — the same 1px-proud look, one level down.
+    mountApp()
+    switchToAox()
+    const wrapper = nField().parentElement
+    expect(cls(wrapper)).toContain('flex')
+    expect(cls(wrapper)).toContain('items-stretch')
+    expect(cls(wrapper)).not.toContain('items-center')
+  })
+
+  it('the "Ao" label opts back out with self-center (a stretched span rides its text at the top)', () => {
+    mountApp()
+    switchToAox()
+    const span = nField().parentElement.querySelector('span')
+    expect(span.textContent).toBe('Ao')
+    expect(cls(span)).toContain('self-center')
+  })
+})
+
+// ── App-wide guard for the same defect class (Q3 round-9) ───────────────────────────────────────
+// Structural, not AoX-specific: ANY flex row that puts an in-flow text <input> in one item and a
+// <button> in another must not be items-center, for exactly the reason above. It lives here because
+// this is where the bug and its history are documented, and it runs over the mounted <App/>, which
+// carries all five mode screens at once (the inactive ones are display:none, still in the tree) plus
+// the settings panel — i.e. every row that owns a control today.
+//
+// Scope, stated honestly:
+//   • it reads the DOM, not the source, so it cannot see branches this mount never renders — the
+//     Save Defaults / defaults-manager popups and the Lookup page. (Neither is at risk today: the
+//     popup's AoX row is <span> + <input> with no button, and LookupCard's row is already
+//     items-stretch. A source regex was the alternative and was rejected — JSX nesting, conditional
+//     branches and template-literal classNames make it either leaky or false-positive-prone.)
+//   • out-of-flow items are exempt and skipped by class (absolute / fixed / .svalue-input): they
+//     take no part in cross-axis sizing. That is precisely why SliderValueEditor's tap-to-type cell
+//     is immune — its <button> and <input> are position:absolute inside a strut-sized span.
+//   • <input type="range"> is exempt: index.css gives the slider a real declared height.
+// Verified non-vacuous: it scans ~50 items-center rows and finds none, and re-introducing
+// items-center on the AoX row makes it fail with that row named.
+describe('app-wide — no items-center flex row mixes an <input> with a <button> (Q3 round-9)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const outOfFlow = (el) => ['absolute', 'fixed', 'svalue-input'].some((t) => cls(el).includes(t))
+  // What a flex ITEM derives its height from, looking through its in-flow subtree.
+  const derivesFrom = (item) => {
+    const seen = { input: false, button: false }
+    const walk = (n) => {
+      if (n !== item && outOfFlow(n)) return
+      if (n.tagName === 'INPUT' && n.getAttribute('type') !== 'range') seen.input = true
+      if (n.tagName === 'BUTTON') seen.button = true
+      for (const c of n.children) walk(c)
+    }
+    walk(item)
+    return seen
+  }
+  const offenders = () => {
+    const bad = []
+    for (const row of document.querySelectorAll('*')) {
+      if (!cls(row).includes('flex') || !cls(row).includes('items-center')) continue
+      let input = false
+      let button = false
+      for (const item of row.children) {
+        if (outOfFlow(item)) continue
+        const k = derivesFrom(item)
+        input ||= k.input
+        button ||= k.button
+      }
+      if (input && button) bad.push(row.getAttribute('class'))
+    }
+    return bad
+  }
+
+  it('holds across every mode screen and the settings panel', () => {
+    mountApp()
+    switchToAox()
+    expect(offenders()).toEqual([])
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /settings/i }))
+    })
+    expect(offenders()).toEqual([])
+  })
+})

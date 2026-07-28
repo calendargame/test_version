@@ -44,7 +44,8 @@ const panelDomId = (id: string) => `guide-panel-${id}`
 // callback: the snapped layout and the corrected scroll appear together (the Reduce
 // Motion instant path, which also fixes the old teleport-past-max clamp). Any real user
 // scroll input (touchstart/wheel) cancels the writer instantly — the user always wins —
-// and the returned cancel function serves mid-flight re-toggles and guide unmount.
+// and the returned cancel function serves mid-flight re-toggles, leaving the guide for
+// another mode, the app being backgrounded, and unmount (see scrollWriterRef below).
 function startScrollWriter(from: number, to: number, durationMs: number): () => void {
   let raf = 0
   let start: number | null = null
@@ -214,7 +215,12 @@ function DotDiagram() {
     </svg>
   )
 }
-export default function GuidePage() {
+// `visible` is the same prop the five game modes take, and it does the same two jobs: it drives
+// the display toggle on this component's own root (App keeps every screen mounted, so leaving How
+// to Play no longer destroys the open panel or the reading position), and it tells the component
+// it has left the screen — the moment a running scroll glide has to be dropped, since there is no
+// unmount left to do it.
+export default function GuidePage({ visible }: { visible: boolean }) {
   const [open, setOpen] = useState<string | null>(null)
   // The shared per-toggle motion clock (ms), stamped onto every section (see GuideSection).
   // null until the first toggle — pre-toggle renders never animate, so the sections simply
@@ -222,12 +228,14 @@ export default function GuidePage() {
   const [motionMs, setMotionMs] = useState<number | null>(null)
   // The in-flight scroll writer's cancel function (null = none running). Canceled on any
   // user scroll input by the writer itself, on re-toggle mid-flight by the coordinator
-  // below, and by the effect on two occasions: unmount (leaving the guide — a surviving
-  // writer would keep scrolling the next mode's page) and the app being BACKGROUNDED.
-  // The hide case matters because rAF stops firing while hidden: a writer caught mid-flight
-  // would resume on return against a timestamp gap, snapping the page to a target computed
-  // for a tap the reader has long since forgotten. Cancelling leaves the panels to finish
-  // their CSS transition and the browser to hold position (the guide-scoped
+  // below, and by the effect on three occasions: leaving the guide for another mode, the app
+  // being BACKGROUNDED, and unmount. Leaving matters because the writer drives the WINDOW —
+  // a survivor would go on scrolling whatever screen replaced the guide (and this component
+  // stays mounted now, so nothing else would stop it).
+  // The backgrounded case matters because rAF stops firing while hidden: a writer caught
+  // mid-flight would resume on return against a timestamp gap, snapping the page to a target
+  // computed for a tap the reader has long since forgotten. Cancelling leaves the panels to
+  // finish their CSS transition and the browser to hold position (the guide-scoped
   // overflow-anchor:none in index.css guarantees "hold"). Nothing is re-armed on return:
   // foregrounding is not a navigation and must never move the reading position.
   const scrollWriterRef = useRef<(() => void) | null>(null)
@@ -236,6 +244,12 @@ export default function GuidePage() {
     scrollWriterRef.current = null
   }, [])
   useEffect(() => {
+    // Off-screen: drop anything in flight, and listen for nothing — a hidden guide can neither
+    // start a glide nor be scrolled, so there is no visibility case left to handle.
+    if (!visible) {
+      cancelScrollWriter()
+      return
+    }
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') cancelScrollWriter()
     }
@@ -244,7 +258,7 @@ export default function GuidePage() {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       cancelScrollWriter()
     }
-  }, [cancelScrollWriter])
+  }, [visible, cancelScrollWriter])
   // The toggle coordinator (Q8) — hooked into the single toggle callback, never pointer
   // events. Everything is measured at tap time, pre-animation: the closing panel's
   // RENDERED height (its grid track — a mid-flight re-toggle reads the interpolated
@@ -286,26 +300,40 @@ export default function GuidePage() {
       const scrollY = window.scrollY
       const tappedRect = tapped.getBoundingClientRect()
       const rootStyle = getComputedStyle(document.documentElement)
-      const cssPx = (name: string) => parseFloat(rootStyle.getPropertyValue(name))
       const motionScale = parseFloat(rootStyle.getPropertyValue('--motion-scale'))
-      const seatTop = cssPx('--seat-top')
+      const seatTop = parseFloat(rootStyle.getPropertyValue('--seat-top'))
       const target = accordionScrollTarget({
         scrollY,
         viewportH: window.innerHeight,
-        // The guide's READING LINE (index.css). --seat-top is registered with @property, so on
-        // engines that implement @property this read is already a resolved px length. On engines
-        // that DON'T — Safari ≤16.3 and Firefox <128, both inside this build's target set, which
-        // is exactly why Tailwind emits its own @supports fallback for the same token into the
-        // same stylesheet — an unregistered custom property computes to its substituted token
-        // stream, i.e. the literal "calc(57px + 24px)", which parseFloats to NaN. Defaulting that
-        // NaN to 0 would seat every tapped panel at viewport y = 0, UNDER the fixed bar: a worse
-        // bug than the one this token exists to fix, and a silent one. So the fallback recomposes
-        // the line from the two plain px tokens it is made of, which parse everywhere. jsdom
-        // applies no stylesheets and returns '' for all three, landing on 0 — there the panels
-        // still toggle on the shared clock, writer-less.
+        // The guide's READING LINE (index.css): the fixed bar's height plus ONE panel gap, so a
+        // tapped panel seated there pushes the bottom edge of the panel above it exactly onto the
+        // bar's underside. --seat-top is registered with @property, so on engines that implement
+        // @property this read is already a resolved px length. On engines that DON'T — Safari
+        // ≤16.3 and Firefox <128, both inside this build's target set, which is exactly why
+        // Tailwind emits its own @supports fallback for the same token into the same stylesheet —
+        // an unregistered custom property computes to its substituted token stream, i.e. the
+        // literal "calc(var(--bar-h) + var(--guide-panel-gap))", which parseFloats to NaN.
+        // Defaulting that NaN to 0 would seat every tapped panel at viewport y = 0, UNDER the
+        // fixed bar: a worse bug than the one this token exists to fix, and a silent one. So the
+        // read walks DOWN a ladder, each rung strictly weaker and strictly safer than the one
+        // above, and nothing but the last can reach 0:
+        //   1. --seat-top itself, already a resolved px length wherever @property is implemented.
+        //   2. scroll-padding-top — the SAME declaration through a standard property, which is
+        //      expected to resolve its calc() to an absolute length at computed-value time. That
+        //      is the behaviour of every engine we can test, but it is an expectation about the
+        //      untestable ones, not a proof, which is why it is not the last rung.
+        //   3. --bar-h, a literal px token written by App's ResizeObserver (and defaulted in
+        //      index.css), so parseFloat CANNOT fail on it on any engine. It is the seat minus one
+        //      panel gap — a few px shallow, hiding the panel above a hair less completely, and
+        //      nothing worse. --guide-panel-gap cannot be added back here: it computes to
+        //      calc(.25rem * 2), NaN by the same rule as rung 1.
+        // jsdom applies no stylesheets and returns '' for all three, landing on 0 — there the
+        // panels still toggle on the shared clock, writer-less.
         seatTop: Number.isFinite(seatTop)
           ? seatTop
-          : (cssPx('--bar-h') || 0) + (cssPx('--fade-h') || 0),
+          : parseFloat(rootStyle.scrollPaddingTop) ||
+            parseFloat(rootStyle.getPropertyValue('--bar-h')) ||
+            0,
         docH: doc.scrollHeight,
         headerDocTop: tappedRect.top + scrollY,
         closingH,
@@ -325,7 +353,22 @@ export default function GuidePage() {
     [open, cancelScrollWriter],
   )
   return (
-    <div className="space-y-2">
+    // This root is the whole screen, so it carries all three of the screen's outer properties:
+    //   • the display toggle — App keeps every screen mounted, and the toggle has to sit on the
+    //     element that carries the margin below, or a hidden guide would still push 10px of
+    //     margin into App's flex column on every other screen.
+    //   • mt-2.5 — half of the 20px this screen used to carry as a single mt-5 on its wrapper.
+    //     The guide-only pb-2.5 on the fixed bar (main.tsx) absorbs the other half, which centres
+    //     the bar's shadow line in the same 20px gap. Both halves are guide-only, and neither is
+    //     what the other screens use (the game modes open on StatPanel's mt-4).
+    //   • the panel gap as a TOKEN, not a utility step: index.css derives the accordion's reading
+    //     line (--seat-top) from the same --guide-panel-gap, so seating a tapped panel one gap
+    //     below the fixed bar hides the panel above it exactly. A literal space-y-2 here would be
+    //     a second home for that number and the two would drift.
+    <div
+      className="mt-2.5 space-y-(--guide-panel-gap)"
+      style={{ display: visible ? 'block' : 'none' }}
+    >
       <GuideSection
         id="overview"
         title="What Is Calendar Game?"
@@ -446,7 +489,16 @@ export default function GuidePage() {
             The sections of this guide open one at a time — opening a section closes the one before
             it. When a section opens or closes, the page scrolls along with the motion whenever
             that's needed to keep your place: instead of sliding off-screen, the section you tapped
-            comes to rest just clear of the bar at the top, with its title fully readable.
+            comes to rest just clear of the bar at the top, with its title fully readable. The last
+            section or two are the exception — the page has already run out of room to scroll by
+            then, so they settle wherever the bottom of the page allows.
+          </li>
+          <li>
+            The guide holds its place while you're in the app: switch to a mode, play, and come back
+            and the same section is still open at the same point on the page. Only a fresh start —
+            closing the app and launching it again, reloading it, or a Full Reset — returns it to
+            the top with every section closed. Switching to another app and back is not a fresh
+            start: that keeps your place, here as everywhere else.
           </li>
           <li>
             Text around the app can't be selected or highlighted, so presses and drags always
@@ -823,6 +875,16 @@ export default function GuidePage() {
           </li>
           <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
           <li>
+            Inside the ⚙ menu, once you've clicked one option of a setting, the arrow keys move
+            along that setting's options and choose each one as you land on it (<Kbd>Home</Kbd> and{' '}
+            <Kbd>End</Kbd> jump to its first and last, and the ends wrap around). What counts as one
+            setting is the choice, not the row: Date Format is a single five-way choice, so the
+            arrows carry straight from the Written row into the Numeric one — and Theme does the
+            same across Dark and Light whenever Use System Settings is off, since that's when the
+            five themes are one pick. A locked setting ignores the keys. None of these presses reach
+            past the menu, so they never step the date behind it.
+          </li>
+          <li>
             Reset Stats (<Kbd>S</Kbd>) only applies to the casual modes (Classic, Deduction, Flash);
             pressing it in Blitz, AoX, or Lookup is a no-op, since those modes have no separate
             Reset Stats button (their round/run Reset clears in-round/in-run stats; persistent bests
@@ -1078,7 +1140,7 @@ export default function GuidePage() {
           Julian dates, not a force probability. Changing the value always regenerates an unanswered
           date; burned dates defer like every other setting.
         </p>
-        <p>The five buttons lock and fade in three cases:</p>
+        <p>The five options lock and fade in three cases:</p>
         <UL>
           <li>The Julian Calendar toggle above is off (no Julian dates can be generated).</li>
           <li>
@@ -1131,7 +1193,7 @@ export default function GuidePage() {
         <UL>
           <li>
             If your year range contains no leap years (under the active calendar), the four Leap
-            Year Chance buttons lock and fade; the previously-selected value stays visually selected
+            Year Chance options lock and fade; the previously-selected value stays visually selected
             so it's restored when you change the range back to one with a leap year reachable.
           </li>
           <li>
@@ -1356,8 +1418,9 @@ export default function GuidePage() {
             survive.
           </li>
           <li>
-            Closes any open overlay (How to Play, ⚙ menu, codes, method breakdown) and switches to
-            Classic.
+            Closes any open overlay (⚙ menu, codes, method breakdown) and switches to Classic. How
+            to Play goes back to the top with every section closed, so nothing is left open behind
+            you.
           </li>
         </UL>
         <p>

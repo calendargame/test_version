@@ -83,11 +83,14 @@ export const accordionEase = (t: number): number => {
 // All inputs are pre-computed geometry, fully known at tap time (before any animation):
 //   scrollY       window scroll at the tap (may sit negative mid rubber-band)
 //   viewportH     window.innerHeight
-//   seatTop       the reading line: viewport y of the first fully-legible document pixel,
-//                 = the fixed bar's height PLUS the top fade's depth (--seat-top, registered
-//                 in index.css as --bar-h + --fade-h). NOT the bar alone: the top feather is
-//                 painted over the --fade-h immediately below the bar, so a header seated at
-//                 --bar-h lands inside the fade — on screen by arithmetic, unreadable in fact.
+//   seatTop       the reading line: the viewport y a tapped panel's top edge should land on,
+//                 = the fixed bar's height PLUS one guide panel gap (--seat-top, registered in
+//                 index.css as --bar-h + --guide-panel-gap). The gap is what makes it exact —
+//                 seat the tapped panel one gap below the bar and the BOTTOM edge of the panel
+//                 above it lands precisely on the bar's underside, out of frame. NOT the bar
+//                 alone (that seats the previous panel's bottom a full gap into view) and NOT
+//                 bar + fade, which round 8 used and which overshot by fade − gap, leaving a
+//                 15.5px sliver of the previous panel showing.
 //   docH          the document's current scrollHeight
 //   headerDocTop  the tapped section wrapper's current document-space top
 //   closingH      the closing panel's current RENDERED height (0 when nothing closes;
@@ -124,6 +127,13 @@ export interface AccordionToggleGeometry {
 // epsilon on purpose — there the current position is genuinely OUT of the final scroll
 // range, so the browser is going to move it whatever we do; the only question is whether
 // the move rides the panels' clock or snaps in one frame.
+//
+// A cannot always DELIVER the seat, and that is a fact about the page, not a bug in the rule:
+// tap one of the last section or two and finalMaxScroll is smaller than the seat the header
+// wants, so the target clamps short and the panel above stays partly visible. The document
+// simply cannot scroll far enough. The only "fix" would be padding the bottom of the guide
+// with empty space to buy scroll range, which is visible dead space on every other tap. Do
+// not add one.
 //
 // Scenario B — the toggle SHRINKS the document past the current position: the browser
 // would clamp scrollY the instant the panel finished, flinging the page in a single

@@ -261,7 +261,7 @@ describe('GuideSection accordion contract (Q8 — aria + coordinator landmarks)'
 describe('GuidePage toggle coordinator (Q8 — the shared clock, exclusive open)', () => {
   const headers = (container) => [...container.querySelectorAll('button[aria-controls]')]
   it('a toggle stamps ONE shared --expander-ms on every section and opens exactly the tapped one', () => {
-    const { container } = render(<GuidePage />)
+    const { container } = render(<GuidePage visible />)
     const all = headers(container)
     fireEvent.click(all[0])
     // jsdom lays out at zero height, so the distance-scaled clock lands on its 240ms floor —
@@ -273,7 +273,7 @@ describe('GuidePage toggle coordinator (Q8 — the shared clock, exclusive open)
     expect(all.filter((h) => h.getAttribute('aria-expanded') === 'true')).toHaveLength(1)
   })
   it('tapping another section switches the single open panel; re-tapping closes it', () => {
-    const { container } = render(<GuidePage />)
+    const { container } = render(<GuidePage visible />)
     const all = headers(container)
     fireEvent.click(all[0])
     fireEvent.click(all[3])
