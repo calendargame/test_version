@@ -26,7 +26,6 @@ import { MethodBreakdownSection } from './components/MethodBreakdown.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
 import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
-import { DOT_CELL } from './lib/dotLayout.js'
 import { sharedFitScale } from './lib/statFit.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
@@ -44,16 +43,16 @@ import { reconcileAoxStanding, aoxBestEqual, emptyAoxBest } from './engine/aoxBe
 import { useGameEngine } from './engine/useGameEngine.js'
 import { reportWebVitals } from './dev/webVitals.js'
 import type { WeekdayQuestion, DedPuzzle } from './engine/gameReducer.js'
-import type { ButtonState } from './engine/answerButtons.js'
 import type { FormatId, DatePart } from './lib/format.js'
 import type { CodeDate } from './components/MethodBreakdown.jsx'
 import RotateOverlay from './components/RotateOverlay.jsx'
 import BlitzBestRow from './components/BlitzBestRow.jsx'
 import BootOverlay from './components/BootOverlay.jsx'
-import type { GenDate, FmtDate, FlashState, ModeProps, DedOpts } from './modes/modeTypes.js'
+import type { GenDate, FmtDate, ModeProps, DedOpts } from './modes/modeTypes.js'
 import { RESET_BTN_CLASS, FOOTER_RESET_BTN_CLASS, RESET_STATS_BTN_CLASS, RESET_STATS_ARMED_CLASS, FOOTER_LINK_ROW_CLASS, NUM_INPUT_BASE, NUM_INPUT_CLASS, buttonStateClass, BASE_BTN, ANSWER_GRID_GAP } from './components/controlClasses.js'
 import { rollFormat, isTouch, fmtBlitzT, fmtFlashT, SLIDER_READOUT_WIDEST, truncTime, fmtTime, fmtAccuracyPct, blockMinus, blockMinusBI } from './lib/modeFormat.js'
 import { FLASH_MS, useButtonFlash, engineFresh, useStatsHideToggles, useResetStatsArm, useChangeEffect, useSettingsCloseEffect } from './modes/modeHooks.js'
+import WeekdayAnswer from './components/WeekdayAnswer.jsx'
 const ReactDOM = { createRoot, createPortal }
 
     // Shared mode types (GenDate/FmtDate/FlashState/GameEngine/ModeProps/DedOpts) -> src/modes/modeTypes.ts, imported at top.
@@ -77,57 +76,7 @@ const ReactDOM = { createRoot, createPortal }
     // Shared control className tokens + buttonStateClass -> src/components/controlClasses.ts, imported at top.
     // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts (shared with
     // HtP's DotDiagram, which derives its diagram from the same array), imported at top.
-    // WeekdayAnswer — the Sun..Sat answer grid shared by the four weekday modes (Classic/Flash/Blitz/
-    // AoX), in EITHER the classic labelled-button layout or the logo's 7-dot layout (Settings → Input;
-    // Deduction has its own puzzle grid, not a weekday answer). Both layouts share the per-option state
-    // derivation (persist colour / flash / lock / dim) and the same release-aware onClick (the global
-    // pointer controller makes every button press-drag-release + makes a data-answer-grid drag-to-select).
-    // DOM order is always Sun..Sat so the keyboard 0–9 path (children[idx]) works in both; the dot layout
-    // only repositions visually via DOT_CELL. idleClass is 'surface-button' for both (matches every
-    // weekday grid). The buttons branch matches the prior inline grids — Classic/Flash/Blitz verbatim,
-    // and AoX now also blurs the answer on touch like the others (harmless: just drops focus after a
-    // tap) — so behaviour, and the DOM tests that drive it, are unchanged. The dots are unlabelled
-    // circles (aria-label carries the accessible day name) sized + positioned by the .dot-box/
-    // .dot-cluster/.dot-btn CSS (index.css). Every caller keys the grid on state.gridEpoch (Q9):
-    // RESET / RESET_ROUND bump it, so a reset REMOUNTS the grid and the cleared colors SNAP to idle
-    // — .surface-button's hover transition would otherwise fade the green away (remounted elements
-    // never transition from a predecessor's styles; reorder/useLayoutEffect alone proven insufficient).
-    // Deduction keys its own puzzle-grid wrapper the same way.
-    function WeekdayAnswer({inputStyle,persistBtns,flash,optionsDisabled,onPick}:{
-      inputStyle: InputStyle;
-      persistBtns: Record<string, ButtonState | undefined>;
-      flash: FlashState | null;
-      optionsDisabled: boolean;
-      onPick: (i: number)=>void;
-    }){
-      const opt=(i: number)=>{
-        const ps=persistBtns[i];
-        const isFlashing=!!(flash&&flash.idx===i);
-        const bCls=buttonStateClass(ps,isFlashing,flash?.type==="good",'surface-button');
-        const perLocked=!!ps;
-        const shouldDim=optionsDisabled&&!ps&&!isFlashing;
-        // pointer-events-none ONLY when the whole grid is inert (codes open / browsing back / inactive). A
-        // perLocked (already-answered) button stays hit-testable so it still highlights as you drag over it
-        // (Q4) — the onClick guard below blocks any re-answer, so it can't be re-selected.
-        const inert=optionsDisabled;
-        const onClick=()=>{if(perLocked)return;onPick(i);if(isTouch)(document.activeElement as HTMLElement | null)?.blur();};
-        return {bCls,inert,shouldDim,onClick};
-      };
-      if(inputStyle==='dots'){
-        return(
-          <div className="mt-4 dot-box">
-            <div className="dot-cluster" data-answer-grid="true">
-              {DAY.map((nm,i)=>{const o=opt(i);return(<button key={nm} type="button" aria-label={nm} onClick={o.onClick} style={{gridRow:DOT_CELL[i].r,gridColumn:DOT_CELL[i].c}} className={`dot-btn ${o.bCls} ${o.inert?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""}`}/>);})}
-            </div>
-          </div>
-        );
-      }
-      return(
-        <div className={`mt-4 grid grid-cols-2 ${ANSWER_GRID_GAP}`} data-answer-grid="true">
-          {DAY.map((nm,i)=>{const o=opt(i);const last=i===DAY.length-1?"col-span-2":"";return(<button key={nm} type="button" onClick={o.onClick} className={`${BASE_BTN} ${o.bCls} ${o.inert?"pointer-events-none":""} ${o.shouldDim?"opacity-60":""} ${last}`}>{nm}</button>);})}
-        </div>
-      );
-    }
+    // WeekdayAnswer -> src/components/WeekdayAnswer.tsx, imported at top.
     // MONTH / DAY name tables → src/lib/format.js, imported at top.
     // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
     // that replaced the native <select>). Order here = order shown in the dropdown.
