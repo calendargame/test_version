@@ -15,16 +15,8 @@ import { describe, it, expect } from 'vitest'
 import { randomDate, makeDedPuzzle } from '../src/main.jsx'
 import { dim, isGapDate, isJulianDate, wday, wdayJulian } from '../src/lib/calendar.js'
 import { correctIndexOf } from '../src/engine/gameReducer.js'
+import { mulberry32 } from './helpers/rng.js'
 
-function mulberry32(a) {
-  return function () {
-    a |= 0
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 const realWday = (y, m, d, jul) =>
   jul && isJulianDate(y, m, d) ? wdayJulian(y, m, d) : wday(y, m, d)
 

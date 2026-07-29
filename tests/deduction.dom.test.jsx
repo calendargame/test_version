@@ -21,6 +21,7 @@ import { useSettings } from '../src/store/settings.js'
 import { DAY } from '../src/lib/format.js'
 import { isGapDate, isJulianDate, dim } from '../src/lib/calendar.js'
 import { activeWday } from '../src/engine/gameReducer.js'
+import { installSeededRandom } from './helpers/rng.js'
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 function mountApp() {
@@ -620,39 +621,53 @@ describe('Deduction — Q13: carried flash suppressed when the option count chan
 
   it('Year both-crosses: 2↔5 flips render clean; same-layout advances keep exactly one pulse', () => {
     pin({ minY: 1500, maxY: 1650, useJulian: true }) // ab (1500/1600 century) + jul (1581-1583) both possible
-    mountApp()
-    switchToDeduction()
-    clickCtrl('Year')
-    clickCtrl('ab Cross')
-    clickCtrl('Jul Cross')
-    let sawSame = false
-    let sawChange = false
-    // Each puzzle picks ab (N=5) or jul (N=2) 50/50, so both branches show up fast.
-    for (let k = 0; k < 120 && !(sawSame && sawChange); k++) {
-      const kind = advanceAndCheck()
-      if (kind === 'same') sawSame = true
-      if (kind === 'change') sawChange = true
+    const restoreRandom = installSeededRandom(1500)
+    try {
+      mountApp()
+      switchToDeduction()
+      clickCtrl('Year')
+      clickCtrl('ab Cross')
+      clickCtrl('Jul Cross')
+      let sawSame = false
+      let sawChange = false
+      // Each puzzle picks ab (N=5) or jul (N=2) 50/50, so both branches show up fast.
+      for (let k = 0; k < 120 && !(sawSame && sawChange); k++) {
+        const kind = advanceAndCheck()
+        if (kind === 'same') sawSame = true
+        if (kind === 'change') sawChange = true
+      }
+      expect(sawSame).toBe(true)
+      expect(sawChange).toBe(true)
+    } finally {
+      restoreRandom()
     }
-    expect(sawSame).toBe(true)
-    expect(sawChange).toBe(true)
-  }, 60000)
+  })
 
   it('Day pinned to 1582: the Oct 7↔4 layout pair also suppresses the carried flash', () => {
     pin({ minY: 1582, maxY: 1582, useJulian: true })
-    mountApp()
-    switchToDeduction()
-    let sawSame = false
-    let sawChange = false // a 7↔4 (or 4↔7) advance — Oct pre-gap [1-4] vs the 7-day windows
-    // P(4-option layout) ≈ (1/12)·(4/21) per advance → a flip pair lands in ~32 advances on
-    // average; 400 puts the no-flip odds around 1e-6.
-    for (let k = 0; k < 400 && !(sawSame && sawChange); k++) {
-      const kind = advanceAndCheck()
-      if (kind === 'same') sawSame = true
-      if (kind === 'change') sawChange = true
+    // Seeded: the 4-option layout needs the hidden day to land in Oct 1-4 (P ~ (1/12)·(4/21) ~ 1.6%
+    // per advance), so with the real RNG this sweep's iteration count — and therefore its wall-clock
+    // — has a long tail. It took ~16s on an average draw and blew its 60s cap under full-suite load
+    // while passing in isolation: a flaky gate. Seed 404 reaches both branches in ~3 advances
+    // (~0.8s). If a change to date generation ever shifts the RNG call sequence this will get slow
+    // again rather than wrong — re-pick a seed by timing a few (see tests/helpers/rng.js).
+    const restoreRandom = installSeededRandom(404)
+    try {
+      mountApp()
+      switchToDeduction()
+      let sawSame = false
+      let sawChange = false // a 7↔4 (or 4↔7) advance — Oct pre-gap [1-4] vs the 7-day windows
+      for (let k = 0; k < 400 && !(sawSame && sawChange); k++) {
+        const kind = advanceAndCheck()
+        if (kind === 'same') sawSame = true
+        if (kind === 'change') sawChange = true
+      }
+      expect(sawSame).toBe(true)
+      expect(sawChange).toBe(true)
+    } finally {
+      restoreRandom()
     }
-    expect(sawSame).toBe(true)
-    expect(sawChange).toBe(true)
-  }, 60000)
+  })
 })
 
 // ── Q14: both-crosses Year reserves the 5-layout height (2-button grid centered in a sizer) ──
@@ -683,49 +698,54 @@ describe('Deduction — Q14: both-crosses 2-option Year sizer overlay', () => {
 
   it('sizer + self-centered grid exactly on the N=2 puzzles; N=5 stays the plain tight grid', () => {
     pin({ minY: 1500, maxY: 1650, useJulian: true })
-    mountApp()
-    switchToDeduction()
-    clickCtrl('Year')
-    clickCtrl('ab Cross')
-    clickCtrl('Jul Cross')
-    let checked2 = false
-    let checked5 = false
-    for (let k = 0; k < 120 && !(checked2 && checked5); k++) {
-      const grid = visibleAnswerGrid()
-      if (optButtons().length === 2) {
-        expect(grid.className).toContain('col-start-1 row-start-1 self-center')
-        const sizer = sizerOf(grid)
-        expect(sizer).toBeTruthy()
-        expect(sizer.className).toContain('invisible')
-        expect(sizer.className).toContain('pointer-events-none')
-        expect(sizer.className).toContain('grid-cols-6')
-        expect(sizer.hasAttribute('data-answer-grid')).toBe(false)
-        expect(sizer.children.length).toBe(5) // the five 5-layout strut cells…
-        expect(sizer.querySelectorAll('button').length).toBe(0) // …inert DIVs, never buttons
-        // Strut and real grid draw their gutter from the one ANSWER_GRID_GAP, so the height the
-        // strut reserves is the height the 5-layout actually takes. A drift here is invisible in
-        // jsdom and on-screen alike — it just leaves a dead band or a jump (Q4 round-9).
-        expect(gapTokens(sizer)).toEqual(gapTokens(grid))
-        expect(gapTokens(sizer)).toHaveLength(1)
-        // The 5-layout's col-spans are derived from the same yearGridLayout the real grid uses.
-        expect(Array.from(sizer.children, (c) => /col-span-\d/.exec(c.className)?.[0])).toEqual([
-          'col-span-2',
-          'col-span-2',
-          'col-span-2',
-          'col-span-3',
-          'col-span-3',
-        ])
-        checked2 = true
-      } else {
-        expect(optButtons().length).toBe(5)
-        expect(grid.className).not.toContain('self-center')
-        expect(sizerOf(grid)).toBe(null)
-        checked5 = true
+    const restoreRandom = installSeededRandom(2500)
+    try {
+      mountApp()
+      switchToDeduction()
+      clickCtrl('Year')
+      clickCtrl('ab Cross')
+      clickCtrl('Jul Cross')
+      let checked2 = false
+      let checked5 = false
+      for (let k = 0; k < 120 && !(checked2 && checked5); k++) {
+        const grid = visibleAnswerGrid()
+        if (optButtons().length === 2) {
+          expect(grid.className).toContain('col-start-1 row-start-1 self-center')
+          const sizer = sizerOf(grid)
+          expect(sizer).toBeTruthy()
+          expect(sizer.className).toContain('invisible')
+          expect(sizer.className).toContain('pointer-events-none')
+          expect(sizer.className).toContain('grid-cols-6')
+          expect(sizer.hasAttribute('data-answer-grid')).toBe(false)
+          expect(sizer.children.length).toBe(5) // the five 5-layout strut cells…
+          expect(sizer.querySelectorAll('button').length).toBe(0) // …inert DIVs, never buttons
+          // Strut and real grid draw their gutter from the one ANSWER_GRID_GAP, so the height the
+          // strut reserves is the height the 5-layout actually takes. A drift here is invisible in
+          // jsdom and on-screen alike — it just leaves a dead band or a jump (Q4 round-9).
+          expect(gapTokens(sizer)).toEqual(gapTokens(grid))
+          expect(gapTokens(sizer)).toHaveLength(1)
+          // The 5-layout's col-spans are derived from the same yearGridLayout the real grid uses.
+          expect(Array.from(sizer.children, (c) => /col-span-\d/.exec(c.className)?.[0])).toEqual([
+            'col-span-2',
+            'col-span-2',
+            'col-span-2',
+            'col-span-3',
+            'col-span-3',
+          ])
+          checked2 = true
+        } else {
+          expect(optButtons().length).toBe(5)
+          expect(grid.className).not.toContain('self-center')
+          expect(sizerOf(grid)).toBe(null)
+          checked5 = true
+        }
+        clickCtrl('New') // reroll — ab/jul picked 50/50 per puzzle
       }
-      clickCtrl('New') // reroll — ab/jul picked 50/50 per puzzle
+      expect(checked2).toBe(true)
+      expect(checked5).toBe(true)
+    } finally {
+      restoreRandom()
     }
-    expect(checked2).toBe(true)
-    expect(checked5).toBe(true)
   })
 
   it('Jul Cross alone (N=2 but only one toggle) does NOT reserve: no sizer, no self-center', () => {
@@ -784,23 +804,28 @@ describe('Deduction — Q4 round-8: Day / Month / Year answer buttons share one 
 
   it('the both-crosses Year sizer strut tracks the real buttons — same size token, no drift', () => {
     pin({ minY: 1500, maxY: 1650, useJulian: true })
-    mountApp()
-    switchToDeduction()
-    clickCtrl('Year')
-    clickCtrl('ab Cross')
-    clickCtrl('Jul Cross')
-    let checked = false
-    for (let k = 0; k < 120 && !checked; k++) {
-      const grid = visibleAnswerGrid()
-      const prev = grid.previousElementSibling
-      if (prev && prev.getAttribute('aria-hidden') === 'true') {
-        // The strut reserves the 5-layout's height, so a size mismatch would reserve the wrong one.
-        for (const cell of prev.children) expect(sizeTokens(cell)).toEqual(['text-sm'])
-        checked = true
+    const restoreRandom = installSeededRandom(2600)
+    try {
+      mountApp()
+      switchToDeduction()
+      clickCtrl('Year')
+      clickCtrl('ab Cross')
+      clickCtrl('Jul Cross')
+      let checked = false
+      for (let k = 0; k < 120 && !checked; k++) {
+        const grid = visibleAnswerGrid()
+        const prev = grid.previousElementSibling
+        if (prev && prev.getAttribute('aria-hidden') === 'true') {
+          // The strut reserves the 5-layout's height, so a size mismatch would reserve the wrong one.
+          for (const cell of prev.children) expect(sizeTokens(cell)).toEqual(['text-sm'])
+          checked = true
+        }
+        clickCtrl('New')
       }
-      clickCtrl('New')
+      expect(checked).toBe(true)
+    } finally {
+      restoreRandom()
     }
-    expect(checked).toBe(true)
   })
 })
 
