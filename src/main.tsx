@@ -43,49 +43,17 @@ import { reconcileBlitzBest, reconcileSuddenBest } from './engine/blitzBest.js'
 import { reconcileAoxStanding, aoxBestEqual, emptyAoxBest } from './engine/aoxBest.js'
 import { useGameEngine } from './engine/useGameEngine.js'
 import { reportWebVitals } from './dev/webVitals.js'
-import type { Question, WeekdayQuestion, DedPuzzle, GameState } from './engine/gameReducer.js'
+import type { WeekdayQuestion, DedPuzzle, GameState } from './engine/gameReducer.js'
 import type { ButtonState } from './engine/answerButtons.js'
 import type { FormatId, DatePart } from './lib/format.js'
 import type { CodeDate } from './components/MethodBreakdown.jsx'
 import RotateOverlay from './components/RotateOverlay.jsx'
 import BlitzBestRow from './components/BlitzBestRow.jsx'
 import BootOverlay from './components/BootOverlay.jsx'
+import type { GenDate, FmtDate, FlashState, GameEngine, ModeProps, DedOpts } from './modes/modeTypes.js'
 const ReactDOM = { createRoot, createPortal }
 
-// --- Shared types for the typed App + mode components (Stage C, TypeScript, final file). ---
-type GenDate = (minY: number, maxY: number) => Question
-type FmtDate = (y: number, m: number, d: number, fmt?: FormatId) => string
-// FlashState.n — option count of the grid the flash was born in (set by Deduction, whose grids
-// change size; see DeductionMode's gridFlash validity rule). The weekday modes omit it: their
-// 7-grid is fixed, so the carried flash is always valid — the designed feedback.
-type FlashState = { type: 'good' | 'bad'; idx: number; n?: number }
-type GameEngine = ReturnType<typeof useGameEngine>
-interface ModeProps {
-  visible: boolean
-  minY: number
-  maxY: number
-  useJulian: boolean
-  saveStats: boolean
-  dateFormat: FormatId
-  randomFormat: boolean
-  inputStyle?: InputStyle // day-of-week answer layout (buttons | dots); weekday modes only — Deduction ignores it
-  leapChance: string
-  janFebChance: string
-  julianChance: string
-  settingsOpen?: boolean //  the ⚙ popover open state — modes defer their settings side-effects to its CLOSE
-  clockPaused?: boolean //  Q11: true while the rotate-back overlay covers the app — the countdown modes (Flash, Blitz) freeze their live clocks for its duration
-  onFreshChange?: (fresh: boolean) => void
-}
-interface DedOpts {
-  useJulian: boolean
-  leapChance: string
-  janFebChance: string
-  randomFormat: boolean
-  dateFormat: FormatId
-  abCrossOnly: boolean
-  julCrossOnly: boolean
-  monthOnly1582: boolean
-}
+    // Shared mode types (GenDate/FmtDate/FlashState/GameEngine/ModeProps/DedOpts) -> src/modes/modeTypes.ts, imported at top.
 // AoxBest / BlitzBest / SuddenBest moved to store/progress.ts (the persisted store owns them); imported above.
 
     const {useEffect,useLayoutEffect,useRef,useState,useCallback,useMemo} = React;
