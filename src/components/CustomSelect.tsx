@@ -108,6 +108,9 @@ export default function CustomSelect({
     // page (desktop Windows browsers; overlay-scrollbar platforms were unaffected). In app mode
     // the document can't scroll, so clientWidth === innerWidth — bit-identical to the
     // iOS-QA-confirmed values.
+    // Round 10's sub-pixel sweep (--bar-h, GuidePage's panel heights) deliberately left this
+    // read alone: same rounding class, but horizontal, worth ≤0.5px, and sitting on the
+    // iOS-QA'd portal geometry path. Nothing here stacks against a hairline border.
     const right = document.documentElement.clientWidth - rect.right
     // The ± window.scrollY term converts the viewport rect into the portal's containing-block
     // space. In app mode #root is position:fixed at the viewport origin and the document can't

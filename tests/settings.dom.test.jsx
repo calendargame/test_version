@@ -367,16 +367,22 @@ describe('Settings → Display — date-format trays', () => {
     expect(st().dateFormat).toBe('written-dmy')
   })
 
-  // Round-9: the two trays STACK instead of sharing one flex row. Side-by-side gave each half
-  // half the panel — the one picker in the ⚙ whose rows didn't line up with everything else, and
-  // the tightest labels on the narrowest phone. Stacked, Date Format is structurally the SAME
-  // block as Theme, which is what this asserts: same wrapper spacing token, same per-row shape.
-  it('is TWO STACKED captioned trays — the same shape as the Theme block', () => {
+  // Round-10 (owner call, reverting round-9's stack): the two trays share ONE ROW again.
+  // Theme stacks out of NECESSITY — five theme names measure at zero headroom on any phone
+  // narrower than the owner's — and round-9 mistook that forced layout for a rule, applying it
+  // here too and costing ~61px of scrolling for consistency with a case that had no choice.
+  // These labels are m/d/y-sized and fit a shared row at every width we ship.
+  // THE RULE IS ABOUT HOUSINGS, NOT AXIS: each named family gets its own captioned tray; whether
+  // the trays sit side by side or stack is a FIT question answered per group. So this asserts the
+  // per-row SHAPE is identical to Theme's (that is the rule) while the axis differs (that is fit).
+  it('is TWO captioned trays SHARING ONE ROW, each shaped like a Theme row', () => {
     mountApp()
     const dateGroup = screen.getByRole('radiogroup', { name: 'Date Format' })
-    expect(dateGroup.className).toContain('space-y-2')
-    expect(dateGroup.className).not.toContain('flex') // the old side-by-side row is gone
+    expect(dateGroup.className).toContain('flex') // side by side, not stacked
+    expect(dateGroup.className).not.toContain('space-y-') // no vertical rhythm between them
     expect(dateGroup.children).toHaveLength(2)
+    // Both halves share the row evenly — without flex-1 the wider half would starve the other.
+    for (const half of dateGroup.children) expect(half.className).toContain('flex-1')
     expect(dateGroup.children[0]).toBe(rowEl('Written'))
     expect(dateGroup.children[1]).toBe(rowEl('Numeric'))
     // The theme rows' shared wrapper spaces its rows with the same token.
@@ -876,13 +882,17 @@ describe('Settings — the radiogroup keyboard contract', () => {
   it('moved no class on any housing, locked or not', () => {
     mountApp()
     const cls = (name) => screen.getByRole('radiogroup', { name }).className
-    expect(cls('Date Format')).toBe('space-y-2')
+    // ⚠ Round-10 retarget, NOT a loosening: Q2's gate was "the keyboard pass moves no pixel", and
+    // it still holds — this string changed because the OWNER separately reverted Date Format to
+    // one row (round-10), which is a deliberate visual change with its own test above. The pin
+    // stays exact so a future keyboard/lock change still cannot move it by accident.
+    expect(cls('Date Format')).toBe('flex gap-2')
     expect(cls('Input')).toBe('')
     expect(cls('Jan/Feb Chance on Leap Years')).toBe('')
     expect(rowEl('Dark').parentElement.className).toBe('space-y-2')
     expect(cls('Dark theme')).toBe('space-y-1.5')
     clickToggle('Random Format')
-    expect(cls('Date Format')).toBe('space-y-2 opacity-60 pointer-events-none')
+    expect(cls('Date Format')).toBe('flex gap-2 opacity-60 pointer-events-none')
     act(() => st().setMinY(1900)) // all-Gregorian: the Julian row locks, and it has no own class
     expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
   })
@@ -903,5 +913,71 @@ describe('Settings — the radiogroup keyboard contract', () => {
     expect(outer.className).toBe('space-y-2 opacity-60 pointer-events-none')
     expect(outer.firstElementChild.className).toBe('space-y-1.5')
     expect(screen.getByRole('radio').getAttribute('aria-disabled')).toBe('true')
+  })
+})
+
+// Round 10 item B — the popover's sticky footer is one of the app's four boundary surfaces, and
+// its shadow is now progressive: a continuous --shade written by the shared edge hook instead of
+// a class toggled off popoverAtBottom and cross-faded by a CSS transition. This is also the site
+// the reviewer's 4px-dead-band objection was about, so the "overflows by a hair" case is pinned
+// here explicitly: the shadow and the bottom fade mask have to give the same answer.
+describe('Settings — the sticky footer’s progressive boundary shadow (round 10 item B)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    // index.css is not loaded in jsdom, so the ramp distance the writer reads is stood up by hand
+    // at its real value — and BEFORE the mount, since the hook reads it once when it attaches.
+    document.documentElement.style.setProperty('--fade-h', '24px')
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+    document.documentElement.style.removeProperty('--fade-h')
+  })
+
+  const footer = () => document.querySelector('.popover-sticky-footer')
+  const scroller = () => document.querySelector('#settings-popover [data-drag-scroll]')
+  const shade = (el) => Number(el.style.getPropertyValue('--shade'))
+  const scrollTo = (el, top) => {
+    el.scrollTop = top
+    act(() => {
+      fireEvent.scroll(el)
+    })
+  }
+
+  it('ramps the footer shadow with the panel’s remaining scroll, toggling no class', () => {
+    mountApp()
+    const el = scroller()
+    // elev-shadow-up is unconditional now; the class list is captured and re-checked at the end.
+    expect(footer().className).toContain('elev-shadow-up')
+    const classes = footer().className
+    Object.defineProperties(el, {
+      scrollHeight: { configurable: true, get: () => 1200 },
+      clientHeight: { configurable: true, get: () => 400 },
+    })
+    scrollTo(el, 0)
+    expect(shade(footer())).toBe(1) // 800px below → full strength
+    scrollTo(el, 1200 - 400 - 14) // 14px from the end → (14 − 4) / (24 − 4)
+    expect(shade(footer())).toBe(0.5)
+    scrollTo(el, 1200 - 400)
+    expect(shade(footer())).toBe(0)
+    expect(footer().className).toBe(classes)
+  })
+
+  it('stays shadowless on a panel that overflows by a hair — the shadow and the mask agree', () => {
+    // The failure a naive progressive rule would have shipped: a 3px overflow is inside the
+    // bottom dead band, so the fade mask is off. If the shade were computed from the raw gap the
+    // footer would wear a permanent ~12% shadow beside a mask that says there is nothing below —
+    // one boundary, two answers. Both readings come off the same measurement, so it cannot happen.
+    mountApp()
+    const el = scroller()
+    Object.defineProperties(el, {
+      scrollHeight: { configurable: true, get: () => 403 },
+      clientHeight: { configurable: true, get: () => 400 },
+    })
+    scrollTo(el, 0)
+    expect(shade(footer())).toBe(0)
+    expect(el.className).not.toContain('fade-scroll-bottom')
+    expect(el.className).not.toContain('fade-scroll-both')
   })
 })

@@ -25,7 +25,7 @@ import LookupCard from './components/LookupCard.jsx'
 import { MethodBreakdownSection } from './components/MethodBreakdown.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
-import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './components/scrollRegion.js'
+import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { DOT_CELL } from './lib/dotLayout.js'
 import { sharedFitScale } from './lib/statFit.js'
 import { bootFlowOffset, BOOT_FLOW_FALLBACK_LEN } from './lib/bootFlow.js'
@@ -598,7 +598,7 @@ interface DedOpts {
 
 
 
-    const DEPLOY_TS=new Date('2026-07-28T15:52:00Z');
+    const DEPLOY_TS=new Date('2026-07-29T04:52:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -2424,7 +2424,7 @@ interface DedOpts {
       // when runLookup() fires a new result or the user manually closes it.
       // Bar height tracking. The htp-sticky-bar is position:fixed (chrome-style fixed
       // element above everything), so it has no natural effect on the flow of the
-      // appScrollRef container below it. We measure the bar's offsetHeight here and
+      // appScrollRef container below it. We measure the bar's border-box height here and
       // write it to a CSS custom property (--bar-h) on the document root; the scroll
       // container reads it via padding-top:var(--bar-h) so its content starts below
       // the bar instead of being covered by it. ResizeObserver fires on initial mount
@@ -2436,7 +2436,7 @@ interface DedOpts {
       // scroll-ownership effect below: on a mode change the bar's height and the guide's scroll
       // range change in the SAME commit, and a ResizeObserver callback lands only after every
       // layout effect has run — so a scroll restore that trusted the observer would clamp against
-      // a document 10px too short. Calling it directly reads the post-commit truth (offsetHeight
+      // a document 10px too short. Calling it directly reads the post-commit truth (the rect read
       // forces layout), which is why it's a callback rather than a closure inside the effect.
       // ⚠ THE THREE EFFECTS BELOW ARE ONE ORDERED CHAIN, and the order is the declaration order:
       // React runs layout effects top-down, so this one measures the bar, the scroll-ownership
@@ -2446,8 +2446,33 @@ interface DedOpts {
       // which is one wrong frame. That is why this is useLayoutEffect and not useEffect: as a
       // passive effect it landed AFTER the edge evaluation, which then measured the first frame of
       // every cold start against index.css's placeholder --bar-h:57px.
+      // ⚠ SUB-PIXEL PRECISION (round 10) — the measure is getBoundingClientRect().height, NOT
+      // offsetHeight. offsetHeight is specified to return a ROUNDED INTEGER: on the owner's device
+      // the bar is really 71.765625px tall and offsetHeight reported 72, so --bar-h — and with it
+      // everything positioned from --bar-h — sat 0.234px too low. That was the whole of the
+      // hairline he reported in How to Play (a faint line of the PREVIOUS panel's bottom border
+      // touching the bar with no gap, gone after scrolling a hair further). SEVEN readers share
+      // this one token and every one of them sharpens at once:
+      //   1. --seat-top (index.css) — the accordion's reading line, --bar-h + one panel gap.
+      //   2. scroll-padding-top on that same rule — the native scrollport seat (Tab to a header).
+      //   3. .doc-fade-top's top offset — where the guide's top feather starts.
+      //   4. the app scroller's paddingTop below — the content's start, i.e. the document height.
+      //   5. the settings popover's max-height calc.
+      //   6. CustomSelect's ceiling read (a flip-up is bounded by the bar, not the screen edge).
+      //   7. GuidePage's seat ladder, last rung (--seat-top → scroll-padding-top → --bar-h).
+      // Reader 3 is the structural one, and the reason this fix is a guarantee rather than a hope
+      // about how a given renderer rounds: with an exact --bar-h the feather begins EXACTLY where
+      // the bar ends, so it covers anything that could still bleed through. At 0.234px low there
+      // was a band painted by neither the bar nor the fade.
+      // ⚠ getBoundingClientRect() is TRANSFORM-AWARE — it reports the VISUAL box. The bar carries
+      // no transform today and must not gain one: a scale on the bar would silently corrupt all
+      // seven readers at once (animate a child instead).
+      // ⚠ Do NOT "modernise" this into ResizeObserver's borderBoxSize (fractional too): this
+      // callback is ALSO invoked directly from the mode-change layout effect below, where there is
+      // no observer entry to read, so a rect read is needed regardless — and two sources for one
+      // number is exactly the drift the ONE-writer note above exists to prevent.
       const htpStickyBarRef=useRef<HTMLDivElement | null>(null);
-      const syncBarHeight=useCallback(()=>{const el=htpStickyBarRef.current;if(el)document.documentElement.style.setProperty('--bar-h',`${el.offsetHeight}px`);},[]);
+      const syncBarHeight=useCallback(()=>{const el=htpStickyBarRef.current;if(el)document.documentElement.style.setProperty('--bar-h',`${el.getBoundingClientRect().height}px`);},[]);
       useLayoutEffect(()=>{
         const el=htpStickyBarRef.current;if(!el)return;
         syncBarHeight();
@@ -2468,6 +2493,17 @@ interface DedOpts {
       // bar stays position:fixed throughout (the iOS status-bar tint sampling depends on it).
       const docScroll=mode==="guide";
       const appScrollRef=useRef<HTMLDivElement | null>(null);
+      // The guide's two fixed soft edges (index.css .doc-fade-*), refs so the edge effect below can
+      // write their --shade. Mounted for the whole of guide mode now that their strength is
+      // continuous — a strip at --shade 0 paints nothing, so there is no on/off left to render.
+      const docFadeTopRef=useRef<HTMLDivElement | null>(null);
+      const docFadeBottomRef=useRef<HTMLDivElement | null>(null);
+      // The mask fades on the CLAMPED-mode container, and nothing else — the bar's shadow and the
+      // guide's strips are continuous now and read --shade instead (see the effect below). Guide
+      // mode therefore leaves these untouched and un-rendered-from: scrolling How to Play sets no
+      // React state at all, which is the point on the app's one long reading page. They are
+      // deliberately kept, not vestigial: fade-scroll-* is a state CLASS, so the container's two
+      // masks still need the booleans.
       const [appAtBottom,setAppAtBottom]=useState(true);
       const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
       // The guide's reading position, in document scroll units — the app's ONLY per-mode scroll
@@ -2524,54 +2560,64 @@ interface DedOpts {
         }
         const el=appScrollRef.current;if(el)el.scrollTop=0;
       },[mode,docScroll,syncBarHeight]);
-      // App-wide scroll-state tracking. Two states drive the shared edge indicators —
-      //   appScrolledFromTop → bar's elev-shadow-down + the top fade
-      //   appAtBottom         → the bottom fade
-      // — sourced from ONE of two scrollers, branched on docScroll:
+      // App-wide scroll-state tracking, sourced from ONE of two scrollers, branched on docScroll:
       //   • clamped modes: the confined scroll container (appScrollRef) via its own scroll
-      //     listener + ResizeObserver; the fades are the fade-scroll-* masks ON the container.
-      //     Container scrolls when content overflows the viewport-below-bar (any mode where
-      //     content can't fit at the current viewport size).
+      //     listener + ResizeObserver. Container scrolls when content overflows the
+      //     viewport-below-bar (any mode where content can't fit at the current viewport size).
       //   • guide mode: the DOCUMENT (data-doc-scroll) via window scroll/resize, reading
       //     document.scrollingElement against window.innerHeight (the container is a plain
-      //     flow block there — window resize stands in for the container ResizeObserver);
-      //     the fades are the fixed doc-fade-* strips rendered after the container.
+      //     flow block there — window resize stands in for the container ResizeObserver).
+      // What it drives, in two languages (round 10 item B):
+      //   • CONTINUOUS, both branches — the bar's boundary shadow, and in guide mode the two
+      //     doc-fade strips, all via the 0…1 --shade written straight onto those elements. That
+      //     is what killed the shadow that lingered after a status-bar tap: strength is a
+      //     function of position, so a stopped scroller is already at its final value.
+      //   • BOOLEAN, clamped branch only — the container's own fade-scroll-* masks, which are
+      //     state classes and so still need appScrolledFromTop / appAtBottom.
+      // The arithmetic is NOT written out here: scrollEdgeGaps and its two predicates
+      // (components/scrollRegion) are the one owner of "how far is this scroller from its edges",
+      // shared with useScrollEdgeState, so the shadow and the mask can never answer differently.
+      // What stays bespoke is only the SOURCING — the document scroller has no element to observe,
+      // so this branch reads document.scrollingElement and listens on window; the inner regions
+      // (popover, changelog, lookup) go through the shared hook.
+      // A missing scrollingElement is treated as an unscrollable document rather than skipped, so
+      // even then every boundary gets written to a defined resting 0 instead of being left at the
+      // @property initial value.
       // Defaults: appAtBottom true / appScrolledFromTop false (no indicators on first
       // paint before scroll state is evaluated). The listener runs on every mode change
-      // so it picks up the right scroller and re-evaluates against new content. Inner
-      // scroll regions (popover, changelog, lookup) track theirs through the shared
-      // useScrollEdgeState (components/scrollRegion); this effect stays bespoke for the
-      // docScroll branch — the document scroller has no element to observe, so it reads
-      // document.scrollingElement and listens on window instead.
+      // so it picks up the right scroller and re-evaluates against new content.
       // A LAYOUT effect, and the LAST of the three declared above, so React runs it third: the
       // first evaluate() of a mode therefore measures a bar already re-synced and a position
       // already applied, and the indicators are right on the FIRST painted frame. As a passive
       // effect it would evaluate after the paint, so returning to a scrolled guide flashed one
       // frame with no bar shadow and no top fade.
       useLayoutEffect(()=>{
+        const rampPx=readShadeRampPx();
+        // One writer for every boundary this screen owns; a ref that isn't mounted is skipped.
+        const paint=(scrollTop:number,scrollHeight:number,clientHeight:number)=>{
+          const gaps=scrollEdgeGaps(scrollTop,scrollHeight,clientHeight);
+          const top=edgeShade(gaps.top,0,rampPx);
+          writeShade(htpStickyBarRef.current,top);
+          writeShade(docFadeTopRef.current,top);
+          writeShade(docFadeBottomRef.current,edgeShade(gaps.bottom,BOTTOM_EDGE_BAND_PX,rampPx));
+          return gaps;
+        };
         if(docScroll){
-          const evaluate=()=>{
-            const se=document.scrollingElement;if(!se)return;
-            const scrollTop=se.scrollTop;
-            const scrollHeight=se.scrollHeight;
-            const clientHeight=window.innerHeight;
-            const noOverflow=scrollHeight<=clientHeight+1;
-            setAppAtBottom(noOverflow||scrollTop+clientHeight>=scrollHeight-4);
-            setAppScrolledFromTop(!noOverflow&&scrollTop>0);
-          };
+          const evaluate=()=>{const se=document.scrollingElement;paint(se?se.scrollTop:0,se?se.scrollHeight:0,window.innerHeight);};
           evaluate();
           window.addEventListener('scroll',evaluate,{passive:true});
           window.addEventListener('resize',evaluate);
           return()=>{window.removeEventListener('scroll',evaluate);window.removeEventListener('resize',evaluate);};
         }
-        const el=appScrollRef.current;if(!el)return;
+        // Same rule as scrollRegion's no-scroller path: a boundary surface with no scroller to
+        // track must REST at 0, never at @property's initial 1. Unreachable today (the container
+        // renders unconditionally), but leaving the hole would make the pattern "safe here,
+        // unsafe there" — and its twin in Lookup was a live full-strength-shadow bug.
+        const el=appScrollRef.current;if(!el){paint(0,0,0);return;}
         const evaluate=()=>{
-          const scrollTop=el.scrollTop;
-          const scrollHeight=el.scrollHeight;
-          const clientHeight=el.clientHeight;
-          const noOverflow=scrollHeight<=clientHeight+1;
-          setAppAtBottom(noOverflow||scrollTop+clientHeight>=scrollHeight-4);
-          setAppScrolledFromTop(!noOverflow&&scrollTop>0);
+          const gaps=paint(el.scrollTop,el.scrollHeight,el.clientHeight);
+          setAppAtBottom(isAtBottom(gaps));
+          setAppScrolledFromTop(isScrolledFromTop(gaps));
         };
         evaluate();
         el.addEventListener('scroll',evaluate,{passive:true});
@@ -2997,13 +3043,17 @@ interface DedOpts {
       // useScrollEdgeState (components/scrollRegion; the Q5 round-7 extraction of what were
       // per-region copies of one listener). The flags drive the shared edge indicators:
       //   …ScrolledFromTop → top fade (no shadow at the top — no fixed UI there)
-      //   …AtBottom        → bottom fade; the popover's also drives its sticky-footer shadow
-      //                      (both signal "more below" — the changelog's Close row is plain)
+      //   …AtBottom        → bottom fade (both signal "more below")
       // While closed the hook holds the defaults (scrolledFromTop false, atBottom true) so
       // reopening never flashes stale indicators; both fade flags combine into fade-scroll-both
       // inside scrollFadeClass when both edges overflow.
+      // The popover ALSO hands the hook its sticky footer as the bottom boundary surface: that
+      // shadow is continuous now (--shade, round 10 item B), so it is no longer derived from
+      // popoverAtBottom at the JSX — the hook writes it. The changelog names no boundary surface;
+      // its Close row is plain, so both trailing arguments are omitted.
       const popoverInnerScrollRef=useRef<HTMLDivElement | null>(null);
-      const {scrolledFromTop:popoverScrolledFromTop,atBottom:popoverAtBottom}=useScrollEdgeState(popoverInnerScrollRef,settingsOpen);
+      const popoverFooterRef=useRef<HTMLDivElement | null>(null);
+      const {scrolledFromTop:popoverScrolledFromTop,atBottom:popoverAtBottom}=useScrollEdgeState(popoverInnerScrollRef,settingsOpen,undefined,popoverFooterRef);
       const changelogScrollRef=useRef<HTMLDivElement | null>(null);
       const {scrolledFromTop:changelogScrolledFromTop,atBottom:changelogAtBottom}=useScrollEdgeState(changelogScrollRef,changelogOpen);
       // Footer-button caption auto-fit (Round-2) — the StatPanel value-fit pattern applied to the
@@ -3025,6 +3075,13 @@ interface DedOpts {
         const twins=Array.from(row.querySelectorAll<HTMLElement>('[data-fittwin]'));
         if(labels.length===0||twins.length===0)return;
         const naturals=twins.map(t=>t.scrollWidth);
+        // ⚠ These two stay integer-valued measures on purpose — round 10's sub-pixel sweep
+        // (--bar-h, GuidePage's panel heights) deliberately skipped them. scrollWidth is the only
+        // platform read of a clamped span's NATURAL width; a rect would report the clamped width,
+        // a different number rather than a sharper one. clientWidth EXCLUDES border and scrollbar
+        // where rect.width includes both, so swapping it would change which box is being fitted —
+        // a semantic change, not a precision one. Both feed a font-size ratio, where a rounded
+        // pixel is imperceptible anyway.
         const avails=labels.map(l=>{const btn=l.parentElement;if(!btn)return 0;const cs=getComputedStyle(btn);return btn.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);});
         const scale=sharedFitScale(naturals,avails);
         // Base font off a STATIC twin, never a live caption: the captions carry the inline
@@ -3423,9 +3480,14 @@ interface DedOpts {
               SectionLabels. Name → optional family captions → tray(s).
               Date Format is the family case: five ids in two trays, both reading and writing the
               SAME setting, so the half that doesn't hold the active id shows no selected segment.
-              The trays STACK (round-9) — Written above, Numeric below, matching Theme's shape;
-              side-by-side halved the width available to each and made this the one picker whose
-              rows didn't line up with the rest of the panel. ONE PillGroup spans BOTH trays,
+              The two trays share ONE ROW (round-10 revert of round-9's stack). Theme stacks out of
+              NECESSITY — five theme names measured at zero headroom on any phone narrower than the
+              owner's — and round-9 mistook that forced layout for a rule and applied it here too,
+              costing ~61px of scrolling for consistency with a case that had no choice. These
+              labels are m/d/y-sized, so both trays fit a row comfortably at every width we ship.
+              THE RULE IS ABOUT HOUSINGS, NOT AXIS: each named family gets its own captioned tray;
+              whether the trays sit side by side or stack is a FIT question, answered per group.
+              ONE PillGroup spans BOTH trays,
               on the wrapper that already exists to hold them: a group is a CHOICE, not a row, and
               two groups would each report "nothing selected" whenever the live format lived in
               the other half — and would also split one keyboard choice into two tab stops that
@@ -3434,12 +3496,12 @@ interface DedOpts {
               pills' accessible names (WRITTEN_FORMATS/NUMERIC_FORMATS), which keeps the two
               'MDY's apart. Every picker below states its lock ONCE, as PillGroup's `disabled`:
               the dim, aria-disabled, the onChange guard and the tab stops all follow from it. */}
-          <PillGroup label="Date Format" disabled={randomFormat} className="space-y-2">
-            <div className="space-y-1.5">
+          <PillGroup label="Date Format" disabled={randomFormat} className="flex gap-2">
+            <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Written</SectionLabel>
               <PillTray value={dateFormat} onChange={setDateFormat} options={WRITTEN_FORMATS}/>
             </div>
-            <div className="space-y-1.5">
+            <div className="flex-1 space-y-1.5">
               <SectionLabel className="text-center">Numeric</SectionLabel>
               <PillTray value={dateFormat} onChange={setDateFormat} options={NUMERIC_FORMATS}/>
             </div>
@@ -3541,7 +3603,11 @@ interface DedOpts {
           <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
-        <div data-drag-stay className={`popover-sticky-footer pt-4 px-4 border-t border-(--bd-500-20) ${!popoverAtBottom?" elev-shadow-up":""}`}>
+        {/* The panel's bottom boundary. elev-shadow-up is UNCONDITIONAL: its strength is the
+            --shade the edge hook writes onto this element (0 when the list is scrolled to the
+            end, ramping to full over the last --fade-h of travel), so there is no class to
+            toggle and nothing left to animate. */}
+        <div ref={popoverFooterRef} data-drag-stay className="popover-sticky-footer elev-shadow-up pt-4 px-4 border-t border-(--bd-500-20)">
           <div ref={footerFitRef} className="flex gap-2">
             {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
                 full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
@@ -3746,10 +3812,14 @@ interface DedOpts {
             padding-top:var(--bar-h) so its content starts below the bar
             (position:absolute in the clamped modes; a plain flow block in guide mode,
             where the document scrolls — see docScroll).
-            ResizeObserver elsewhere in App writes the bar's offsetHeight to --bar-h.
+            syncBarHeight elsewhere in App writes the bar's fractional rect height to --bar-h.
             Full width (no max-w) so theme bg + elevation shadow span edge-to-edge on
             screens wider than 480px; inner max-w-[30rem] wrapper holds the title row.
-            elev-shadow-down appears when the scroll container is past top.
+            elev-shadow-down is UNCONDITIONAL — the bar is always this screen's top boundary, and
+            how strongly it says so is the 0…1 --shade the edge effect writes onto this element
+            (0 at rest, ramping to full over the first --fade-h of scroll). The class used to be
+            toggled and cross-faded by a CSS transition, which is what left a shadow visibly
+            fading out after a status-bar tap had already stopped the page dead.
             HtP-only bar pb-2.5: absorbs half (10px) of the 20px gap that sits between the title
             row and the first GuidePage panel. That gap used to be one mt-5 on the guide's
             wrapper; GuidePage's own root now carries the matching mt-2.5 instead, so the total
@@ -3762,7 +3832,7 @@ interface DedOpts {
             its pt-5 (20px) top padding and the whole site sat ~20px too high. Don't remove the
             space — tests/classGlueGuard.test.js now fails the suite on any glued class site.
             (Calendar Game layout bug-fix, 2026-06-01.) */}
-        <div ref={htpStickyBarRef} style={{position:'fixed',top:0,left:0,right:0,zIndex:30}} className={`htp-sticky-bar bg-(--bg1) w-full pt-5 ${mode==="guide"?" pb-2.5":""}${appScrolledFromTop?" elev-shadow-down":""}`}>
+        <div ref={htpStickyBarRef} style={{position:'fixed',top:0,left:0,right:0,zIndex:30}} className={`htp-sticky-bar elev-shadow-down bg-(--bg1) w-full pt-5 ${mode==="guide"?" pb-2.5":""}`}>
           <div className="mx-auto px-4 w-full max-w-[30rem] relative">
             <div className="flex items-center justify-between gap-2">
               {/* header left: title */}
@@ -3885,12 +3955,16 @@ interface DedOpts {
             container and fade its CONTENT box — meaningless once the document scrolls (the
             mask's bottom edge would sit at the end of the whole document, off-screen). These
             fixed, untouchable strips paint the same --fade-h feather over the VIEWPORT edges
-            instead (see index.css), driven by the same two scroll states as the masks.
-            position:fixed is correct here — this is the real app viewport, not a transformed
-            portal; the top strip tucks under the fixed bar at --bar-h, the bottom strip hugs
-            the viewport floor. */}
-        {docScroll&&appScrolledFromTop?<div aria-hidden="true" className="doc-fade-top"/>:null}
-        {docScroll&&!appAtBottom?<div aria-hidden="true" className="doc-fade-bottom"/>:null}
+            instead (see index.css). position:fixed is correct here — this is the real app
+            viewport, not a transformed portal; the top strip tucks under the fixed bar at
+            --bar-h, the bottom strip hugs the viewport floor.
+            Mounted for the WHOLE of guide mode, not per edge state: each strip's opacity is the
+            --shade the edge effect writes onto it, so a strip whose edge is unreached is already
+            invisible and mounting it conditionally would only re-add the on/off this round took
+            out (round 10 item B). Guide mode is also the one place these are progressive; every
+            other panel's mask fade is still a state class — see the index.css note. */}
+        {docScroll?<div ref={docFadeTopRef} aria-hidden="true" className="doc-fade-top"/>:null}
+        {docScroll?<div ref={docFadeBottomRef} aria-hidden="true" className="doc-fade-bottom"/>:null}
         </>
       );
     }

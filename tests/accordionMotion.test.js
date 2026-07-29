@@ -2,7 +2,8 @@
 // coordinator (Q8, round 7): the distance-scaled duration formula and its clamps, the
 // twin-toggle shared clock, the numeric twin of the Material standard easing curve, and
 // the scroll-target rules (the opened-header-lands-above-the-reading-line rule, the
-// shrinking-max-scroll clamp rule, the sub-pixel epsilon, and the null "stay put" cases).
+// shrinking-max-scroll clamp rule, the whole-pixel ceil, the sub-pixel epsilon, and the null
+// "stay put" cases).
 // GuidePage feeds these functions measured DOM geometry; everything HERE is arithmetic, so
 // it runs in Node with no rendering.
 // The felt motion itself — panels and scroll riding one clock — is on-device truth.
@@ -151,23 +152,85 @@ describe('accordionScrollTarget — scenario A (a panel opens)', () => {
     expect(accordionScrollTarget({ ...g, headerDocTop: 1665 })).toBeNull() // exactly on it
     expect(accordionScrollTarget({ ...g, headerDocTop: 1664 })).toBe(999) // one px above
   })
-  it('declines a sub-pixel correction rather than animate a third of a pixel', () => {
+  it('declines a sub-pixel correction rather than animate a fraction of a pixel', () => {
     // Fractional rects make a resting position differ from its own recomputed seat by a
-    // fraction: finalHeaderTop 1064.5 clears the reading line 1065 by half a pixel, so A
-    // fires and computes 999.5 — half a pixel from where the page already sits. Running a
-    // 240ms glide for that is visible motion with no visible correction.
+    // fraction: finalHeaderTop 1064.5 clears the reading line 1065 by half a pixel, so A fires
+    // and computes a raw 999.5. The epsilon reads the distance the writer would ACTUALLY travel,
+    // i.e. after the ceil — 1000, which is exactly where the page already sits. Running a 240ms
+    // glide for that is visible motion with no visible correction.
+    const g = {
+      viewportH: 800,
+      seatTop: SEAT,
+      docH: 3000,
+      headerDocTop: 1664.5,
+      closingH: 600,
+      closingAbove: true,
+      openingH: 400,
+    }
+    expect(accordionScrollTarget({ ...g, scrollY: 1000 })).toBeNull()
+    // And it still has teeth where the page is NOT resting on a whole pixel — a rubber-band
+    // release, a native smooth-scroll landing. Same 1000 target, 0.4px away, still declined.
+    expect(accordionScrollTarget({ ...g, scrollY: 999.6 })).toBeNull()
+  })
+
+  it('CEILS the target to a whole pixel — the one offset every engine represents exactly', () => {
+    // The round-10 fix, at the owner's real seat: 57px bar + an 8.46px panel gap (0.5rem at his
+    // 16.92px fluid root). finalHeaderTop 1064.2 − 65.46 = a raw 998.74, a fraction the engine
+    // was free to round either way; ceiling hands it a 999 that every quantisation grid (1px,
+    // 1/DPR, 1/64px) contains exactly, so the engine's own rounding becomes a no-op.
     expect(
       accordionScrollTarget({
         scrollY: 1000,
         viewportH: 800,
-        seatTop: SEAT,
+        seatTop: 65.46,
         docH: 3000,
-        headerDocTop: 1664.5,
+        headerDocTop: 1664.2,
         closingH: 600,
         closingAbove: true,
         openingH: 400,
       }),
-    ).toBeNull()
+    ).toBe(999)
+  })
+
+  it('always ceils UP — never a fraction toward the hairline it exists to hide', () => {
+    // The asymmetry is the whole argument for ceil over round: overshooting hides a fraction
+    // more of a panel nobody is reading, undershooting reveals the previous panel's border under
+    // the bar. Every fraction of a pixel lands on the SAME whole pixel above; only an exact
+    // integer stays put.
+    const g = {
+      scrollY: 1000,
+      viewportH: 800,
+      seatTop: SEAT,
+      docH: 3000,
+      closingH: 600,
+      closingAbove: true,
+      openingH: 400,
+    }
+    expect(accordionScrollTarget({ ...g, headerDocTop: 1600 })).toBe(935)
+    for (let f = 0.05; f < 1; f += 0.1) {
+      const target = accordionScrollTarget({ ...g, headerDocTop: 1600 + f })
+      expect(Number.isInteger(target)).toBe(true)
+      expect(target).toBe(936)
+    }
+  })
+
+  it('ceils INSIDE the clamps: an unreachable seat still lands on the exact max-scroll', () => {
+    // finalDocH 2799.5 → max-scroll 1999.5, and the seat the header wants is a raw 1999.25 —
+    // which ceils to 2000, past the end of the document. The clamp takes it back to the exact
+    // fractional edge rather than a whole pixel the page cannot reach: the same reason scenario
+    // B's own target is never ceiled (see below).
+    expect(
+      accordionScrollTarget({
+        scrollY: 2500,
+        viewportH: 800,
+        seatTop: SEAT,
+        docH: 3000,
+        headerDocTop: 2664.75,
+        closingH: 600.5,
+        closingAbove: true,
+        openingH: 400,
+      }),
+    ).toBe(1999.5)
   })
   it('measures against the SETTLED scroll (clamped into the final range), not the raw scrollY', () => {
     // A net-shrinking switch: scrollY 2500 will clamp to the final max-scroll 1714, so the
@@ -279,6 +342,25 @@ describe('accordionScrollTarget — scenario B (the shrinking max-scroll would c
         openingH: 0,
       }),
     ).toBe(1600)
+  })
+  it('is never ceiled — its target IS the far edge, and past it the browser eats the frames', () => {
+    // A fractional panel height (rect reads, round 10) makes the final max-scroll fractional:
+    // 3000 − 600.5 − 800 = 1599.5. Scenario A rounds its target UP to a whole pixel; B must not,
+    // because B's target is already the end of the scroll range. Aiming past it would hand the
+    // writer frames the browser's own clamp absorbs, and a glide whose last stretch moves nothing
+    // reads as stalling.
+    expect(
+      accordionScrollTarget({
+        scrollY: 2500,
+        viewportH: 800,
+        seatTop: SEAT,
+        docH: 3000,
+        headerDocTop: 1800,
+        closingH: 600.5,
+        closingAbove: false,
+        openingH: 0,
+      }),
+    ).toBe(1599.5)
   })
   it('also guards a net-shrinking SWITCH when scenario A declines (closing panel below)', () => {
     // A big panel below the tapped header closes (800px) while a small one opens (100px):

@@ -132,6 +132,7 @@ export function MethodBreakdownSection({
   useJulian = false,
   displayedFormat = 'written-mdy',
   cellDates = null,
+  ref,
 }: {
   date?: CodeDate | null
   open?: boolean
@@ -144,6 +145,11 @@ export function MethodBreakdownSection({
   useJulian?: boolean
   displayedFormat?: FormatId
   cellDates?: CodeDate[] | null
+  // The wrapper element, for the one site that needs to reach it: in Lookup this section IS the
+  // history list's bottom boundary, and the scroll-edge hook writes its --shade here (round 10
+  // item B, components/scrollRegion). A plain prop, since React 19 passes `ref` through to
+  // function components without forwardRef. The four game-mode sites pass nothing.
+  ref?: React.Ref<HTMLDivElement>
 }) {
   // The panel's DOM id, for the button's aria-controls. useId, not a prop: all six codes
   // panels are mounted at once (the game modes are display:none, never unmounted), so a
@@ -259,7 +265,7 @@ export function MethodBreakdownSection({
   }, [open, date, displayedFormat, useJulian, cellDatesKey])
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   return (
-    <div className={className}>
+    <div ref={ref} className={className}>
       <button
         type="button"
         data-key="C"

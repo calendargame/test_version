@@ -21,7 +21,10 @@
 // scoped to this same html[data-doc-scroll] rule; Q5 (round 9) re-derived it from the guide's
 // panel gap instead of the top feather, and both halves of that derivation are pinned below.
 // Q6 (round 9) then extended the resume contract to mode switching — its own describe block,
-// third from the top.
+// third from the top. Round 10 (item B) made this page's three edge indicators — the bar's
+// boundary shadow and the two doc-fade strips — PROGRESSIVE, driven by a continuous --shade
+// instead of a class toggled by a boolean and cross-faded by a CSS transition; the scroll-sourcing
+// tests below now assert that number, and the stylesheet half is pinned near the bottom.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -80,6 +83,7 @@ describe('document scroll for How-to-Play (data-doc-scroll)', () => {
     delete document.scrollingElement
     delete document.visibilityState
     document.documentElement.scrollTop = 0
+    document.documentElement.style.removeProperty('--fade-h')
   })
 
   it('stamps data-doc-scroll on <html> in guide mode only, removing it on switch and unmount', () => {
@@ -136,54 +140,106 @@ describe('document scroll for How-to-Play (data-doc-scroll)', () => {
     expect(el.firstElementChild.className).toContain('pb-3')
   })
 
-  it('drives the bar shadow + doc-fade strips from document.scrollingElement in guide mode', () => {
+  // Round 10 item B: the bar's shadow and the guide's two soft edges are PROGRESSIVE — one
+  // continuous --shade per element instead of a class toggled by a boolean and cross-faded by a
+  // CSS transition. jsdom cannot measure paint, but it can prove the whole contract that feeds it:
+  // the class is unconditional, both strips are mounted for the whole of guide mode, and the
+  // number written on each element tracks the scroll position and stays inside [0, 1].
+  const shade = (el) => Number(el.style.getPropertyValue('--shade'))
+
+  it('ramps the bar shadow + doc-fade strips from document.scrollingElement in guide mode', () => {
+    // index.css is not loaded here, so the ramp distance the writer reads is stood up by hand at
+    // its real value. Without it --fade-h parses to NaN and the ramp degrades to the boolean —
+    // which is the documented fallback, and is exactly what the last case below checks.
+    document.documentElement.style.setProperty('--fade-h', '24px')
     const { container } = mountApp()
     pressKey('H')
     const bar = container.querySelector('.htp-sticky-bar')
-    expect(bar.className).not.toContain('elev-shadow-down')
-    expect(container.querySelector('.doc-fade-top')).toBeNull()
-    expect(container.querySelector('.doc-fade-bottom')).toBeNull()
-    // Mock the root scroller: 2000px of content in the (jsdom-default 768px) viewport,
-    // scrolled 100px in → past top AND not at bottom.
-    const se = { scrollTop: 100, scrollHeight: 2000 }
+    const top = container.querySelector('.doc-fade-top')
+    const bottom = container.querySelector('.doc-fade-bottom')
+    // Presence is no longer the signal: both strips exist for the whole of guide mode, and an
+    // unreached edge is simply at strength 0. jsdom implements no document.scrollingElement, so
+    // this is also the missing-root-scroller path — read as an unscrollable document, which must
+    // still WRITE a resting 0 rather than leave the elements at the @property initial value.
+    expect(bar.className).toContain('elev-shadow-down') // unconditional
+    expect(top).not.toBeNull()
+    expect(bottom).not.toBeNull()
+    expect([shade(bar), shade(top), shade(bottom)]).toEqual([0, 0, 0])
+    // Mock the root scroller: 2000px of content in the (jsdom-default 768px) viewport.
+    const se = { scrollTop: 6, scrollHeight: 2000 }
     Object.defineProperty(document, 'scrollingElement', { configurable: true, get: () => se })
     act(() => {
       fireEvent.scroll(window)
     })
-    expect(bar.className).toContain('elev-shadow-down')
-    expect(container.querySelector('.doc-fade-top')).not.toBeNull()
-    expect(container.querySelector('.doc-fade-bottom')).not.toBeNull()
-    // Back at the top → shadow + top strip clear, bottom strip stays.
+    // 6px into a 24px ramp — a quarter strength, and the bar and the top strip are one number.
+    expect(shade(bar)).toBe(0.25)
+    expect(shade(top)).toBe(0.25)
+    expect(shade(bottom)).toBe(1) // 1226px of content still below → pinned at full
+    // Past the ramp the value CLAMPS instead of growing.
+    se.scrollTop = 1000
+    act(() => {
+      fireEvent.scroll(window)
+    })
+    expect([shade(bar), shade(top), shade(bottom)]).toEqual([1, 1, 1])
+    // Back at the top → the top pair goes to 0 with no timer to run late; the bottom is unmoved.
     se.scrollTop = 0
     act(() => {
       fireEvent.scroll(window)
     })
-    expect(bar.className).not.toContain('elev-shadow-down')
-    expect(container.querySelector('.doc-fade-top')).toBeNull()
-    expect(container.querySelector('.doc-fade-bottom')).not.toBeNull()
-    // At the bottom — delivered via the resize listener (the other guide-mode source).
-    se.scrollTop = 2000 - window.innerHeight
+    expect([shade(bar), shade(top), shade(bottom)]).toEqual([0, 0, 1])
+    // The bottom ramp starts where the 4px dead band ends, so it reaches 0 and the strip switches
+    // off at the SAME place the banded atBottom says "arrived" — 12px out is (12−4)/(24−4).
+    se.scrollTop = 2000 - window.innerHeight - 12
     act(() => {
-      fireEvent(window, new Event('resize'))
+      fireEvent(window, new Event('resize')) // the other guide-mode source
     })
-    expect(container.querySelector('.doc-fade-top')).not.toBeNull()
-    expect(container.querySelector('.doc-fade-bottom')).toBeNull()
+    expect(shade(bottom)).toBe(0.4)
+    se.scrollTop = 2000 - window.innerHeight - 3 // inside the dead band
+    act(() => {
+      fireEvent.scroll(window)
+    })
+    expect(shade(bottom)).toBe(0)
+    // …and through all of that, not one class changed. No boolean is left driving any of these
+    // three: the two the app still keeps (appScrolledFromTop / appAtBottom) exist for the CLAMPED
+    // container's mask classes and provably do nothing on this page — the container is classless
+    // in guide mode and the bar's list is a constant.
+    expect(bar.className).toBe('htp-sticky-bar elev-shadow-down bg-(--bg1) w-full pt-5  pb-2.5')
+    expect([top.className, bottom.className]).toEqual(['doc-fade-top', 'doc-fade-bottom'])
+  })
+
+  it('falls back to full strength — never to no shadow — if the ramp distance cannot be read', () => {
+    // --fade-h deliberately unset (the afterEach cleared it), so the writer's parseFloat is NaN.
+    // The documented degradation is the pre-round-10 behaviour: on the moment the edge is live,
+    // at full strength. A shadow that silently vanished would be the unacceptable failure.
+    const { container } = mountApp()
+    pressKey('H')
+    Object.defineProperty(document, 'scrollingElement', {
+      configurable: true,
+      get: () => ({ scrollTop: 6, scrollHeight: 2000 }),
+    })
+    act(() => {
+      fireEvent.scroll(window)
+    })
+    expect(shade(container.querySelector('.htp-sticky-bar'))).toBe(1)
   })
 
   it('drives the scroll state from the container — never the document — in clamped modes', () => {
+    document.documentElement.style.setProperty('--fade-h', '24px')
     const { container } = mountApp()
     const el = scrollContainer(container)
     const bar = container.querySelector('.htp-sticky-bar')
-    // Mock container geometry: overflowing content, scrolled 60px in.
+    // Mock container geometry: overflowing content, scrolled 12px in — half the ramp.
     Object.defineProperties(el, {
       scrollHeight: { configurable: true, get: () => 1500 },
       clientHeight: { configurable: true, get: () => 700 },
     })
-    el.scrollTop = 60
+    el.scrollTop = 12
     act(() => {
       fireEvent.scroll(el)
     })
-    expect(bar.className).toContain('elev-shadow-down')
+    expect(shade(bar)).toBe(0.5)
+    // The container's own mask fades stay BOOLEAN state classes — deliberately, and this is the
+    // pairing that proves it: half a shadow, a whole fade-scroll-top.
     expect(el.className).toContain('fade-scroll-both')
     // The doc strips are guide-mode-only — never in a clamped mode.
     expect(container.querySelector('.doc-fade-top')).toBeNull()
@@ -197,13 +253,13 @@ describe('document scroll for How-to-Play (data-doc-scroll)', () => {
     act(() => {
       fireEvent.scroll(window)
     })
-    expect(bar.className).toContain('elev-shadow-down')
+    expect(shade(bar)).toBe(0.5)
     // The container's own scroll does: back to top → shadow clears, bottom fade remains.
     el.scrollTop = 0
     act(() => {
       fireEvent.scroll(el)
     })
-    expect(bar.className).not.toContain('elev-shadow-down')
+    expect(shade(bar)).toBe(0)
     expect(el.className).toContain('fade-scroll-bottom')
   })
 })
@@ -454,6 +510,10 @@ const ruleBody = (re) => {
   expect(m, `index.css: no rule matched ${re}`).not.toBeNull()
   return m[1]
 }
+// The DECLARATIONS only. index.css documents itself heavily, and the comments name the very
+// things some of these pins ban — the deleted `transition: box-shadow` among them — so a
+// must-NOT-appear assertion has to read the code, not the prose that explains it.
+const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('index.css — the feather token and the derived reading line (--seat-top)', () => {
   it('feathers every scroll edge from the one --fade-h token, with no hardcoded twin', () => {
@@ -499,6 +559,13 @@ describe('index.css — the feather token and the derived reading line (--seat-t
     expect(body).toContain('scroll-padding-top:var(--seat-top)')
   })
 
+  it('makes the guide’s two soft edges progressive, on the same --shade as the shadow', () => {
+    // The strips no longer mount and unmount per edge state — their opacity IS the shade, so
+    // "unreached edge" and "invisible strip" are the same fact rather than two that can disagree.
+    for (const re of [/\.doc-fade-top\{([^}]*)\}/, /\.doc-fade-bottom\{([^}]*)\}/])
+      expect(ruleBody(re)).toContain('opacity:var(--shade,1)')
+  })
+
   it('keeps ONE home for the panel gap — the token the guide lays out with and the seat derives from', () => {
     // The whole point of the token: the gap the reader sees and the gap the scroll math
     // assumes are the same declaration. A literal space-y-2 back on the guide's section list
@@ -511,5 +578,193 @@ describe('index.css — the feather token and the derived reading line (--seat-t
     )
     expect(guide).toContain('className="mt-2.5 space-y-(--guide-panel-gap)"')
     expect(guide).not.toContain('space-y-2"')
+  })
+})
+
+// Round 10 item B — the progressive boundary shadow, pinned where it is provable: in the
+// stylesheet. jsdom paints nothing, so the DOM tests above can only show that the right NUMBER
+// reaches the right element; what follows is the other half — that the declaration those numbers
+// feed is built the way it has to be built to reach a browser at all.
+describe('index.css — the progressive boundary shadow (round 10 item B)', () => {
+  it('composes the shadow from per-theme channels × alpha × --shade — and never from color-mix()', () => {
+    // ⚠ The one that would have shipped a silent, untestable bug. A hand-written color-mix()
+    // holding var(--shade) cannot be constant-folded by Lightning CSS (the value is only known at
+    // runtime) and gets no automatic @supports fallback, so on an engine without color-mix the
+    // WHOLE box-shadow declaration is invalid at parse and every boundary shadow in the app
+    // disappears. The channels-and-alpha form is pixel-identical and works back to Safari 12.1.
+    for (const [re, offset] of [
+      [/\.elev-shadow-down\{([^}]*)\}/, '0 4px 6px -2px'],
+      [/\.elev-shadow-up\{([^}]*)\}/, '0 -4px 6px -2px'],
+    ]) {
+      const body = ruleBody(re)
+      expect(body).toBe(
+        `box-shadow:${offset} rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))`,
+      )
+      expect(body).not.toContain('color-mix')
+    }
+  })
+
+  it('leaves NO box-shadow transition anywhere — the lag this replaced had nowhere else to hide', () => {
+    // The owner's symptom was a shadow still fading ~0.15-0.2s after a status-bar tap had stopped
+    // the page dead. Progressive strength only removes that if no duration survives beside it, so
+    // this bans the property outright rather than checking the one rule that used to carry it.
+    expect(cssCode).not.toMatch(/transition[^;}]*box-shadow/)
+    expect(cssCode).not.toContain('.htp-sticky-bar,.popover-sticky-footer')
+  })
+
+  it('REGISTERS --shade as a non-inherited <number>, defaulting to a VISIBLE shadow', () => {
+    // Registration is the safety net: with a syntax, a malformed JS write is rejected and the last
+    // good value survives; unregistered it would substitute garbage into the calc() and take the
+    // whole shadow with it. initial-value 1 (and the literal `,1)` fallback for engines with no
+    // @property, matching the --seat-top ladder) means an unwritten boundary shows its full static
+    // shadow — never an invisible one. inherits:false keeps a region's shade off its subtree AND
+    // keeps each write from invalidating style for anything but the one element.
+    const prop = ruleBody(/@property --shade\{([^}]*)\}/)
+    expect(prop).toContain('syntax:"<number>"')
+    expect(prop).toContain('inherits:false')
+    expect(prop).toContain('initial-value:1')
+  })
+
+  it('splits the shadow token per theme, with no survivor of the single rgba it replaced', () => {
+    // Verified against the pre-split values: black/50% for the default row (dusk and nebula
+    // inherit it — dusk used to re-declare the identical rgba, and that duplicate went with the
+    // split), midnight's violet glow on pure black, and the two light rows' dark tints. Alpha 0 is
+    // fully transparent whatever the channels hold, so multiplying the alpha behaves in all five.
+    for (const pair of [
+      '--shadow-elev-c:0 0 0;--shadow-elev-a:.5',
+      '--shadow-elev-c:139 92 246;--shadow-elev-a:.18',
+      '--shadow-elev-c:46 16 101;--shadow-elev-a:.18',
+      '--shadow-elev-c:30 27 75;--shadow-elev-a:.15',
+    ])
+      expect(cssCode).toContain(pair)
+    expect(cssCode.match(/--shadow-elev-c:/g)).toHaveLength(4)
+    expect(cssCode.match(/--shadow-elev-a:/g)).toHaveLength(4)
+    expect(cssCode).not.toMatch(/--shadow-elev:/) // the un-split token is gone, not shadowed
+  })
+})
+
+// Round 10 — the sub-pixel measurement fix. offsetHeight is specified to return a ROUNDED
+// INTEGER, so a 71.765625px bar wrote --bar-h:72px and everything seated off it sat 0.234px low;
+// the guide's panel measures rounded the same way, the opening one twice over (a difference of two
+// integers). The fix is rect reads at both sites plus a whole-pixel scroll target.
+// ⚠ WHAT JSDOM CAN AND CANNOT PROVE. It runs no layout: every real rect is zeros and every
+// offsetHeight is 0, so nothing here measures anything. What these tests DO prove is decisive
+// anyway — WHICH API each site reads. Teaching Element.prototype.getBoundingClientRect a
+// fractional height makes the two paths give different answers (the old offsetHeight path reads
+// jsdom's 0 and is unaffected by the mock), so each assertion below fails on the pre-round-10 code
+// for the right reason. The felt result — no hairline of the previous panel under the bar — stays
+// on-device truth.
+describe('sub-pixel measurement (round 10)', () => {
+  let rectSpy = null
+  let realScrollY = null
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+    rectSpy?.mockRestore()
+    rectSpy = null
+    if (realScrollY) Object.defineProperty(window, 'scrollY', realScrollY)
+    realScrollY = null
+    vi.unstubAllGlobals()
+    delete document.scrollingElement
+    document.documentElement.removeAttribute('data-doc-scroll')
+    document.documentElement.style.removeProperty('--bar-h')
+    document.documentElement.style.removeProperty('--seat-top')
+  })
+
+  // Every element reports height h and top 0 unless `taller` claims it. A plain function so
+  // `this` is the measured element.
+  const mockRects = (taller) => {
+    rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = taller(this)
+      return { height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0 }
+    })
+  }
+  // rAF under manual control: ids are 1-based indices into `frames`, so cancelling nulls its slot.
+  const manualFrames = () => {
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', (id) => {
+      frames[id - 1] = null
+    })
+    return frames
+  }
+  // Run the glide the last click scheduled to completion: first frame is t=0, the next one is
+  // handed a timestamp past any duration this app uses, so it lands exactly on the target.
+  const glideEnd = (frames, scrollToSpy) => {
+    act(() => frames.at(-1)(0))
+    act(() => frames.at(-1)(10000))
+    return scrollToSpy.mock.calls.at(-1)[1]
+  }
+
+  it('writes --bar-h from the bar’s fractional rect, not a rounded offsetHeight', () => {
+    // The owner's real bar: 71.765625px, which offsetHeight reports as 72. The 0.234px that
+    // rounding invented is the whole bug — .doc-fade-top starts at top:var(--bar-h), so the top
+    // feather began a quarter-pixel BELOW the bar's underside and left a band painted by neither.
+    mockRects(() => 71.765625)
+    mountApp()
+    expect(document.documentElement.style.getPropertyValue('--bar-h')).toBe('71.765625px')
+  })
+
+  it('lands the accordion glide on a WHOLE pixel (the ceil), from a fractional seat', () => {
+    // Fractional in, integer out. The seat is the owner's real one (57 + 8.46 at his 16.92px
+    // fluid root) and the opening panel is 400.4px tall, so the raw target is 434.54 — the
+    // fraction the engine used to be free to round either way. Integers are the one offset every
+    // quantisation grid can represent exactly, and CEIL is the safe direction: overshooting hides
+    // a fraction more of a panel nobody is reading, undershooting shows the hairline.
+    const { container } = mountApp()
+    pressKey('H')
+    document.documentElement.style.setProperty('--seat-top', '65.46px')
+    Object.defineProperty(document, 'scrollingElement', {
+      configurable: true,
+      get: () => ({ scrollHeight: 3000 }),
+    })
+    realScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 500 })
+    // Only the opening panel BODY is tall: its .expander wrapper measures 0, so the opening
+    // travel is the body's own 400.4 (the difference of two rect reads, the pair that used to be
+    // a difference of two independently rounded integers).
+    mockRects((el) => (el.id === 'guide-panel-overview' ? 400.4 : 0))
+    const frames = manualFrames()
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    act(() => {
+      fireEvent.click(container.querySelector('#guide-sec-overview button'))
+    })
+    // headerDocTop 0 + 500, seat 65.46 → 434.54 → 435. The document is 3400.4 tall against a
+    // 768px viewport, so the max-scroll clamp is nowhere near this.
+    expect(glideEnd(frames, scrollToSpy)).toBe(435)
+    scrollToSpy.mockRestore()
+  })
+
+  it('measures the CLOSING panel by rect too, and leaves the max-scroll target un-ceiled', () => {
+    // Two claims, one fixture, because they share it. The closing expander is the only tall
+    // element (600.5px), so a switch that opens nothing measurable is pure scenario B: the
+    // document shrinks past the current scroll and the writer glides to the final max-scroll.
+    // That target is finalDocH − viewportH, so it carries the closing panel's fraction straight
+    // through — proving the rect read (offsetHeight would make closingH 0 and the document never
+    // shrink) AND that B is deliberately NOT ceiled (ceiling it would aim past the document's own
+    // end, where the browser's clamp eats the last frames and the glide reads as stalling).
+    const { container } = mountApp()
+    pressKey('H')
+    Object.defineProperty(document, 'scrollingElement', {
+      configurable: true,
+      get: () => ({ scrollHeight: 3000 }),
+    })
+    realScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 2500 })
+    mockRects((el) => (el.classList.contains('expander') ? 600.5 : 0))
+    const frames = manualFrames()
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    act(() => {
+      fireEvent.click(container.querySelector('#guide-sec-overview button'))
+    })
+    act(() => {
+      fireEvent.click(container.querySelector('#guide-sec-buttons button'))
+    })
+    expect(glideEnd(frames, scrollToSpy)).toBe(3000 - 600.5 - window.innerHeight)
+    scrollToSpy.mockRestore()
   })
 })

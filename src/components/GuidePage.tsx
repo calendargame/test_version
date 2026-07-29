@@ -280,12 +280,24 @@ export default function GuidePage({ visible }: { visible: boolean }) {
         ? (document.getElementById(panelDomId(open))?.closest<HTMLElement>('.expander') ?? null)
         : null
       const openingBody = opens ? document.getElementById(panelDomId(id)) : null
-      const closingH = closingExpander?.offsetHeight ?? 0
+      // ⚠ Both panel measures read getBoundingClientRect().height, never offsetHeight, which is
+      // specified to round to a whole pixel (round 10 — the same sub-pixel fix as --bar-h, whose
+      // ⚠ block in main.tsx carries the reader list and the transform caveat that applies here
+      // too: a transform on a panel would make these VISUAL heights, not layout ones). The three
+      // roundings this coordinator used to carry are not equal in cost:
+      //   • closingH is the worst, worth about twice the bar: it is subtracted from the document
+      //     height AND — when the closing panel sits above the tapped header — from that header's
+      //     final position, so one rounding error moves the scroll target through two terms.
+      //   • openingH moves the landing least of the three, but it is a DIFFERENCE OF TWO
+      //     INDEPENDENTLY ROUNDED INTEGERS, so its own error reaches a full 1.0px — twice either
+      //     other — and it feeds finalMaxScroll, the clamp that decides whether the target can
+      //     reach the seat at all.
+      const closingH = closingExpander?.getBoundingClientRect().height ?? 0
       const openingH = openingBody
         ? Math.max(
             0,
-            openingBody.offsetHeight -
-              (openingBody.closest<HTMLElement>('.expander')?.offsetHeight ?? 0),
+            openingBody.getBoundingClientRect().height -
+              (openingBody.closest<HTMLElement>('.expander')?.getBoundingClientRect().height ?? 0),
           )
         : 0
       // The shared clock and the state flip depend on nothing but the panel measurements —
@@ -322,8 +334,9 @@ export default function GuidePage({ visible }: { visible: boolean }) {
         //      expected to resolve its calc() to an absolute length at computed-value time. That
         //      is the behaviour of every engine we can test, but it is an expectation about the
         //      untestable ones, not a proof, which is why it is not the last rung.
-        //   3. --bar-h, a literal px token written by App's ResizeObserver (and defaulted in
-        //      index.css), so parseFloat CANNOT fail on it on any engine. It is the seat minus one
+        //   3. --bar-h, a literal px token written by App's syncBarHeight (and defaulted in
+        //      index.css) — fractional since round 10, which parseFloat handles exactly as well as
+        //      a whole number, so this rung CANNOT fail on any engine. It is the seat minus one
         //      panel gap — a few px shallow, hiding the panel above a hair less completely, and
         //      nothing worse. --guide-panel-gap cannot be added back here: it computes to
         //      calc(.25rem * 2), NaN by the same rule as rung 1.
@@ -334,6 +347,9 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           : parseFloat(rootStyle.scrollPaddingTop) ||
             parseFloat(rootStyle.getPropertyValue('--bar-h')) ||
             0,
+        // scrollHeight has no fractional twin to switch to — the spec defines it as a rounded
+        // integer and exposes nothing else, so this one read stays as it is. Its error is bounded
+        // at half a pixel and lands only in finalMaxScroll, which is itself a clamp.
         docH: doc.scrollHeight,
         headerDocTop: tappedRect.top + scrollY,
         closingH,

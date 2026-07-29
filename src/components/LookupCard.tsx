@@ -121,16 +121,22 @@ export default function LookupCard({
     typeof onSelectedHistoryIdChange === 'function' ? onSelectedHistoryIdChange : () => {}
   const cov = !!calcOpen
   // Lookup history scroll-state — the shared useScrollEdgeState (components/scrollRegion,
-  // the settings-recipe edge listener). The two flags drive the edge indicators:
-  //   lookupHistoryScrolledFromTop → top fade + History header shadow (down)
-  //   lookupHistoryAtBottom        → bottom fade + MethodBreakdown shadow (up)
+  // the settings-recipe edge listener). This region has BOTH boundary surfaces, one per edge,
+  // and hands the hook a ref to each: the History header above the list and the Show Codes
+  // section below it. Their shadows are continuous (--shade, round 10 item B) — the hook writes
+  // each element's strength from the list's distance to that edge — so neither is derived from a
+  // flag at the JSX any more. The two returned flags now drive ONE thing each:
+  //   lookupHistoryScrolledFromTop → the list's top fade mask
+  //   lookupHistoryAtBottom        → the list's bottom fade mask
   // `history` stands in as the hook's active key: the <ul> only exists with entries, so a
   // history change re-attaches the listener to a freshly (re)mounted list; the hook's
   // ResizeObserver covers the list being resized under the user — which now happens on every
   // screen-size change too, since the list's height is measured rather than capped.
   const lookupHistoryRef = React.useRef<HTMLUListElement>(null)
+  const historyHeaderRef = React.useRef<HTMLDivElement>(null)
+  const methodSectionRef = React.useRef<HTMLDivElement>(null)
   const { scrolledFromTop: lookupHistoryScrolledFromTop, atBottom: lookupHistoryAtBottom } =
-    useScrollEdgeState(lookupHistoryRef, history)
+    useScrollEdgeState(lookupHistoryRef, history, historyHeaderRef, methodSectionRef)
   // Codes-open is purely global state — it stays as-is when the user clicks through
   // history entries, only changing on (1) a manual toggle, (2) a brand-new lookup
   // via runLookup, or (3) MethodBreakdownSection's auto-close when the displayed
@@ -450,12 +456,15 @@ export default function LookupCard({
             method section produced the same geometry with the lane OUTSIDE the scroller. */}
         {/* History header: with the panel padding vertical-only, the header's own px-4 spans
             the full panel width, so its divider line cuts edge-to-edge on its own.
-            lookup-history-header class is for the box-shadow transition
-            hook (see CSS). elev-shadow-down + the divider line together signal "fixed
-            header above content scrolling below" — same pattern as the popover sticky
-            footer's elev-shadow-up. */}
+            elev-shadow-down + the divider line together signal "fixed header above content
+            scrolling below" — same pattern as the popover sticky footer's elev-shadow-up. The
+            class is UNCONDITIONAL: strength comes from the --shade the edge hook writes onto
+            this element, so there is no toggle and no transition (round 10 item B). The
+            lookup-history-header class survives as the stable name for this boundary surface —
+            it is what the tests select — and no longer as a CSS transition hook. */}
         <div
-          className={`lookup-history-header shrink-0 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70) ${lookupHistoryScrolledFromTop ? ' elev-shadow-down' : ''}`}
+          ref={historyHeaderRef}
+          className="lookup-history-header elev-shadow-down shrink-0 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70)"
         >
           <span>History</span>
           {entries.length > 0 && (
@@ -496,11 +505,14 @@ export default function LookupCard({
         )}
         {/* MethodBreakdownSection wrapper: its px-4 spans the vertical-only-padded panel
             full-width, so the existing border-t divider cuts edge-to-edge on its own.
-            lookup-method-section class hooks the box-shadow transition.
-            elev-shadow-up signals "fixed footer below content scrolling above." */}
+            elev-shadow-up signals "fixed footer below content scrolling above" — unconditional
+            like the header's, and driven by the same hook writing --shade onto this element
+            through the ref below. lookup-method-section is the boundary surface's stable name
+            (the tests select it), no longer a transition hook. */}
         <MethodBreakdownSection
+          ref={methodSectionRef}
           date={cdv}
-          className={`lookup-method-section shrink-0 px-4 pt-4 border-t border-(--bd-500-40) ${!lookupHistoryAtBottom ? ' elev-shadow-up' : ''}`}
+          className="lookup-method-section elev-shadow-up shrink-0 px-4 pt-4 border-t border-(--bd-500-40)"
           contentClassName="mt-3 rounded-2xl panel px-4 pt-[3px] pb-1.5"
           open={cov}
           onOpenChange={sco}

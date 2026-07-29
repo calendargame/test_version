@@ -80,9 +80,15 @@ export const accordionEase = (t: number): number => {
 }
 
 // ── Scroll target: where the window must land for the toggle to read as ONE motion ───
-// All inputs are pre-computed geometry, fully known at tap time (before any animation):
+// All inputs are pre-computed geometry, fully known at tap time (before any animation). They
+// arrive FRACTIONAL — GuidePage measures every one of them with getBoundingClientRect (round 10),
+// and docH is the single exception, an integer because the platform offers nothing else:
 //   scrollY       window scroll at the tap (may sit negative mid rubber-band)
-//   viewportH     window.innerHeight
+//   viewportH     window.innerHeight. NOT documentElement.clientHeight: the tempting case for
+//                 that swap is "innerHeight shrinks with Safari's bottom toolbar", and this
+//                 repo's own iOS-QA'd note in components/CustomSelect asserts the opposite — it
+//                 reaches for visualViewport PRECISELY because innerHeight does NOT shrink.
+//                 Owner decision (round 10): leave it; revisit only on a real symptom.
 //   seatTop       the reading line: the viewport y a tapped panel's top edge should land on,
 //                 = the fixed bar's height PLUS one guide panel gap (--seat-top, registered in
 //                 index.css as --bar-h + --guide-panel-gap). The gap is what makes it exact —
@@ -91,7 +97,9 @@ export const accordionEase = (t: number): number => {
 //                 alone (that seats the previous panel's bottom a full gap into view) and NOT
 //                 bar + fade, which round 8 used and which overshot by fade − gap, leaving a
 //                 15.5px sliver of the previous panel showing.
-//   docH          the document's current scrollHeight
+//   docH          the document's current scrollHeight — an INTEGER by spec, with no fractional
+//                 twin to switch to. Its half-pixel worst case reaches only finalMaxScroll,
+//                 which is a clamp, so nothing downstream compounds it.
 //   headerDocTop  the tapped section wrapper's current document-space top
 //   closingH      the closing panel's current RENDERED height (0 when nothing closes;
 //                 mid-flight re-toggles pass the interpolated value, keeping the math exact)
@@ -121,12 +129,13 @@ export interface AccordionToggleGeometry {
 // range — plus the seat the header must clear. Target: the header seated exactly on the
 // reading line. (The final-range clamps on the target are pure defense: A's own inequality
 // already bounds it below the settled position.) A returns null when the glide would be
-// under a pixel: the target is built from fractional rects, so a rest position can differ
-// from its own recomputed seat by a fraction, and running a 240-440ms animation to erase
-// a third of a pixel is visible motion for no visible correction. Scenario B has no such
-// epsilon on purpose — there the current position is genuinely OUT of the final scroll
-// range, so the browser is going to move it whatever we do; the only question is whether
-// the move rides the panels' clock or snaps in one frame.
+// under a pixel: the target is built from fractional rects and the position it is measured
+// against can itself be fractional, so a page already at rest can sit a sliver from its own
+// recomputed seat, and running a 240-440ms animation to erase a third of a pixel is visible
+// motion for no visible correction. Scenario B has no such epsilon on purpose — there the
+// current position is genuinely OUT of the final scroll range, so the browser is going to move
+// it whatever we do; the only question is whether the move rides the panels' clock or snaps in
+// one frame.
 //
 // A cannot always DELIVER the seat, and that is a fact about the page, not a bug in the rule:
 // tap one of the last section or two and finalMaxScroll is smaller than the seat the header
@@ -135,11 +144,30 @@ export interface AccordionToggleGeometry {
 // with empty space to buy scroll range, which is visible dead space on every other tap. Do
 // not add one.
 //
+// A's target is CEILED to a whole pixel (round 10), and that is a policy, not a tuned number:
+// integers are the only scroll offsets every engine can represent EXACTLY — whatever a platform's
+// quantisation grid is (1px, 1/DPR, 1/64px), it contains the integers — so handing over a whole
+// number turns the engine's own rounding into a no-op instead of a coin flip the geometry cannot
+// see. CEIL rather than round because the two directions do not cost the same: overshooting hides
+// a fraction more of a panel nobody is reading, while undershooting reveals the previous panel's
+// translucent bottom border (45% alpha in the default theme) as a hairline touching the bar —
+// the owner's report that started this. Two placements are load-bearing. INSIDE the clamps, so a
+// target the document is too short to reach still resolves to the exact finalMaxScroll (B says
+// why that value must not be pushed up). BEFORE the epsilon, which is the honest order: the
+// epsilon asks "would the writer travel less than a pixel", and after the ceil that is a question
+// about the distance actually travelled. Against a whole-pixel resting position it now fires only
+// at zero — correct, since any other integer target is a full pixel away — and it still earns its
+// keep at fractional ones (a rubber-band release, a native smooth-scroll landing).
+//
 // Scenario B — the toggle SHRINKS the document past the current position: the browser
 // would clamp scrollY the instant the panel finished, flinging the page in a single
 // frame (the captured 744px/150ms clamp-fling). Gliding to the final max-scroll on the
 // panels' own clock makes the collapse and the travel one coherent motion. Checked for
 // closes AND as the fallback for a net-shrinking switch where A declined.
+// B's target is deliberately NOT ceiled. It already IS the far edge of the scroll range, so
+// rounding it up aims the writer PAST the end of the document, where the browser's own clamp
+// absorbs every frame beyond the edge: the last stretch of the glide would move nothing and the
+// motion could read as stalling just before it stops.
 export const accordionScrollTarget = (g: AccordionToggleGeometry): number | null => {
   const finalDocH = g.docH - g.closingH + g.openingH
   const finalMaxScroll = Math.max(0, finalDocH - g.viewportH)
@@ -147,7 +175,7 @@ export const accordionScrollTarget = (g: AccordionToggleGeometry): number | null
     const finalHeaderTop = g.headerDocTop - (g.closingAbove ? g.closingH : 0)
     const settledY = Math.min(Math.max(g.scrollY, 0), finalMaxScroll)
     if (finalHeaderTop < settledY + g.seatTop) {
-      const target = Math.min(Math.max(finalHeaderTop - g.seatTop, 0), finalMaxScroll)
+      const target = Math.min(Math.max(Math.ceil(finalHeaderTop - g.seatTop), 0), finalMaxScroll)
       return Math.abs(target - g.scrollY) < 1 ? null : target
     }
   }

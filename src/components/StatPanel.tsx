@@ -65,6 +65,12 @@ export default function StatPanel({
     spans.forEach((s) => {
       s.style.fontSize = '' // reset all to the base (text-sm) BEFORE measuring (avoids a feedback loop)
     })
+    // ⚠ Both reads stay as they are — round 10's sub-pixel sweep (--bar-h in main.tsx, the guide's
+    // panel heights) skipped them on purpose. scrollWidth is the ONLY platform measure of a
+    // clamped span's NATURAL width; rect.width would report the CLAMPED width, a different number
+    // rather than a sharper one. clientWidth excludes border and scrollbar where rect.width
+    // includes both, so that swap would change which box is being fitted. Both feed a ratio, and
+    // a rounded pixel of it is imperceptible in a font size.
     const measured = spans.map((s) => ({
       s,
       natural: s.scrollWidth,
