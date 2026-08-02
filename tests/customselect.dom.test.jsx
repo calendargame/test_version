@@ -9,9 +9,10 @@
 // via the global Tab shortcut or a mouse click — Enter/Space/arrows do NOT open it from the trigger.
 // The check mark (✓) marks the selection, independent of the box.
 // (Behavior updated 2026-06-06; the box-on-open suppression was 2026-06-01.)
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import CustomSelect from '../src/components/CustomSelect.jsx'
+import { SCROLL_GAP_MS, isDocScrollInFlight } from '../src/lib/docScrollFlight.js'
 
 const OPTIONS = [
   { value: 'a', label: 'Alpha' },
@@ -117,15 +118,30 @@ describe('CustomSelect — active-cursor highlight', () => {
 // and the branch was unreachable. Its three tests are gone for the same reason — testing an
 // unreachable branch is how it survives.
 //
-// THE DISMISS RULE (Q8). While the menu is open, a DOCUMENT scroll closes it with outside-tap
-// semantics (no trigger refocus) — but only when ARMED, and arming is what makes the menu usable
-// on a page that is still gliding:
+// THE DISMISS RULE (Q8, rewritten 2026-08-02). While the menu is open, a DOCUMENT scroll closes it
+// with outside-tap semantics (no trigger refocus) — but only when ARMED, and arming is what makes
+// the menu usable on a page that is still gliding:
 //   • armed at open = "nothing was scrolling when you opened this" (lib/docScrollFlight);
 //   • an UNARMED scroll is a silent no-op — it must not close (that is the flick-then-open case)
 //     and must not re-measure either (re-measuring per scroll event through momentum is the
 //     jitter this whole item removed);
-//   • the in-flight scroll's own scrollend arms, monotonically, so the NEXT scroll closes.
-// An element scroll is now nothing to this component at all: no close, no reposition.
+//   • it RE-ARMS on a scroll event that is the FIRST OF A NEW SEQUENCE, so a scroll the user starts
+//     with the menu open both arms and dismisses in that one event.
+// ⚠ The re-arm used to be the in-flight scroll's own scrollend, and that shipped and FAILED on the
+// owner's iPhone: the menu's opening touch is what cancels the glide, so the cancellation's
+// scrollend arrived ~16ms after the open and armed the menu against the dying scroll it had just
+// correctly refused to be dismissed by — the menu stayed open for about one frame. lib/docScrollFlight's
+// header has the full account. These tests therefore drive a CONTROLLED CLOCK and real scroll-event
+// cadences rather than any end-of-scroll signal, and the four cases below are the owner's spec:
+//   A. a scroll already in flight at open        → opens, stays open for the whole sequence;
+//   B. the same for a programmatic/smooth glide  → opens, stays open, and the glide's END is not an
+//      event either, so nothing happens when it stops;
+//   C. page static, the user swipes              → closes (via the touchstart-outside path — see
+//      the test, which says so and proves which path is doing the work);
+//   D. page static, then a scroll STARTS         → closes on that scroll's FIRST event, because it
+//      is the first of a new sequence. Both flavours are pinned: armed-at-open, and re-armed after
+//      surviving a glide (that second one is the exact case the shipped scrollend rule broke).
+// An element scroll is nothing to this component at all: no close, no reposition.
 describe('CustomSelect — the fixed portal panel (position, dismiss arming, --bar-h)', () => {
   let rectSpy
   // All triggers share one mocked rect — only the CustomSelect wrapper's rect is read while
@@ -148,18 +164,51 @@ describe('CustomSelect — the fixed portal panel (position, dismiss arming, --b
   }
   const setScrollY = (v) =>
     Object.defineProperty(window, 'scrollY', { configurable: true, value: v })
-  // The app-wide in-flight flag is a module singleton (lib/docScrollFlight): a document scroll
-  // raises it, a scrollend lowers it. These drive it the way the browser would.
+  // The app-wide scroll reading is a module singleton (lib/docScrollFlight) that answers two
+  // questions from the GAP between document scroll events, so these tests own the clock the module
+  // reads. Real elapsed time is not an option: a test that let 150ms of wall clock pass could not
+  // say which side of the boundary it landed on, and one that let 150ms pass ACCIDENTALLY would be
+  // a menu closing for a reason no assertion mentions. The clock is monotonic across the whole
+  // describe (module state is a singleton; a per-test reset would put "now" behind the previous
+  // test's last event and read as mid-scroll).
+  let clock = 1_000_000
+  let nowSpy
+  const tick = (ms) => {
+    clock += ms
+  }
   const docScroll = () => fireEvent.scroll(document)
-  const docScrollEnd = () => document.dispatchEvent(new Event('scrollend'))
+  // One frame of a LIVE scroll — momentum and CSSOM smooth scrolling were both measured at
+  // 15–18.5ms between events, against the module's 150ms gap.
+  const FRAME_MS = 16
+  const glideFrame = () => {
+    tick(FRAME_MS)
+    act(() => {
+      docScroll()
+    })
+  }
+  // The sequence ending is NOT an event: the events simply stop. This is that silence.
+  const scrollStops = () => tick(SCROLL_GAP_MS)
   const barTriggerRect = { top: 40, bottom: 63, left: 200, right: 300 }
+  const optionCount = () => screen.queryAllByRole('option').length
+
+  beforeEach(() => {
+    nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    // Every test starts from a stated baseline: nothing in flight, nothing having just started.
+    // (Two scrolls, because the second is what puts "a new sequence just started" back down.)
+    scrollStops()
+    docScroll()
+    tick(FRAME_MS)
+    docScroll()
+    scrollStops()
+    expect(isDocScrollInFlight()).toBe(false)
+  })
 
   afterEach(() => {
     rectSpy?.mockRestore()
     rectSpy = undefined
     setScrollY(0) // jsdom never scrolls on its own; pin the mock back to the app-mode value
     document.documentElement.style.removeProperty('--bar-h') // back to the 0 the app never sets in jsdom
-    docScrollEnd() // leave the shared in-flight flag at rest for the next test
+    nowSpy.mockRestore()
     cleanup()
     document.getElementById('root')?.remove()
   })
@@ -198,68 +247,167 @@ describe('CustomSelect — the fixed portal panel (position, dismiss arming, --b
     expect(panel().style.top).toBe(`${63 + 6}px`)
   })
 
-  it('opens and STAYS open when a scroll was already in flight — and never re-measures', () => {
+  it('A — a finger-driven glide already in flight at open: opens, stays open, never re-measures', () => {
     mockRect(barTriggerRect)
-    // Case A/B: you flicked the page (or tapped the status bar), lifted your finger, and opened
-    // the menu while it was still gliding.
-    act(() => {
-      docScroll()
-    })
+    // You flicked the guide page, lifted your finger, and pressed the trigger while momentum was
+    // still gliding. Two frames of that glide have already gone by when the menu opens.
+    glideFrame()
+    glideFrame()
+    expect(isDocScrollInFlight()).toBe(true)
     fireEvent.click(mount())
-    expect(screen.queryAllByRole('option').length).toBe(3)
-    // The glide continues under the open menu. Move the trigger too, so a re-measure would be
+    expect(optionCount()).toBe(3)
+    // ⚠ THE IPHONE SEQUENCE, reproduced — this is what the shipped version died on, and it is why
+    // a test made only of scroll events would not have caught it. The finger that opened the menu
+    // is also what CANCELS the glide, so WebKit delivers that cancellation's scrollend ~16ms AFTER
+    // the open, with the dying scroll still emitting. The old rule armed on it and the very next
+    // frame closed the menu, about 10ms after it opened ("never opens", "flashes"). The rule in
+    // place now does not listen for scrollend anywhere, so this is not an event to it.
+    tick(FRAME_MS)
+    act(() => {
+      document.dispatchEvent(new Event('scrollend'))
+    })
+    glideFrame()
+    expect(optionCount()).toBe(3)
+    // The glide continues underneath the open menu — 20 more frames, 320ms in total, i.e. twice
+    // the gap in elapsed time. What holds the menu open is that no frame is ever the FIRST of a
+    // sequence, not that little time has passed. Move the trigger too, so a re-measure would be
     // visible: an unarmed scroll must be a complete no-op, not a reposition.
     mockRect({ top: 900, bottom: 923, left: 200, right: 300 })
-    act(() => {
-      docScroll()
-      docScroll()
-    })
-    expect(screen.queryAllByRole('option').length).toBe(3) // still open
+    for (let i = 0; i < 20; i++) glideFrame()
+    expect(optionCount()).toBe(3) // still open
     expect(panel().style.top).toBe(`${63 + 6}px`) // still where it opened
+    // And the deleted no-scrollend fallback stays deleted: a wheel or a key press is not an arming
+    // signal any more. That path had its own suite; both went in the same change, and this line is
+    // what is left of it — under the fallback, either of these would have armed the menu here and
+    // the next frame would have closed it.
+    act(() => {
+      fireEvent.wheel(window)
+      fireEvent.keyDown(window, { key: 'PageDown' })
+    })
+    glideFrame()
+    expect(optionCount()).toBe(3)
   })
 
-  it('arms on the in-flight scroll’s scrollend, so the NEXT scroll dismisses it', () => {
+  it('B — a programmatic glide already running at open: same answer, and its END is not an event', () => {
     mockRect(barTriggerRect)
+    // A CSSOM smooth scroll, or the guide accordion's per-frame writer — which deliberately does
+    // NOT go through scrollWindowTo, because its frames ARE a scroll in flight (GuidePage's
+    // header). Driven here at 18.5ms, the widest gap ever measured inside a live sequence, so this
+    // case runs against the worst real cadence rather than a comfortable one.
+    const writerFrame = (y) => {
+      tick(18.5)
+      act(() => {
+        window.scrollTo(0, y)
+        docScroll()
+      })
+    }
+    writerFrame(40)
+    writerFrame(90)
+    expect(isDocScrollInFlight()).toBe(true) // the glide is running as the menu opens
+    fireEvent.click(mount())
+    expect(optionCount()).toBe(3)
+    // The same cancellation as in case A: a touch landing on a page that a smooth scroll is moving
+    // aborts that scroll, and the engine says so ~16ms later — after the menu is already open.
+    tick(FRAME_MS)
+    act(() => {
+      document.dispatchEvent(new Event('scrollend'))
+    })
+    for (let y = 140; y <= 600; y += 50) writerFrame(y)
+    expect(optionCount()).toBe(3) // open through the whole glide
+    // …and when the glide finishes, nothing happens — because nothing IS the signal. The old rule
+    // had an event here (scrollend), and that event is what armed the menu against its own glide.
+    scrollStops()
+    expect(optionCount()).toBe(3)
+  })
+
+  it('C — page static, the user swipes: the TOUCH closes it, before any scroll exists', () => {
+    mockRect(barTriggerRect)
+    const trigger = mount()
+    fireEvent.click(trigger)
+    expect(optionCount()).toBe(3)
+    // ⚠ WHICH PATH: this is the click-outside listener (mousedown/touchstart), NOT the scroll
+    // dismiss rule the rest of this block is about. The finger lands outside the panel, on the page
+    // it is about to pan, and that is simply a tap outside an open popover — it closes there and
+    // then. No scroll event has been dispatched at this point, and the clock has not moved, so the
+    // scroll path cannot be what did it.
+    act(() => {
+      fireEvent.touchStart(document.body)
+    })
+    expect(optionCount()).toBe(0)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    // The other half of the same gesture, and the reason the scroll path must also handle it: a
+    // swipe that STARTS INSIDE the panel is not an outside tap, so that listener declines it. The
+    // page it pans then closes the menu through the scroll path — the accepted, native-iOS-like
+    // consequence documented on the component.
+    fireEvent.click(trigger)
+    expect(optionCount()).toBe(3)
+    act(() => {
+      fireEvent.touchStart(panel())
+    })
+    expect(optionCount()).toBe(3) // the touch alone does nothing
+    glideFrame() // …and the page starts moving under the finger
+    expect(optionCount()).toBe(0)
+    // Proof that the first half really is a different path: the outside tap closes an UNARMED menu
+    // too — one opened mid-glide, which no scroll may dismiss. Arming is not an input to it.
+    glideFrame()
+    fireEvent.click(trigger) // opens unarmed (a scroll is in flight)
+    expect(optionCount()).toBe(3)
+    act(() => {
+      fireEvent.touchStart(document.body)
+    })
+    expect(optionCount()).toBe(0)
+  })
+
+  it('D — page static, then a scroll STARTS: closed by that scroll’s first event, no refocus', () => {
+    mockRect(barTriggerRect)
+    const trigger = mount()
+    fireEvent.click(trigger)
+    expect(optionCount()).toBe(3)
+    // iOS's status-bar tap, or any scroll begun with the menu open: its first event is the first of
+    // a new sequence, so the menu is armed by it and closed by that same event.
+    scrollStops()
     act(() => {
       docScroll()
     })
-    const trigger = mount()
-    fireEvent.click(trigger)
-    act(() => {
-      docScrollEnd() // the glide finishes — the menu is still open, and now armed
-    })
-    expect(screen.queryAllByRole('option').length).toBe(3)
-    act(() => {
-      docScroll() // a scroll the user started WITH the menu open
-    })
-    expect(screen.queryAllByRole('option').length).toBe(0)
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-  })
-
-  it('a menu opened with nothing scrolling is armed at once — outside-tap semantics, no refocus', () => {
-    mockRect(barTriggerRect)
-    const trigger = mount()
-    fireEvent.click(trigger)
-    expect(screen.queryAllByRole('option').length).toBe(3)
-    act(() => {
-      docScroll() // a page scroll targets the Document node
-    })
-    expect(screen.queryAllByRole('option').length).toBe(0) // closed, not repositioned
+    expect(optionCount()).toBe(0) // closed, not repositioned
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).not.toBe(trigger) // no refocus (≠ Esc's closeAndFocus)
     cleanup()
     document.getElementById('root')?.remove()
-    // That scroll's sequence has to END before the next open, or the app-wide in-flight flag it
-    // raised would (correctly) leave the second menu unarmed — the flag is one app-wide fact, not
-    // per-instance state.
-    docScrollEnd()
+    // That scroll's sequence has to be OVER before the next open, or the app-wide reading it
+    // refreshed would (correctly) leave the second menu unarmed — one app-wide fact, not
+    // per-instance state. Under the old rule this line was a synthetic scrollend; now it is silence.
+    scrollStops()
     // WebKit safety: engines that target documentElement for the page scroll close too.
     fireEvent.click(mount())
-    expect(screen.queryAllByRole('option').length).toBe(3)
+    expect(optionCount()).toBe(3)
     act(() => {
       fireEvent.scroll(document.documentElement)
     })
-    expect(screen.queryAllByRole('option').length).toBe(0)
+    expect(optionCount()).toBe(0)
+  })
+
+  it('D — opened DURING a glide: survives it, then closes on the first event of the NEXT scroll', () => {
+    mockRect(barTriggerRect)
+    // The RE-ARM, and the exact case the shipped scrollend version got wrong: it armed on the
+    // cancellation of the very glide the menu was opened during (the opening touch is what cancels
+    // it), so the glide's own next frame closed the menu ~10ms after it opened.
+    glideFrame()
+    glideFrame()
+    const trigger = mount()
+    fireEvent.click(trigger) // opens UNARMED — a scroll is in flight
+    glideFrame()
+    glideFrame()
+    glideFrame()
+    expect(optionCount()).toBe(3) // the glide runs out under the open menu
+    scrollStops() // …and stops, silently
+    expect(optionCount()).toBe(3)
+    // Now the user starts a scroll of their own. First event of a new sequence: arm, and dismiss.
+    act(() => {
+      docScroll()
+    })
+    expect(optionCount()).toBe(0)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('an ELEMENT scroll is nothing to it — no dismiss, no reposition', () => {

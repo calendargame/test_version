@@ -46,7 +46,7 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    date: '2026-08-01',
+    date: '2026-08-02',
     items: [
       'Dates on or before October 4, 1582 can be read in two calendars, and Lookup now shows both — "Julian: Saturday" above "Gregorian: Wednesday" — instead of one chosen for you. The answer sits on three fixed lines: the date, then its reading or readings.',
       'February 29 of a year like 1500 is a real Julian date and no Gregorian date at all. Lookup now accepts it and answers "Gregorian: Does Not Exist", and Show Codes works through the calendar the date actually has.',

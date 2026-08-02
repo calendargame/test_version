@@ -51,8 +51,9 @@ const panelDomId = (id: string) => `guide-panel-${id}`
 // sequence over. This one is not a jump that PLACES the page — it is the app RUNNING a scroll
 // animation, and its frames are exactly the "a scroll is in flight" that flag describes. Declaring
 // completion on every frame would make a glide read as stationary, so a menu opened during one
-// would arm and then dismiss itself on the next frame. It ends like any other scroll, on its last
-// frame's scrollend. tests/docScrollFlight pins the split.
+// would arm and then dismiss itself on the next frame. It ends like any other scroll: the frames
+// stop, and the GAP after the last one is what marks the sequence over.
+// tests/docScrollFlight pins the split.
 function startScrollWriter(from: number, to: number, durationMs: number): () => void {
   let raf = 0
   let start: number | null = null

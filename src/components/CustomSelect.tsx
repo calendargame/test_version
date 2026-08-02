@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useId, type ReactNode, type RefObject } fr
 import { createPortal } from 'react-dom'
 import { useBackButton } from './useBackButton.js'
 import {
-  SCROLLEND_SUPPORTED,
   isDocScrollInFlight,
+  isNewDocScrollSequence,
   isDocumentScroll,
 } from '../lib/docScrollFlight.js'
 
@@ -155,10 +155,10 @@ export default function CustomSelect({
       // ARMING (Q8) — the whole dismiss rule, decided synchronously, in one line.
       // A scroll already in flight at this moment is the tail of a gesture that finished BEFORE
       // the menu existed (a flick, or iOS's status-bar glide), so it must not dismiss it; anything
-      // that starts later must. Without scrollend there is no way to know which we are in, so we
-      // start UNARMED and let a fresh gesture arm us below — that loses the status-bar case on
-      // those engines but can never dismiss a menu the user just opened.
-      armedRef.current = SCROLLEND_SUPPORTED && !isDocScrollInFlight()
+      // that starts later must. isDocScrollInFlight answers that from the GAP since the last
+      // document scroll event — a reading of the past, which the opening touch cannot rewrite.
+      // (It used to be answered from scrollend, and that failed on device; see the scroll effect.)
+      armedRef.current = !isDocScrollInFlight()
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the
@@ -270,19 +270,25 @@ export default function CustomSelect({
   // DISMISS — a DOCUMENT scroll, and only when ARMED. Unarmed it is a silent no-op: it must not
   // close (that is case A/B, the scroll that was already gliding when you opened the menu) and it
   // must not re-measure either, because re-measuring per scroll event through momentum is the
-  // jitter round 5 chased and Q8 deleted. Arming is monotonic while open: it starts as
-  // !isDocScrollInFlight() at open (handleToggle) and the in-flight scroll's own scrollend raises
-  // it, so the very next scroll after that boundary dismisses. Listening in the capture phase with
+  // jitter round 5 chased and Q8 deleted. It starts as !isDocScrollInFlight() at open
+  // (handleToggle), and re-arms when a scroll event turns out to be the FIRST OF A NEW SEQUENCE.
+  //
+  // ⚠ It used to re-arm on scrollend, and that shipped and FAILED on the owner's iPhone (cases A
+  // and B). The reason is structural and is written up in full in lib/docScrollFlight: the menu's
+  // own opening touch is what CANCELS the glide, so the cancellation's scrollend arrived ~16ms
+  // after the open and armed the menu against the dying scroll it had just correctly refused to be
+  // dismissed by. The menu stayed open for about one frame. Asking "did a scroll just end" cannot
+  // work when the asking is what ends it; asking "did this event START a sequence" reads only the
+  // past, which the finger cannot rewrite. Do not put scrollend back.
+  // Listening in the capture phase with
   // the flag module's own target test (isDocumentScroll — a page scroll is fired at the Document,
   // documentElement accepted for WebKit, while an element scroll does not bubble at all): the two
   // listeners must agree about what counts as a page scroll, so they share the one predicate.
   // Accepted consequence, unchanged: a touch-drag that starts inside the open panel and pans the
   // page also closes it (native-iOS-like).
-  // FALLBACK, engines with no scrollend: arm on a fresh scroll GESTURE instead — a wheel or a key
-  // is unambiguously new input, and arming alone does nothing until a scroll actually follows.
-  // A touch swipe outside the panel is already handled by the click-outside listener above; a
-  // swipe that starts INSIDE the panel, and the status-bar tap (which sends no page input at all),
-  // are the two cases those engines lose. Both are strictly better than dismissing case A.
+  // NO FALLBACK PATH ANY MORE, and that is a simplification the fix bought: a gap between scroll
+  // events is not a capability, so there is nothing to feature-detect and every engine takes the
+  // one path. The wheel/keydown arming that existed for engines without scrollend is gone with it.
   //
   // RE-MEASURE — window resize (rotation), visualViewport (iOS pinch-zoom moves the visual
   // viewport independently of the layout viewport a fixed element lives in), and --bar-h. That
@@ -299,19 +305,15 @@ export default function CustomSelect({
       armedRef.current = true
     }
     const onScroll = (e: Event) => {
-      if (!isDocumentScroll(e) || !armedRef.current) return
+      if (!isDocumentScroll(e)) return
+      // A scroll that STARTS while the menu is open is a new user intent — arm on it, then let this
+      // same event dismiss. A continuation of the sequence the menu was opened during does neither.
+      if (isNewDocScrollSequence()) arm()
+      if (!armedRef.current) return
       setOpen(false)
       setActiveIdx(-1)
     }
-    const onScrollEnd = (e: Event) => {
-      if (isDocumentScroll(e)) arm()
-    }
     window.addEventListener('scroll', onScroll, true)
-    if (SCROLLEND_SUPPORTED) window.addEventListener('scrollend', onScrollEnd, true)
-    else {
-      window.addEventListener('wheel', arm, { passive: true })
-      window.addEventListener('keydown', arm)
-    }
     window.addEventListener('resize', reposition)
     const vv = window.visualViewport
     if (vv) {
@@ -329,11 +331,6 @@ export default function CustomSelect({
     barObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
     return () => {
       window.removeEventListener('scroll', onScroll, true)
-      if (SCROLLEND_SUPPORTED) window.removeEventListener('scrollend', onScrollEnd, true)
-      else {
-        window.removeEventListener('wheel', arm)
-        window.removeEventListener('keydown', arm)
-      }
       window.removeEventListener('resize', reposition)
       if (vv) {
         vv.removeEventListener('resize', reposition)

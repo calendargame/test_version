@@ -122,7 +122,7 @@ const ReactDOM = { createRoot, createPortal }
 
 
 
-    const DEPLOY_TS=new Date('2026-08-02T03:30:00Z');
+    const DEPLOY_TS=new Date('2026-08-02T08:40:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -548,8 +548,8 @@ const ReactDOM = { createRoot, createPortal }
       // what makes the restore safe — there is no later effect left to overwrite it.
       // Both jumps go through scrollWindowTo (lib/docScrollFlight), the app's one door for an
       // INSTANT window jump: either can land on top of a scroll that is still gliding, and an
-      // aborted scroll may never deliver its scrollend, which would strand the app-wide in-flight
-      // flag at true and kill the mode menu's scroll dismissal for the rest of the session. The
+      // instant scroll is COMPLETE the moment scrollTo returns — so the door states that fact rather
+      // than leaving the tracker to infer it from a jump's own trailing scroll event. The
       // helper states the truth these two lines establish — the page is where we just put it and
       // nothing is moving.
       useLayoutEffect(()=>{
@@ -687,8 +687,8 @@ const ReactDOM = { createRoot, createPortal }
       //     mode. The guide's in-flight scroll writer is cancelled when the app is backgrounded
       //     by GuidePage itself, which is where that concern belongs.
       // The window jump goes through scrollWindowTo (lib/docScrollFlight) for the reason spelled out
-      // on the mode-change effect above: a reload can hand back a page mid-glide, and an instant
-      // jump that aborts a smooth scroll may never see that scroll's scrollend.
+      // on the mode-change effect above: a reload can hand back a page mid-glide, and the jump that
+      // lands on top of it ends that glide as a matter of fact, not by inference.
       useEffect(()=>{const reset=()=>{scrollWindowTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=(e: PageTransitionEvent)=>{if(e.persisted)return;reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
       // Keyboard input — desktop convenience, mobile-no-op.
       // Three categories of keys are handled, all subject to the same gates: not in
@@ -1811,8 +1811,14 @@ const ReactDOM = { createRoot, createPortal }
                     an aria-hidden copy that only reserves width, and the live label stacked on it. So
                     the button is always exactly as wide as "Check for updates" (the longest of the
                     four by construction — lib/updateCheck pins it) and the Changelog link beside it
-                    can never shift when the label changes. justify-items-start keeps the text
-                    anchored where it sits at rest instead of sliding to a new centre.
+                    can never shift when the label changes. justify-items-CENTER splits the slack
+                    evenly, so each shorter label sits centred in the gap between the Last Updated
+                    stamp and Changelog rather than hugging one edge (owner's call 2026-08-02,
+                    overriding an earlier justify-items-start that anchored them left). The resting
+                    label is the widest, so it fills the cell exactly and centring cannot move it —
+                    only the three status labels shift, which is the whole point. Note the CENTRE is
+                    the button's own fixed cell, NOT the row: it stays put however wide the date in
+                    the timestamp renders, so nothing here is position-dependent on that.
                   • UNDERLINE ONLY AT REST. The other three labels are STATUS, not actions; wearing the
                     interaction signal while not being the interaction is the round-3 block-hover
                     mistake. The button still IS pressable during a result — a tap starts another
@@ -1821,7 +1827,7 @@ const ReactDOM = { createRoot, createPortal }
                     is in. No aria-live: a tap leaves focus on the button, where the accessible name
                     changing is announced anyway, and a live region inside a control double-announces
                     on some screen readers — an unverifiable trade for no gain. */}
-            <button type="button" onClick={onCheckUpdates} disabled={updateCheck==='checking'} className="select-none rounded-md px-1 -mx-1 grid justify-items-start"><span aria-hidden="true" className="col-start-1 row-start-1 invisible whitespace-nowrap">{UPDATE_CHECK_LABEL.idle}</span><span className={`col-start-1 row-start-1 whitespace-nowrap ${updateCheck==='idle'?" underline":""}`}>{UPDATE_CHECK_LABEL[updateCheck]}</span></button>
+            <button type="button" onClick={onCheckUpdates} disabled={updateCheck==='checking'} className="select-none rounded-md px-1 -mx-1 grid justify-items-center"><span aria-hidden="true" className="col-start-1 row-start-1 invisible whitespace-nowrap">{UPDATE_CHECK_LABEL.idle}</span><span className={`col-start-1 row-start-1 whitespace-nowrap ${updateCheck==='idle'?" underline":""}`}>{UPDATE_CHECK_LABEL[updateCheck]}</span></button>
             {/* Changelog (Q6), RIGHT of Check for updates — the two update-flavored links live
                 together, force-the-latest then read-what-changed. Same footer-link recipe, in a
                 row wearing the same shared FOOTER_LINK_ROW_CLASS as the View/Clear row above
