@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { Stats } from '../engine/gameReducer.js'
 import { captureError } from '../observability/sentry.js'
 import { checkStatsInvariants } from '../engine/invariants.js'
+import { dimEither } from '../lib/calendar.js'
 import { useSettings } from './settings.js'
 
 // store/progress.ts — saved gameplay progress (Stage D1).
@@ -56,10 +57,12 @@ export interface SuddenBest {
 // A saved Lookup history entry — the persisted shape, owned HERE (the store is what versions and
 // migrates it; it used to be declared in the LookupCard UI component and imported backwards).
 // It carries only what the user actually supplied: the parsed date, a stable id for selection, and
-// the Oct 5–14, 1582 gap marker. Everything the card SHOWS — the formatted label, the weekday, the
-// full result sentence — is derived from y/m/d against the LIVE Date Format / Julian settings, so
-// changing either re-renders every row and the result line together. (Before v3 the rendered text
-// was stored too, and a format change left an old-format result sentence above a new-format row.)
+// the Oct 5–14, 1582 gap marker. Everything the card SHOWS — the formatted label, the weekday(s) —
+// is derived from y/m/d against the LIVE Date Format, so changing it re-renders every row and the
+// answer slot together. (Before v3 the rendered text was stored too, and a format change left an
+// old-format result sentence above a new-format row.) There is deliberately no calendar field
+// either: a pre-reform date is shown in BOTH calendars, so there is nothing per-entry to freeze and
+// no way for a stored date to be re-read as a different — or an impossible — one later.
 export interface LookupEntry {
   id: string
   y: number
@@ -171,6 +174,17 @@ export function migrateAoxBestKeys(
 // blank weekday, or trips the mode error boundary. An entry that can't answer "which date?" has
 // nothing to show and is dropped.
 //
+// The date must also be a REAL one, not merely a number-shaped one. This is the same either-calendar
+// rule Lookup validates with (dimEither): a date counts if it exists in a calendar it can be read
+// in, so pre-reform February keeps Julian's 29th, and February 30 or day 32 exists nowhere and is
+// dropped. Without this check a tampered or truncated payload would be ANSWERED rather than refused
+// — the card would print a confident weekday for a date that never happened, since the underlying
+// day-number arithmetic happily rolls February 30 into March. Whole numbers for the same reason:
+// month 1.5 indexes MONTH to `undefined` and day 1.5 produces a weekday belonging to no day.
+// Deliberately NOT bounded to Lookup's 1–10000 years: an out-of-range year still names a real date
+// and still reads correctly, so there is nothing wrong to drop — unlike an impossible day, which
+// can only be answered wrongly.
+//
 // This runs on EVERY rehydrate (see `merge` below), not just the v2→v3 upgrade: a v3 payload is
 // read from the same untrusted localStorage as a v2 one. Exported for tests.
 export function normalizeLookupEntries(entries: unknown): LookupEntry[] {
@@ -181,9 +195,13 @@ export function normalizeLookupEntries(entries: unknown): LookupEntry[] {
         !!e &&
         typeof e === 'object' &&
         typeof e.id === 'string' &&
-        Number.isFinite(e.y) &&
-        Number.isFinite(e.m) &&
-        Number.isFinite(e.d),
+        Number.isInteger(e.y) &&
+        Number.isInteger(e.m) &&
+        Number.isInteger(e.d) &&
+        e.m >= 1 &&
+        e.m <= 12 &&
+        e.d >= 1 &&
+        e.d <= dimEither(e.y, e.m),
     )
     .map((e) =>
       e.isGap

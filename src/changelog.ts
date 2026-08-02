@@ -2,13 +2,27 @@
 // players, never developers. Hand-maintained: every deploy adds its lines here, a standing part
 // of the deploy ritual.
 //
-// THE CHARTER (round-8 Q8) — this array is exactly what ships and exactly what the popup draws:
+// THE CHARTER (round-8 Q8; the two ordering rules amended round-11 Q6) — this array is exactly
+// what ships and exactly what the popup draws:
 //   • Newest first. Entry dates are the deploy's Pacific calendar date in ISO form (YYYY-MM-DD);
 //     the popup renders them through the user's Date Format setting, so never encode a format here.
-//   • ONE entry per Pacific calendar DAY, never per deploy (the round-7 owner call): a second
-//     deploy on the same day merges into that day's single entry by PREPENDING its lines, newest
-//     lines first — so dates stay unique, which is also the popup's per-entry React-key contract
-//     (key={en.date}); changelog.dom.test pins the uniqueness.
+//   • ONE entry per Pacific calendar DAY, never per deploy (the round-7 owner call) — so dates
+//     stay unique, which is also the popup's per-entry React-key contract (key={en.date});
+//     changelog.dom.test pins the uniqueness.
+//   • ORDER WITHIN A DAY: MOST NOTICEABLE FIRST, related lines kept adjacent, `Fixed:` lines
+//     last. Already the de-facto pattern (the 7/26 entry ends on one), written down in round-11
+//     Q6. The entry is read top-down by someone who has just been handed the update, so the line
+//     likeliest to be why they opened it leads; a fix nobody was waiting for closes.
+//   • A SECOND DEPLOY ON THE SAME DAY RESTATES THAT DAY'S NET EFFECT VERSUS PRODUCTION — it does
+//     not prepend a second log. (The charter said "prepend, newest lines first" until round-11
+//     Q6; the practice on 2026-07-28 was already better and is what got codified.) A player only
+//     ever sees the difference from the version they last had, so an intermediate state nobody
+//     ran is not a change: MERGE a correction into the line it corrects, and DELETE outright a
+//     line describing something the later deploy reverted. Worked example, 2026-07-28: round
+//     10's hairline fix was merged into round 9's How-to-Play line, and round 9's "Date Format
+//     now stacks" line was deleted because round 10 reverted it and no player ever saw it.
+//     Lines already SHIPPED on an earlier day are settled history — never reordered or reworded
+//     to suit a later rule.
 //   • TEN entries maximum, ever. When a new day would make it eleven, MOVE the oldest entry to
 //     CHANGELOG-ARCHIVE.md at the repo root (no source file imports it, so retired history costs
 //     the bundle nothing) — do not just let the array grow. Before round-8 the popup sliced the
@@ -31,6 +45,19 @@ export type ChangelogEntry = {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    date: '2026-08-01',
+    items: [
+      'Dates on or before October 4, 1582 can be read in two calendars, and Lookup now shows both — "Julian: Saturday" above "Gregorian: Wednesday" — instead of one chosen for you. The answer sits on three fixed lines: the date, then its reading or readings.',
+      'February 29 of a year like 1500 is a real Julian date and no Gregorian date at all. Lookup now accepts it and answers "Gregorian: Does Not Exist", and Show Codes works through the calendar the date actually has.',
+      'History rows say the same thing in short, so each stays on one line: "J: Sat · G: Wed" for an early date, and just the weekday on its own for every other one. Tap a row to see it spelled out in full above.',
+      'The Julian Calendar setting no longer changes any Lookup answer. It only picks which calendar Show Codes teaches.',
+      'Check for updates now really checks. The link reads "Checking…" while it looks, then answers "Up to date" or "No connection" in the same spot, and installs something only when there genuinely is a new version — so a press with nothing to get no longer throws away the copy that lets the app work offline.',
+      'Opening the mode menu just after flicking the page no longer closes it again straight away: a scroll that was already gliding is left to finish, while a scroll you start with the menu open still closes it.',
+      'Going back to the app from another page no longer sends How to Play to the top. A fresh launch, a reload and a Full Reset still start there.',
+      'Fixed: the fades and shadows at the edges of a scrolling area now keep up when content grows or shrinks under them — opening Show Codes in Lookup, or a How to Play section — instead of holding the old answer until you next scroll.',
+    ],
+  },
   {
     date: '2026-07-28',
     items: [

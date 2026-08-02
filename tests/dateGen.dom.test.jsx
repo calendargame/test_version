@@ -88,6 +88,34 @@ const CHANCES = ['random', 0, 0.5, 1]
 const FORMATS = ['numeric-ymd', 'numeric-mdy', 'numeric-dmy', 'written-mdy', 'written-dmy']
 const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)]
 
+// The app NEVER asks for a Year puzzle from a range that can't hold one: DeductionMode computes
+// yearSubPossible, disables the Year chip while it is false, and switches an already-selected Year
+// to Day the moment it goes false (src/modes/DeductionMode.tsx). makeDedPuzzle relies on that —
+// "No fallback: the Year sub-mode playability contract (yearSubPossible) keeps this from being
+// called for an unbuildable range in normal play" (src/lib/dedPuzzle.ts) — so on an unbuildable
+// range it just exhausts its 3000-attempt bound and returns null.
+//
+// ⚠ WHY THE FUZZ MUST RESPECT THIS (Q11, the intermittent-failure root cause). Without it, a third
+// of the draws asked Year for ranges the app forbids: 7,351 of 60,000 calls returned null, and
+// those calls alone burned 96.7% of the test's runtime — while asserting NOTHING, because
+// checkPuzzle(null) returns [] by design. The test therefore cost ~4s of pure CPU for ~0.14s of
+// actual checking, which under full-suite worker contention stretched past the 20s per-test budget
+// and failed the run at random (reproduced 6 times in 10 consecutive full-suite runs; the test's
+// own reported duration was 20.6-22.7s against 6.0s standalone). Restating the contract here is not
+// a narrowing of coverage — it spends those 7,351 iterations on puzzles that actually get checked.
+// Deliberately RESTATED rather than imported: a fuzz that fed itself from the implementation it
+// probes could not notice the implementation drifting. The unbuildable side is pinned by its own
+// test below, so the branch this skips is still covered — just at a bounded cost.
+const yearSubPossible = (lo, hi, useJulian) => {
+  const a = Math.max(1, lo)
+  if (hi - a + 1 >= 5) return true
+  if (!useJulian) return false
+  const has1581 = a <= 1581 && hi >= 1581,
+    has1582 = a <= 1582 && hi >= 1582,
+    has1583 = a <= 1583 && hi >= 1583
+  return (has1582 && has1583) || (has1581 && has1582)
+}
+
 describe('date-generation fuzz — every setting yields a real, answerable question (C2 Part 3)', () => {
   it('randomDate produces only real, answerable weekday questions across all settings', () => {
     const rnd = mulberry32(12345)
@@ -132,7 +160,7 @@ describe('date-generation fuzz — every setting yields a real, answerable quest
       const built = { day: 0, month: 0, year: 0 }
       for (let i = 0; i < 60000; i++) {
         const [lo, hi] = pick(rnd, RANGES)
-        const type = pick(rnd, ['day', 'month', 'year'])
+        const drawn = pick(rnd, ['day', 'month', 'year'])
         const opts = {
           useJulian: rnd() < 0.5,
           leapChance: pick(rnd, CHANCES),
@@ -143,6 +171,9 @@ describe('date-generation fuzz — every setting yields a real, answerable quest
           julCrossOnly: rnd() < 0.5,
           monthOnly1582: rnd() < 0.5,
         }
+        // Exactly what the app does when the range can't hold a Year puzzle — DeductionMode's
+        // `if (dedType === 'year' && !yearSubPossible) setDedType('day')`. See yearSubPossible above.
+        const type = drawn === 'year' && !yearSubPossible(lo, hi, opts.useJulian) ? 'day' : drawn
         const p = makeDedPuzzle(type, lo, hi, opts)
         if (p != null) built[p.type]++
         const v = checkPuzzle(p)
@@ -158,6 +189,48 @@ describe('date-generation fuzz — every setting yields a real, answerable quest
       expect(built.day).toBeGreaterThan(0)
       expect(built.month).toBeGreaterThan(0)
       expect(built.year).toBeGreaterThan(0)
+    } finally {
+      Math.random = realRandom
+    }
+  })
+
+  // The other side of the yearSubPossible contract, pinned directly instead of being hammered by the
+  // fuzz above (Q11 — that was 96.7% of that test's runtime for zero assertions). When the app WOULD
+  // have disabled the Year chip, makeDedPuzzle must fail CLEANLY: null, never a malformed or
+  // unanswerable puzzle. A bounded sample is the right shape — the outcome is structural, not
+  // probabilistic, so each configuration is exhausted-and-null on every attempt.
+  it('an unbuildable Year range yields null, never a malformed puzzle', () => {
+    const dateRng = mulberry32(24680)
+    const realRandom = Math.random
+    Math.random = () => dateRng()
+    try {
+      const unexpected = [] // anything built at all is the violation here
+      let checked = 0
+      for (const [lo, hi] of RANGES) {
+        for (const useJulian of [false, true]) {
+          if (yearSubPossible(lo, hi, useJulian)) continue
+          for (const julCrossOnly of [false, true]) {
+            for (let i = 0; i < 10; i++) {
+              const p = makeDedPuzzle('year', lo, hi, {
+                useJulian,
+                leapChance: 'random',
+                janFebChance: 'random',
+                randomFormat: false,
+                dateFormat: 'numeric-ymd',
+                abCrossOnly: i % 2 === 0,
+                julCrossOnly,
+                monthOnly1582: false,
+              })
+              checked++
+              if (p != null)
+                unexpected.push(`[${lo},${hi}] jul=${useJulian} → ${JSON.stringify(p)}`)
+            }
+          }
+        }
+      }
+      expect(unexpected, unexpected.slice(0, 5).join('\n')).toEqual([])
+      // Prove the sweep found unbuildable configurations at all (not vacuously green).
+      expect(checked).toBeGreaterThan(0)
     } finally {
       Math.random = realRandom
     }

@@ -1,7 +1,7 @@
 import './index.css' // Tailwind (v3, compiled in-build) + the app's custom CSS — replaces the old Play-CDN <script> + inline <style>.
 import * as React from 'react'
 import ErrorBoundary, { ModeErrorBoundary } from './ErrorBoundary'
-import { initObservability } from './observability/sentry'
+import { initObservability, captureError } from './observability/sentry'
 // The original loaded the full ReactDOM UMD global, which exposes BOTH createRoot and
 // createPortal. The modern modular build splits them: createRoot is in 'react-dom/client',
 // createPortal is in 'react-dom'. Reconstruct a ReactDOM with both so the app's
@@ -21,10 +21,14 @@ import GuidePage from './components/GuidePage.jsx'
 import LookupCard from './components/LookupCard.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
-import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
+import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { sharedFitScale } from './lib/statFit.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
+import { scrollWindowTo } from './lib/docScrollFlight.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
+import { checkForUpdate, readOwnBuildId, buildIdUrl, makeCheckNonce, UPDATE_CHECK_LABEL, UPDATE_RESULT_MS } from './lib/updateCheck.js'
+import type { UpdateCheckState } from './lib/updateCheck.js'
+import { useSettingsCloseEffect } from './components/useSettingsCloseEffect.js'
 import { CHANGELOG, GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot } from './changelog.js'
 import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
 import type { InputStyle, SettingsValues } from './store/settings.js'
@@ -106,7 +110,10 @@ const ReactDOM = { createRoot, createPortal }
 
     // entryWithGreen → src/engine/answerButtons.js, imported at top (shared with the reducer + AoxMode).
 
-    // FLASH_MS + the shared mode-screen hooks -> src/modes/modeHooks.ts, imported at top.
+    // FLASH_MS + the shared mode-screen hooks -> src/modes/modeHooks.ts, consumed there by the five
+    // screens; nothing here reaches into src/modes for them. The one that is NOT mode-specific,
+    // useSettingsCloseEffect, lives in src/components/useSettingsCloseEffect.ts (App uses it too,
+    // for the Q7 update-check reset) and is imported at top.
 
     // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js, imported at top.
 
@@ -115,7 +122,7 @@ const ReactDOM = { createRoot, createPortal }
 
 
 
-    const DEPLOY_TS=new Date('2026-07-29T04:52:00Z');
+    const DEPLOY_TS=new Date('2026-08-02T03:30:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -135,11 +142,17 @@ const ReactDOM = { createRoot, createPortal }
     const markSkipBootHold=()=>{try{sessionStorage.setItem(SKIP_BOOT_HOLD_KEY,'1');}catch{/* best-effort */}};
     const consumeSkipBootHold=()=>{try{const set=sessionStorage.getItem(SKIP_BOOT_HOLD_KEY)!==null;sessionStorage.removeItem(SKIP_BOOT_HOLD_KEY);return set;}catch{return false;}};
 
-    // Force the very latest deployed version, bypassing the service-worker cache — the MANUAL big
-    // hammer behind Settings → "Check for updates". (The NORMAL update path is two-step prompt-mode:
+    // Force the very latest deployed version, bypassing the service-worker cache — the big hammer
+    // BEHIND Settings → "Check for updates", and since Q7 (round 11) no longer what that button
+    // does. The button checks first and applies through the service worker; this runs only when a
+    // check FOUND something the gentle path cannot deliver (no registration at all, or no handoff
+    // within UPDATE_HANDOFF_MS). It stays reachable because it is the only cure for the round-7
+    // class — an asset whose bytes changed while its precache revision did not, which Workbox will
+    // never re-download (scripts/precacheIntegrity.mjs now makes that unshippable at build time).
+    // (The NORMAL update path is two-step prompt-mode:
     // a newly-deployed SW installs + WAITS in the background, and App's auto-update boot effect
-    // applies it on the next cold open behind the Updating screen.) This button covers what that
-    // path can't — a stuck/ancient SW or cached icon you can't shake on a phone with no hard-refresh:
+    // applies it on the next cold open behind the Updating screen.) It covers what that path
+    // can't — a stuck/ancient SW or cached icon you can't shake on a phone with no hard-refresh:
     // it unregisters the service worker(s) and deletes the Cache-API caches (the precached app shell
     // + assets), then reloads — so the next load fetches everything fresh from the server. NEVER use
     // it on the automatic path: with the caches wiped, an offline launch has nothing to serve (the
@@ -204,6 +217,14 @@ const ReactDOM = { createRoot, createPortal }
     // hold, activating an already-waiting worker completes in tens of ms and the reload outraces
     // React's paint of the overlay — the owner never saw the screen (1s picked 2026-07-13).
     const MIN_UPDATING_MS=1000;
+
+    // Q7: how long the manual applier waits for the service-worker handoff (controllerchange) before
+    // giving up and reaching for forceReloadLatest. A FAILURE bound, not a display duration — the
+    // Updating screen is up the whole time either way. Generous, because a slow phone finishing an
+    // install at 6s is a real success and cutting it off would wipe the offline copy for nothing;
+    // the auto path's own 4s net is shorter because there it only ever activates an ALREADY
+    // downloaded worker, while this one may still be fetching the new build.
+    const UPDATE_HANDOFF_MS=8000;
 
     // makeUpdateReloadGate (pure, exported for tests) — the AUTO update path's reload gate: reload()
     // fires only when BOTH the SW handoff (controllerchange, or the 4s safety timeout — either calls
@@ -431,7 +452,8 @@ const ReactDOM = { createRoot, createPortal }
       //   3. .doc-fade-top's top offset — where the guide's top feather starts.
       //   4. the app scroller's paddingTop below — the content's start, i.e. the document height.
       //   5. the settings popover's max-height calc.
-      //   6. CustomSelect's ceiling read (a flip-up is bounded by the bar, not the screen edge).
+      //   6. CustomSelect's open dropdown, which WATCHES this property: its trigger is in the bar,
+      //      so a change here means the trigger moved and the fixed panel must re-measure.
       //   7. GuidePage's seat ladder, last rung (--seat-top → scroll-padding-top → --bar-h).
       // Reader 3 is the structural one, and the reason this fix is a guarantee rather than a hope
       // about how a given renderer rounds: with an exact --bar-h the feather begins EXACTLY where
@@ -515,7 +537,7 @@ const ReactDOM = { createRoot, createPortal }
       // either case — it fires after every layout effect has run, i.e. a frame late. It can sit
       // ahead of the attribute because the bar does not care about it: the bar is position:fixed
       // against the viewport, so releasing #root's clamps changes nothing about its height. What
-      // IS load-bearing is that both land before window.scrollTo — the attribute because the
+      // IS load-bearing is that both land before the scrollWindowTo below — the attribute because the
       // document cannot scroll without it, the measurement because it sets the height the offset
       // is clamped against.
       // A LAYOUT effect so all of that happens before the browser paints the new mode, and on
@@ -524,22 +546,30 @@ const ReactDOM = { createRoot, createPortal }
       // one needed: the document cannot scroll in a clamped mode, so the game-mode branch has no
       // window reset to make. Nothing else in the app moves a scroller on a mode change, which is
       // what makes the restore safe — there is no later effect left to overwrite it.
+      // Both jumps go through scrollWindowTo (lib/docScrollFlight), the app's one door for an
+      // INSTANT window jump: either can land on top of a scroll that is still gliding, and an
+      // aborted scroll may never deliver its scrollend, which would strand the app-wide in-flight
+      // flag at true and kill the mode menu's scroll dismissal for the rest of the session. The
+      // helper states the truth these two lines establish — the page is where we just put it and
+      // nothing is moving.
       useLayoutEffect(()=>{
         syncBarHeight();
         if(docScroll){
           document.documentElement.setAttribute('data-doc-scroll','');
-          window.scrollTo(0,guideScrollYRef.current);
-          return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
+          scrollWindowTo(0,guideScrollYRef.current);
+          return()=>{scrollWindowTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
         }
         const el=appScrollRef.current;if(el)el.scrollTop=0;
       },[mode,docScroll,syncBarHeight]);
       // App-wide scroll-state tracking, sourced from ONE of two scrollers, branched on docScroll:
       //   • clamped modes: the confined scroll container (appScrollRef) via its own scroll
-      //     listener + ResizeObserver. Container scrolls when content overflows the
-      //     viewport-below-bar (any mode where content can't fit at the current viewport size).
+      //     listener. Container scrolls when content overflows the viewport-below-bar (any mode
+      //     where content can't fit at the current viewport size).
       //   • guide mode: the DOCUMENT (data-doc-scroll) via window scroll/resize, reading
-      //     document.scrollingElement against window.innerHeight (the container is a plain
-      //     flow block there — window resize stands in for the container ResizeObserver).
+      //     document.scrollingElement against window.innerHeight.
+      // BOTH branches then add observeScrollExtent (components/scrollRegion) on the container,
+      // because a scroll event answers only "where is the scroller" and the edge question also
+      // asks "how much content is there" — see round 11 Q4 below.
       // What it drives, in two languages (round 10 item B):
       //   • CONTINUOUS, both branches — the bar's boundary shadow, and in guide mode the two
       //     doc-fade strips, all via the 0…1 --shade written straight onto those elements. That
@@ -575,18 +605,40 @@ const ReactDOM = { createRoot, createPortal }
           writeShade(docFadeBottomRef.current,edgeShade(gaps.bottom,BOTTOM_EDGE_BAND_PX,rampPx));
           return gaps;
         };
+        // Same rule as scrollRegion's no-scroller path: a boundary surface with no scroller to
+        // track must REST at 0, never at @property's initial 1. Unreachable today (the container
+        // renders unconditionally) and hoisted ABOVE the branch so both modes obey it — leaving
+        // the hole on either side would make the pattern "safe here, unsafe there", and its twin
+        // in Lookup was a live full-strength-shadow bug.
+        const el=appScrollRef.current;if(!el){paint(0,0,0);return;}
+        // ROUND 11 Q4 — the container is handed to observeScrollExtent in BOTH modes, because in
+        // both it is the thing the CONTENT hangs off:
+        //   • clamped: it is the scroll box, and `absolute inset-0` pins that box to the viewport
+        //     BY CONSTRUCTION — so the ResizeObserver that used to watch it was watching the one
+        //     number no content change can move, and every mask froze the moment content changed
+        //     without a scroll (open Show Codes while resting at the top and the bottom fade kept
+        //     the answer from before it opened). The helper reaches the one child, the mode-content
+        //     wrapper, whose height IS this scroller's scrollHeight.
+        //   • guide: it is a plain flow block, so its own height is what the document scrolls, and
+        //     there was no observer here at all — window scroll + resize only. An accordion toggle
+        //     changes the document's height and produces neither event (a tap that seats an already
+        //     seated panel scrolls nowhere, and the panel keeps growing for the rest of its
+        //     animation after the glide's last scroll event), which is the doc-fade freeze.
+        // It also makes the two branches answer the same question the same way, which the one
+        // watching a pinned box and the one watching nothing did not.
+        // The observer now fires once per animation FRAME while content is transitioning — that is
+        // the point (the indicators track a panel opening instead of snapping after it) and it
+        // costs nothing on the frames that move no boundary: writeShade skips an unchanged number
+        // and React bails on a setState to the value already held, so those frames re-render
+        // nothing. tests/scrollExtent.dom pins the whole contract, fixtures included.
         if(docScroll){
           const evaluate=()=>{const se=document.scrollingElement;paint(se?se.scrollTop:0,se?se.scrollHeight:0,window.innerHeight);};
           evaluate();
           window.addEventListener('scroll',evaluate,{passive:true});
           window.addEventListener('resize',evaluate);
-          return()=>{window.removeEventListener('scroll',evaluate);window.removeEventListener('resize',evaluate);};
+          const stopExtent=observeScrollExtent(el,evaluate);
+          return()=>{window.removeEventListener('scroll',evaluate);window.removeEventListener('resize',evaluate);stopExtent();};
         }
-        // Same rule as scrollRegion's no-scroller path: a boundary surface with no scroller to
-        // track must REST at 0, never at @property's initial 1. Unreachable today (the container
-        // renders unconditionally), but leaving the hole would make the pattern "safe here,
-        // unsafe there" — and its twin in Lookup was a live full-strength-shadow bug.
-        const el=appScrollRef.current;if(!el){paint(0,0,0);return;}
         const evaluate=()=>{
           const gaps=paint(el.scrollTop,el.scrollHeight,el.clientHeight);
           setAppAtBottom(isAtBottom(gaps));
@@ -594,9 +646,8 @@ const ReactDOM = { createRoot, createPortal }
         };
         evaluate();
         el.addEventListener('scroll',evaluate,{passive:true});
-        const ro=new ResizeObserver(evaluate);
-        ro.observe(el);
-        return()=>{el.removeEventListener('scroll',evaluate);ro.disconnect();};
+        const stopExtent=observeScrollExtent(el,evaluate);
+        return()=>{el.removeEventListener('scroll',evaluate);stopExtent();};
       },[mode,docScroll]);
       // Root-scroll invariant on MOUNT and on BFCache restore — nothing else. The division of
       // labour, stated explicitly because this effect used to overreach (Q6, round 8):
@@ -606,11 +657,25 @@ const ReactDOM = { createRoot, createPortal }
       //   • THIS effect owns only the clamped-layout root invariant: the app mounts in Classic
       //     (the current tab is never persisted, so a cold start or refresh ALWAYS lands there)
       //     where html/body/#root are clamped and a non-zero root scrollTop would permanently
-      //     offset the fixed layout. A BFCache restore can hand back exactly that, so pageshow
-      //     re-asserts it — with rAF + setTimeout because iOS Safari restores scroll AFTER the
-      //     event fires. Resets window/documentElement/body (defense-in-depth — body has
-      //     overflow:hidden so it can't scroll, but a restore might try anyway) AND the inner
-      //     container, the surface the user actually scrolls in the clamped modes.
+      //     offset the fixed layout. A FRESH LOAD can hand back exactly that — history scroll
+      //     restoration on a reload replays the offset the document had last session, which may
+      //     have been guide mode's legitimately-scrolled document, into a layout that is now
+      //     clamped — so mount + a non-persisted pageshow re-assert it, with rAF + setTimeout
+      //     because iOS Safari applies that restoration AFTER the event fires. Resets
+      //     window/documentElement/body (defense-in-depth — body has overflow:hidden so it can't
+      //     scroll, but a restore might try anyway) AND the inner container, the surface the user
+      //     actually scrolls in the clamped modes.
+      //   • A BFCACHE RESTORE (event.persisted) IS SKIPPED ENTIRELY (Q3, round 11) — the opposite
+      //     case, and the reason the gate exists. `pageshow` fires for both a genuine load and a
+      //     back-forward-cache restore, and a restore is not a navigation: the JS heap is kept
+      //     alive, so the app comes back in the SAME mode with the SAME DOM it left. Whatever
+      //     scroll offset the browser hands back is therefore the one that belongs to this layout
+      //     — in guide mode the reader's place, in a clamped mode a zero the document could not
+      //     have moved off — and zeroing it is pure loss. That is exactly the mistake round 8
+      //     removed from visibilitychange (come back, lose your place in How to Play), surviving
+      //     in a second event; round 9 then built the guide's position preservation on top of it.
+      //     The invariant above is untouched by the gate: a restore cannot smuggle in a stale
+      //     offset, because the mode that produced it is the mode being restored.
       //   • BACKGROUNDING NOW MOVES NOTHING — a deliberate behaviour CHANGE (Q6, round 8), not a
       //     tidy-up. There was a visibilitychange→reset listener here calling this same reset(),
       //     which zeroes the inner scroller too: switching apps and coming back jumped you to the
@@ -621,7 +686,10 @@ const ReactDOM = { createRoot, createPortal }
       //     it, so there was never a root-scroll invariant for this listener to defend — in EVERY
       //     mode. The guide's in-flight scroll writer is cancelled when the app is backgrounded
       //     by GuidePage itself, which is where that concern belongs.
-      useEffect(()=>{const reset=()=>{window.scrollTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=()=>{reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
+      // The window jump goes through scrollWindowTo (lib/docScrollFlight) for the reason spelled out
+      // on the mode-change effect above: a reload can hand back a page mid-glide, and an instant
+      // jump that aborts a smooth scroll may never see that scroll's scrollend.
+      useEffect(()=>{const reset=()=>{scrollWindowTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=(e: PageTransitionEvent)=>{if(e.persisted)return;reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
       // Keyboard input — desktop convenience, mobile-no-op.
       // Three categories of keys are handled, all subject to the same gates: not in
       // an input/textarea/contentEditable, no modifiers held (Cmd+L stays browser),
@@ -646,13 +714,12 @@ const ReactDOM = { createRoot, createPortal }
       // not read before its declaration (the compiler flags accessing a binding before it's declared).
       const [settingsOpen,setSettingsOpen]=useState(false);
       // Q3: the "Updating…" overlay (BootOverlay updating) — three triggers: the Settings "Check for
-      // updates" button shows it for MIN_UPDATING_MS (so the screen registers) then runs
-      // forceReloadLatest (clear caches + reload), the auto-update-on-open effect below shows it for
-      // at least the same hold while a WAITING new version activates (both cleared by their reload),
-      // and the Q2 build-change flash effect shows it for exactly that hold — no reload — when a
-      // boot detects an update that already landed silently (cleared by its own hold-end).
+      // updates" button raises it once a check has FOUND something (Q7's applier below — never on a
+      // press that turns out to have nothing to get), the auto-update-on-open effect below shows it
+      // for at least MIN_UPDATING_MS while a WAITING new version activates (both cleared by their
+      // reload), and the Q2 build-change flash effect shows it for exactly that hold — no reload —
+      // when a boot detects an update that already landed silently (cleared by its own hold-end).
       const [updating,setUpdating]=useState(false);
-      const onCheckUpdates=useCallback(()=>{setUpdating(true);window.setTimeout(forceReloadLatest,MIN_UPDATING_MS);},[]);
       // Q3 Loading screen: remove index.html's #boot splash once BOTH are true —
       //   • it has been VISIBLE ≥0.5s (bootHoldRemaining, anchored to the __bootShownAt rAF stamp — not
       //     navigation start), so a fast cached load doesn't flash it for a single frame (which read
@@ -680,6 +747,107 @@ const ReactDOM = { createRoot, createPortal }
       // this before revealing the app (the rare same-boot overlap: a freshly-downloaded new build
       // AND an even newer version already waiting).
       const updateReloadPendingRef=useRef(false);
+      // ══ Q7 (round 11): "Check for updates" ACTUALLY CHECKS ═══════════════════════════════════
+      // It used to show the Updating screen and run forceReloadLatest unconditionally — claiming an
+      // update on every press and destroying the offline copy even on the presses where nothing had
+      // changed. Now it asks first. The DETECTOR (why it is a build-identity file and not a fetch
+      // with cache:'reload', not DEPLOY_TS, not registration.update()) is documented at length in
+      // lib/updateCheck.ts; what lives here is the UI state and the APPLIER.
+      //
+      // STATE — one button whose LABEL IS ITS STATE, never a second line or a toast (owner's call).
+      // idle → checking → (current | offline) → idle after UPDATE_RESULT_MS, or → the Updating
+      // overlay when there is something to get. A press during a RESULT starts another check (the
+      // result is information, not a mode you have to dismiss); a press during 'checking' cannot
+      // happen — the button is disabled — and is refused anyway so a synthetic click cannot start a
+      // second in-flight check.
+      //
+      // The applier reuses the auto-update path wholesale: SKIP_WAITING to the waiting worker, one
+      // reload through makeUpdateReloadGate so the MIN_UPDATING_MS visible hold is honoured and the
+      // reload fires at most once, and markSkipBootHold so the boot it causes doesn't stack a second
+      // artificial splash hold. That KEEPS THE OFFLINE COPY, which the old unconditional
+      // forceReloadLatest destroyed every time.
+      // forceReloadLatest is still reachable, and deliberately — but be exact about WHEN, because
+      // the round-7 class is not it. It fires from inside this applier and nowhere else, on the two
+      // ways the gentle path can fail to deliver what the check promised: no registration to hand
+      // off to at all, or no controllerchange within UPDATE_HANDOFF_MS. Having promised an update,
+      // the button must produce one.
+      // The round-7 class — an asset whose bytes changed while its precache revision did not, which
+      // Workbox will never re-download — is now handled a step earlier and better: Q10b's
+      // scripts/precacheIntegrity.mjs FAILS THE BUILD unless every revision in dist/sw.js is the
+      // md5 of the file actually shipped, so such a build cannot exist to be installed. A client
+      // still carrying one from round 7 is cured by the next deploy through this same gentle path
+      // (its cached revision is the stale one, the new manifest carries the true md5, so Workbox
+      // does re-download). What no client-side button can cure is an edge serving wrong bytes for a
+      // correct revision: the check's own fetch would be served the same stale bytes and say "up to
+      // date". That is a server-side problem and belongs to the deploy, not to this button.
+      const [updateCheck,setUpdateCheck]=useState<UpdateCheckState>('idle');
+      const updateResultTimerRef=useRef<number|undefined>(undefined);
+      const updateCheckAbortRef=useRef<AbortController|null>(null);
+      const applyUpdate=useCallback((reg: ServiceWorkerRegistration|null)=>{
+        updateReloadPendingRef.current=true; // the overlay is owned through to a navigation now
+        setUpdating(true);
+        // No service worker at all (unsupported, blocked, or a registration that failed — the state
+        // Q10a now reports): there is nothing to hand off to, so the hammer IS the update path.
+        if(!reg){window.setTimeout(forceReloadLatest,MIN_UPDATING_MS);return;}
+        let reloaded=false;
+        const gate=makeUpdateReloadGate({minHoldMs:MIN_UPDATING_MS,reload:()=>{reloaded=true;markSkipBootHold();window.location.reload();}});
+        gate.armHold();
+        navigator.serviceWorker.addEventListener('controllerchange',()=>gate.onHandoff(),{once:true});
+        const handOff=(w: ServiceWorker|null|undefined)=>{if(w)w.postMessage({type:'SKIP_WAITING'});};
+        // A worker already parked in `waiting` is the update — messaging it directly is the whole
+        // job. Only when there is none do we go to the network, and update() is used here as the
+        // APPLIER it is: it fetches + installs, and the new worker arrives as `waiting` (or as
+        // `installing` we then wait out). A resolved update() that produces neither is the failed
+        // install reproduced in the Q7 research; the safety net below covers it.
+        if(reg.waiting)handOff(reg.waiting);
+        else reg.update().then(()=>{
+          if(reg.waiting){handOff(reg.waiting);return;}
+          const installing=reg.installing;
+          if(installing)installing.addEventListener('statechange',()=>{if(installing.state==='installed')handOff(reg.waiting??installing);});
+        }).catch(err=>captureError(err,{where:'update-apply'}));
+        window.setTimeout(()=>{if(reloaded)return;gate.cancel();forceReloadLatest();},UPDATE_HANDOFF_MS);
+      },[]);
+      const onCheckUpdates=useCallback(()=>{
+        if(updateCheck==='checking')return;
+        if(updateResultTimerRef.current!==undefined){window.clearTimeout(updateResultTimerRef.current);updateResultTimerRef.current=undefined;}
+        updateCheckAbortRef.current?.abort();
+        const controller=new AbortController();
+        updateCheckAbortRef.current=controller;
+        setUpdateCheck('checking');
+        void(async()=>{
+          let reg: ServiceWorkerRegistration|null=null;
+          try{if(typeof navigator!=='undefined'&&'serviceWorker' in navigator)reg=(await navigator.serviceWorker.getRegistration())??null;}catch{/* no registration readable — the identity fetch still answers the question */}
+          if(controller.signal.aborted)return;
+          const verdict=await checkForUpdate({
+            ownId:readOwnBuildId(document),
+            url:buildIdUrl(import.meta.env.BASE_URL,makeCheckNonce()),
+            hasWaitingWorker:Boolean(reg?.waiting),
+            // Wrapped, not passed by reference: a bare `fetch` detached from window throws Illegal
+            // Invocation in some engines, and an engine with no fetch at all must throw INSIDE
+            // checkForUpdate's try (where it reads as 'offline') rather than out here.
+            fetchImpl:(input,init)=>fetch(input,init),
+            signal:controller.signal,
+          });
+          if(controller.signal.aborted)return;
+          if(verdict==='update'){applyUpdate(reg);return;}
+          setUpdateCheck(verdict);
+          updateResultTimerRef.current=window.setTimeout(()=>{updateResultTimerRef.current=undefined;setUpdateCheck('idle');},UPDATE_RESULT_MS);
+        })();
+      },[updateCheck,applyUpdate]);
+      // Closing ⚙ Settings ends the whole interaction early: the pending revert timer is cleared,
+      // the label is back at rest for the next open, and an in-flight check is ABORTED rather than
+      // left to land behind a panel the user has just dismissed — a full-screen Updating overlay
+      // appearing after the menu closed would be the app acting on its own. Fires only when the
+      // state actually moved while the panel was open, which is exactly when there is anything to
+      // undo (useSettingsCloseEffect's contract).
+      useSettingsCloseEffect(settingsOpen,[updateCheck],()=>{
+        updateCheckAbortRef.current?.abort();
+        if(updateResultTimerRef.current!==undefined){window.clearTimeout(updateResultTimerRef.current);updateResultTimerRef.current=undefined;}
+        setUpdateCheck('idle');
+      });
+      // Unmount teardown: drop an in-flight check and any pending revert. The refs are this
+      // component's own timer/abort handles, so reading them at teardown is exactly the point.
+      useEffect(()=>()=>{updateCheckAbortRef.current?.abort();if(updateResultTimerRef.current!==undefined)window.clearTimeout(updateResultTimerRef.current);},[]);
       useEffect(()=>{
         let disposed=false;
         let cssFallbackId: number | undefined;
@@ -737,12 +905,19 @@ const ReactDOM = { createRoot, createPortal }
       // in the sessionStorage attempt counter (the loop breaker — see readUpdateAttempts): after 2
       // straight failed attempts the flow is SKIPPED, the counter cleared, and the app renders on the
       // old version instead of looping Updating→reload forever.
+      // Q10a (round 11) — BOTH ways the registration can fail now REPORT instead of vanishing. The
+      // dynamic import's rejection (the ./sw.js chunk itself failing to load) is captured below, and
+      // the registration call's own failure is captured inside src/sw.ts via onRegisterError. Either
+      // one leaves the app running with NO service worker — no offline copy, no update path, and
+      // (before this) nothing anywhere saying so: an agent hit exactly that state in July 2026 and it
+      // was invisible. These are the two halves because they fail independently — the chunk can load
+      // and register() still be rejected (an unsupported scope, a blocked SW, a 404 on sw.js).
       useEffect(()=>{
         if(!import.meta.env.PROD||typeof navigator==='undefined'||!('serviceWorker' in navigator))return;
         let cancelled=false;
         let engageOnCss: (()=>void) | null=null;
         let gate: ReturnType<typeof makeUpdateReloadGate> | null=null;
-        import('./sw.js').catch(()=>{});
+        import('./sw.js').catch(err=>captureError(err,{where:'sw-module-import'})); // Q10a: never swallowed — a chunk that won't load means NO service worker at all (see the note above)
         navigator.serviceWorker.getRegistration().then(reg=>{
           if(cancelled)return;
           const waiting=reg?.waiting;
@@ -1281,10 +1456,12 @@ const ReactDOM = { createRoot, createPortal }
         setDeductionResetKey(k=>k+1);
         setGuideResetKey(k=>k+1);
         // Scroll window + app container to top (synchronous, avoids a visual flash before the
-        // scroll-ownership effect would do it; window.scrollTo is defense-in-depth, body can't
-        // scroll). The guide's saved reading position goes with them — switchMode above captured
-        // it on the way out, and a Full Reset means there is nothing to come back to.
-        if(typeof window!=="undefined")window.scrollTo(0,0);
+        // scroll-ownership effect would do it; the window jump is defense-in-depth, body can't
+        // scroll). It goes through scrollWindowTo (lib/docScrollFlight) like every other instant
+        // jump — see the mode-change effect above. The guide's saved reading position goes with
+        // them — switchMode above captured it on the way out, and a Full Reset means there is
+        // nothing to come back to.
+        if(typeof window!=="undefined")scrollWindowTo(0,0);
         if(appScrollRef.current)appScrollRef.current.scrollTop=0;
         guideScrollYRef.current=0;
       };
@@ -1626,8 +1803,25 @@ const ReactDOM = { createRoot, createPortal }
           <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
           <div className={FOOTER_LINK_ROW_CLASS}>
             <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
-            {/* Force the latest deployed version (clears the service-worker cache + reloads; keeps saved data). Handy on a phone where you can't hard-refresh. Styled exactly like the Contact email link above (underline, inherits the footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme. */}
-            <button type="button" onClick={onCheckUpdates} className="underline select-none rounded-md px-1 -mx-1">Check for updates</button>
+            {/* Check for a newer deployed version and apply it if there is one (Q7, round 11 — it used
+                to reload unconditionally). Styled like the Contact email link above (inherits the
+                footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme,
+                with three deliberate departures:
+                  • THE HIDDEN STRUT. The button is a one-cell grid holding the resting label twice —
+                    an aria-hidden copy that only reserves width, and the live label stacked on it. So
+                    the button is always exactly as wide as "Check for updates" (the longest of the
+                    four by construction — lib/updateCheck pins it) and the Changelog link beside it
+                    can never shift when the label changes. justify-items-start keeps the text
+                    anchored where it sits at rest instead of sliding to a new centre.
+                  • UNDERLINE ONLY AT REST. The other three labels are STATUS, not actions; wearing the
+                    interaction signal while not being the interaction is the round-3 block-hover
+                    mistake. The button still IS pressable during a result — a tap starts another
+                    check — but it is not offering the same thing, so it does not claim to.
+                  • DISABLED while checking, so the state the label reports is the state the control
+                    is in. No aria-live: a tap leaves focus on the button, where the accessible name
+                    changing is announced anyway, and a live region inside a control double-announces
+                    on some screen readers — an unverifiable trade for no gain. */}
+            <button type="button" onClick={onCheckUpdates} disabled={updateCheck==='checking'} className="select-none rounded-md px-1 -mx-1 grid justify-items-start"><span aria-hidden="true" className="col-start-1 row-start-1 invisible whitespace-nowrap">{UPDATE_CHECK_LABEL.idle}</span><span className={`col-start-1 row-start-1 whitespace-nowrap ${updateCheck==='idle'?" underline":""}`}>{UPDATE_CHECK_LABEL[updateCheck]}</span></button>
             {/* Changelog (Q6), RIGHT of Check for updates — the two update-flavored links live
                 together, force-the-latest then read-what-changed. Same footer-link recipe, in a
                 row wearing the same shared FOOTER_LINK_ROW_CLASS as the View/Clear row above
@@ -1842,10 +2036,13 @@ const ReactDOM = { createRoot, createPortal }
                     wrapperRef={modeSelectRef} so the existing settings click-outside handler
                     keeps treating taps inside the mode dropdown the same way it treated taps
                     on the original <select>. showChevron renders the same ▲▼ indicator.
-                    The menu always opens DOWNWARD, and no longer needs a prop to say so: the
-                    trigger sits in the fixed bar, so the auto-flip's fit check (round-8) finds
-                    the whole panel fits below it and never even considers the space above —
-                    which, being the bar itself, could not hold the panel anyway. */}
+                    The menu always opens DOWNWARD, with no prop and no longer any flip logic to
+                    say so (Q8, round 11 deleted round-8's auto-flip): the trigger sits IN the bar
+                    the flip measured the space above against, so that space was structurally
+                    negative and the branch was unreachable. This trigger is also WHY the panel can
+                    be viewport-fixed and measured once per open — fixed chrome is the one place no
+                    scroller can move it out from under the panel (see the caller contract at the
+                    top of components/CustomSelect). */}
                 <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
             </div>
@@ -1973,8 +2170,10 @@ const ReactDOM = { createRoot, createPortal }
     const rootEl = typeof document !== "undefined" ? document.getElementById("root") : null;
     if (rootEl) ReactDOM.createRoot(rootEl).render(<ErrorBoundary><App/></ErrorBoundary>);
 
-    // Real-user error reporting (C1). PRODUCTION + STAGING only — import.meta.env.PROD is false in
-    // `vite dev`, so dev never reports. Lazy-loads the Sentry SDK as its own chunk (see
+    // Real-user error reporting (C1). DEPLOYED builds only. This flag is the BUILD-time half —
+    // import.meta.env.PROD is false in `vite dev`, so dev never reports — but it is true for a
+    // locally-SERVED production build too, so initObservability() adds the runtime half and refuses
+    // on a loopback host (Q9). Lazy-loads the Sentry SDK as its own chunk (see
     // src/observability/sentry.ts); the error boundaries above call captureError() on a crash.
     if (rootEl && import.meta.env.PROD) initObservability();
 

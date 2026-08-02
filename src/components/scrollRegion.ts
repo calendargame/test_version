@@ -115,6 +115,66 @@ export function writeShade(el: HTMLElement | null | undefined, shade: number): v
   if (el.style.getPropertyValue('--shade') !== next) el.style.setProperty('--shade', next)
 }
 
+// ── Watching the SCROLL EXTENT, not the scroller's box (round 11 Q4) ─────────────────────────
+// The edge answer is a function of THREE numbers — scrollTop, scrollHeight, clientHeight — and
+// the platform only gives an event for the first. A scroll listener therefore covers exactly one
+// third of the question, and the other two thirds change silently: a panel opens, a list gains a
+// row, an animation grows a section frame by frame, and the indicators keep painting the answer
+// to a question nobody is asking any more.
+//
+// The obvious guard — a ResizeObserver on the scroller — covers only clientHeight, and only on
+// the scrollers whose box can actually change. That is the bug this replaces: the app's main
+// container is `absolute inset-0`, so its box is pinned to the viewport BY CONSTRUCTION and no
+// content change can ever resize it; observing it meant observing the one number that could not
+// move. The settings popover has the same shape once its content passes the card's max-height —
+// the flex child stops growing, and every further change is invisible to an observer watching it.
+//
+// scrollHeight is the CONTENT's height, so the content is what has to be watched:
+//   • the scroller itself — clientHeight (a viewport rotation, a flex re-layout, --bar-h moving).
+//   • each of its element CHILDREN — scrollHeight is their stacked height, so a child growing
+//     (including once per frame through a CSS transition, which is what makes the fades track an
+//     accordion instead of snapping after it) is the content growing.
+//   • a childList MutationObserver — a child ADDED or REMOVED changes the same total while
+//     resizing none of the survivors, so no ResizeObserver could see it. It re-observes BEFORE it
+//     reports, because an arriving child has to be under observation by the time it grows, and a
+//     removed child's own observation left with it.
+//     ⚠ WHERE THAT THIRD MECHANISM IS LOAD-BEARING, stated exactly so nobody trims it after a
+//     half-check: the only region whose children change today is the Lookup history <ul>, and
+//     there the hook ALSO re-attaches (its `active` is the history array, so adding an entry
+//     changes the identity the effect depends on). So today it is the belt to that braces. It
+//     stops being redundant the moment a region has conditional children and an `active` that
+//     does not change with them — a shape this file cannot see and a caller has no reason to
+//     think about. Keeping it is what makes the three mechanisms cover the three numbers BY
+//     CONSTRUCTION instead of by an audit of every call site, and an audit of every call site
+//     silently going stale is precisely this round's bug.
+// Re-observing is a disconnect-and-re-add rather than a diff: observe() on an already-observed
+// target is idempotent, the child count here is small, and the alternative is a second copy of
+// the child list to keep honest. onChange is called explicitly after it because a real engine's
+// initial delivery for the newly observed targets is asynchronous and a removal delivers nothing
+// at all — the caller must not have to know which.
+//
+// ⚠ The callback must not change LAYOUT, or the engine reports a resize-observer loop. Every
+// caller here writes --shade (paint) and toggles a mask class (paint), which is why this is safe
+// and why it must stay that way.
+export function observeScrollExtent(el: HTMLElement, onChange: () => void): () => void {
+  const ro = new ResizeObserver(onChange)
+  const observeAll = () => {
+    ro.disconnect()
+    ro.observe(el)
+    for (const child of Array.from(el.children)) ro.observe(child)
+  }
+  observeAll()
+  const mo = new MutationObserver(() => {
+    observeAll()
+    onChange()
+  })
+  mo.observe(el, { childList: true })
+  return () => {
+    ro.disconnect()
+    mo.disconnect()
+  }
+}
+
 // Scroll-edge state for one scroll region: which edges have content extending past them.
 //   scrolledFromTop → feed the top fade mask
 //   atBottom        → feed the bottom fade mask
@@ -134,8 +194,9 @@ export function writeShade(el: HTMLElement | null | undefined, shade: number): v
 // synchronous body setState cascades an extra render; react-hooks/set-state-in-effect fails the
 // lint gate on it), so a closed region is already clean and reopening never flashes stale
 // indicators.
-// A scroll listener tracks the user; a ResizeObserver on the element catches content growing
-// or shrinking in place (e.g. the history list gaining its tenth entry mid-view).
+// A scroll listener tracks the user; observeScrollExtent above tracks everything else the answer
+// depends on — the region's own box AND its content (the history list gaining its tenth entry
+// mid-view, the Show Codes section opening under it and taking the list's height with it).
 // A LAYOUT effect, matching the app-scroller effect in main.tsx that already argues the point:
 // evaluated after paint, a region would show one frame with no fade and no boundary shadow before
 // the indicators arrive. That frame is cheap to avoid and it is the frame the eye lands on when a
@@ -183,11 +244,10 @@ export function useScrollEdgeState<T extends HTMLElement>(
     }
     evaluate()
     el.addEventListener('scroll', evaluate, { passive: true })
-    const ro = new ResizeObserver(evaluate)
-    ro.observe(el)
+    const stopExtent = observeScrollExtent(el, evaluate)
     return () => {
       el.removeEventListener('scroll', evaluate)
-      ro.disconnect()
+      stopExtent()
       // Deactivation reset. The FLAGS can only reset here — they are React state, and writing
       // them from the effect body would trip react-hooks/set-state-in-effect (a CI error here).
       // The SHADES reset in both places: here on teardown, and in the no-scroller path above,

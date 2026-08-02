@@ -16,7 +16,10 @@
 // day it was written, so backgrounding the app and returning threw the reader back to the
 // top of How to Play. The listener is gone; these tests hold the line from both sides —
 // a resume moves NOTHING (guide or clamped, scroll position and open panel alike) while
-// pageshow still re-asserts the clamped-layout root invariant on a BFCache restore. The
+// pageshow still re-asserts the clamped-layout root invariant on a genuine (re)load. Round 11's
+// Q3 finished that job: a BFCache restore reaches the app through pageshow too, and it is a
+// resume wearing a navigation's event, so it is now gated out by `persisted` and moves nothing
+// either — the pair of tests at the end of the first block is the whole contract. The
 // reading line the accordion seats panels on (--seat-top) is pinned here too, since it is
 // scoped to this same html[data-doc-scroll] rule; Q5 (round 9) re-derived it from the guide's
 // panel gap instead of the top feather, and both halves of that derivation are pinned below.
@@ -25,6 +28,10 @@
 // boundary shadow and the two doc-fade strips — PROGRESSIVE, driven by a continuous --shade
 // instead of a class toggled by a boolean and cross-faded by a CSS transition; the scroll-sourcing
 // tests below now assert that number, and the stylesheet half is pinned near the bottom.
+// Round 11 Q4 owns the doc-fade's other half — a document whose HEIGHT changes with neither a
+// scroll nor a resize event, which is what an accordion toggle is — and it lives with the rest of
+// the scroll-extent fixtures in tests/scrollExtent.dom, not here: the freeze was never about this
+// page's sourcing, which these tests already cover, but about the two numbers no event reports.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -60,6 +67,16 @@ function scrollContainer(container) {
 // the duration of each event (afterEach deletes the own property, restoring the prototype
 // getter). Deliberately WITHOUT a pageshow — foregrounding is not a navigation, and the
 // distinction between the two is the whole point of the tests below.
+// A pageshow event with an explicit `persisted` flag: false = a genuine (re)load, true = a
+// back-forward-cache restore. jsdom does not implement PageTransitionEvent, and a plain Event
+// leaves `persisted` undefined — which reads as false and would make the restore case pass for
+// the wrong reason — so the flag is defined on the event object itself.
+function pageShowEvent(persisted) {
+  const ev = new Event('pageshow')
+  Object.defineProperty(ev, 'persisted', { value: persisted })
+  return ev
+}
+
 function resumeFromBackground() {
   for (const state of ['hidden', 'visible']) {
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
@@ -354,21 +371,43 @@ describe('resume from background never moves anything (Q6, round 8)', () => {
     Object.defineProperty(window, 'scrollY', realScrollY)
   })
 
-  it('STILL zeroes a bogus root scroll on a BFCache restore (pageshow), unlike a resume', () => {
-    // The other half of the contract: pageshow IS a navigation event, and a restore into the
-    // clamped layout can hand back a non-zero root scrollTop that would permanently offset
-    // the fixed #root. Deleting the resume listener must not cost us this guard.
+  it('STILL zeroes a bogus root scroll on a FRESH load (pageshow), unlike a resume', () => {
+    // The other half of the contract: a non-persisted pageshow IS a navigation, and history
+    // scroll restoration on a reload can hand the clamped layout a non-zero root scrollTop
+    // (the offset the document had last session, in a mode that allowed one) that would
+    // permanently offset the fixed #root. Deleting the resume listener must not cost us this
+    // guard, and neither must Q3's BFCache gate below.
     const { container } = mountApp() // Classic — clamped
     const el = scrollContainer(container)
     el.scrollTop = 77
     document.documentElement.scrollTop = 310
     const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     act(() => {
-      fireEvent(window, new Event('pageshow'))
+      fireEvent(window, pageShowEvent(false))
     })
     expect(scrollToSpy).toHaveBeenCalledWith(0, 0)
     expect(document.documentElement.scrollTop).toBe(0)
     expect(el.scrollTop).toBe(0)
+    scrollToSpy.mockRestore()
+  })
+
+  // Q3 (round 11) — the gate. `pageshow` fires for a genuine load AND for a back-forward-cache
+  // restore, and only the first is a navigation: a restore keeps the JS heap, so the app returns
+  // in the same mode with the same DOM and the offsets the browser hands back are the ones that
+  // belong to it. Zeroing them is round 8's deleted visibilitychange reset surviving in a second
+  // event. The two tests are deliberately identical apart from `persisted`.
+  it('leaves a BFCache restore (pageshow persisted) completely alone', () => {
+    const { container } = mountApp() // Classic — clamped
+    const el = scrollContainer(container)
+    el.scrollTop = 77
+    document.documentElement.scrollTop = 310
+    const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    act(() => {
+      fireEvent(window, pageShowEvent(true))
+    })
+    expect(scrollToSpy).not.toHaveBeenCalled()
+    expect(document.documentElement.scrollTop).toBe(310)
+    expect(el.scrollTop).toBe(77)
     scrollToSpy.mockRestore()
   })
 })

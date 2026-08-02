@@ -222,4 +222,61 @@ describe('progress store — normalizeLookupEntries', () => {
     expect(normalizeLookupEntries(null)).toEqual([])
     expect(normalizeLookupEntries('nope')).toEqual([])
   })
+
+  // ── The date must be REAL, not merely number-shaped (round-11 Q2) ───────────────────────────
+  // Number-shaped is not enough now that the card answers rather than refuses: the day-number
+  // arithmetic underneath rolls February 30 into March and would print a confident weekday for a
+  // date that never happened. Same either-calendar rule Lookup validates with — a date counts if a
+  // calendar it can be read in has it.
+  it('drops days no calendar has', () => {
+    expect(
+      normalizeLookupEntries([
+        { id: 'a', y: 1776, m: 2, d: 30 }, // February never has 30 days, under either rule
+        { id: 'b', y: 1776, m: 4, d: 31 }, // April has 30
+        { id: 'c', y: 1776, m: 1, d: 32 },
+        { id: 'd', y: 1776, m: 1, d: 0 },
+        { id: 'e', y: 1776, m: 13, d: 1 }, // MONTH[12] is undefined
+        { id: 'f', y: 1776, m: 0, d: 1 },
+        { id: 'ok', y: 1776, m: 7, d: 4 },
+      ]),
+    ).toEqual([{ id: 'ok', y: 1776, m: 7, d: 4 }])
+  })
+
+  // The either-calendar half. February 29, 1500 is a real Julian date and no Gregorian date at all;
+  // 1900's is neither, because the Julian rule has stopped applying by then.
+  it('keeps a pre-reform February 29 that only the Julian rule grants, and only that', () => {
+    expect(
+      normalizeLookupEntries([
+        { id: 'jul', y: 1500, m: 2, d: 29 },
+        { id: 'both', y: 1200, m: 2, d: 29 },
+        { id: 'neither', y: 1900, m: 2, d: 29 },
+        { id: 'plain', y: 1500, m: 2, d: 28 },
+      ]),
+    ).toEqual([
+      { id: 'jul', y: 1500, m: 2, d: 29 },
+      { id: 'both', y: 1200, m: 2, d: 29 },
+      { id: 'plain', y: 1500, m: 2, d: 28 },
+    ])
+  })
+
+  // Whole numbers, for the same reason: month 1.5 indexes MONTH to `undefined` and day 1.5 lands on
+  // a weekday belonging to no day. A gap entry is still an ordinary October date to this check.
+  it('requires whole numbers, and lets the gap days through as ordinary October dates', () => {
+    expect(
+      normalizeLookupEntries([
+        { id: 'a', y: 1776.5, m: 7, d: 4 },
+        { id: 'b', y: 1776, m: 1.5, d: 4 },
+        { id: 'c', y: 1776, m: 7, d: 4.5 },
+        { id: 'gap', y: 1582, m: 10, d: 10, isGap: true },
+      ]),
+    ).toEqual([{ id: 'gap', y: 1582, m: 10, d: 10, isGap: true }])
+  })
+
+  // Deliberately NOT bounded to Lookup's 1–10000 years: an out-of-range year still names a real
+  // date and still reads correctly, so there is nothing wrong to drop — unlike an impossible day,
+  // which can only be answered wrongly. Pinned so the omission reads as a decision, not an oversight.
+  it('leaves a year outside the input range alone — it is unusual, not impossible', () => {
+    const odd = [{ id: 'a', y: 20000, m: 7, d: 4 }]
+    expect(normalizeLookupEntries(odd)).toEqual(odd)
+  })
 })

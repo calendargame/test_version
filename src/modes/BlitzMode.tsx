@@ -4,7 +4,8 @@
 // props, so nothing about its behaviour changes by living here.
 import { useEffect, useRef, useState } from 'react'
 import type { ModeProps, FmtDate, GenDate } from './modeTypes.js'
-import { useButtonFlash, useSettingsCloseEffect } from './modeHooks.js'
+import { useButtonFlash } from './modeHooks.js'
+import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { RESET_BTN_CLASS } from '../components/controlClasses.js'
 import {
   fmtTime,

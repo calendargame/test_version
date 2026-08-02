@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 //
 // The changelog + update-signal dots (round-6 Q6). src/changelog holds the hand-maintained
-// plain-words per-DAY entries (newest first; a second same-day deploy PREPENDS its lines to that
-// day's entry — the round-7 combine policy — so dates stay unique). Round-8 Q8 made that array the
-// published set exactly: the popup renders CHANGELOG as-is, so the ten-day cap is enforced at
-// SOURCE (pinned below) and the oldest entry moves to CHANGELOG-ARCHIVE.md instead of piling up
-// here. That retired the render-time slice, and with it the separate changelogLimit.dom file which
-// mocked a larger data set behind that slice — the popup can no longer discard anything, so the
-// cap can no longer be a rendering question. The two light-blue dots are the persisted
+// plain-words per-DAY entries (newest first; a second same-day deploy RESTATES that day's net
+// effect versus production inside the one entry rather than prepending a second log — the round-7
+// combine policy, ordering amended in round-11 Q6 — so dates stay unique). Round-8 Q8 made that
+// array the published set exactly: the popup renders CHANGELOG as-is, so the ten-day cap is
+// enforced at SOURCE (pinned below) and the oldest entry moves to CHANGELOG-ARCHIVE.md instead of
+// piling up here. That retired the render-time slice, and with it the separate changelogLimit.dom
+// file which mocked a larger data set behind that slice — the popup can no longer discard
+// anything, so the cap can no longer be a rendering question. The two light-blue dots are the persisted
 // breadcrumb to the popup: the Q2 build-stamp detection marks both flags on every build change
 // (including one the real Updating flow just bridged — only the SCREEN is suppressed then),
 // opening ⚙ Settings retires the gear's dot, and the first tap on the footer's Changelog link
@@ -71,8 +72,10 @@ describe('changelog data (src/changelog)', () => {
     const dates = CHANGELOG.map((en) => en.date)
     expect([...dates].sort().reverse()).toEqual(dates) // newest-first (ISO sorts lexically)
     // One entry per Pacific day (the round-7 same-day COMBINE policy): a second same-day deploy
-    // prepends its lines instead of adding a twin-dated card. Uniqueness is what makes the
-    // ordering pin above STRICT, and it protects the popup's key={en.date} React-key contract.
+    // rewrites that day's existing entry to the day's net effect versus production, rather than
+    // adding a twin-dated card (round-11 Q6 settled the rewrite; the card count is the same
+    // either way). Uniqueness is what makes the ordering pin above STRICT, and it protects the
+    // popup's key={en.date} React-key contract.
     expect(new Set(dates).size).toBe(dates.length)
   })
 

@@ -1,23 +1,32 @@
 // @vitest-environment jsdom
 //
-// lookupCard.dom.test.jsx — LookupCard's BEHAVIOUR (round-8 Q2). The component had no behaviour
-// test at all before this: scrollRegion.dom pins its geometry classes, progress.* pins the saved
-// shape, but nothing described what the card actually does when you type into it.
+// lookupCard.dom.test.jsx — LookupCard's BEHAVIOUR (round-8 Q2, extended by round-11 Q2). The
+// component had no behaviour test at all before round 8: scrollRegion.dom pins its geometry
+// classes, progress.* pins the saved shape, but nothing described what the card actually does when
+// you type into it.
 //
-// Two contracts are locked here.
+// Three contracts are locked here.
 //
-// 1. The RESULT SLOT is always present, at a constant height, in every state. Before Q2 the
-//    result line rendered only when there was a result, so the panel below it jumped by a line
-//    the moment you pressed Lookup and jumped back when you pressed Clear. Now the slot always
-//    exists: it shows the hint when there is nothing to say, and the answer or the error when
-//    there is. (The HEIGHT is a class contract — jsdom lays nothing out — so the test asserts the
-//    reserving class is on the node, plus that the node itself never disappears.)
+// 1. The ANSWER SLOT is always present, at a constant height, in every state. Before round-8 Q2 the
+//    result line rendered only when there was a result, so the panel below it jumped by a line the
+//    moment you pressed Lookup and jumped back when you pressed Clear. Now the slot always exists:
+//    it shows the hint when there is nothing to say, and the answer or the error when there is.
+//    Round-11 Q2 made it three EXPLICIT ROWS — the date, then the reading(s) — instead of a
+//    sentence whose wrap decided the height. (The HEIGHT is a class contract — jsdom lays nothing
+//    out — so the test asserts the reserving class is on the node, plus that the node itself never
+//    disappears, plus that the row COUNT is what the reserve was sized for.)
 //
-// 2. The result sentence is DERIVED, never stored. The live bug this replaces: the history rows
-//    re-rendered under the current Date Format while the result line above them kept the format
-//    the lookup was made in, so the same date read two different ways on one screen. The
-//    regression pin is the last test — an entry saved under one format renders its result in the
-//    format that is live NOW.
+// 2. The answer is DERIVED, never stored. The live bug this replaces: the history rows re-rendered
+//    under the current Date Format while the result line above them kept the format the lookup was
+//    made in, so the same date read two different ways on one screen. The regression pin is in the
+//    "derived, not stored" block — an entry saved under one format renders in the format live NOW.
+//
+// 3. A date before the Gregorian reform is AMBIGUOUS, and the card shows BOTH calendars (round-11
+//    Q2). That is what makes contract 2 possible for the Julian setting too: with no calendar
+//    chosen there is nothing per-entry to freeze, so a stored date can never be re-read later as a
+//    different — or an impossible — one. The bug it fixes: an entry created with Julian on was
+//    re-derived as a valid GREGORIAN date once Julian was turned off, so February 29 of a
+//    Julian-only leap year printed March 1's weekday under a February 29 label.
 //
 // The card keeps all of its state in the parent, so these tests drive it through a small
 // controlled host that wires the props to real state, exactly as App does.
@@ -74,32 +83,55 @@ function Host({ dateFormat = 'written-mdy', useJulian = false, initialHistory = 
   )
 }
 
-// The slot is the only min-h-10 node in the card — found by class so the test doesn't depend on
-// which of its several possible strings is currently showing.
-const slot = (container) => container.querySelector('.min-h-10')
+// The slot is the only min-h-15 node in the card — found by class so the test doesn't depend on
+// which of its several possible contents is currently showing.
+const slot = (container) => container.querySelector('.min-h-15')
+// The slot's lines. An answer is structured rows (the date, then the reading(s)); the hint and the
+// errors are one plain string. Returning both as an array keeps every assertion in one shape.
+const lines = (container) => {
+  const node = slot(container)
+  return node.children.length ? [...node.children].map((c) => c.textContent) : [node.textContent]
+}
+// A history row, as [formatted date, readings].
+const rows = (container) =>
+  [...container.querySelectorAll('ul li button')].map((b) =>
+    [...b.querySelectorAll('span')].map((s) => s.textContent),
+  )
 const lookup = (container, text) => {
   fireEvent.change(container.querySelector('input'), { target: { value: text } })
   fireEvent.click(screen.getByRole('button', { name: 'Lookup' }))
 }
 
-describe('Lookup result slot — always rendered, constant height (round-8 Q2)', () => {
+describe('Lookup answer slot — always rendered, constant height (round-8 Q2 / round-11 Q2)', () => {
   afterEach(cleanup)
 
-  it('a fresh card shows the hint, in the dimmer tone, in a two-line slot', () => {
+  it('a fresh card shows the hint, in the dimmer tone, in a three-line slot', () => {
     const { container } = render(<Host />)
     const node = slot(container)
     expect(node).not.toBeNull()
     expect(node.textContent).toBe(HINT)
-    expect(node.className).toContain('min-h-10') // 2.5rem = two text-sm lines, fluid-root-scaled
+    expect(node.className).toContain('min-h-15') // 3.75rem = three text-sm lines, fluid-root-scaled
     expect(node.className).toContain('text-(--tx-200-70)') // hint tone, not answer tone
   })
 
   it('an answer replaces the hint and takes the brighter answer tone', () => {
     const { container } = render(<Host dateFormat="numeric-mdy" />)
     lookup(container, '7/4/1776')
-    const node = slot(container)
-    expect(node.textContent).toBe('7/4/1776 is a Thursday.')
-    expect(node.className).toContain('text-(--tx-100-90)')
+    expect(lines(container)).toEqual(['7/4/1776', 'Thursday'])
+    expect(slot(container).className).toContain('text-(--tx-100-90)')
+  })
+
+  // The reserve is three lines, so nothing may ever ask for a fourth. These are the three shapes
+  // that can land in it, and the widest of each: an unambiguous date (2), an ambiguous one (3), and
+  // the gap message, which is one line of date plus a message that occupies the other two.
+  it('nothing that can land in the slot needs more than the three rows reserved', () => {
+    const { container } = render(<Host dateFormat="written-mdy" />)
+    lookup(container, '9/24/1444')
+    expect(lines(container)).toHaveLength(3)
+    lookup(container, '7/4/1776')
+    expect(lines(container)).toHaveLength(2)
+    lookup(container, '10/10/1582')
+    expect(lines(container)).toHaveLength(2) // the date, then the message (two lines of wrap)
   })
 
   it('every error family lands in the SAME slot node — the card never changes height', () => {
@@ -120,7 +152,7 @@ describe('Lookup result slot — always rendered, constant height (round-8 Q2)',
   it('Clear restores the hint (and Clear History does too)', () => {
     const { container } = render(<Host dateFormat="numeric-mdy" />)
     lookup(container, '7/4/1776')
-    expect(slot(container).textContent).toBe('7/4/1776 is a Thursday.')
+    expect(lines(container)).toEqual(['7/4/1776', 'Thursday'])
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(slot(container).textContent).toBe(HINT)
     lookup(container, '7/4/1776')
@@ -129,7 +161,7 @@ describe('Lookup result slot — always rendered, constant height (round-8 Q2)',
     expect(screen.getByText('No lookups yet')).toBeTruthy()
   })
 
-  // The HARD constraint from Q2: the hint is a render-time fallback, never state. main.tsx
+  // The HARD constraint from round-8 Q2: the hint is a render-time fallback, never state. main.tsx
   // computes isFullyReset from lookupOutput === "" — if the hint were ever written into that
   // state, the Full Reset button would silently unlock on a brand-new, untouched app.
   it('lookupOutput stays "" while the hint shows, and while an ANSWER shows', () => {
@@ -149,11 +181,14 @@ describe('Lookup result slot — always rendered, constant height (round-8 Q2)',
 describe('Lookup — the Oct 5–14, 1582 gap (round-8 Q2)', () => {
   afterEach(cleanup)
 
+  // The gap days are NOT an ambiguous date with two readings: isJulianDate ends the Julian era on
+  // Oct 4, 1582, so these ten days are neither calendar's — a third thing, which is what the
+  // message says. Round-11 Q2 left this answer word for word as it was.
   it('answers with the short message; the long version lives in the How-to-Play guide', () => {
     const { container } = render(<Host dateFormat="numeric-mdy" />)
     lookup(container, '10/10/1582')
-    expect(slot(container).textContent).toBe(GAP)
-    expect(screen.getByText('Does Not Exist')).toBeTruthy() // the history row's weekday column
+    expect(lines(container)).toEqual(['10/10/1582', GAP])
+    expect(rows(container)).toEqual([['10/10/1582', 'Does Not Exist']])
   })
 
   it('re-looking-up a gap date replays the same message from history', () => {
@@ -162,32 +197,32 @@ describe('Lookup — the Oct 5–14, 1582 gap (round-8 Q2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(slot(container).textContent).toBe(HINT)
     lookup(container, '10/10/1582')
-    expect(slot(container).textContent).toBe(GAP)
+    expect(lines(container)).toEqual(['10/10/1582', GAP])
     expect(screen.getAllByText('Does Not Exist')).toHaveLength(1) // replayed, not duplicated
   })
 })
 
-describe('Lookup — the result sentence is derived, not stored (round-8 Q2 regression pin)', () => {
+describe('Lookup — the answer is derived, not stored (round-8 Q2 regression pin)', () => {
   afterEach(cleanup)
 
   // THE bug: an entry saved under one Date Format kept its rendered sentence, so after the user
   // switched formats the result line read the old way while the history row right below it read
   // the new way. Both come from {y,m,d} now, so both follow the live setting.
-  it('an entry stored under one Date Format renders its result in the CURRENT format', () => {
+  it('an entry stored under one Date Format renders its answer in the CURRENT format', () => {
     const stored = { id: 'e1', y: 1776, m: 7, d: 4 }
     const { container } = render(
       <Host dateFormat="written-mdy" initialHistory={[stored]} useJulian={false} />,
     )
-    // Select it from history: the sentence is built now, in the format that is live now.
+    // Select it from history: the answer is built now, in the format that is live now.
     fireEvent.click(container.querySelector('ul button'))
-    expect(slot(container).textContent).toBe('July 4, 1776 is a Thursday.')
+    expect(lines(container)).toEqual(['July 4, 1776', 'Thursday'])
 
     cleanup()
     // Same stored entry, different live format — same date, re-rendered, no stale copy anywhere.
     const second = render(<Host dateFormat="numeric-dmy" initialHistory={[stored]} />)
     fireEvent.click(second.container.querySelector('ul button'))
-    expect(slot(second.container).textContent).toBe('4.7.1776 is a Thursday.')
-    expect(second.container.querySelector('ul button').textContent).toContain('4.7.1776')
+    expect(lines(second.container)).toEqual(['4.7.1776', 'Thursday'])
+    expect(rows(second.container)).toEqual([['4.7.1776', 'Thursday']])
   })
 
   // The pin above proves derivation across two MOUNTS. This one changes the format on a LIVE
@@ -196,19 +231,19 @@ describe('Lookup — the result sentence is derived, not stored (round-8 Q2 regr
   // back to the hint. Both the changelog and the How-to-Play guide promise that "changing the
   // Date Format updates the answer line and the whole list together", so this is that sentence,
   // executable.
-  it('changing the Date Format on a LIVE card updates the answer line — it does not clear it', () => {
+  it('changing the Date Format on a LIVE card updates the answer — it does not clear it', () => {
     const stored = { id: 'e1', y: 1776, m: 7, d: 4 }
     const { container, rerender } = render(
       <Host dateFormat="written-mdy" initialHistory={[stored]} />,
     )
     fireEvent.click(container.querySelector('ul button'))
-    expect(slot(container).textContent).toBe('July 4, 1776 is a Thursday.')
+    expect(lines(container)).toEqual(['July 4, 1776', 'Thursday'])
 
     act(() => {
       rerender(<Host dateFormat="numeric-dmy" initialHistory={[stored]} />)
     })
-    expect(slot(container).textContent).toBe('4.7.1776 is a Thursday.') // updated, not cleared
-    expect(container.querySelector('ul button').textContent).toContain('4.7.1776') // together
+    expect(lines(container)).toEqual(['4.7.1776', 'Thursday']) // updated, not cleared
+    expect(rows(container)).toEqual([['4.7.1776', 'Thursday']]) // together
     // The input is always NUMERIC, and its separator and field order just changed, so it is
     // rewritten in place rather than emptied — the box still holds the date you are looking at.
     expect(container.querySelector('input').value).toBe('4.7.1776')
@@ -228,28 +263,143 @@ describe('Lookup — the result sentence is derived, not stored (round-8 Q2 regr
     expect(container.querySelector('input').value).toBe('')
     expect(slot(container).textContent).toBe(HINT) // the stale error named the old format
   })
+})
 
-  it('a Julian-eligible date names the calendar it was read under, live from the setting', () => {
-    const stored = { id: 'e1', y: 1500, m: 3, d: 1 }
-    const greg = render(<Host dateFormat="numeric-mdy" initialHistory={[stored]} />)
-    fireEvent.click(greg.container.querySelector('ul button'))
-    expect(slot(greg.container).textContent).toBe('3/1/1500 is a Thursday (Gregorian).')
+// ── Both calendars for an ambiguous date (round-11 Q2) ────────────────────────────────────────
+// Weekday oracles below are independent of the app's own arithmetic: Julian Oct 4, 1582 was a
+// Thursday and the next day was Gregorian Oct 15, a Friday (the pair calendar.test.js also pins),
+// and the rest follow from the fixed 10-day offset in that era.
+describe('Lookup — a pre-reform date shows BOTH calendars (round-11 Q2)', () => {
+  afterEach(cleanup)
+
+  it('names both readings in full, one per line, Julian first', () => {
+    const { container } = render(<Host dateFormat="written-mdy" />)
+    lookup(container, '9/24/1444')
+    expect(lines(container)).toEqual([
+      'September 24, 1444',
+      'Julian: Thursday',
+      'Gregorian: Tuesday',
+    ])
+  })
+
+  // The reason this replaced the "(Julian)" / "(Gregorian)" suffix: the setting used to decide what
+  // a stored date WAS, so turning it off re-read every pre-reform entry as a different date. Now it
+  // reaches neither the answer nor the rows, and the same entry reads identically either way.
+  it('the Julian Calendar setting changes neither the answer nor the rows', () => {
+    const stored = { id: 'e1', y: 1444, m: 9, d: 24 }
+    const off = render(<Host dateFormat="written-mdy" initialHistory={[stored]} />)
+    fireEvent.click(off.container.querySelector('ul button'))
+    const answerOff = lines(off.container)
+    const rowsOff = rows(off.container)
     cleanup()
 
-    const jul = render(<Host dateFormat="numeric-mdy" initialHistory={[stored]} useJulian />)
-    fireEvent.click(jul.container.querySelector('ul button'))
-    expect(slot(jul.container).textContent).toBe('3/1/1500 is a Sunday (Julian).')
-    // …and the history row's weekday column agrees with the sentence above it.
-    expect(jul.container.querySelector('ul button').textContent).toContain('Sunday')
+    const on = render(<Host dateFormat="written-mdy" initialHistory={[stored]} useJulian />)
+    fireEvent.click(on.container.querySelector('ul button'))
+    expect(lines(on.container)).toEqual(answerOff)
+    expect(rows(on.container)).toEqual(rowsOff)
+  })
+
+  // The 12 February 29ths that only Julian's every-fourth-year rule grants. This is the bug in its
+  // sharpest form: with Julian off the card used to REFUSE to create the date, and an entry created
+  // with Julian on then re-derived as a Gregorian February 29 — printing March 1's Thursday under
+  // a February 29 label, with "(Gregorian)" appended as a positive claim that it was a real date.
+  it('February 29, 1500 is a real Julian date and no Gregorian date at all', () => {
+    for (const useJulian of [false, true]) {
+      const { container } = render(<Host dateFormat="written-mdy" useJulian={useJulian} />)
+      lookup(container, '2/29/1500')
+      expect(lines(container)).toEqual([
+        'February 29, 1500',
+        'Julian: Saturday',
+        'Gregorian: Does Not Exist',
+      ])
+      cleanup()
+    }
+  })
+
+  // …and one where BOTH calendars have the date: 1200 is a leap year under either rule.
+  it('February 29, 1200 exists in both, and both agree on the weekday', () => {
+    const { container } = render(<Host dateFormat="written-mdy" />)
+    lookup(container, '2/29/1200')
+    expect(lines(container)).toEqual(['February 29, 1200', 'Julian: Tuesday', 'Gregorian: Tuesday'])
+  })
+
+  // The era boundary, from both sides. isJulianDate ends on Oct 4, 1582; Oct 15 is the first
+  // Gregorian day and has one reading, unlabelled.
+  it('Oct 4, 1582 is ambiguous; Oct 15, 1582 is not', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    lookup(container, '10/4/1582')
+    expect(lines(container)).toEqual(['10/4/1582', 'Julian: Thursday', 'Gregorian: Monday'])
+    lookup(container, '10/15/1582')
+    expect(lines(container)).toEqual(['10/15/1582', 'Friday'])
+  })
+
+  // The history rows carry the same information compactly — measured at 375px, where the full
+  // weekday form overflows the row by 5.8px and a wrap would give the one scrolling list two row
+  // heights. A row with a single reading is untouched: no label, no separator, full weekday.
+  it('history rows abbreviate both readings, and leave a single reading alone', () => {
+    const { container } = render(<Host dateFormat="written-mdy" />)
+    lookup(container, '7/4/1776')
+    lookup(container, '9/24/1444')
+    lookup(container, '2/29/1500')
+    expect(rows(container)).toEqual([
+      ['February 29, 1500', 'J: Sat · G: Does Not Exist'],
+      ['September 24, 1444', 'J: Thu · G: Tue'],
+      ['July 4, 1776', 'Thursday'],
+    ])
+  })
+
+  // The either-calendar rule is an acceptance rule, not a licence: a date that exists in NEITHER
+  // calendar is still refused, and the day ceiling in the message is the higher of the two.
+  it('rejects a date that exists in neither calendar, naming the higher ceiling', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    lookup(container, '2/30/1500')
+    expect(slot(container).textContent).toBe('Day must be 1–29 for February') // Julian's 29th counts
+    lookup(container, '2/29/1900')
+    expect(slot(container).textContent).toBe('Day must be 1–28 for February') // post-reform: one rule
+  })
+
+  // Validation now runs BEFORE the history match. Until round-11 Q2 the match short-circuited
+  // ahead of the day check, so a date the app refuses to CREATE became answerable the moment an
+  // entry for it happened to be stored — same input, same settings, opposite outcome depending on
+  // the contents of a list. The either-calendar rule closed the reachable path to that (nothing
+  // storable is refusable any more, and normalizeLookupEntries drops impossible entries on load),
+  // so this pins the ORDER itself: the guarantee is stated, not left to be a coincidence.
+  it('an impossible date in history is still refused, not answered', () => {
+    const impossible = { id: 'e1', y: 1776, m: 2, d: 30 }
+    const { container } = render(
+      <Host dateFormat="numeric-mdy" initialHistory={[impossible]} />, //
+    )
+    lookup(container, '2/30/1776')
+    expect(slot(container).textContent).toBe('Day must be 1–29 for February')
+    expect(container.querySelector('ul button').className).not.toContain('bg-(--hist-sel)')
+  })
+
+  // Show Codes teaches ONE method, and the Julian Calendar setting still picks which — but it can
+  // no longer pick a calendar the date does not exist in. With the setting off, February 29, 1500
+  // would otherwise be walked through as a Gregorian date that never happened.
+  it('Show Codes follows the setting, except where only one calendar has the date', () => {
+    const codes = (container) => container.querySelector('.lookup-method-section').textContent
+    const showCodes = () => fireEvent.click(screen.getByRole('button', { name: /Show Codes/ }))
+
+    const both = render(<Host dateFormat="numeric-mdy" />)
+    lookup(both.container, '9/24/1444')
+    showCodes()
+    expect(codes(both.container)).toContain('Gregorian Calendar') // setting off, both readings real
+    cleanup()
+
+    const julianOnly = render(<Host dateFormat="numeric-mdy" />)
+    lookup(julianOnly.container, '2/29/1500')
+    showCodes()
+    expect(codes(julianOnly.container)).toContain('Julian Calendar') // setting off, reality wins
   })
 })
 
 // ── The isFullyReset contract, at App level (round-8 Q2) ─────────────────────────────────────
 // The Full Reset footer button is dimmed and locked exactly while the whole app sits at launch
-// state, and App reads `lookupOutput === ""` as one of the terms. Q2 changed who writes that
-// state: a successful lookup used to store its result sentence there and now stores nothing (the
-// sentence is derived from the selected history entry). This test is the direct consequence pin —
-// a real lookup must still light Full Reset, through the OTHER Lookup terms (history, input,
+// state, and App reads `lookupOutput === ""` as one of the terms. Round-8 Q2 changed who writes
+// that state: a successful lookup used to store its result sentence there and now stores nothing
+// (the answer is derived from the selected history entry). This test is the direct consequence pin
+// — a real lookup must still light Full Reset, through the OTHER Lookup terms (history, input,
 // selection, calcDate) — and it fails if a later change ever writes the hint string into that
 // state, which would unlock Full Reset on an untouched app. Pristine settings, no overrides, so
 // isFullyReset can actually be true. Mirrors the C3a freshness pin in blitz.dom.
@@ -293,7 +443,7 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
     // The input takes the numeric form of the live Date Format; the ANSWER comes back written.
     act(() => fireEvent.change(input, { target: { value: '7/4/1776' } }))
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Lookup' })))
-    expect(screen.getByText('July 4, 1776 is a Thursday.')).toBeTruthy()
+    expect(lines(document)).toEqual(['July 4, 1776', 'Thursday'])
     act(() => fireEvent.keyDown(window, { key: 'K' }))
     toggleSettings()
     expect(isDisabled(fullReset())).toBe(false) // the lookup registered, without lookupOutput

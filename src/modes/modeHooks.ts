@@ -2,7 +2,7 @@
 // per-mode chrome deduped out of the five screens during the Stage-C mode-untangle: they move
 // together because every screen uses some subset and none of them belongs to any one screen.
 import * as React from 'react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GameState } from '../engine/gameReducer.js'
 import type { GameEngine, FlashState } from './modeTypes.js'
 import { calcLast, calcAvg, calcMed } from '../engine/stats.js'
@@ -263,40 +263,7 @@ export function useChangeEffect(deps: React.DependencyList, fn: () => void) {
   }, deps) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-// Like useChangeEffect, but DEFERRED to the settings-popover CLOSE: snapshots `deps` when the popover
-// OPENS and runs fn ONCE on close IFF they changed (a change-then-revert is a no-op). The ⚙ settings
-// only change while the popover is open, so this batches their side-effects — a date regen, a run/
-// round reset — to a single apply on close instead of one per keystroke, and never resets the solve
-// timer mid-adjustment. fn runs through a ref so the latest closure (current run/round state) fires.
-// (Mode-LOCAL toggles that change outside the popover must keep useChangeEffect — they'd never see an
-// open→close transition coincide with their change.)
-// Both effects are LAYOUT effects (Q9, must move together): the close-fired reset/regen has to commit
-// in the SAME paint as the popover close — as passive effects they ran a frame later, so the closing
-// popover uncovered the still-green grid for one frame before the reset landed. Same-kind effects run
-// in declaration order, so the fnRef updater stays ahead of the close-watcher below.
-export function useSettingsCloseEffect(
-  settingsOpen: boolean,
-  deps: React.DependencyList,
-  fn: () => void,
-) {
-  const fnRef = useRef(fn)
-  useLayoutEffect(() => {
-    fnRef.current = fn
-  })
-  const snapRef = useRef(deps)
-  const wasOpenRef = useRef(settingsOpen)
-  useLayoutEffect(() => {
-    const wasOpen = wasOpenRef.current
-    wasOpenRef.current = settingsOpen
-    if (settingsOpen && !wasOpen) {
-      snapRef.current = deps
-      return
-    } // opened → snapshot the current values
-    if (!settingsOpen && wasOpen) {
-      // closed → fire once iff anything changed
-      const changed = deps.some((d, i) => d !== snapRef.current[i])
-      snapRef.current = deps
-      if (changed) fnRef.current()
-    }
-  }, [settingsOpen, ...deps]) // eslint-disable-line react-hooks/exhaustive-deps
-}
+// The settings-popover-CLOSE counterpart of useChangeEffect — useSettingsCloseEffect — moved to
+// components/useSettingsCloseEffect in round 11 (Q7), when App became a caller too: it was never
+// mode-specific, and a hook App depends on cannot live in the directory the phase-1 split exists to
+// push mode-screen code INTO. The five screens import it from there.

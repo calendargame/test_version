@@ -12,6 +12,12 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync, readdirSync } fr
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+// The two names the app and the build must agree on, defined once in the module that reads them at
+// runtime (see the long note there for why the detector has this shape at all). Vite bundles its
+// own config file, relative TypeScript imports included, so this is a real single source rather
+// than a copy kept in step by hand.
+import { BUILD_ID_FILE, BUILD_ID_META, isBuildId } from './src/lib/updateCheck.ts'
+import { verifyDistPrecache, describePrecacheProblems } from './scripts/precacheIntegrity.mjs'
 
 // GitHub Pages serves the org ROOT page `calendargame.github.io` (and its custom domain
 // calendargame.app) from '/', but every PROJECT repo's Pages site from '/<repo>/'. CI sets
@@ -149,6 +155,128 @@ const testOgMeta = (base) => ({
     html.replaceAll('https://calendargame.app/', `https://calendargame.app${base}`),
 })
 
+// Every file in a finished build, as forward-slash paths relative to it. Sorted + separator-
+// normalized so the identity below is a property of the OUTPUT, not of the machine that produced it.
+const distFiles = (dir, prefix = '') =>
+  readdirSync(join(dir, prefix), { withFileTypes: true })
+    .flatMap((e) =>
+      e.isDirectory()
+        ? distFiles(dir, prefix ? `${prefix}/${e.name}` : e.name)
+        : [prefix ? `${prefix}/${e.name}` : e.name],
+    )
+    .sort()
+
+// buildIdentity (Q7, round 11) — gives every build an identity the running app can compare against
+// the deployed one, which is what makes "Check for updates" a check instead of an unconditional
+// reload. src/lib/updateCheck.ts carries the full reasoning for the design; the mechanics here:
+//
+//   1. HASH the finished build — every file in dist, icons and all. Source maps are excluded (they
+//      are uploaded to Sentry and deleted, never shipped) and the identity file itself does not
+//      exist yet. Path AND bytes go into the hash, so a pure RENAME is a different build too.
+//   2. INJECT <meta name="cg-build"> into dist/index.html. That is how the running app knows which
+//      build it is: the document it was parsed from says so. Nothing is written into the hashed
+//      JS/CSS assets — those carry their content hash in their FILENAME and are precached with
+//      `revision: null`, so a client that already has assets/index-<hash>.js would never re-fetch
+//      it however much its bytes changed. Editing one after the fact is the one thing this plugin
+//      must never do.
+//   3. WRITE dist/build-id.txt with the same id. Workbox's globPatterns are js/wasm/css/html, so a
+//      .txt is not precached — the file is network-only by construction, which is exactly what the
+//      detector needs and why offline reads as "No connection" rather than as a verdict.
+//   4. REWRITE index.html's precache revision to match the bytes step 2 produced. Without this the
+//      injected meta would be invisible to every client that already had the page cached, and the
+//      running id would be frozen at whatever build it first installed — the update check would
+//      then report an update forever and never be able to clear it. (precacheIntegrity below
+//      verifies this rewrite landed, exactly as it verifies testIconVariant's.)
+//
+// The id is a pure function of the pre-injection output, and the post-injection output is a pure
+// function of the id — so two builds are byte-identical if and only if their ids match, which is
+// the property the whole feature rests on. enforce:'post' AND last in the plugin array: it must see
+// the FINAL bytes, after VitePWA has written sw.js and after testIconVariant has swapped in the
+// gray staging icons and corrected their revisions.
+const buildIdentity = () => {
+  let outDir = 'dist'
+  return {
+    name: 'build-identity',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    closeBundle() {
+      const hash = createHash('sha256')
+      for (const rel of distFiles(outDir)) {
+        if (rel.endsWith('.map')) continue
+        hash.update(rel)
+        hash.update('\0')
+        hash.update(readFileSync(join(outDir, rel)))
+        hash.update('\0')
+      }
+      const id = hash.digest('hex')
+      // The runtime refuses an id it does not recognise as a token (updateCheck's BUILD_ID_TOKEN),
+      // so a build that produced an unrecognisable one would ship a permanently dead check. Fail
+      // here instead — the two ends of that agreement are asserted against each other.
+      if (!isBuildId(id)) throw new Error(`build-identity: computed an unusable build id (${id})`)
+
+      const indexPath = join(outDir, 'index.html')
+      const html = readFileSync(indexPath, 'utf8')
+      if (!html.includes('</head>'))
+        throw new Error(
+          'build-identity: dist/index.html has no </head> to inject the build id into',
+        )
+      writeFileSync(
+        indexPath,
+        html.replace('</head>', `  <meta name="${BUILD_ID_META}" content="${id}">\n</head>`),
+      )
+      writeFileSync(join(outDir, BUILD_ID_FILE), `${id}\n`)
+
+      const swPath = join(outDir, 'sw.js')
+      const sw = readFileSync(swPath, 'utf8')
+      const entry = sw.match(/\{[^{}]*"index\.html"[^{}]*\}/)
+      if (!entry)
+        throw new Error('build-identity: no index.html entry in the sw.js precache manifest')
+      const indexMd5 = md5(readFileSync(indexPath))
+      const fixed = entry[0].replace(
+        /(["']?revision["']?\s*:\s*")[0-9a-fA-F]+(")/,
+        `$1${indexMd5}$2`,
+      )
+      if (fixed === entry[0])
+        throw new Error("build-identity: could not rewrite index.html's precache revision")
+      writeFileSync(swPath, sw.replace(entry[0], fixed))
+    },
+  }
+}
+
+// precacheIntegrity (Q10b, round 11) — the round-7 class made unshippable. Fails the BUILD when any
+// precache revision in the generated sw.js disagrees with the md5 of the file actually sitting in
+// dist, which is the only thing that decides whether a client ever re-downloads that file. The
+// check itself lives in scripts/precacheIntegrity.mjs (pure + unit-tested); this is just its wiring.
+// Last of all, so it audits the final artifact — including both plugins above that rewrite
+// revisions by hand.
+const precacheIntegrity = () => {
+  let outDir = 'dist'
+  return {
+    name: 'precache-integrity',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    closeBundle() {
+      const { checked, hashless, problems } = verifyDistPrecache(outDir)
+      if (problems.length > 0)
+        throw new Error(
+          `precache-integrity: ${problems.length} precached file(s) whose revision does not match the shipped bytes.\n` +
+            `${describePrecacheProblems(problems)}\n` +
+            `A stale revision means Workbox never re-downloads that file — clients keep the old copy forever.`,
+        )
+      console.log(
+        `✅ Precache integrity OK: ${checked} revision(s) match their shipped bytes ` +
+          `(${hashless} content-hash-named entries need none).`,
+      )
+    },
+  }
+}
+
 // The PWA web app manifest, handed to VitePWA below. Module-scope + exported (the
 // swapBlockingStylesheet precedent) so tests/webManifest.test.js can pin the BUILT manifest's
 // keys without running a build — vite-plugin-pwa JSON-serializes these entries into
@@ -278,6 +406,11 @@ export default defineConfig(({ command, mode }) => ({
           }),
         ]
       : []),
+    // LAST, and in this order (both enforce:'post', so among post plugins the array order is the
+    // run order): buildIdentity must see the final bytes of every earlier rewrite, and
+    // precacheIntegrity must audit the artifact after buildIdentity's own rewrite. See both above.
+    buildIdentity(),
+    precacheIntegrity(),
   ],
   // Generate hidden source maps ONLY when we're uploading them to Sentry (CI deploys with the auth
   // token). 'hidden' emits the .map files but omits the //# sourceMappingURL comment from the shipped

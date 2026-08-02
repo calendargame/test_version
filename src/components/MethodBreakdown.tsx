@@ -228,6 +228,16 @@ export function MethodBreakdownSection({
   // Mutators that honor this contract: pushAndNext, goBack, goForward,
   // runDeductionRound, sctn, the dedType useEffect, handleResetStats, the blitz
   // config-change effect.
+  // LOSING THE DATE IS A CLOSE, and the effect below takes no shortcut for it: the derived `open`
+  // above already folds in hasDate, so a date going away (Reset Stats, Lookup selecting a gap
+  // entry) arrives as open=false and takes the same hold-then-release path. A HOLD, not an
+  // immediate release: the panel may be mid-slide when the date disappears, and releasing on the
+  // spot would swap the codes for the "AD dates only" line in full view. Until Q5 (round 11) this
+  // effect opened with `if (!date) return`, which wedged the machine — React ran the previous
+  // run's cleanup, clearing the pending release timer, and armed nothing in its place, so
+  // closingRef stayed true and the snapshot stayed on the departed date until the next open. It
+  // never SHOWED, because a dateless panel is forced closed: correct by accident, a downstream
+  // guard covering for a stuck machine. tests/methodBreakdown.dom pins both halves.
   /* The freeze effect below is a genuine timer mechanism: it mirrors frozen←live while the panel
      is open and, on close, HOLDS the frozen snapshot for CODES_CLOSE_MS before releasing it to the
      latest values. The synchronous setState (mirror-while-open / immediate-when-not-animating) has
@@ -235,7 +245,6 @@ export function MethodBreakdownSection({
      cellDatesKey (a content-stable proxy) instead of the identity-unstable cellDates array. */
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   React.useEffect(() => {
-    if (!date) return
     if (open) {
       wasOpenRef.current = true
       closingRef.current = false

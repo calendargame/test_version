@@ -46,6 +46,13 @@ const panelDomId = (id: string) => `guide-panel-${id}`
 // scroll input (touchstart/wheel) cancels the writer instantly — the user always wins —
 // and the returned cancel function serves mid-flight re-toggles, leaving the guide for
 // another mode, the app being backgrounded, and unmount (see scrollWriterRef below).
+// ⚠ This is the app's ONE bare window.scrollTo, and deliberately so (Q8, round 11). Every other
+// instant window jump goes through scrollWindowTo (lib/docScrollFlight), which declares the scroll
+// sequence over. This one is not a jump that PLACES the page — it is the app RUNNING a scroll
+// animation, and its frames are exactly the "a scroll is in flight" that flag describes. Declaring
+// completion on every frame would make a glide read as stationary, so a menu opened during one
+// would arm and then dismiss itself on the next frame. It ends like any other scroll, on its last
+// frame's scrollend. tests/docScrollFlight pins the split.
 function startScrollWriter(from: number, to: number, durationMs: number): () => void {
   let raf = 0
   let start: number | null = null
@@ -433,9 +440,13 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           in the background and takes effect the next time you open the app fresh. A short{' '}
           <b>updating screen</b> marks the change — it appears once for each new version, even when
           the switch already finished quietly between visits. Switching back from another app never
-          triggers it; the update waits for a fresh open. To force the latest right now instead, the
-          Settings (⚙) panel has a <b>Check for updates</b> link that reloads the newest version on
-          the spot (your saved progress is kept), behind the same updating screen.
+          triggers it; the update waits for a fresh open. To ask right now instead, the Settings (⚙)
+          panel has a <b>Check for updates</b> link. It really does check: the link reads{' '}
+          <b>Checking…</b> while it looks, then answers in the same spot — <b>Up to date</b> if you
+          already have the newest version, or <b>No connection</b> if it could not reach the
+          internet. The answer stays for a few seconds and the link goes back to normal. Only when
+          there genuinely is something new does it install it there and then, behind the same
+          updating screen (your saved progress is kept either way).
         </p>
         <p>
           To see what an update actually changed, the <b>Changelog</b> link right next to Check for
@@ -486,9 +497,10 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           </li>
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
-            release to switch (or just tap to open the menu and tap a mode, as before). If you
-            scroll this How to Play page while the menu is open, it closes — the same as tapping
-            outside it.
+            release to switch (or just tap to open the menu and tap a mode, as before). Start
+            scrolling this How to Play page while the menu is open and it closes, the same as
+            tapping outside it — but a scroll that was already gliding when you opened the menu is
+            left to finish, so opening it right after a flick no longer shuts it again instantly.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it
@@ -1147,6 +1159,12 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             In Blitz rounds and AoX runs (active or just ended), a Julian toggle resets the
             round/run when you close the ⚙ menu.
           </li>
+          <li>
+            In Lookup the setting changes no answer at all: a date on or before October 4, 1582 is
+            shown in both calendars either way. It only picks which one Show Codes works through —
+            and even then it defers to the date, since February 29 of a year like 1500 exists in the
+            Julian calendar only.
+          </li>
         </UL>
         <Subhead>Julian Chance</Subhead>
         <p>
@@ -1755,23 +1773,44 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             Show Codes is available for all results and stays open as you browse your history.
           </li>
           <li>
-            The answer line below the input always keeps its space, so nothing on the page shifts as
-            answers come and go. With nothing to report — before your first lookup, or after Clear —
-            it simply invites you to enter a date.
+            The answer sits on three fixed lines below the input — the date, then its weekday — and
+            always keeps its space, so nothing on the page shifts as answers come and go. With
+            nothing to report — before your first lookup, or after Clear — it simply invites you to
+            enter a date.
+          </li>
+          <li>
+            <b>Dates before the Gregorian switch have two weekdays, and Lookup shows both.</b> On or
+            before October 4, 1582 a date can be read in the Julian calendar or in the Gregorian one
+            projected back, and the two rarely agree — so the answer names each: "Julian: Saturday",
+            "Gregorian: Wednesday". Nothing is chosen for you, and the Julian Calendar setting makes
+            no difference here. From October 15, 1582 onwards there is only one reading, and it is
+            shown on its own with no label.
+          </li>
+          <li>
+            Some of those early dates exist in one calendar only — February 29 of a year like 1500
+            is a real Julian date and no Gregorian date at all, because the two disagree about which
+            years are leap years. That reads as "Gregorian: Does Not Exist", and Show Codes works
+            through the calendar the date actually has.
           </li>
           <li>
             The history panel keeps your last twenty lookups. It scrolls within its own box whenever
             the list is taller than the room available.
           </li>
           <li>
-            Nothing in Lookup is frozen at the moment you look it up: the answer line and every
-            history row are worked out afresh from the date itself, so changing the Date Format or
-            the Julian Calendar setting updates the answer and the whole list together — an older
-            entry can never disagree with the one above it.
+            History rows say the same thing in short, so each stays on one line: "J: Sat · G: Wed"
+            for a date with two readings, and just the weekday on its own for every other date. Tap
+            a row to see it spelled out in full above.
           </li>
           <li>
-            October 5–14, 1582 never existed and will appear in history as "Does Not Exist" with
-            Show Codes unavailable.
+            Nothing in Lookup is frozen at the moment you look it up: the answer and every history
+            row are worked out afresh from the date itself, so changing the Date Format updates the
+            answer and the whole list together — an older entry can never disagree with the one
+            above it.
+          </li>
+          <li>
+            October 5–14, 1582 never existed — they are neither calendar's dates, not an early date
+            with two readings — and will appear in history as "Does Not Exist" with Show Codes
+            unavailable.
           </li>
         </UL>
       </GuideSection>

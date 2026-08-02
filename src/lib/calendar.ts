@@ -61,6 +61,23 @@ export const isJulianDate = (y: number, m: number, d: number): boolean =>
   y < 1582 || (y === 1582 && (m < 10 || (m === 10 && d <= 4)))
 export const isGapDate = (y: number, m: number, d: number): boolean =>
   y === 1582 && m === 10 && d >= 5 && d <= 14
+// Is this month one whose days can be read in EITHER calendar? Everything up to the reform can be:
+// a pre-reform date has a real Julian reading AND a real proleptic-Gregorian one, and the two
+// disagree about which dates even exist — Julian's every-fourth-year leap rule grants February 29
+// to years like 1500 that Gregorian's century rule does not.
+//
+// MONTH-level rather than day-level on purpose: isJulianDate takes the day, and the day is the very
+// thing dimEither below is being asked about ("how many days does this month have?"). October 1582
+// is the only month with days on both sides of the reform, and it has 31 days under both calendars,
+// so asking about its first day — "does this month START before the reform?" — is exact here, not an
+// approximation. Not exported: dimEither is the only sound way to use it.
+const isJulianEraMonth = (y: number, m: number): boolean => isJulianDate(y, m, 1)
+// The highest day number this month has under ANY calendar it can be read in — i.e. the largest day
+// that is a real date. Only February ever differs between the two leap rules, so this is dim's
+// answer everywhere except the pre-reform Februaries, where it is the Julian 29 rather than the
+// Gregorian 28. Lookup validates against this: a date that exists in either calendar is a date.
+export const dimEither = (y: number, m: number): number =>
+  isJulianEraMonth(y, m) ? Math.max(dim(y, m, true), dim(y, m)) : dim(y, m)
 // Returns true if [lo,hi] contains at least one leap year, evaluated under the active calendar
 // (Julian rule for years <1582 when useJulian is on; Gregorian rule otherwise). Used to lock the
 // Leap Year Chance buttons when no leap year is reachable — without this, setting 50/75/100% would

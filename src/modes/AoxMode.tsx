@@ -4,7 +4,8 @@
 // so nothing about its behaviour changes by living here.
 import { useEffect, useRef, useState } from 'react'
 import type { ModeProps, FmtDate, GenDate } from './modeTypes.js'
-import { FLASH_MS, useButtonFlash, useSettingsCloseEffect } from './modeHooks.js'
+import { FLASH_MS, useButtonFlash } from './modeHooks.js'
+import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { NUM_INPUT_CLASS, RESET_BTN_CLASS } from '../components/controlClasses.js'
 import { fmtTime, truncTime, fmtAccuracyPct } from '../lib/modeFormat.js'
 import { randomDate } from '../lib/dateGen.js'

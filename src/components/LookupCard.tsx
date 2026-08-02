@@ -1,12 +1,14 @@
 import * as React from 'react'
 import { fmt, MONTH, DAY, numericFormatOf } from '../lib/format.js'
-import { dim, wday, wdayJulian, isJulianDate, isGapDate } from '../lib/calendar.js'
+import { dim, dimEither, wday, wdayJulian, isJulianDate, isGapDate } from '../lib/calendar.js'
 import { MethodBreakdownSection, type CodeDate } from './MethodBreakdown.jsx'
 import { SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './scrollRegion.js'
 import type { FormatId } from '../lib/format.js'
 // The history entry's persisted shape lives with the store that versions and migrates it
 // (store/progress) — it is {id, y, m, d, isGap?} and nothing else. Everything shown on screen is
-// derived from those inputs by the three helpers below, against the LIVE settings.
+// derived from those inputs by entryLabel/entryReadings below, against the LIVE Date Format. The
+// store also guarantees the date is REAL (normalizeLookupEntries), which is what lets the readings
+// treat "this calendar has no such date" as a fact about the calendar rather than about the data.
 import type { LookupEntry } from '../store/progress.js'
 
 interface LookupCardProps {
@@ -43,50 +45,110 @@ const NO_ENTRIES: LookupEntry[] = []
 // it must never be written into the lookupOutput state, which App reads as "" to decide the Full
 // Reset button is dimmed/locked (isFullyReset); storing the hint would silently unlock it.
 const LOOKUP_HINT = 'Enter a date to see its weekday.'
-// The Oct 5–14, 1582 answer, deliberately SHORT: the result slot is two lines tall and the full
-// story (why ten days vanished when the Gregorian calendar was adopted) is already told in the
-// How-to-Play guide's Julian Calendar section — one canonical copy, not two.
+// The Oct 5–14, 1582 answer, deliberately SHORT: it shares the result slot with the date line above
+// it and the full story (why ten days vanished when the Gregorian calendar was adopted) is already
+// told in the How-to-Play guide's Julian Calendar section — one canonical copy, not two.
 const GAP_MSG = 'October 5–14, 1582 never existed — 10 days skipped in the Gregorian switch.'
+// What a calendar reads when the date is not one of its dates. ONE string for two situations that
+// are the same statement at different scopes, which is why they share the words: a gap entry exists
+// in NO calendar (nothing follows it, so it stands alone), and a pre-reform February 29 like 1500
+// exists in Julian but not in Gregorian (the label beside it — "Gregorian:" / "G:" — is what scopes
+// it there). Inventing a second phrase for the second case would split one idea into two.
+const NO_READING = 'Does Not Exist'
 
 // ── Derived-from-the-entry helpers ──────────────────────────────────────────────────────────
-// A history entry stores INPUTS only ({id, y, m, d, isGap?}); its label, weekday and result
-// sentence are computed here, at paint time, from the live Date Format / Julian settings. That is
-// what makes a format change re-render the whole card consistently — the result line above and
-// every row below move together, because there is only one source of truth for all of them.
+// A history entry stores INPUTS only ({id, y, m, d, isGap?}); its label and its weekday reading(s)
+// are computed here, at paint time, from the live Date Format setting. That is what makes a format
+// change re-render the whole card consistently — the answer slot above and every row below move
+// together, because there is only one source of truth for all of them.
 
-// The formatted date, exactly as the history row and the result sentence both show it.
+// The formatted date, exactly as the history row and the answer slot both show it.
 const entryLabel = (e: LookupEntry, fmtDate?: (y: number, m: number, d: number) => string) =>
   fmtDate ? fmtDate(e.y, e.m, e.d) : `${MONTH[e.m - 1]} ${e.d}, ${e.y}`
 
-// The weekday name. Gap entries have none; for a Julian-eligible date the answer depends on the
-// user's Julian Calendar setting, which is why it can't be frozen at lookup time.
-const entryWeekday = (e: LookupEntry, useJulian: boolean) => {
-  if (e.isGap) return 'Does Not Exist'
-  const julian = useJulian && isJulianDate(e.y, e.m, e.d)
-  return DAY[julian ? wdayJulian(e.y, e.m, e.d) : wday(e.y, e.m, e.d)]
+// One calendar's answer for a date, in both the spelled-out form the answer slot uses and the
+// compact form a history row has room for.
+interface Reading {
+  label: string // 'Julian' | 'Gregorian', or '' when there is only one calendar and naming it is noise
+  shortLabel: string // the row's form of the same: 'J' | 'G' | ''
+  weekday: string // the weekday name, or NO_READING where this calendar has no such date
+  shortWeekday: string // the row's form: 'Wed' — see entryRowReadings for why rows abbreviate
+}
+const reading = (
+  label: string,
+  shortLabel: string,
+  exists: boolean,
+  dayIndex: number,
+): Reading => ({
+  label,
+  shortLabel,
+  weekday: exists ? DAY[dayIndex] : NO_READING,
+  // Three letters is the whole abbreviation rule (Sunday → Sun). NO_READING is left intact: it is a
+  // statement about the date, not a weekday, and "Doe" would be nonsense.
+  shortWeekday: exists ? DAY[dayIndex].slice(0, 3) : NO_READING,
+})
+
+// Every reading a date has, in the order they are shown.
+//
+// Before the reform a date is genuinely AMBIGUOUS — it has a real Julian reading and a real
+// proleptic-Gregorian one — so the card shows BOTH and lets the user see the disagreement, rather
+// than picking one behind their back from the Julian Calendar setting. That is what makes the
+// entries derivable at all: with no calendar chosen there is nothing per-entry left to freeze, and
+// a stored date can never be re-read as a different (or impossible) one when the setting changes.
+// The 12 pre-reform February 29ths that only Julian's leap rule grants are the sharp end of it:
+// they read as a real Julian weekday and NO_READING under Gregorian, instead of silently borrowing
+// March 1's weekday. After the reform there is one reading and it needs no label. Gap dates have
+// none — they are neither calendar's date, which is what the slot's GAP_MSG says.
+const entryReadings = (e: LookupEntry): Reading[] => {
+  if (e.isGap) return []
+  if (!isJulianDate(e.y, e.m, e.d)) return [reading('', '', true, wday(e.y, e.m, e.d))]
+  return [
+    reading('Julian', 'J', e.d <= dim(e.y, e.m, true), wdayJulian(e.y, e.m, e.d)),
+    reading('Gregorian', 'G', e.d <= dim(e.y, e.m), wday(e.y, e.m, e.d)),
+  ]
 }
 
-// The full sentence shown in the result slot. Julian-eligible dates name the calendar they were
-// read under, so the answer is never ambiguous across a settings change.
-const entryResult = (
-  e: LookupEntry,
-  fmtDate: ((y: number, m: number, d: number) => string) | undefined,
-  useJulian: boolean,
-) => {
-  if (e.isGap) return GAP_MSG
-  const sentence = `${entryLabel(e, fmtDate)} is a ${entryWeekday(e, useJulian)}`
-  return isJulianDate(e.y, e.m, e.d)
-    ? `${sentence} (${useJulian ? 'Julian' : 'Gregorian'}).`
-    : `${sentence}.`
+// The history row's readings, on ONE line, middot-separated.
+//
+// MEASURED, not guessed (375px, the narrowest phone this has to survive; the numbers are the real
+// rendered widths): a row gives its two spans 272.4px between them, the widest ambiguous-era date
+// label is 117.1px ("September 24, 1444", written format), and a two-reading line with full weekday
+// names runs to 161.1px — 290.1px in total, which overflows by 5.8px. Wrapping is not the answer:
+// it would give this one scrolling list two different row heights, which reads far worse than a
+// shorter word. So rows abbreviate — 'J: Wed · G: Sun' — landing the worst case at 214.5px, and the
+// worst NO_READING row ("February 29, 1300" + 'J: Mon · G: Does Not Exist') at 255.7px. The
+// spelled-out form lives in the answer slot directly above, so the compact form has somewhere to be
+// learned from. A row with only ONE reading keeps the full weekday: nothing is competing for the
+// space, and abbreviating it would change every ordinary row for nothing.
+const entryRowReadings = (e: LookupEntry): string =>
+  e.isGap
+    ? NO_READING
+    : entryReadings(e)
+        .map((r) => (r.label ? `${r.shortLabel}: ${r.shortWeekday}` : r.weekday))
+        .join(' · ')
+
+// Which calendar Show Codes works in. The answer slot shows both readings now, so the Julian
+// Calendar setting no longer decides what a date IS — but the codes panel teaches ONE method and
+// the setting is still what picks it. The one thing it must not do is teach a method for a date
+// that the picked calendar does not have: February 29, 1500 is Julian-only, so with the setting off
+// the panel would otherwise walk the user through a Gregorian date that never happened and land on
+// March 1's codes. So follow the setting wherever both readings are real, and follow reality where
+// only one is. (Gregorian's leap years are a subset of Julian's, so "not in Gregorian" implies "in
+// Julian" for any date that passed validation — the true branch is the only one reality allows.)
+const codesUseJulian = (date: CodeDate | null, useJulian: boolean): boolean => {
+  if (!date || !isJulianDate(date.y, date.m, date.d)) return useJulian
+  return date.d <= dim(date.y, date.m) ? useJulian : true
 }
 
 // LookupCard — the Lookup-mode card: a numeric date input (format follows the
-// active dateFormat), a two-line result slot, a history list that scrolls once it
+// active dateFormat), a three-line answer slot, a history list that scrolls once it
 // runs out of screen (with edge-fade indicators), and the shared Show Codes panel.
 // All state is lifted to the parent and passed via props/callbacks, so this
 // component is presentational + input-parsing only, and it OWNS no rendered text:
-// labels, weekdays and result sentences are all derived from the stored {y,m,d}
-// against the live settings. Recognizes the Oct 5–14, 1582 gap ("Does Not Exist").
+// labels and weekdays are all derived from the stored {y,m,d} against the live
+// Date Format. A pre-reform date shows BOTH calendars' readings rather than one
+// chosen by the Julian Calendar setting, which now reaches only the codes panel
+// (codesUseJulian). Recognizes the Oct 5–14, 1582 gap ("Does Not Exist").
 //
 // Extracted from main.jsx in Stage C, Step 4f (verbatim). Uses module-level
 // helpers now imported from lib/* (isLeap/dim/wday/numericFormatOf etc.) — no
@@ -230,9 +292,26 @@ export default function LookupCard({
       lookupInputRef.current?.focus()
       return
     }
-    // Every SUCCESSFUL path below clears lookupOutput and selects the entry instead: the sentence
-    // on screen is derived from the selection (see displayNote), so lookupOutput is now purely the
+    // The day check, on the EITHER-calendar rule: a date is real if it exists in a calendar this
+    // date can be read in, so pre-reform February keeps Julian's 29th. It runs BEFORE the history
+    // match on purpose — the match short-circuited ahead of it until now, which meant a date the
+    // app refuses to CREATE became answerable the moment an entry for it happened to be stored:
+    // same input, same settings, opposite outcome depending on the contents of a list. Validate
+    // first, then look for a match, and the two answers cannot diverge. (The gap days pass this
+    // check like any other October day — October has 31 of them in both calendars — and are picked
+    // out below, which is where their "never existed" answer belongs.)
+    const maxd = dimEither(yy, mm)
+    if (dd < 1 || dd > maxd) {
+      ssid(null)
+      slo(`Day must be 1–${maxd} for ${MONTH[mm - 1]}`)
+      lookupInputRef.current?.focus()
+      return
+    }
+    // Every SUCCESSFUL path below clears lookupOutput and selects the entry instead: what is on
+    // screen is derived from the selection (see selectedEntry), so lookupOutput is now purely the
     // transient "couldn't answer" message — leaving a stale error behind it would be dead state.
+    // Matching on y/m/d alone is exactly right: an entry carries no calendar of its own to
+    // disagree with, because the card shows every calendar the date can be read in.
     const existing = entries.find((e) => e.y === yy && e.m === mm && e.d === dd)
     if (existing) {
       if (onMoveHistory) onMoveHistory(existing.id)
@@ -253,14 +332,6 @@ export default function LookupCard({
       sco(false)
       if (onAddHistory) onAddHistory(entry)
       lookupInputRef.current?.blur()
-      return
-    }
-    const julian = useJulian && isJulianDate(yy, mm, dd)
-    const maxd = dim(yy, mm, julian)
-    if (dd < 1 || dd > maxd) {
-      ssid(null)
-      slo(`Day must be 1–${maxd} for ${MONTH[mm - 1]}`)
-      lookupInputRef.current?.focus()
       return
     }
     const entry = { id: makeEntryId(), y: yy, m: mm, d: dd }
@@ -297,7 +368,7 @@ export default function LookupCard({
   // with that date — convenient for re-running a lookup or editing it. The input is always
   // numeric (per the input's contract; the displayed history label may be written), so
   // populate using the numeric form of the selected dateFormat regardless of how the
-  // history row reads. The result sentence follows from the selection itself (displayNote), so
+  // history row reads. The answer follows from the selection itself (selectedEntry), so
   // this only has to clear any error message the selection replaces.
   const selEntry = (entry: LookupEntry) => {
     if (!entry) return
@@ -318,14 +389,13 @@ export default function LookupCard({
     slo('')
     sco(false)
   }
-  // The result line: the selected entry's sentence, derived fresh, else the live output (which is
-  // now only ever an error message or ""). One rule, no Julian special case — entryResult covers
-  // it. fmtDate closes over dateFormat and is re-created when it changes, so it alone is the
-  // correct dependency; listing dateFormat too would be redundant.
-  const displayNote = React.useMemo(() => {
-    const selectedEntry = entries.find((e) => e.id === sid)
-    return selectedEntry ? entryResult(selectedEntry, fmtDate, useJulian) : lo
-  }, [sid, entries, useJulian, fmtDate, lo])
+  // The answer slot's subject: the selected entry, whose date line and reading lines are derived
+  // fresh below. With nothing selected the slot falls back to the live output (which is now only
+  // ever an error message or "") and then to the standing hint.
+  const selectedEntry = React.useMemo(
+    () => entries.find((e) => e.id === sid) ?? null,
+    [entries, sid],
+  )
   // Keyboard navigation for the Lookup card when no input has focus:
   //   ArrowDown/ArrowUp — move highlighted history entry; selecting populates input.
   //   Backspace/Delete  — clear the Lookup input box (matches the Clear button).
@@ -424,18 +494,38 @@ export default function LookupCard({
             Clear
           </button>
         </div>
-        {/* The result slot is ALWAYS rendered, at a constant two-line height, so the card below it
-            never jumps. Two lines is the exact ceiling of every string that can land here: the
-            1582 gap message is two, the "(Gregorian)" answer variant is one line on a 430px screen
-            and two on a 393px one, and every error and ordinary answer is one. A one-line reserve
-            would still jump ~21px on the tall cases. min-h-10 (2.5rem) is two text-sm line boxes
-            and, being a standard scale utility, tracks the fluid root font instead of freezing a
-            pixel height. Top-aligned on purpose — centering would shift the first line as the
-            second appears. Empty state shows the hint, in the dimmer text tone. */}
+        {/* The answer slot is ALWAYS rendered, at a constant THREE-line height, so the card below it
+            never jumps. Three EXPLICIT ROWS, not a sentence that happens to wrap: row 1 is always
+            the formatted date, rows 2–3 the reading(s) — one for a post-reform date (the third row
+            stays empty), one per calendar for an ambiguous one. The old two-line reserve held a
+            sentence whose line count depended on the font, the width, the month name and the
+            weekday length, so it survived by tuning; rows make the height a property of the
+            structure instead. Measured at 375px, where the slot is 310px wide: the longest line
+            that can land here is 'Gregorian: Does Not Exist' at 156.7px, so no reading line can
+            wrap on any phone this app supports, and the gap message below is the same two lines it
+            has always been. min-h-15 (3.75rem) is three text-sm line boxes and, being a scale
+            utility, tracks the fluid root font instead of freezing a pixel height.
+            TOP-ALIGNED, never centred: the date and the first reading then land in the same place
+            every time and only the unused third row varies. Centring would drift the whole block
+            with its content — exactly the instability round 8 removed. Errors and the empty-state
+            hint are plain text in the same slot; the hint takes the dimmer tone. */}
         <div
-          className={`text-sm min-h-10 ${displayNote ? 'text-(--tx-100-90)' : 'text-(--tx-200-70)'}`}
+          className={`text-sm min-h-15 ${selectedEntry || lo ? 'text-(--tx-100-90)' : 'text-(--tx-200-70)'}`}
         >
-          {displayNote || LOOKUP_HINT}
+          {selectedEntry ? (
+            <>
+              <div>{entryLabel(selectedEntry, fmtDate)}</div>
+              {selectedEntry.isGap ? (
+                <div>{GAP_MSG}</div>
+              ) : (
+                entryReadings(selectedEntry).map((r) => (
+                  <div key={r.label}>{r.label ? `${r.label}: ${r.weekday}` : r.weekday}</div>
+                ))
+              )}
+            </>
+          ) : (
+            lo || LOOKUP_HINT
+          )}
         </div>
         <p className="text-xs text-(--tx-100-90)">
           Format: <b>{inputMeta.label}</b>
@@ -490,11 +580,18 @@ export default function LookupCard({
                   onClick={() => selEntry(e)}
                   className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-(--acc) bg-(--hist-sel)' : 'hist-unsel hover:bg-(--hist-hov)'}`}
                 >
-                  <span className="block text-[13px] font-medium text-(--tx-100-90)">
+                  {/* Every row is exactly one line tall, by construction rather than by fitting:
+                      the readings never wrap and never shrink (a two-reading line is the whole
+                      point of the row), and the date label is the side that gives — truncate ends
+                      it with an ellipsis instead of pushing the readings out of the panel. The
+                      measurement in entryRowReadings says nothing reachable actually needs the
+                      truncation; it is here so that a row's height can never depend on its
+                      content, which in a scrolling list is the failure worth designing out. */}
+                  <span className="block min-w-0 truncate text-[13px] font-medium text-(--tx-100-90)">
                     {entryLabel(e, fmtDate)}
                   </span>
-                  <span className="text-[12px] font-semibold text-(--tx-200-80)">
-                    {entryWeekday(e, useJulian)}
+                  <span className="shrink-0 whitespace-nowrap text-[12px] font-semibold text-(--tx-200-80)">
+                    {entryRowReadings(e)}
                   </span>
                 </button>
               </li>
@@ -516,7 +613,7 @@ export default function LookupCard({
           contentClassName="mt-3 rounded-2xl panel px-4 pt-[3px] pb-1.5"
           open={cov}
           onOpenChange={sco}
-          useJulian={useJulian}
+          useJulian={codesUseJulian(cdv, useJulian)}
           displayedFormat={dateFormat}
         />
       </div>

@@ -1,0 +1,376 @@
+// @vitest-environment jsdom
+//
+// ROUND 11 Q4 — the two fade/shadow freezes, and the fixture gap underneath them.
+//
+// THE BUGS. Every scroll indicator answers one question — "how far is this scroller from each of
+// its edges" — from three numbers: scrollTop, scrollHeight, clientHeight. The platform gives an
+// event for the first only. Both freezes are the other two changing silently:
+//   • CLAMPED modes: the app's scroll container is `absolute inset-0`, so its box is pinned to the
+//     viewport BY CONSTRUCTION. The ResizeObserver watching it was watching the one number no
+//     content change can ever move — open Show Codes while resting at the top and the bottom fade
+//     kept painting the answer from before it opened.
+//   • GUIDE mode: the document is the scroller and there was no observer at all, only window
+//     scroll + resize. An accordion toggle produces neither (a tap that seats an already-seated
+//     panel scrolls nowhere, and the panel keeps growing for the rest of its animation after the
+//     glide's last scroll event), so the bottom doc-fade froze.
+// Both are now `observeScrollExtent` (components/scrollRegion), which watches the CONTENT: the
+// scroller, each of its element children, and a childList MutationObserver for children arriving
+// or leaving.
+//
+// THE FIXTURE GAP, which is the actual recurring defect. The suite was green over both bugs, and
+// over round 10's ship-blocker before them, because every scroll fixture in it renders the same
+// shape: a populated, comfortably overflowing region, driven by a scroll event. It never rendered
+// a resting state and never performed a transition without a scroll. tests/helpers/scrollGeometry
+// names those states; this file sweeps them, and the two regressions below are pinned inside that
+// sweep rather than beside it.
+//
+// WHAT jsdom CANNOT DO, stated plainly: it lays nothing out and its ResizeObserver is an inert
+// stub, so the three numbers and the resize notification are supplied by the fixture. That makes
+// this a test of the app's WIRING — which element is watched, which number is re-read, what is
+// written where — and not of real layout. The feel of a fade tracking a real accordion at 60fps
+// is the owner's device.
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { useCallback, useRef } from 'react'
+import { render, cleanup, act, fireEvent } from '@testing-library/react'
+import { App } from '../src/main.jsx'
+import LookupCard from '../src/components/LookupCard.jsx'
+import {
+  observeScrollExtent,
+  scrollFadeClass,
+  useScrollEdgeState,
+} from '../src/components/scrollRegion.js'
+import { useSettings } from '../src/store/settings.js'
+import {
+  installResizeObserver,
+  setScrollGeometry,
+  RESTING_GEOMETRIES,
+  OVERFLOWING_GEOMETRY,
+} from './helpers/scrollGeometry.js'
+
+const shade = (el) => el.style.getPropertyValue('--shade')
+
+// A MutationObserver delivers on a microtask; a timeout is queued behind all of them.
+const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The primitive, on plain DOM. No React, no app — just "what does it watch, and when does it
+// report".
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe('observeScrollExtent — the content, not the box', () => {
+  let ro
+  let stop
+  beforeEach(() => {
+    ro = installResizeObserver()
+  })
+  afterEach(() => {
+    stop?.()
+    stop = null
+    ro.restore()
+    document.body.innerHTML = ''
+  })
+
+  // A scroller with two children, the shape of every region in the app.
+  function region() {
+    const el = document.createElement('div')
+    const first = document.createElement('div')
+    const second = document.createElement('div')
+    el.append(first, second)
+    document.body.appendChild(el)
+    return { el, first, second }
+  }
+
+  it('watches the scroller AND every element child', () => {
+    // The clamped-mode freeze, stated structurally. `absolute inset-0` pins the scroller's box to
+    // the viewport, so an observer on the box alone is an observer on the one number content can
+    // never move. scrollHeight is the CHILDREN's stacked height — so the children are the subject.
+    const { el, first, second } = region()
+    stop = observeScrollExtent(el, () => {})
+    expect([ro.isObserved(el), ro.isObserved(first), ro.isObserved(second)]).toEqual([
+      true,
+      true,
+      true,
+    ])
+  })
+
+  it('reports a child growing frame by frame — an animation is tracked, not waited out', () => {
+    // The accordion case. A CSS transition resizes its element once per frame; each of those is a
+    // new answer to the edge question, which is why the indicators follow the panel open instead
+    // of snapping to the end of it.
+    const { el, first } = region()
+    const onChange = vi.fn()
+    stop = observeScrollExtent(el, onChange)
+    for (let frame = 0; frame < 3; frame++) ro.resize(first)
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it('still reports the scroller’s own box changing — a rotation is a resize too', () => {
+    const { el } = region()
+    const onChange = vi.fn()
+    stop = observeScrollExtent(el, onChange)
+    ro.resize(el)
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a child ADDED, and watches it from then on', async () => {
+    // No ResizeObserver can see this one: the total changes while no survivor resizes. The
+    // re-observe is what makes it more than a notification — a child that arrives and THEN grows
+    // (a history row animating in) has to be under observation by the time it does.
+    const { el } = region()
+    const onChange = vi.fn()
+    stop = observeScrollExtent(el, onChange)
+    const added = document.createElement('li')
+    el.appendChild(added)
+    await flushMicrotasks()
+    expect(onChange).toHaveBeenCalled()
+    expect(ro.isObserved(added)).toBe(true)
+  })
+
+  it('reports a child REMOVED — its own observation left with it', async () => {
+    const { el, second } = region()
+    const onChange = vi.fn()
+    stop = observeScrollExtent(el, onChange)
+    second.remove()
+    await flushMicrotasks()
+    expect(onChange).toHaveBeenCalled()
+  })
+
+  it('stops watching on teardown — both observers, not just the resize one', async () => {
+    const { el, first } = region()
+    const onChange = vi.fn()
+    observeScrollExtent(el, onChange)()
+    ro.resize(first)
+    ro.resize(el)
+    el.appendChild(document.createElement('div'))
+    await flushMicrotasks()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The RESTING states, through the shared hook — so Lookup's history list, the settings popover
+// and the changelog popup are all covered by construction (they are its only three callers).
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The hook's whole public surface in one component: a scroller, the two boundary surfaces it can
+// be handed, and the mask class its two booleans produce.
+function Region({ geometry, active = true }) {
+  const scrollerRef = useRef(null)
+  const topRef = useRef(null)
+  const bottomRef = useRef(null)
+  // A CALLBACK ref, so the geometry is in place before the hook's layout effect measures: React
+  // attaches refs during the commit, ahead of every layout effect. The ordering is the point —
+  // round 10's shadow bug was wrong on the FIRST painted frame, and a fixture that applied its
+  // geometry after mounting could never have caught it.
+  const attach = useCallback(
+    (node) => {
+      scrollerRef.current = node
+      if (node) setScrollGeometry(node, geometry)
+    },
+    [geometry],
+  )
+  const { scrolledFromTop, atBottom } = useScrollEdgeState(scrollerRef, active, topRef, bottomRef)
+  return (
+    <div>
+      <div ref={topRef} data-testid="top" />
+      <div
+        ref={attach}
+        data-testid="scroller"
+        className={`region${scrollFadeClass(scrolledFromTop, atBottom)}`}
+      >
+        <div data-testid="child" />
+      </div>
+      <div ref={bottomRef} data-testid="bottom" />
+    </div>
+  )
+}
+
+describe('the resting states — nothing to scroll means nothing to signal', () => {
+  beforeEach(() => {
+    document.documentElement.style.setProperty('--fade-h', '24px')
+  })
+  afterEach(() => {
+    cleanup()
+    document.documentElement.style.removeProperty('--fade-h')
+  })
+
+  it.each(RESTING_GEOMETRIES)(
+    '%s: no mask, and both boundaries written to 0',
+    (_name, geometry) => {
+      const { getByTestId } = render(<Region geometry={geometry} />)
+      // WRITTEN, not merely absent: an unset --shade inherits @property's initial-value of 1, which
+      // is a full-strength 50%-black shadow. That is exactly how round 10's ship-blocker looked.
+      expect(shade(getByTestId('top'))).toBe('0.000')
+      expect(shade(getByTestId('bottom'))).toBe('0.000')
+      expect(getByTestId('scroller').className).toBe('region')
+    },
+  )
+
+  it('is not passing by writing nothing — a live edge still lights up', () => {
+    const { getByTestId } = render(<Region geometry={OVERFLOWING_GEOMETRY} />)
+    expect(shade(getByTestId('bottom'))).toBe('1.000')
+    expect(getByTestId('scroller').className).toBe('region fade-scroll-bottom')
+  })
+
+  it('rests everything again when the region deactivates', () => {
+    // The other half of the round-10 class: a region that HAD something to scroll and then does
+    // not. The teardown reset is what stops a closed popover reopening with stale indicators.
+    const { getByTestId, rerender } = render(<Region geometry={OVERFLOWING_GEOMETRY} />)
+    expect(shade(getByTestId('bottom'))).toBe('1.000')
+    rerender(<Region geometry={OVERFLOWING_GEOMETRY} active={false} />)
+    expect(shade(getByTestId('bottom'))).toBe('0.000')
+    expect(getByTestId('scroller').className).toBe('region')
+  })
+
+  it('Lookup with ONE entry: the list exists and has nothing to scroll', () => {
+    // The content-level neighbour of the empty state pinned in scrollRegion.dom. Empty renders no
+    // <ul> at all (the null-scroller path); one entry renders a real scroller that is simply not
+    // overflowing — a different code path to the same required answer, and the state every fresh
+    // install is in right after its first lookup.
+    const { container } = render(<LookupCard history={[{ id: 'e0', y: 1592, m: 3, d: 1 }]} />)
+    expect(container.querySelectorAll('ul li')).toHaveLength(1)
+    for (const sel of ['.lookup-history-header', '.lookup-method-section'])
+      expect(shade(container.querySelector(sel))).toBe('0.000')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The app's own two branches: the clamped container and the guide document.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+function mountApp() {
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+  return render(<App />)
+}
+
+// H toggles guide; the container is the div carrying the inline paddingTop (the one style BOTH
+// branches keep — it is deliberately classless in guide mode).
+const pressKey = (key) =>
+  act(() => {
+    fireEvent.keyDown(window, { key })
+  })
+const scrollContainer = (container) =>
+  [...container.querySelectorAll('div')].find((d) => d.style.paddingTop === 'var(--bar-h)')
+
+describe('the app scroller — content changes with no scroll event (round 11 Q4)', () => {
+  let ro
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    document.documentElement.style.setProperty('--fade-h', '24px')
+    ro = installResizeObserver() // BEFORE mount — the app builds its observers in layout effects
+  })
+  afterEach(() => {
+    cleanup()
+    ro.restore()
+    document.getElementById('root')?.remove()
+    document.documentElement.removeAttribute('data-doc-scroll')
+    delete document.scrollingElement
+    document.documentElement.style.removeProperty('--fade-h')
+  })
+
+  it('watches the mode-content wrapper, not only the pinned box', () => {
+    // The root cause, stated where it can never quietly come back: `absolute inset-0` means the
+    // container's own size is a constant, so an observer on it alone can only ever report a
+    // viewport change. The wrapper below it is the element whose height IS this scroller's
+    // scrollHeight.
+    const { container } = mountApp()
+    const el = scrollContainer(container)
+    expect(el.className).toContain('absolute') // the precondition, stated
+    expect(el.className).toContain('inset-0')
+    expect([ro.isObserved(el), ro.isObserved(el.firstElementChild)]).toEqual([true, true])
+  })
+
+  it('sweeps the resting states with no residue between them', () => {
+    // One mount, driven from state to state, so this also pins that leaving a live state cleans
+    // up after itself — a mask left behind by the previous geometry is the freeze in miniature.
+    const { container } = mountApp()
+    const el = scrollContainer(container)
+    const bar = container.querySelector('.htp-sticky-bar')
+    for (const [, geometry] of RESTING_GEOMETRIES) {
+      setScrollGeometry(el, OVERFLOWING_GEOMETRY)
+      act(() => ro.resize(el))
+      expect(el.className).toContain('fade-scroll-bottom') // live, so the next assertion means something
+      setScrollGeometry(el, geometry)
+      act(() => ro.resize(el))
+      expect(el.className).not.toContain('fade-scroll')
+      expect(shade(bar)).toBe('0.000')
+    }
+  })
+
+  it('follows content growing under a stationary scroller — the freeze, fixed', () => {
+    // Show Codes opens while the user rests at the top. No scroll event happens, and no resize of
+    // the scroller can happen. Before this round the bottom fade kept the answer from before the
+    // panel opened.
+    const { container } = mountApp()
+    const el = scrollContainer(container)
+    const wrapper = el.firstElementChild
+    setScrollGeometry(el, { scrollTop: 0, scrollHeight: 700, clientHeight: 700 })
+    act(() => ro.resize(el))
+    expect(el.className).not.toContain('fade-scroll')
+    // The content grows; the box does not.
+    setScrollGeometry(el, { scrollHeight: 1500 })
+    act(() => ro.resize(wrapper))
+    expect(el.className).toContain('fade-scroll-bottom')
+    expect(el.className).not.toContain('fade-scroll-top') // still resting at the top
+    expect(shade(container.querySelector('.htp-sticky-bar'))).toBe('0.000')
+    // …and back: the panel closes, the fade goes with it.
+    setScrollGeometry(el, { scrollHeight: 700 })
+    act(() => ro.resize(wrapper))
+    expect(el.className).not.toContain('fade-scroll')
+  })
+
+  it('re-answers after the BOX changes — a rotation, a keyboard, a --bar-h shift', () => {
+    // The post-resize state, and the one direction an observer on the scroller's own box could
+    // always see: the content is unchanged and the room for it shrinks. Kept as its own fixture
+    // because "the box changed" and "the content changed" are two different halves of the same
+    // question, and the round-11 fix must not have traded one for the other.
+    const { container } = mountApp()
+    const el = scrollContainer(container)
+    setScrollGeometry(el, { scrollTop: 0, scrollHeight: 700, clientHeight: 700 })
+    act(() => ro.resize(el))
+    expect(el.className).not.toContain('fade-scroll')
+    setScrollGeometry(el, { clientHeight: 420 })
+    act(() => ro.resize(el))
+    expect(el.className).toContain('fade-scroll-bottom')
+  })
+
+  it('watches the same container in guide mode, where the document is the scroller', () => {
+    // The guide branch had no observer at all — window scroll + resize only. The container is a
+    // plain flow block there, so its own height is what the document scrolls: it and its child are
+    // both the content, and both are watched.
+    const { container } = mountApp()
+    pressKey('H')
+    const el = scrollContainer(container)
+    expect(el.className).toBe('') // the precondition: classless flow block, not a scroll box
+    expect([ro.isObserved(el), ro.isObserved(el.firstElementChild)]).toEqual([true, true])
+  })
+
+  it('follows the guide document growing with neither a scroll nor a resize event', () => {
+    // The doc-fade freeze. An accordion toggle changes the DOCUMENT's height: a tap that seats an
+    // already-seated panel scrolls nowhere, and the panel keeps growing for the rest of its
+    // animation after the glide's last scroll event. Neither window event fires — and this test
+    // fires neither, deliberately. The one strip driven by the bottom edge is the subject.
+    const { container } = mountApp()
+    pressKey('H')
+    const wrapper = scrollContainer(container).firstElementChild
+    const bottom = container.querySelector('.doc-fade-bottom')
+    // A document that exactly fills the (jsdom-default 768px) viewport: nothing below to signal.
+    const se = { scrollTop: 0, scrollHeight: 768 }
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, get: () => se })
+    act(() => ro.resize(wrapper))
+    expect(shade(bottom)).toBe('0.000')
+    // The panel opens, one animation frame at a time. The strip's strength is continuous, so this
+    // is the fixture that shows it TRACKING the growth rather than snapping at the end of it:
+    // the bottom ramp starts where the 4px dead band ends and reaches full at --fade-h.
+    for (const [scrollHeight, expected] of [
+      [768, '0.000'],
+      [780, '0.400'], // 12px below → (12 − 4) / (24 − 4)
+      [790, '0.900'],
+      [800, '1.000'], // 32px below → past the feather, clamped
+    ]) {
+      se.scrollHeight = scrollHeight
+      act(() => ro.resize(wrapper))
+      expect(shade(bottom)).toBe(expected)
+    }
+  })
+})

@@ -10,6 +10,7 @@ import {
   wdayJulian,
   isJulianDate,
   isGapDate,
+  dimEither,
   rangeHasLeapYear,
 } from '../src/lib/calendar.js'
 
@@ -182,6 +183,30 @@ describe('isGapDate — Oct 5–14, 1582 never existed', () => {
     expect(isGapDate(1581, 10, 10)).toBe(false)
     expect(isGapDate(1583, 10, 10)).toBe(false)
     expect(isGapDate(2024, 10, 10)).toBe(false)
+  })
+})
+
+// dimEither answers "is this a real date?" for a Lookup, where a pre-reform date can be read in
+// EITHER calendar — so a day that exists in either one is a date. The only place the two rules
+// disagree is February, and only before the reform can both apply.
+describe('dimEither — days in month under any calendar the date can be read in', () => {
+  it('agrees with dim everywhere the two leap rules cannot both apply', () => {
+    for (const y of [1583, 1600, 1900, 2000, 2023, 2024])
+      for (let m = 1; m <= 12; m++) expect(dimEither(y, m), `${y}-${m}`).toBe(dim(y, m))
+  })
+  it('pre-reform February takes the Julian 29th where Gregorian has only 28', () => {
+    expect(dimEither(1500, 2)).toBe(29) // Julian leap (every /4), Gregorian century non-leap
+    expect(dimEither(300, 2)).toBe(29)
+    expect(dimEither(1200, 2)).toBe(29) // leap under both — same answer, different reason
+    expect(dimEither(1501, 2)).toBe(28) // leap under neither
+  })
+  it('the rule ends with the Julian era, not with the year 1582', () => {
+    // October 1582 straddles the reform and has 31 days under both calendars, so the whole month
+    // counts as ambiguous without changing any answer. November is past it.
+    expect(dimEither(1582, 10)).toBe(31)
+    expect(dimEither(1582, 2)).toBe(28) // 1582 is leap under neither rule
+    expect(dimEither(1584, 2)).toBe(29) // Gregorian leap, and the Julian rule no longer applies
+    expect(dimEither(1700, 2)).toBe(28) // Julian WOULD say 29 — but 1700 is not a Julian-era year
   })
 })
 

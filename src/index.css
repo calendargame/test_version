@@ -461,6 +461,7 @@ button:focus,select:focus{outline:none}
    again so the gap tracks the type it trails. */
 [data-update-dot="inline"]{display:inline-block;margin-inline-start:.3em}
 /* Q3 boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
+   once its check has FOUND a newer build — round-11 Q7; never on a press with nothing to get —
    and by the auto-update-on-open boot check when a freshly-deployed version is waiting; the LOADING
    splash is separate — index.html's body-level #boot, inline-styled there and removed by App's
    dismissBootSplash once it's been visible ≥0.5s and the real stylesheet has applied).

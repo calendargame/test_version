@@ -18,6 +18,10 @@
 // behind that shade is pinned first, as pure functions, because it is the piece that had to have
 // exactly one owner: the shadow's strength and the mask's on/off are two readings of one
 // measurement, and this file proves they cannot disagree.
+// Round 11 Q4 then generalized the ship-blocker pinned at the bottom of this file: the STATES it
+// hid in — resting, empty, exactly fitting, growing with no scroll event — are named fixtures now
+// (tests/helpers/scrollGeometry) swept across every region in tests/scrollExtent.dom, instead of
+// being pinned one point test at a time here after each one ships.
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react'
 import LookupCard from '../src/components/LookupCard.jsx'

@@ -85,10 +85,12 @@ export const accordionEase = (t: number): number => {
 // and docH is the single exception, an integer because the platform offers nothing else:
 //   scrollY       window scroll at the tap (may sit negative mid rubber-band)
 //   viewportH     window.innerHeight. NOT documentElement.clientHeight: the tempting case for
-//                 that swap is "innerHeight shrinks with Safari's bottom toolbar", and this
-//                 repo's own iOS-QA'd note in components/CustomSelect asserts the opposite — it
-//                 reaches for visualViewport PRECISELY because innerHeight does NOT shrink.
-//                 Owner decision (round 10): leave it; revisit only on a real symptom.
+//                 that swap is "innerHeight shrinks with Safari's bottom toolbar" — but it does
+//                 NOT, which is why the app reaches for visualViewport.height wherever the
+//                 toolbar-free height is what it actually wants (an iOS-QA'd finding; it was
+//                 CustomSelect's flip test that established it, before round 11 deleted that
+//                 unreachable branch). Owner decision (round 10): leave it; revisit only on a
+//                 real symptom.
 //   seatTop       the reading line: the viewport y a tapped panel's top edge should land on,
 //                 = the fixed bar's height PLUS one guide panel gap (--seat-top, registered in
 //                 index.css as --bar-h + --guide-panel-gap). The gap is what makes it exact —

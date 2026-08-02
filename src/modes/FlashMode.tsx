@@ -3,13 +3,8 @@
 // behaviour changes by living here.
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { ModeProps, GenDate, FmtDate } from './modeTypes.js'
-import {
-  useButtonFlash,
-  useStatsHideToggles,
-  useSettingsCloseEffect,
-  engineFresh,
-  useResetStatsArm,
-} from './modeHooks.js'
+import { useButtonFlash, useStatsHideToggles, engineFresh, useResetStatsArm } from './modeHooks.js'
+import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import {
   RESET_BTN_CLASS,
   RESET_STATS_ARMED_CLASS,

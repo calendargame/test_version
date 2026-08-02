@@ -6,11 +6,11 @@ import type { ModeProps } from './modeTypes.js'
 import {
   useButtonFlash,
   useStatsHideToggles,
-  useSettingsCloseEffect,
   useChangeEffect,
   engineFresh,
   useResetStatsArm,
 } from './modeHooks.js'
+import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import {
   ANSWER_GRID_GAP,
   BASE_BTN,
@@ -177,7 +177,11 @@ function DeductionMode({
     if (index === total - 1 && total % 3 === 1) return 'col-span-3'
     return ''
   }
-  // Can the range support a Year puzzle? (mirrors App's yearSubPossible exactly.)
+  // Can the range support a Year puzzle? Since the Q1 phase-1 split this screen is the only copy
+  // in src — App's twin moved here with it. tests/dateGen.dom keeps a deliberately INDEPENDENT
+  // model of this rule to drive its fuzz (the project's standing oracle rule: a reference model
+  // that shares code with the implementation cannot disagree with it, and disagreement is the
+  // whole point). Change the rule here and that model has to be changed to match, on purpose.
   const yearSubPossible = (() => {
     const lo = Math.max(1, minY),
       hi = maxY

@@ -102,31 +102,37 @@ describe('CustomSelect — active-cursor highlight', () => {
   })
 })
 
-// ── Portal geometry: the doc-scroll coordinate term + the auto-flip fit test (round-8) + the
-//    document-scroll close (Q2) ─────────────────────────────────────────────────────────────
+// ── The fixed portal panel: position, the Q8 dismiss rule, and --bar-h ───────────────────────
 //
-// The option panel portals into #root with position:absolute. In APP mode #root is
-// position:fixed at the viewport origin and the document can't scroll, so viewport coordinates
-// ARE containing-block coordinates (scrollY locked at 0). In GUIDE mode (html[data-doc-scroll])
-// #root goes static and the document becomes the scroller — the panel's containing block then
-// anchors at the DOCUMENT origin, so measurePanel must add window.scrollY or a scrolled-down
-// page paints the menu scrollY px above its trigger, sliding off the top of the screen (the
-// Round-4 "mode menu opens upward + clipped in How-to-Play" report).
-// The AUTO-FLIP (round-8 root-cause fix, replacing the mode selector's forceDown hardcode):
-// the panel opens DOWN unless it does not fit below AND does fit above. "Above" is measured to
-// the FIXED BAR (--bar-h), not the screen edge — clearing the viewport while painting over the
-// title/gear/mode selector is not fitting. The old test compared space-above to space-BELOW and
-// never checked the panel fit above at all, so a long list with cramped room on both sides
-// flipped up into a space too small for it; the last two cases here pin both halves of the fix.
-// While open, captured scrolls split by TARGET (Q2): an ELEMENT scroll (the settings
-// popover's inner wrapper) repositions the panel; a DOCUMENT scroll (guide mode's page pan)
-// CLOSES it with outside-tap semantics — no trigger refocus.
-describe('CustomSelect — portal position math (doc-scroll term + auto-flip fit + doc-scroll close)', () => {
+// POSITION (Q8, round 11). The option panel portals into #root as position:FIXED, so its
+// containing block is the viewport in both of the app's layouts and its coordinates are simply
+// the trigger's viewport rect — no scroll term, no mode-dependent correction. That replaces the
+// round-4 ± window.scrollY patch, which existed only because the panel was position:absolute
+// while guide mode (html[data-doc-scroll]) makes #root static, moving the panel's containing
+// block to the document origin. The assertion here is deliberately STRONGER than the one it
+// replaces: the old test pinned a particular scroll term, this one pins that the panel's
+// position does not depend on the document scroll AT ALL.
+// The auto-flip-up branch is gone with it (owner's call): at the only call site the trigger is
+// inside the bar the flip measured its ceiling from, so the space above is structurally negative
+// and the branch was unreachable. Its three tests are gone for the same reason — testing an
+// unreachable branch is how it survives.
+//
+// THE DISMISS RULE (Q8). While the menu is open, a DOCUMENT scroll closes it with outside-tap
+// semantics (no trigger refocus) — but only when ARMED, and arming is what makes the menu usable
+// on a page that is still gliding:
+//   • armed at open = "nothing was scrolling when you opened this" (lib/docScrollFlight);
+//   • an UNARMED scroll is a silent no-op — it must not close (that is the flick-then-open case)
+//     and must not re-measure either (re-measuring per scroll event through momentum is the
+//     jitter this whole item removed);
+//   • the in-flight scroll's own scrollend arms, monotonically, so the NEXT scroll closes.
+// An element scroll is now nothing to this component at all: no close, no reposition.
+describe('CustomSelect — the fixed portal panel (position, dismiss arming, --bar-h)', () => {
   let rectSpy
   // All triggers share one mocked rect — only the CustomSelect wrapper's rect is read while
   // these tests run (jsdom's real getBoundingClientRect is all-zeros, useless for geometry).
+  // Callable again mid-test to MOVE the trigger, which is how "did it re-measure?" is asked.
   const mockRect = ({ top, bottom, left, right }) => {
-    rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+    const rect = {
       top,
       bottom,
       left,
@@ -136,16 +142,24 @@ describe('CustomSelect — portal position math (doc-scroll term + auto-flip fit
       width: right - left,
       height: bottom - top,
       toJSON: () => ({}),
-    })
+    }
+    if (rectSpy) rectSpy.mockReturnValue(rect)
+    else rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect)
   }
   const setScrollY = (v) =>
     Object.defineProperty(window, 'scrollY', { configurable: true, value: v })
+  // The app-wide in-flight flag is a module singleton (lib/docScrollFlight): a document scroll
+  // raises it, a scrollend lowers it. These drive it the way the browser would.
+  const docScroll = () => fireEvent.scroll(document)
+  const docScrollEnd = () => document.dispatchEvent(new Event('scrollend'))
+  const barTriggerRect = { top: 40, bottom: 63, left: 200, right: 300 }
 
   afterEach(() => {
     rectSpy?.mockRestore()
     rectSpy = undefined
     setScrollY(0) // jsdom never scrolls on its own; pin the mock back to the app-mode value
     document.documentElement.style.removeProperty('--bar-h') // back to the 0 the app never sets in jsdom
+    docScrollEnd() // leave the shared in-flight flag at rest for the next test
     cleanup()
     document.getElementById('root')?.remove()
   })
@@ -161,94 +175,84 @@ describe('CustomSelect — portal position math (doc-scroll term + auto-flip fit
   }
   const panel = () => screen.getByRole('listbox')
 
-  it('adds the document scroll to the panel top (guide mode: the containing block sits at the document origin)', () => {
-    mockRect({ top: 40, bottom: 63, left: 200, right: 300 }) // a top-bar trigger — plenty of space below, never flips
-    setScrollY(500)
+  it('is position:fixed, 6px under the trigger with their right edges aligned', () => {
+    mockRect(barTriggerRect)
     fireEvent.click(mount())
-    expect(panel().style.top).toBe(`${63 + 6 + 500}px`) // rect.bottom + 6 + scrollY
-    expect(panel().style.bottom).toBe('') // opening down — top-positioned only
+    expect(panel().style.position).toBe('fixed')
+    expect(panel().style.top).toBe(`${63 + 6}px`)
+    expect(panel().style.right).toBe(`${document.documentElement.clientWidth - 300}px`)
+    expect(panel().style.bottom).toBe('') // opens down; there is no flip-up branch left
   })
 
-  // The rect both flip cases share: a trigger near the bottom edge, so spaceBelow
-  // (innerHeight − rect.bottom − 16 = 12) is far under the 3×45+10 = 145 estimate. Whether the
-  // panel flips then turns entirely on whether it FITS above — which the next two tests drive
-  // from opposite sides using this one fixture.
-  const bottomEdgeRect = {
-    top: window.innerHeight - 68,
-    bottom: window.innerHeight - 28,
-    left: 200,
-    right: 300,
-  }
-
-  it('a bottom-of-screen trigger auto-flips up when the panel FITS above', () => {
-    mockRect(bottomEdgeRect)
-    fireEvent.click(mount())
-    // spaceAbove = rect.top − barH(0 in jsdom) − 6 = 694 ≥ 145 → flip.
-    expect(panel().style.bottom).toBe(`${window.innerHeight - bottomEdgeRect.top + 6}px`) // − scrollY (0) — the term is symmetric
-    expect(panel().style.top).toBe('')
+  it('places the panel IDENTICALLY at every document scroll offset (the term is gone, not retuned)', () => {
+    mockRect(barTriggerRect)
+    const trigger = mount()
+    fireEvent.click(trigger)
+    const atRest = { top: panel().style.top, right: panel().style.right }
+    fireEvent.click(trigger) // close
+    // A deeply scrolled guide page. Under the old absolute panel this same open painted the menu
+    // 1500px away from its trigger unless a matching correction term was applied.
+    setScrollY(1500)
+    fireEvent.click(trigger)
+    expect({ top: panel().style.top, right: panel().style.right }).toEqual(atRest)
+    expect(panel().style.top).toBe(`${63 + 6}px`)
   })
 
-  it('does NOT flip when the panel fits NEITHER below nor above (the round-8 bug: a tall list, cramped both sides)', () => {
-    // The exact shape the old spaceAbove > spaceBelow test got wrong. 16 options need
-    // 16×45+10 = 730px; the trigger sits low enough that space below (212) is hopeless and
-    // space above (494) is merely LARGER — not large enough. The old test read "more room
-    // above" and flipped up into a gap that could not hold the panel; the fit test keeps it
-    // down, where an over-tall panel at least starts at the trigger and runs off the bottom
-    // instead of off the top.
-    const tall = Array.from({ length: 16 }, (_, i) => ({ value: `v${i}`, label: `Option ${i}` }))
-    mockRect({
-      top: window.innerHeight - 268,
-      bottom: window.innerHeight - 228,
-      left: 200,
-      right: 300,
-    })
-    fireEvent.click(mount({ options: tall, value: 'v0' }))
-    expect(panel().style.top).toBe(`${window.innerHeight - 228 + 6}px`)
-    expect(panel().style.bottom).toBe('')
-  })
-
-  it('measures the space above to the FIXED BAR, not the screen edge — a tall --bar-h keeps the same rect down', () => {
-    // Same fixture as the flip case above; ONLY --bar-h changes. Raw rect.top is still a roomy
-    // 700px, but the bar owns the first 600 of it, leaving 700 − 600 − 6 = 94 < 145. A panel
-    // that clears the viewport by painting over the title/gear/mode selector is not "fitting",
-    // so it stays down. (jsdom loads no CSS, so --bar-h is absent → 0 → the flip case above.)
-    document.documentElement.style.setProperty('--bar-h', '600px')
-    mockRect(bottomEdgeRect)
-    fireEvent.click(mount())
-    expect(panel().style.top).toBe(`${bottomEdgeRect.bottom + 6}px`)
-    expect(panel().style.bottom).toBe('')
-  })
-
-  it('an ELEMENT scroll re-measures WITH the scroll term (the panel stays pinned mid-scroll)', () => {
-    mockRect({ top: 40, bottom: 63, left: 200, right: 300 })
-    fireEvent.click(mount())
-    expect(panel().style.top).toBe(`${63 + 6}px`) // scrollY 0 at open
-    setScrollY(800)
-    // An element scroll (the settings popover's inner wrapper) — the capture-phase window
-    // listener sees target = the element and re-runs measurePanel. (A DOCUMENT scroll
-    // closes the panel instead — next test.)
-    const scroller = document.createElement('div')
-    document.body.appendChild(scroller)
+  it('opens and STAYS open when a scroll was already in flight — and never re-measures', () => {
+    mockRect(barTriggerRect)
+    // Case A/B: you flicked the page (or tapped the status bar), lifted your finger, and opened
+    // the menu while it was still gliding.
     act(() => {
-      fireEvent.scroll(scroller)
+      docScroll()
     })
-    expect(panel().style.top).toBe(`${63 + 6 + 800}px`)
-    scroller.remove()
+    fireEvent.click(mount())
+    expect(screen.queryAllByRole('option').length).toBe(3)
+    // The glide continues under the open menu. Move the trigger too, so a re-measure would be
+    // visible: an unarmed scroll must be a complete no-op, not a reposition.
+    mockRect({ top: 900, bottom: 923, left: 200, right: 300 })
+    act(() => {
+      docScroll()
+      docScroll()
+    })
+    expect(screen.queryAllByRole('option').length).toBe(3) // still open
+    expect(panel().style.top).toBe(`${63 + 6}px`) // still where it opened
   })
 
-  it('a DOCUMENT scroll closes the panel — outside-tap semantics, no trigger refocus', () => {
-    mockRect({ top: 40, bottom: 63, left: 200, right: 300 })
+  it('arms on the in-flight scroll’s scrollend, so the NEXT scroll dismisses it', () => {
+    mockRect(barTriggerRect)
+    act(() => {
+      docScroll()
+    })
+    const trigger = mount()
+    fireEvent.click(trigger)
+    act(() => {
+      docScrollEnd() // the glide finishes — the menu is still open, and now armed
+    })
+    expect(screen.queryAllByRole('option').length).toBe(3)
+    act(() => {
+      docScroll() // a scroll the user started WITH the menu open
+    })
+    expect(screen.queryAllByRole('option').length).toBe(0)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('a menu opened with nothing scrolling is armed at once — outside-tap semantics, no refocus', () => {
+    mockRect(barTriggerRect)
     const trigger = mount()
     fireEvent.click(trigger)
     expect(screen.queryAllByRole('option').length).toBe(3)
     act(() => {
-      fireEvent.scroll(document) // a page scroll targets the Document node
+      docScroll() // a page scroll targets the Document node
     })
     expect(screen.queryAllByRole('option').length).toBe(0) // closed, not repositioned
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).not.toBe(trigger) // no refocus (≠ Esc's closeAndFocus)
     cleanup()
     document.getElementById('root')?.remove()
+    // That scroll's sequence has to END before the next open, or the app-wide in-flight flag it
+    // raised would (correctly) leave the second menu unarmed — the flag is one app-wide fact, not
+    // per-instance state.
+    docScrollEnd()
     // WebKit safety: engines that target documentElement for the page scroll close too.
     fireEvent.click(mount())
     expect(screen.queryAllByRole('option').length).toBe(3)
@@ -256,5 +260,39 @@ describe('CustomSelect — portal position math (doc-scroll term + auto-flip fit
       fireEvent.scroll(document.documentElement)
     })
     expect(screen.queryAllByRole('option').length).toBe(0)
+  })
+
+  it('an ELEMENT scroll is nothing to it — no dismiss, no reposition', () => {
+    mockRect(barTriggerRect)
+    fireEvent.click(mount())
+    const scroller = document.createElement('div')
+    document.body.appendChild(scroller)
+    mockRect({ top: 900, bottom: 923, left: 200, right: 300 })
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+    expect(screen.queryAllByRole('option').length).toBe(3)
+    expect(panel().style.top).toBe(`${63 + 6}px`) // the deleted reposition branch, staying deleted
+    scroller.remove()
+  })
+
+  it('re-measures when --bar-h changes, which moves the trigger without a window resize', async () => {
+    // A font swap or safe-area shift re-heights the fixed bar; main.tsx publishes the new height
+    // on <html> and fires no resize event. The panel watches that property because its trigger
+    // lives in that bar.
+    mockRect(barTriggerRect)
+    fireEvent.click(mount())
+    expect(panel().style.top).toBe(`${63 + 6}px`)
+    mockRect({ top: 48, bottom: 71, left: 200, right: 300 }) // the bar grew 8px; the trigger moved
+    await act(async () => {
+      document.documentElement.style.setProperty('--bar-h', '80px')
+    })
+    expect(panel().style.top).toBe(`${71 + 6}px`)
+    // An unrelated inline write on <html> (the theme background) is not a bar change.
+    mockRect({ top: 300, bottom: 323, left: 200, right: 300 })
+    await act(async () => {
+      document.documentElement.style.background = '#000'
+    })
+    expect(panel().style.top).toBe(`${71 + 6}px`)
   })
 })

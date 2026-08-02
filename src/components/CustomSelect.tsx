@@ -1,29 +1,54 @@
 import { useState, useRef, useEffect, useId, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useBackButton } from './useBackButton.js'
+import {
+  SCROLLEND_SUPPORTED,
+  isDocScrollInFlight,
+  isDocumentScroll,
+} from '../lib/docScrollFlight.js'
 
 // CustomSelect — the app's custom dropdown, replacing the native <select>.
 //
 // Renders a trigger button; when open, the option list is PORTALED to #root so
 // it escapes any clipping/overflow ancestor (e.g. the scrollable Settings
-// popover) and floats over the page. Full listbox keyboard support
-// (↑/↓/Home/End/Enter/Space/Esc/Tab) and a click-outside-to-close handler that
-// correctly treats taps inside the portaled panel (and on native scrollbars)
-// as "inside". While open, an ELEMENT scroll (the settings popover's inner
-// wrapper) repositions the panel to its trigger, but a DOCUMENT scroll (guide
-// mode's page pan — even a touch-drag that starts inside the open panel)
-// CLOSES it with outside-tap semantics — see the reposition effect.
+// popover) and floats over the page, positioned FIXED against the viewport.
+// Full listbox keyboard support (↑/↓/Home/End/Enter/Space/Esc/Tab) and a
+// click-outside-to-close handler that correctly treats taps inside the portaled
+// panel (and on native scrollbars) as "inside".
 //
-// ⚠ STABILITY NOTE: the portal positioning (measurePanel) and open-direction
-// logic (handleToggle's space-based flip) were tuned against iOS Safari over
-// several attempts and are QA-confirmed working. They look like ordinary
-// geometry but are device-sensitive — ALWAYS re-verify on iPhone Safari
-// (browser + PWA) after editing anything here.
+// ⚠ CALLER CONTRACT (Q8, round 11) — THE TRIGGER MUST LIVE IN FIXED CHROME. The panel is
+// position:fixed and is measured from the trigger's viewport rect on open; nothing re-measures it
+// while a scroller moves, by design. The app's one call site is the mode selector in the fixed top
+// bar, which no scroller can move. A future call site inside a SCROLLING region needs repositioning
+// WRITTEN AND TESTED against that real case — do not assume it, and do not restore a general
+// "reposition on any scroll" branch on spec: this component had one, it was provably unexercisable
+// (one live instance, trigger in fixed chrome), and re-measuring mid-scroll is exactly what
+// produced the momentum jitter Q8 removed.
+//
+// ⚠ IT ALSO DEPENDS ON html / body / #root DECLARING NO CONTAINING BLOCK. A transform, filter,
+// backdrop-filter, will-change, contain or perspective on any of those three would turn the
+// "viewport" this panel is fixed to into a scrolling box and silently bring the drift back.
+// tests/containingBlockGuard.test.js fails the build if one ever appears.
+//
+// DISMISS RULE (Q8): a document scroll the user STARTS while the menu is open closes it with
+// outside-tap semantics; a scroll that was ALREADY RUNNING when it opened is left alone (you
+// flicked the guide page, lifted your finger, then opened the menu). The arming that draws that
+// line lives on the scroll effect below; the flag it reads lives in lib/docScrollFlight.
+//
+// The panel always opens DOWNWARD. The auto-flip-up branch was deleted in round 11 (Q8): at the
+// only call site the space above is structurally negative (measured −45px against a 325px panel —
+// the trigger is IN the bar the flip measured its ceiling from), so the branch could not run, and
+// once the panel is fixed its `bottom` offset would have had to be re-derived against a different
+// box — an untestable edit to unreachable code. A future call site that genuinely needs to flip
+// should have it written against that case.
+//
+// ⚠ STABILITY NOTE: the portal positioning (measurePanel) was tuned against iOS Safari over
+// several attempts and is QA-confirmed working. It looks like ordinary geometry but is
+// device-sensitive — ALWAYS re-verify on iPhone Safari (browser + PWA) after editing anything here.
 //
 // Props: value, onChange, options [{value,label}], className (trigger), ariaLabel,
 // wrapperRef (forwarded to the wrapper so callers can treat it like the old <select>
 // ref), showChevron, and pressDrag (press-drag-select, documented at the prop below).
-// The panel opens DOWN unless it doesn't fit below AND does fit above — see handleToggle.
 //
 // Extracted from main.jsx in Stage C, Step 4d (verbatim; the only change is
 // ReactDOM.createPortal → the directly-imported createPortal — same function).
@@ -32,13 +57,12 @@ export interface CustomSelectOption {
   value: string
   label: ReactNode
 }
-// Measured coordinates for the portaled panel, in its CONTAINING-BLOCK space
-// (viewport rect + document scroll — see measurePanel): right edge always
-// pinned, and exactly one of top (opening down) / bottom (flipping up).
+// Measured coordinates for the portaled panel, in VIEWPORT space. The panel is position:fixed, so
+// its containing block IS the viewport and a getBoundingClientRect reading needs no conversion:
+// right edge pinned to the trigger's, top 6px below it.
 interface PanelPos {
   right: number
-  top?: number
-  bottom?: number
+  top: number
 }
 export default function CustomSelect({
   value,
@@ -83,71 +107,58 @@ export default function CustomSelect({
   const selectedIdx = options.findIndex((o) => o.value === value)
   // panelRef points at the PORTALED panel so the click-outside handler can
   // treat taps inside it as "inside" (the panel is no longer a DOM descendant
-  // of the wrapper). openUpwardRef holds the flip decision as a ref (not state)
-  // so measurePanel can read it synchronously within the same toggle that sets
-  // it. panelPos holds the measured viewport coordinates for the portal.
+  // of the wrapper). panelPos holds the measured viewport coordinates for the
+  // portal. armedRef holds the dismiss decision (see handleToggle + the scroll
+  // effect) as a ref, not state: it is read inside listeners and must never
+  // re-render anything.
   const panelRef = useRef<HTMLDivElement>(null)
-  const openUpwardRef = useRef(false)
   const [panelPos, setPanelPos] = useState<PanelPos | null>(null)
-  // measurePanel reads the trigger's current viewport rect and writes panelPos:
-  // right edge aligned to the trigger, 6px below it (top) when opening down, or
-  // 6px above it (bottom) when flipping up. Called on open and on element-scroll/resize
-  // so the portaled panel stays pinned to its trigger (a DOCUMENT scroll closes the
-  // panel instead — see the reposition effect).
+  const armedRef = useRef(false)
+  // measurePanel reads the trigger's current viewport rect and writes panelPos: right edge
+  // aligned to the trigger, 6px below it. Called on open, on resize / visualViewport change, and
+  // when --bar-h moves the bar the trigger sits in — and on NOTHING else, in particular never on
+  // a scroll (see the effect below).
   // Plain function (no useCallback): it reads ref.current, which a manual dep array can't
   // track at ref.current granularity — useCallback here trips preserve-manual-memoization.
-  // The React Compiler memoizes this automatically, so the reposition effect below can list
+  // The React Compiler memoizes this automatically, so the effect below can list
   // it as a dependency and the compiler keeps its identity stable (no listener re-subscribe).
   const measurePanel = () => {
     if (!ref.current) return
     const rect = ref.current.getBoundingClientRect()
     // documentElement.clientWidth, NOT window.innerWidth: the CSS `right` offset resolves against
-    // the containing block's right edge. In GUIDE mode the containing block is the initial
-    // containing block, whose width EXCLUDES a classic document scrollbar — innerWidth includes
-    // it, which painted every dropdown one scrollbar-width LEFT of its trigger on the How-to-Play
-    // page (desktop Windows browsers; overlay-scrollbar platforms were unaffected). In app mode
-    // the document can't scroll, so clientWidth === innerWidth — bit-identical to the
-    // iOS-QA-confirmed values.
+    // the containing block's right edge, and a fixed element's containing block — like
+    // clientWidth, unlike innerWidth — EXCLUDES a classic document scrollbar. In guide mode
+    // (html[data-doc-scroll]) the document can show one, and innerWidth painted every dropdown one
+    // scrollbar-width LEFT of its trigger on the How-to-Play page (desktop Windows browsers;
+    // overlay-scrollbar platforms were unaffected). In app mode the document can't scroll, so
+    // clientWidth === innerWidth — bit-identical to the iOS-QA-confirmed values.
     // Round 10's sub-pixel sweep (--bar-h, GuidePage's panel heights) deliberately left this
     // read alone: same rounding class, but horizontal, worth ≤0.5px, and sitting on the
     // iOS-QA'd portal geometry path. Nothing here stacks against a hairline border.
     const right = document.documentElement.clientWidth - rect.right
-    // The ± window.scrollY term converts the viewport rect into the portal's containing-block
-    // space. In app mode #root is position:fixed at the viewport origin and the document can't
-    // scroll — scrollY is always 0, so these are bit-identical to the iOS-QA-confirmed values.
-    // In GUIDE mode (html[data-doc-scroll]) #root goes static and the DOCUMENT becomes the
-    // scroller, so the absolute panel's containing block anchors at the document origin: without
-    // the term, a page scrolled down S px painted the panel S px above the trigger, sliding off
-    // the top of the screen (the Round-4 "mode menu opens upward + clipped in HtP" report).
-    if (openUpwardRef.current)
-      setPanelPos({ right, bottom: window.innerHeight - rect.top + 6 - window.scrollY })
-    else setPanelPos({ right, top: rect.bottom + 6 + window.scrollY })
+    // NO scroll term, by construction. The panel is position:fixed, so a getBoundingClientRect
+    // reading — already viewport-relative — IS its containing-block coordinate, at every scroll
+    // offset and in both modes. Round 4 added a ± window.scrollY here to cancel a drift that
+    // existed only because the panel was position:absolute while guide mode makes #root static,
+    // moving its containing block from the viewport to the document; Q8 removed the cause instead
+    // of the symptom. Measured both ways: the absolute panel drifted 1:1 with the page (−394px at
+    // 400 scrolled, −1494px at 1500) and needed a reposition per scroll event, while the fixed one
+    // holds its exact 6px gap at every offset with ZERO reposition calls — and app mode is
+    // pixel-identical either way, since scrollY was always 0 there.
+    setPanelPos({ right, top: rect.bottom + 6 })
   }
-  // Toggle handler measures available space the moment the dropdown opens.
-  // Each option button is ~45px tall (py-3 + the text-[15px] menu text) plus a small panel
-  // margin, so estimatedHeight is what the panel needs. DOWN is the default; the panel flips
-  // UP only when it does NOT fit below and DOES fit above. visualViewport height is used (it
-  // excludes Safari's bottom toolbar) so bottom-of-screen dropdowns don't open down into
-  // toolbar-covered space. The 16px buffer keeps the panel off the bottom edge.
+  // Toggle handler. On the way OPEN it does the two things that can only be decided at that
+  // instant: where the panel goes, and whether a document scroll is allowed to dismiss it.
   // Measurement only happens on open (close is cheap).
-  // ⚠ ROUND-8 FIX — the flip used to compare space-above against space-BELOW and never checked
-  // that the panel actually fits above, so a long list with cramped room on both sides flipped
-  // up into a space that couldn't hold it. Two corrections: the fit test is now spaceAbove vs
-  // estimatedHeight, and the ceiling above is the FIXED BAR (--bar-h), not the screen edge — a
-  // panel that clears the viewport but paints over the title/gear/mode selector is not
-  // "fitting". The 6px mirrors measurePanel's gap. The old "spaceAbove > spaceBelow" term is
-  // redundant under the new test (spaceAbove >= est > spaceBelow implies it) and is gone.
-  // Downward geometry is untouched — it is the iOS-QA-confirmed path.
   const handleToggle = () => {
-    if (!open && ref.current) {
-      const rect = ref.current.getBoundingClientRect()
-      const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight
-      const barH =
-        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 0
-      const spaceBelow = vh - rect.bottom - 16
-      const spaceAbove = rect.top - barH - 6
-      const estimatedHeight = options.length * 45 + 10
-      openUpwardRef.current = spaceBelow < estimatedHeight && spaceAbove >= estimatedHeight
+    if (!open) {
+      // ARMING (Q8) — the whole dismiss rule, decided synchronously, in one line.
+      // A scroll already in flight at this moment is the tail of a gesture that finished BEFORE
+      // the menu existed (a flick, or iOS's status-bar glide), so it must not dismiss it; anything
+      // that starts later must. Without scrollend there is no way to know which we are in, so we
+      // start UNARMED and let a fresh gesture arm us below — that loses the status-bar case on
+      // those engines but can never dismiss a menu the user just opened.
+      armedRef.current = SCROLLEND_SUPPORTED && !isDocScrollInFlight()
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the
@@ -253,43 +264,85 @@ export default function CustomSelect({
       document.removeEventListener('touchstart', h)
     }
   }, [open, ref])
-  // While open, captured scrolls (capture phase, since scroll doesn't bubble) split by
-  // TARGET: an ELEMENT scroll — the settings popover's inner scroll wrapper — re-measures
-  // panelPos so the panel stays pinned to its trigger (the QA'd reposition), but a
-  // DOCUMENT scroll — the guide page itself panning (html[data-doc-scroll]; the app-mode
-  // document can't scroll) — CLOSES the panel with outside-tap semantics (activeIdx reset,
-  // no trigger refocus) instead of chasing the trigger through momentum-scroll jitter.
-  // A page scroll targets the Document node; documentElement is accepted too for WebKit
-  // safety. Accepted consequence: a touch-drag that starts inside the open panel and pans
-  // the page also closes it (native-iOS-like). Resize + visualViewport keep repositioning.
+  // While open: what dismisses the panel, and what re-measures it. The two are now disjoint —
+  // NOTHING both closes and re-measures, and a scroll never re-measures at all.
+  //
+  // DISMISS — a DOCUMENT scroll, and only when ARMED. Unarmed it is a silent no-op: it must not
+  // close (that is case A/B, the scroll that was already gliding when you opened the menu) and it
+  // must not re-measure either, because re-measuring per scroll event through momentum is the
+  // jitter round 5 chased and Q8 deleted. Arming is monotonic while open: it starts as
+  // !isDocScrollInFlight() at open (handleToggle) and the in-flight scroll's own scrollend raises
+  // it, so the very next scroll after that boundary dismisses. Listening in the capture phase with
+  // the flag module's own target test (isDocumentScroll — a page scroll is fired at the Document,
+  // documentElement accepted for WebKit, while an element scroll does not bubble at all): the two
+  // listeners must agree about what counts as a page scroll, so they share the one predicate.
+  // Accepted consequence, unchanged: a touch-drag that starts inside the open panel and pans the
+  // page also closes it (native-iOS-like).
+  // FALLBACK, engines with no scrollend: arm on a fresh scroll GESTURE instead — a wheel or a key
+  // is unambiguously new input, and arming alone does nothing until a scroll actually follows.
+  // A touch swipe outside the panel is already handled by the click-outside listener above; a
+  // swipe that starts INSIDE the panel, and the status-bar tap (which sends no page input at all),
+  // are the two cases those engines lose. Both are strictly better than dismissing case A.
+  //
+  // RE-MEASURE — window resize (rotation), visualViewport (iOS pinch-zoom moves the visual
+  // viewport independently of the layout viewport a fixed element lives in), and --bar-h. That
+  // last one is the trigger's own chrome: main.tsx publishes the fixed bar's measured height there
+  // (syncBarHeight, its single writer), so a change to it means the bar resized and the trigger
+  // moved — with no window resize to announce it (a font swap, a safe-area shift). It used to be
+  // covered by accident, via the element-scroll reposition branch that was deleted with the rest of
+  // the dead geometry; this states the dependency instead. The value is compared, not just watched,
+  // so the other inline write on <html> (the theme background) costs nothing.
   useEffect(() => {
     if (!open) return
     const reposition = () => measurePanel()
+    const arm = () => {
+      armedRef.current = true
+    }
     const onScroll = (e: Event) => {
-      if (e.target === document || e.target === document.documentElement) {
-        setOpen(false)
-        setActiveIdx(-1)
-        return
-      }
-      reposition()
+      if (!isDocumentScroll(e) || !armedRef.current) return
+      setOpen(false)
+      setActiveIdx(-1)
+    }
+    const onScrollEnd = (e: Event) => {
+      if (isDocumentScroll(e)) arm()
     }
     window.addEventListener('scroll', onScroll, true)
+    if (SCROLLEND_SUPPORTED) window.addEventListener('scrollend', onScrollEnd, true)
+    else {
+      window.addEventListener('wheel', arm, { passive: true })
+      window.addEventListener('keydown', arm)
+    }
     window.addEventListener('resize', reposition)
     const vv = window.visualViewport
     if (vv) {
       vv.addEventListener('resize', reposition)
       vv.addEventListener('scroll', reposition)
     }
+    const readBarH = () => getComputedStyle(document.documentElement).getPropertyValue('--bar-h')
+    let lastBarH = readBarH()
+    const barObserver = new MutationObserver(() => {
+      const next = readBarH()
+      if (next === lastBarH) return
+      lastBarH = next
+      reposition()
+    })
+    barObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
     return () => {
       window.removeEventListener('scroll', onScroll, true)
+      if (SCROLLEND_SUPPORTED) window.removeEventListener('scrollend', onScrollEnd, true)
+      else {
+        window.removeEventListener('wheel', arm)
+        window.removeEventListener('keydown', arm)
+      }
       window.removeEventListener('resize', reposition)
       if (vv) {
         vv.removeEventListener('resize', reposition)
         vv.removeEventListener('scroll', reposition)
       }
+      barObserver.disconnect()
     }
     // Depend on [open] alone. measurePanel closes over nothing render-specific (only the
-    // stable ref/openUpwardRef/setPanelPos) and setOpen/setActiveIdx are React's stable
+    // stable ref/setPanelPos) and setOpen/setActiveIdx are React's stable
     // setters, so calling a "stale" copy is behavior-identical; listing them would just
     // re-subscribe the listeners every render. useCallback isn't an option here — it reads
     // ref.current, which trips preserve-manual-memoization. The React Compiler memoizes
@@ -353,10 +406,17 @@ export default function CustomSelect({
             // plus the 4px inset sits inside the 16px outer radius, so the ring is never clipped
             // by overflow-hidden and all four corners of the first/last options stay round.
             className="rounded-2xl overflow-hidden p-1"
+            // position:FIXED (Q8, round 11) — the panel is pinned to the viewport, not to whatever
+            // #root's positioning happens to make its containing block. #root is fixed in app mode
+            // and static in guide mode, which is what made the same absolute panel obey two
+            // different origins; fixed answers to the viewport in both, so the measurement above
+            // needs no mode-dependent correction and the panel cannot drift with the page. It also
+            // means #root's overflow:hidden no longer clips it (a fixed element's containing block
+            // is above #root) — harmless here, since the panel is sized to sit on screen.
             style={{
-              position: 'absolute',
+              position: 'fixed',
               right: panelPos.right,
-              ...(panelPos.top != null ? { top: panelPos.top } : { bottom: panelPos.bottom }),
+              top: panelPos.top,
               zIndex: 60,
               background: 'rgba(245,245,247,0.50)',
               WebkitBackdropFilter: 'blur(28px) saturate(120%)',
