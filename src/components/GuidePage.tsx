@@ -939,8 +939,8 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             Format), Input (Buttons / Dots), and Theme.
           </li>
           <li>
-            <b>Dates</b> — which dates get generated: Year Range, Julian Calendar (+ Julian Chance),
-            Leap Year Chance, and Jan/Feb Chance on Leap Years.
+            <b>Dates</b> — which dates get generated: Year Range, Leap Year Chance, Jan/Feb Chance
+            on Leap Years, and Julian Calendar (+ Julian Chance).
           </li>
           <li>
             <b>Stats</b> — Save Stats.
@@ -1123,6 +1123,49 @@ export default function GuidePage({ visible }: { visible: boolean }) {
         </p>
       </GuideSection>
       <GuideSection
+        id="leap"
+        title="Dates — Leap Year Settings"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
+        <Lead>
+          Two controls for how often leap years appear and which months they're paired with.
+        </Lead>
+        <UL>
+          <li>
+            <b>Leap Year Chance</b> — how often a generated date lands on a leap year. Random uses
+            the natural rate (~24%); 50%, 75%, and 100% force higher rates.
+          </li>
+          <li>
+            <b>Jan/Feb Chance on Leap Years</b> — how often a leap-year date lands on January or
+            February. Random uses the natural rate (~17%, since 2 of 12 months are Jan/Feb); 25%,
+            50%, 75%, and 100% force higher rates. The listed percentage is the exact final rate of
+            Jan/Feb on leap-year dates, not just a force probability — under 50%, exactly half of
+            leap-year dates are Jan/Feb.
+          </li>
+        </UL>
+        <p>
+          Both apply to all game modes' date generation; Lookup is unaffected. Changing any value
+          regenerates the displayed date so the new setting takes effect when you close the ⚙ menu.
+          If you've already wrong-guessed, revealed, or shown codes on the current date, the change
+          is deferred and applies to the next date. In Blitz rounds and AoX runs (active or just
+          ended), a chance change resets the round/run when you close the ⚙ menu.
+        </p>
+        <Subhead>Locking</Subhead>
+        <UL>
+          <li>
+            If your year range contains no leap years (under the active calendar), the four Leap
+            Year Chance options lock and fade; the previously-selected value stays visually selected
+            so it's restored when you change the range back to one with a leap year reachable.
+          </li>
+          <li>
+            Jan/Feb Chance stays unlocked, since the setting still applies on whatever leap years
+            exist in the range.
+          </li>
+        </UL>
+      </GuideSection>
+      <GuideSection
         id="julian"
         title="Dates — Julian Calendar"
         openId={open}
@@ -1193,49 +1236,6 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           The previously-selected value stays visually selected while locked, so it's restored when
           the lock condition clears.
         </p>
-      </GuideSection>
-      <GuideSection
-        id="leap"
-        title="Dates — Leap Year Settings"
-        openId={open}
-        onToggle={toggle}
-        durationMs={motionMs}
-      >
-        <Lead>
-          Two controls for how often leap years appear and which months they're paired with.
-        </Lead>
-        <UL>
-          <li>
-            <b>Leap Year Chance</b> — how often a generated date lands on a leap year. Random uses
-            the natural rate (~24%); 50%, 75%, and 100% force higher rates.
-          </li>
-          <li>
-            <b>Jan/Feb Chance on Leap Years</b> — how often a leap-year date lands on January or
-            February. Random uses the natural rate (~17%, since 2 of 12 months are Jan/Feb); 25%,
-            50%, 75%, and 100% force higher rates. The listed percentage is the exact final rate of
-            Jan/Feb on leap-year dates, not just a force probability — under 50%, exactly half of
-            leap-year dates are Jan/Feb.
-          </li>
-        </UL>
-        <p>
-          Both apply to all game modes' date generation; Lookup is unaffected. Changing any value
-          regenerates the displayed date so the new setting takes effect when you close the ⚙ menu.
-          If you've already wrong-guessed, revealed, or shown codes on the current date, the change
-          is deferred and applies to the next date. In Blitz rounds and AoX runs (active or just
-          ended), a chance change resets the round/run when you close the ⚙ menu.
-        </p>
-        <Subhead>Locking</Subhead>
-        <UL>
-          <li>
-            If your year range contains no leap years (under the active calendar), the four Leap
-            Year Chance options lock and fade; the previously-selected value stays visually selected
-            so it's restored when you change the range back to one with a leap year reachable.
-          </li>
-          <li>
-            Jan/Feb Chance stays unlocked, since the setting still applies on whatever leap years
-            exist in the range.
-          </li>
-        </UL>
       </GuideSection>
       <GuideSection
         id="savestats"

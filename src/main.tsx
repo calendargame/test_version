@@ -1717,25 +1717,25 @@ const ReactDOM = { createRoot, createPortal }
             <span className="text-(--tx-300-60) text-sm shrink-0">→</span>
             <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
           </div>
-          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
-          {/* The three chance rows are pickers, so they are trays (THE PICKER RULE, Display above)
+          {/* ★ THE ORDER OF THIS SECTION (round-12) — Year Range, then the two LEAP rows, then the
+              JULIAN pair last. Julian Chance is locked unless the switch is ON *and* the range
+              straddles 1582, so under any ordinary modern range it is a greyed-out dead control;
+              it used to sit third, ABOVE two live ones. Two pairings constrain any future reshuffle:
+              Jan/Feb Chance is a sub-case of Leap Year Chance and must sit directly under it, and
+              the Julian switch is the thing that explains why Julian Chance greys out, so it must
+              stay directly above it. Move the Julian pair, never one half of it.
+              The three chance rows (this one, Jan/Feb under it, and Julian Chance at the foot of
+              the section) are pickers, so they are trays (THE PICKER RULE, Display above)
               — round-9 converted them from the flat gap-separated buttons they shipped as. The
               conversion costs no height: these rows already captioned ABOVE their control, and
               the tray's ~2px seams are tighter than the ~6px gaps they replace, so every label
               gained room. Each row's LOCK now sits on the GROUP instead of on every button, so
-              the housing greys as one piece; the caption stays lit, as it always did.
-              Julian Chance: locked unless the active year range straddles 1582 (= mixed
-              Julian+Gregorian: minY<=1582<=maxY). Year 1582 itself spans both calendars. When
-              locked the selected value stays visually selected, so it's restored when the range
-              becomes mixed again. The condition is written straight into `disabled` because one
-              boolean is now all the lock takes — the IIFEs these two rows used to need existed
-              only to hand the same derived boolean to a dim class as well. */}
-          <div className="text-xs text-(--tx-200-80) pt-1">Julian Chance</div>
-          <PillGroup label="Julian Chance" disabled={!(useJulian&&minY<=1582&&maxY>=1582)}>
-            <PillTray value={julianChance} onChange={setJulianChance} options={CHANCE_OPTIONS}/>
-          </PillGroup>
-          {/* Leap Year Chance: locked when the active range/calendar has no leap years; the selected value
-              is preserved + restored when a leap year becomes reachable again. */}
+              the housing greys as one piece; the caption stays lit, as it always did. Each lock is
+              written straight into `disabled` because one boolean is now all a lock takes — the
+              IIFEs the two locked rows (Leap Year Chance, Julian Chance) used to need existed only
+              to hand the same derived boolean to a dim class as well.
+              Leap Year Chance: locked when the active range/calendar has no leap years; the selected
+              value is preserved + restored when a leap year becomes reachable again. */}
           <div className="text-xs text-(--tx-200-80) pt-1">Leap Year Chance</div>
           <PillGroup label="Leap Year Chance" disabled={!rangeHasLeapYear(minY,maxY,useJulian)}>
             <PillTray value={leapChance} onChange={setLeapChance} options={LEAP_CHANCE_OPTIONS}/>
@@ -1746,6 +1746,15 @@ const ReactDOM = { createRoot, createPortal }
           <div className="text-xs text-(--tx-200-80) pt-1">Jan/Feb Chance on Leap Years</div>
           <PillGroup label="Jan/Feb Chance on Leap Years">
             <PillTray value={janFebChance} onChange={setJanFebChance} options={CHANCE_OPTIONS}/>
+          </PillGroup>
+          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
+          {/* Julian Chance: locked unless the switch directly above is ON *and* the active year range
+              straddles 1582 (= mixed Julian+Gregorian: minY<=1582<=maxY). Year 1582 itself spans both
+              calendars. When locked the selected value stays visually selected, so it's restored when
+              the range becomes mixed again. */}
+          <div className="text-xs text-(--tx-200-80) pt-1">Julian Chance</div>
+          <PillGroup label="Julian Chance" disabled={!(useJulian&&minY<=1582&&maxY>=1582)}>
+            <PillTray value={julianChance} onChange={setJulianChance} options={CHANCE_OPTIONS}/>
           </PillGroup>
         </div>
         <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
