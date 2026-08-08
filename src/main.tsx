@@ -121,7 +121,7 @@ const ReactDOM = { createRoot, createPortal }
 
 
 
-    const DEPLOY_TS=new Date('2026-08-02T08:40:00Z');
+    const DEPLOY_TS=new Date('2026-08-08T05:30:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
