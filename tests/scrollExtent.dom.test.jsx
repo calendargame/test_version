@@ -147,8 +147,9 @@ describe('observeScrollExtent — the content, not the box', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// The RESTING states, through the shared hook — so Lookup's history list, the settings popover
-// and the changelog popup are all covered by construction (they are its only three callers).
+// The RESTING states, through the shared hook — so Lookup's history list, the settings popover,
+// the changelog popup and the shared defaults card (round 12) are all covered by construction
+// (they are its only four callers).
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The hook's whole public surface in one component: a scroller, the two boundary surfaces it can
 // be handed, and the mask class its two booleans produce.

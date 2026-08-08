@@ -22,9 +22,15 @@
 // hid in — resting, empty, exactly fitting, growing with no scroll event — are named fixtures now
 // (tests/helpers/scrollGeometry) swept across every region in tests/scrollExtent.dom, instead of
 // being pinned one point test at a time here after each one ships.
+// Round 12 added the fourth region and the last describe here: the shared defaults card. It is the
+// one region whose reason for existing is a SHORT VIEWPORT rather than long content — the card
+// cannot shrink past the fluid root font's floor, so below ~615px of viewport it is a fixed 269.5px
+// hanging out of both ends of a scrim that cannot scroll. Nothing pinned that before.
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react'
 import LookupCard from '../src/components/LookupCard.jsx'
+import DefaultsCard from '../src/components/DefaultsCard.jsx'
+import { setScrollGeometry } from './helpers/scrollGeometry.js'
 import {
   SCROLL_REGION_CLASS,
   BOTTOM_EDGE_BAND_PX,
@@ -242,5 +248,137 @@ describe('Lookup date input on the interactive-border rule (round-7 Q7)', () => 
     const cls = container.querySelector('input').className.split(/\s+/)
     expect(cls).toContain('text-base')
     expect(cls).not.toContain('text-sm')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The shared defaults card on the same recipe (round 12) — the region a SHORT VIEWPORT creates.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+const CARD_PREFS = { aoxN: '12', flashMs: 2000, blitzSec: 60, blitzQSec: 10 }
+const noop = () => {}
+const defaultsCard = (props) => (
+  <DefaultsCard
+    cardRef={{ current: null }}
+    titleId="defaults-title"
+    title="Your saved defaults"
+    prefs={CARD_PREFS}
+    seed={CARD_PREFS}
+    setPrefs={noop}
+    onClose={noop}
+    onSave={noop}
+    {...props}
+  />
+)
+// Found by the shared token rather than by position, so the structure can move without the tests
+// quietly measuring a different element.
+const scrollerOf = (container) =>
+  [...container.querySelectorAll('div')].find((d) => d.className.startsWith(SCROLL_REGION_CLASS))
+
+// THE REPRODUCTION, in the numbers it was measured with (Chromium, see the note at the top of
+// components/DefaultsCard). Below ~615px of viewport the fluid root font sits on its 0.75rem
+// floor and the card is a fixed 269.5px; at 480×236 CSS px — Chrome at 400% zoom on a maximised
+// 1080p window, the level WCAG 2.1 SC 1.4.10 asks to work — the title sat at y −3.8 and Save's
+// bottom edge 3.8px below a viewport with no scrollbar and no scroll position. Capped, the same
+// card fits in 212px: the header and footer take what they take and the four rows are what gives.
+const SHORT_VIEWPORT = { scrollTop: 0, scrollHeight: 172, clientHeight: 88 }
+
+describe('the shared defaults card caps itself against a short viewport (round 12)', () => {
+  afterEach(() => {
+    cleanup()
+    document.documentElement.style.removeProperty('--fade-h')
+  })
+
+  it('caps against the VIEWPORT in fluid units, and the column is allowed to give', () => {
+    const { container } = render(defaultsCard())
+    const card = container.querySelector('[role="dialog"]')
+    // Viewport-relative and rem-based on purpose: the root font is clamp()-fluid, so a px cushion
+    // could not equal the scrim's own 1rem side inset on any two devices
+    // (tests/heightGuard.test.js is the standing ban).
+    expect(card.className).toContain('max-h-[calc(100dvh_-_2rem)]')
+    expect(card.className).toContain('flex flex-col')
+    // The scroll recipe's padding rule: the card owns vertical padding only, every child carries
+    // its own px-4, so the scroller's 1rem right padding is the lane the scrollbar paints in.
+    expect(card.className).toContain('py-4')
+    expect(card.className.split(/\s+/)).not.toContain('p-4')
+    expect(scrollerOf(container).className).toContain('min-h-0')
+  })
+
+  it('the four rows are the part that gives — the shared region, lane and fades included', () => {
+    const { container } = render(defaultsCard())
+    const scroller = scrollerOf(container)
+    expect(scroller).toBeTruthy()
+    for (const label of [
+      'AoX Run Length',
+      'Flash Speed',
+      'Blitz Round Timer',
+      'Blitz Question Timer',
+    ])
+      expect(scroller.contains(screen.getByLabelText(label))).toBe(true)
+  })
+
+  it('the chrome the bug put off-screen is OUTSIDE the scroller and holds its size', () => {
+    // The whole point of the cap: Cancel/Save went past the fold with no way to reach them, so
+    // they may never become scroll-to-reach either. Same for the title that names the dialog.
+    const { container } = render(defaultsCard())
+    const scroller = scrollerOf(container)
+    const title = container.querySelector('#defaults-title')
+    expect(scroller.contains(title)).toBe(false)
+    for (const name of ['Cancel', 'Save'])
+      expect(scroller.contains(screen.getByRole('button', { name }))).toBe(false)
+    for (const el of [scroller.previousElementSibling, scroller.nextElementSibling]) {
+      expect(el.className).toContain('shrink-0')
+      expect(el.className).toContain('px-4')
+    }
+  })
+
+  it('the two boundaries speak the directional scroll language, not the card’s own lift', () => {
+    // The card keeps the offset-free 0 0 8px lift that says "free-floating panel"; a scroll
+    // boundary is a different statement and takes the directional pair (the ⚙ popover in main.tsx
+    // argues the distinction out loud). Unconditional classes — strength is the --shade below.
+    const { container } = render(defaultsCard())
+    const scroller = scrollerOf(container)
+    expect(scroller.previousElementSibling.className).toContain('elev-shadow-down')
+    expect(scroller.nextElementSibling.className).toContain('elev-shadow-up')
+    expect(container.querySelector('[role="dialog"]').style.boxShadow).toContain('0 0 8px')
+  })
+
+  it('a card that FITS is the card that shipped before the cap: no mask, both boundaries at 0', () => {
+    // The cap must be invisible on every ordinary screen. WRITTEN to 0, not merely absent: an
+    // unset --shade inherits @property's initial-value of 1, which is a full-strength shadow.
+    document.documentElement.style.setProperty('--fade-h', '24px')
+    const { container } = render(defaultsCard())
+    const scroller = scrollerOf(container)
+    expect(scroller.className).not.toContain('fade-scroll')
+    for (const el of [scroller.previousElementSibling, scroller.nextElementSibling])
+      expect(el.style.getPropertyValue('--shade')).toBe('0.000')
+  })
+
+  it('at the viewport that produced the bug, the rows scroll and each boundary takes its turn', () => {
+    document.documentElement.style.setProperty('--fade-h', '24px')
+    const { container } = render(defaultsCard())
+    const scroller = scrollerOf(container)
+    const head = scroller.previousElementSibling
+    const foot = scroller.nextElementSibling
+    setScrollGeometry(scroller, SHORT_VIEWPORT)
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+    // Resting at the top of 84px of unreached content: the bottom fades and the FOOTER asserts.
+    expect(scroller.className).toContain('fade-scroll-bottom')
+    expect([
+      head.style.getPropertyValue('--shade'),
+      foot.style.getPropertyValue('--shade'),
+    ]).toEqual(['0.000', '1.000'])
+    scroller.scrollTop = SHORT_VIEWPORT.scrollHeight - SHORT_VIEWPORT.clientHeight
+    act(() => {
+      fireEvent.scroll(scroller)
+    })
+    // At the end, the answer flips whole: the top fades and the HEADER is the live boundary.
+    expect(scroller.className).toContain('fade-scroll-top')
+    expect(scroller.className).not.toContain('fade-scroll-bottom')
+    expect([
+      head.style.getPropertyValue('--shade'),
+      foot.style.getPropertyValue('--shade'),
+    ]).toEqual(['1.000', '0.000'])
   })
 })

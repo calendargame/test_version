@@ -551,12 +551,28 @@ export default function LookupCard({
             class is UNCONDITIONAL: strength comes from the --shade the edge hook writes onto
             this element, so there is no toggle and no transition (round 10 item B). The
             lookup-history-header class survives as the stable name for this boundary surface —
-            it is what the tests select — and no longer as a CSS transition hook. */}
+            it is what the tests select — and no longer as a CSS transition hook.
+            THE COUNT is INSIDE the History span, not a third flex child: the row is
+            justify-between, so a third child would redistribute the whole header. As inline text
+            at the row's own 11px tier it shares the line box the header already had, and
+            whitespace-nowrap is what keeps that true at every width — a wrap is the one way this
+            could grow the header, and a header that changes height under a shadow it casts onto
+            the list below is exactly the reflow worth designing out (the same by-construction rule
+            the history rows below follow). It appears from the SECOND entry on (a "(1)" beside
+            a list you can see has one row is noise) and stops at the cap, where it simply reads
+            (100). Dimmer than the label it follows — --tx-300-60 is the footnote tier, a step down
+            from the header's own --tx-200-70 in every theme — so it reads as a detail about the
+            heading rather than part of it. */}
         <div
           ref={historyHeaderRef}
           className="lookup-history-header elev-shadow-down shrink-0 px-4 pb-3 border-b border-(--bd-500-40) flex items-center justify-between text-[11px] uppercase tracking-wide text-(--tx-200-70)"
         >
-          <span>History</span>
+          <span className="whitespace-nowrap">
+            History
+            {entries.length > 1 && (
+              <span className="text-(--tx-300-60)">{` (${entries.length})`}</span>
+            )}
+          </span>
           {entries.length > 0 && (
             <button type="button" onClick={clearHist} className="text-(--tx-200-70) font-medium">
               Clear History

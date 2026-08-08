@@ -1320,7 +1320,8 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             median.
           </li>
           <li>
-            <b>Lookup history.</b>
+            <b>Lookup history</b> — your 100 most recent lookups; older ones drop off the bottom on
+            their own.
           </li>
         </UL>
         <p>Saved Average and Median use a rolling window of your most recent 1000 solves.</p>
@@ -1797,8 +1798,10 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             through the calendar the date actually has.
           </li>
           <li>
-            The history panel keeps your last twenty lookups. It scrolls within its own box whenever
-            the list is taller than the room available.
+            The history panel keeps your 100 most recent lookups: each new one goes on top, and once
+            the list is full the oldest drops off the bottom on its own. From the second entry
+            onwards the number saved is shown beside the History heading. The panel scrolls within
+            its own box whenever the list is taller than the room available.
           </li>
           <li>
             History rows say the same thing in short, so each stays on one line: "J: Sat · G: Wed"

@@ -34,7 +34,7 @@ import type { InputStyle, SettingsValues } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
 import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, normalizeAoxN, prefsMatchDefaults } from './store/userDefaults.js'
 import type { PrefDefaults } from './store/userDefaults.js'
-import { useProgress } from './store/progress.js'
+import { useProgress, addLookupEntry } from './store/progress.js'
 import type { LookupEntry } from './store/progress.js'
 import { reportWebVitals } from './dev/webVitals.js'
 import type { FormatId } from './lib/format.js'
@@ -1089,7 +1089,8 @@ const ReactDOM = { createRoot, createPortal }
       const commitMax=()=>{const p=parseInt(maxInputVal);if(isNaN(p)){setMaxInputVal(String(maxY));return;}const v=Math.max(minY,Math.min(10000,p));applyMaxValue(v);setMaxInputVal(String(v));};
       useEffect(()=>{if(document.activeElement===minInputRef.current)return;setMinInputVal(String(minY));},[minY]);
       useEffect(()=>{if(document.activeElement===maxInputRef.current)return;setMaxInputVal(String(maxY));},[maxY]);
-      const pushLookupHistory=(entry: LookupEntry)=>setLookupHistory(prev=>[entry,...prev].slice(0,20));
+      // Newest to the front, capped — the rule and its number live in store/progress (addLookupEntry).
+      const pushLookupHistory=(entry: LookupEntry)=>setLookupHistory(prev=>addLookupEntry(prev,entry));
       const moveHistoryEntryToTop=(id: string)=>setLookupHistory(prev=>{const idx=prev.findIndex(e=>e.id===id);if(idx<=0)return prev;const entry=prev[idx];return[entry,...prev.slice(0,idx),...prev.slice(idx+1)];});
       const clearLookupHistory=()=>setLookupHistory([]);
       // Date format / randomFormat / leapChance / janFebChance / julianChance now from the

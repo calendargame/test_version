@@ -36,6 +36,7 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import LookupCard from '../src/components/LookupCard.jsx'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
+import { addLookupEntry, LOOKUP_HISTORY_CAP } from '../src/store/progress.js'
 import { fmt } from '../src/lib/format.js'
 
 const HINT = 'Enter a date to see its weekday.'
@@ -56,7 +57,7 @@ function Host({ dateFormat = 'written-mdy', useJulian = false, initialHistory = 
       <output data-testid="lookup-output">{output}</output>
       <LookupCard
         history={history}
-        onAddHistory={(e) => setHistory((prev) => [e, ...prev].slice(0, 20))}
+        onAddHistory={(e) => setHistory((prev) => addLookupEntry(prev, e))}
         onMoveHistory={(id) =>
           setHistory((prev) => {
             const i = prev.findIndex((e) => e.id === id)
@@ -455,5 +456,73 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
     act(() => fireEvent.keyDown(window, { key: 'K' }))
     toggleSettings()
     expect(isDisabled(fullReset())).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The history WINDOW and the count beside the heading (round 12).
+// The cap has always existed and nothing described it; it moved 20 → 100 this round, and the
+// count is what makes it visible without opening a menu. The rule's one owner is
+// store/progress (addLookupEntry), so this reads the real number rather than restating it.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+const dated = (i) => ({ id: `h${i}`, y: 1900 + (i % 120), m: (i % 12) + 1, d: (i % 28) + 1 })
+const header = () => document.querySelector('.lookup-history-header')
+// The heading LABEL — the count's host. Read separately from the header row, which also holds the
+// Clear History button from the first entry on.
+const heading = () => header().firstElementChild.textContent
+
+describe('Lookup history: the window, and the count beside the heading (round 12)', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(cleanup)
+
+  it('keeps the newest LOOKUP_HISTORY_CAP and drops the oldest off the end', () => {
+    const over = Array.from({ length: LOOKUP_HISTORY_CAP + 25 }, (_, i) => dated(i))
+    const kept = over.reduce((prev, entry) => addLookupEntry(prev, entry), [])
+    expect(kept).toHaveLength(LOOKUP_HISTORY_CAP)
+    expect(kept[0]).toEqual(over[over.length - 1]) // newest to the FRONT
+    expect(kept.at(-1)).toEqual(over[over.length - LOOKUP_HISTORY_CAP])
+    expect(kept).not.toContainEqual(over[0]) // …and the oldest is simply gone
+  })
+
+  it('shows nothing at 0 or 1 entries — a “(1)” beside a list you can see is noise', () => {
+    const { rerender } = render(<LookupCard history={[]} />)
+    expect(heading()).toBe('History')
+    rerender(<LookupCard history={[dated(0)]} />)
+    expect(heading()).toBe('History')
+  })
+
+  it('appears on the second entry and reads the total, up to and including the cap', () => {
+    const all = Array.from({ length: LOOKUP_HISTORY_CAP }, (_, i) => dated(i))
+    const { rerender } = render(<LookupCard history={all.slice(0, 2)} />)
+    expect(heading()).toBe('History (2)')
+    rerender(<LookupCard history={all.slice(0, 3)} />)
+    expect(heading()).toBe('History (3)')
+    // At the cap it simply reads (100) and stays there — the owner's call.
+    rerender(<LookupCard history={all} />)
+    expect(heading()).toBe(`History (${LOOKUP_HISTORY_CAP})`)
+  })
+
+  it('cannot reflow the header: no new flex child, no block box, and it may not wrap', () => {
+    // The header is a sticky scroll BOUNDARY that casts a shadow onto the list below it, so its
+    // height is a contract. jsdom lays nothing out, which is exactly why the guarantee here is
+    // structural rather than measured: the count is inline text inside the existing label span —
+    // the justify-between row still has its same two children — and whitespace-nowrap is what
+    // keeps that one line box true at every width. (Measured in Chromium at 375px wide: 29.375px
+    // with the count and 29.375px without.)
+    const empty = render(<LookupCard history={[]} />)
+    const bare = header()
+    const label = bare.firstElementChild
+    const rowClass = bare.className
+    const childCount = bare.childElementCount
+    expect(label.className).toContain('whitespace-nowrap')
+    empty.unmount()
+
+    render(<LookupCard history={[dated(0), dated(1)]} />)
+    const counted = header()
+    expect(counted.className).toBe(rowClass) // the boundary surface itself is untouched
+    expect(counted.childElementCount).toBe(childCount + 1) // …+1 = the Clear History button only
+    const badge = counted.firstElementChild.querySelector('span')
+    expect(badge.textContent).toBe(' (2)') // inline text, its own leading space, no size class
+    expect(badge.className).toBe('text-(--tx-300-60)') // the footnote tier — dimmer than the label
   })
 })

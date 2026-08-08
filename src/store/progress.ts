@@ -20,8 +20,9 @@ import { useSettings } from './settings.js'
 //     sudden death (score only), per-question with Allow Mistakes (score/streak, C3a),
 //     and AoX (average/median). These already lived as component state; the store
 //     now owns them (and their types).
-//   • Lookup history (the last 20 lookups) — see LookupEntry below: the INPUTS only, never
-//     the rendered text (that is derived at paint time from the live settings).
+//   • Lookup history (the newest LOOKUP_HISTORY_CAP lookups — see addLookupEntry below) — see
+//     LookupEntry below: the INPUTS only, never the rendered text (that is derived at paint time
+//     from the live settings).
 //
 // WHAT DOES *NOT* PERSIST (intentionally — mid-run/round state is discarded):
 //   • The engine's live question, history stacks, locked/revealed flags, etc.
@@ -70,6 +71,20 @@ export interface LookupEntry {
   d: number
   isGap?: boolean
 }
+
+// The Lookup history WINDOW, and the one function that applies it. Newest to the front, and past
+// the cap the oldest simply falls off the end — the same bounded-payload rule STATS_TIMES_CAP
+// below states for solve-times, for the same reason (localStorage must not grow without bound
+// across sessions). 100 entries of {id,y,m,d} is a few KB.
+// The RULE lives here rather than at the one call site because it had two writers and one of them
+// was a test: main.tsx's pushLookupHistory and the controlled host in tests/lookupCard.dom each
+// wrote `[entry, ...prev].slice(0, 20)` out by hand, so the number lived in three places (this
+// comment being the third) and could drift in any of them.
+// (Keep the How-to-Play wording in sync with this number — GuidePage's Lookup section and its
+// Saved Progress list both state it.)
+export const LOOKUP_HISTORY_CAP = 100
+export const addLookupEntry = (prev: LookupEntry[], entry: LookupEntry): LookupEntry[] =>
+  [entry, ...prev].slice(0, LOOKUP_HISTORY_CAP)
 
 // The five lifetime-stats silos: the continuous modes plus Deduction's three sub-modes.
 export type StatsKey = 'classic' | 'flash' | 'dedDay' | 'dedMonth' | 'dedYear'
