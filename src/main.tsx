@@ -24,7 +24,6 @@ import { useBackButton } from './components/useBackButton.js'
 import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { sharedFitScale } from './lib/statFit.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
-import { scrollWindowTo } from './lib/docScrollFlight.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
 import { checkForUpdate, readOwnBuildId, buildIdUrl, makeCheckNonce, UPDATE_CHECK_LABEL, UPDATE_RESULT_MS } from './lib/updateCheck.js'
 import type { UpdateCheckState } from './lib/updateCheck.js'
@@ -537,8 +536,8 @@ const ReactDOM = { createRoot, createPortal }
       // either case — it fires after every layout effect has run, i.e. a frame late. It can sit
       // ahead of the attribute because the bar does not care about it: the bar is position:fixed
       // against the viewport, so releasing #root's clamps changes nothing about its height. What
-      // IS load-bearing is that both land before the scrollWindowTo below — the attribute because the
-      // document cannot scroll without it, the measurement because it sets the height the offset
+      // IS load-bearing is that both land before the window.scrollTo below — the attribute because
+      // the document cannot scroll without it, the measurement because it sets the height the offset
       // is clamped against.
       // A LAYOUT effect so all of that happens before the browser paints the new mode, and on
       // leave the window is zeroed BEFORE the attribute comes off — a residual document scrollTop
@@ -546,18 +545,12 @@ const ReactDOM = { createRoot, createPortal }
       // one needed: the document cannot scroll in a clamped mode, so the game-mode branch has no
       // window reset to make. Nothing else in the app moves a scroller on a mode change, which is
       // what makes the restore safe — there is no later effect left to overwrite it.
-      // Both jumps go through scrollWindowTo (lib/docScrollFlight), the app's one door for an
-      // INSTANT window jump: either can land on top of a scroll that is still gliding, and an
-      // instant scroll is COMPLETE the moment scrollTo returns — so the door states that fact rather
-      // than leaving the tracker to infer it from a jump's own trailing scroll event. The
-      // helper states the truth these two lines establish — the page is where we just put it and
-      // nothing is moving.
       useLayoutEffect(()=>{
         syncBarHeight();
         if(docScroll){
           document.documentElement.setAttribute('data-doc-scroll','');
-          scrollWindowTo(0,guideScrollYRef.current);
-          return()=>{scrollWindowTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
+          window.scrollTo(0,guideScrollYRef.current);
+          return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
         }
         const el=appScrollRef.current;if(el)el.scrollTop=0;
       },[mode,docScroll,syncBarHeight]);
@@ -686,10 +679,7 @@ const ReactDOM = { createRoot, createPortal }
       //     it, so there was never a root-scroll invariant for this listener to defend — in EVERY
       //     mode. The guide's in-flight scroll writer is cancelled when the app is backgrounded
       //     by GuidePage itself, which is where that concern belongs.
-      // The window jump goes through scrollWindowTo (lib/docScrollFlight) for the reason spelled out
-      // on the mode-change effect above: a reload can hand back a page mid-glide, and the jump that
-      // lands on top of it ends that glide as a matter of fact, not by inference.
-      useEffect(()=>{const reset=()=>{scrollWindowTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=(e: PageTransitionEvent)=>{if(e.persisted)return;reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
+      useEffect(()=>{const reset=()=>{window.scrollTo(0,0);if(document.documentElement.scrollTop!==0)document.documentElement.scrollTop=0;if(document.body.scrollTop!==0)document.body.scrollTop=0;if(appScrollRef.current)appScrollRef.current.scrollTop=0;};const onPageShow=(e: PageTransitionEvent)=>{if(e.persisted)return;reset();requestAnimationFrame(reset);setTimeout(reset,0);};reset();window.addEventListener('pageshow',onPageShow);return()=>{window.removeEventListener('pageshow',onPageShow);};},[]);
       // Keyboard input — desktop convenience, mobile-no-op.
       // Three categories of keys are handled, all subject to the same gates: not in
       // an input/textarea/contentEditable, no modifiers held (Cmd+L stays browser),
@@ -1472,11 +1462,9 @@ const ReactDOM = { createRoot, createPortal }
         setGuideResetKey(k=>k+1);
         // Scroll window + app container to top (synchronous, avoids a visual flash before the
         // scroll-ownership effect would do it; the window jump is defense-in-depth, body can't
-        // scroll). It goes through scrollWindowTo (lib/docScrollFlight) like every other instant
-        // jump — see the mode-change effect above. The guide's saved reading position goes with
-        // them — switchMode above captured it on the way out, and a Full Reset means there is
-        // nothing to come back to.
-        if(typeof window!=="undefined")scrollWindowTo(0,0);
+        // scroll). The guide's saved reading position goes with them — switchMode above captured
+        // it on the way out, and a Full Reset means there is nothing to come back to.
+        if(typeof window!=="undefined")window.scrollTo(0,0);
         if(appScrollRef.current)appScrollRef.current.scrollTop=0;
         guideScrollYRef.current=0;
       };

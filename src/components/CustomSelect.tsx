@@ -1,11 +1,6 @@
 import { useState, useRef, useEffect, useId, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useBackButton } from './useBackButton.js'
-import {
-  isDocScrollInFlight,
-  isNewDocScrollSequence,
-  isDocumentScroll,
-} from '../lib/docScrollFlight.js'
 
 // CustomSelect — the app's custom dropdown, replacing the native <select>.
 //
@@ -30,10 +25,25 @@ import {
 // "viewport" this panel is fixed to into a scrolling box and silently bring the drift back.
 // tests/containingBlockGuard.test.js fails the build if one ever appears.
 //
-// DISMISS RULE (Q8): a document scroll the user STARTS while the menu is open closes it with
-// outside-tap semantics; a scroll that was ALREADY RUNNING when it opened is left alone (you
-// flicked the guide page, lifted your finger, then opened the menu). The arming that draws that
-// line lives on the scroll effect below; the flag it reads lives in lib/docScrollFlight.
+// ⚠ DISMISS RULE — A SCROLL DOES NOT CLOSE THIS MENU, and that is a decision, not an omission
+// (owner's call, 2026-08-07). What closes it: choosing an option, a touch/mouse press OUTSIDE it,
+// Escape, Tab, and Android Back. A document scroll does nothing at all.
+//
+// WHY, because two shipped designs died proving it. The old rule closed on a scroll the user
+// STARTED while the menu was open, but not on one that was already gliding when it opened — a
+// distinction that has to be drawn from the timing of scroll events, and iOS will not support one.
+// Two mechanisms (a `scrollend` boundary, then a measured gap between scroll events) each passed in
+// Chromium and each FAILED on the owner's iPhone. The root cause of the harder half was never a
+// timing bug at all: WebKit SUPPRESSES the entire touch sequence of a tap that interrupts momentum
+// deceleration (UIKitUtilities' _wk_isInterruptingDeceleration — no touchstart, no pointerdown, no
+// click), deliberately, since ~2017, with no `touch-action` opt-out. So a tap on a coasting page
+// cannot open this menu on ANY design, which is exactly the iOS convention every native app follows:
+// the first tap stops the page, the second one opens the menu.
+// Given that, the owner chose to give up scroll-dismissal outright rather than keep a rule that can
+// only be approximated. It costs nothing visually: the trigger lives in the FIXED top bar (the
+// caller contract above), so a page scrolling under an open panel leaves the panel exactly where it
+// belongs — glued under its own trigger — instead of drifting away from it.
+// tests/customselect pins the non-dismissal; tests/scrollEndGuard keeps the `scrollend` route shut.
 //
 // The panel always opens DOWNWARD. The auto-flip-up branch was deleted in round 11 (Q8): at the
 // only call site the space above is structurally negative (measured −45px against a 325px panel —
@@ -108,12 +118,9 @@ export default function CustomSelect({
   // panelRef points at the PORTALED panel so the click-outside handler can
   // treat taps inside it as "inside" (the panel is no longer a DOM descendant
   // of the wrapper). panelPos holds the measured viewport coordinates for the
-  // portal. armedRef holds the dismiss decision (see handleToggle + the scroll
-  // effect) as a ref, not state: it is read inside listeners and must never
-  // re-render anything.
+  // portal.
   const panelRef = useRef<HTMLDivElement>(null)
   const [panelPos, setPanelPos] = useState<PanelPos | null>(null)
-  const armedRef = useRef(false)
   // measurePanel reads the trigger's current viewport rect and writes panelPos: right edge
   // aligned to the trigger, 6px below it. Called on open, on resize / visualViewport change, and
   // when --bar-h moves the bar the trigger sits in — and on NOTHING else, in particular never on
@@ -147,18 +154,10 @@ export default function CustomSelect({
     // pixel-identical either way, since scrollY was always 0 there.
     setPanelPos({ right, top: rect.bottom + 6 })
   }
-  // Toggle handler. On the way OPEN it does the two things that can only be decided at that
-  // instant: where the panel goes, and whether a document scroll is allowed to dismiss it.
-  // Measurement only happens on open (close is cheap).
+  // Toggle handler. On the way OPEN it measures where the panel goes — the one thing that can only
+  // be decided at that instant. Measurement only happens on open (close is cheap).
   const handleToggle = () => {
     if (!open) {
-      // ARMING (Q8) — the whole dismiss rule, decided synchronously, in one line.
-      // A scroll already in flight at this moment is the tail of a gesture that finished BEFORE
-      // the menu existed (a flick, or iOS's status-bar glide), so it must not dismiss it; anything
-      // that starts later must. isDocScrollInFlight answers that from the GAP since the last
-      // document scroll event — a reading of the past, which the opening touch cannot rewrite.
-      // (It used to be answered from scrollend, and that failed on device; see the scroll effect.)
-      armedRef.current = !isDocScrollInFlight()
       measurePanel()
       // Do NOT pre-highlight the selected option on open. The grey "active" box is a
       // pointer/keyboard cursor, not an open-state indicator (the ✓ already marks the
@@ -264,56 +263,23 @@ export default function CustomSelect({
       document.removeEventListener('touchstart', h)
     }
   }, [open, ref])
-  // While open: what dismisses the panel, and what re-measures it. The two are now disjoint —
-  // NOTHING both closes and re-measures, and a scroll never re-measures at all.
+  // While open: what RE-MEASURES the panel — and that is now this effect's whole job. Nothing here
+  // dismisses (see the dismiss-rule note on the component), and NO DOCUMENT SCROLL IS SUBSCRIBED TO,
+  // which is the point twice over: dismissal is gone, and re-measuring per scroll event through
+  // momentum is the jitter round 5 chased and Q8 deleted. The panel does not need it — it is
+  // position:fixed under a trigger that lives in fixed chrome, so a moving page moves neither.
   //
-  // DISMISS — a DOCUMENT scroll, and only when ARMED. Unarmed it is a silent no-op: it must not
-  // close (that is case A/B, the scroll that was already gliding when you opened the menu) and it
-  // must not re-measure either, because re-measuring per scroll event through momentum is the
-  // jitter round 5 chased and Q8 deleted. It starts as !isDocScrollInFlight() at open
-  // (handleToggle), and re-arms when a scroll event turns out to be the FIRST OF A NEW SEQUENCE.
-  //
-  // ⚠ It used to re-arm on scrollend, and that shipped and FAILED on the owner's iPhone (cases A
-  // and B). The reason is structural and is written up in full in lib/docScrollFlight: the menu's
-  // own opening touch is what CANCELS the glide, so the cancellation's scrollend arrived ~16ms
-  // after the open and armed the menu against the dying scroll it had just correctly refused to be
-  // dismissed by. The menu stayed open for about one frame. Asking "did a scroll just end" cannot
-  // work when the asking is what ends it; asking "did this event START a sequence" reads only the
-  // past, which the finger cannot rewrite. Do not put scrollend back.
-  // Listening in the capture phase with
-  // the flag module's own target test (isDocumentScroll — a page scroll is fired at the Document,
-  // documentElement accepted for WebKit, while an element scroll does not bubble at all): the two
-  // listeners must agree about what counts as a page scroll, so they share the one predicate.
-  // Accepted consequence, unchanged: a touch-drag that starts inside the open panel and pans the
-  // page also closes it (native-iOS-like).
-  // NO FALLBACK PATH ANY MORE, and that is a simplification the fix bought: a gap between scroll
-  // events is not a capability, so there is nothing to feature-detect and every engine takes the
-  // one path. The wheel/keydown arming that existed for engines without scrollend is gone with it.
-  //
-  // RE-MEASURE — window resize (rotation), visualViewport (iOS pinch-zoom moves the visual
-  // viewport independently of the layout viewport a fixed element lives in), and --bar-h. That
-  // last one is the trigger's own chrome: main.tsx publishes the fixed bar's measured height there
-  // (syncBarHeight, its single writer), so a change to it means the bar resized and the trigger
-  // moved — with no window resize to announce it (a font swap, a safe-area shift). It used to be
-  // covered by accident, via the element-scroll reposition branch that was deleted with the rest of
-  // the dead geometry; this states the dependency instead. The value is compared, not just watched,
-  // so the other inline write on <html> (the theme background) costs nothing.
+  // The three things that DO move the trigger, none of them a document scroll: window resize
+  // (rotation); the visualViewport, whose own resize/scroll report iOS moving the VISUAL viewport
+  // independently of the layout viewport a fixed element lives in (pinch-zoom pan, the URL bar
+  // collapsing) — a different box from the one a page scroll moves; and --bar-h, the trigger's own
+  // chrome — main.tsx publishes the fixed bar's measured height there (syncBarHeight, its single
+  // writer), so a change to it means the bar resized and the trigger moved, with no resize event to
+  // announce it (a font swap, a safe-area shift). The value is compared, not just watched, so the
+  // other inline write on <html> (the theme background) costs nothing.
   useEffect(() => {
     if (!open) return
     const reposition = () => measurePanel()
-    const arm = () => {
-      armedRef.current = true
-    }
-    const onScroll = (e: Event) => {
-      if (!isDocumentScroll(e)) return
-      // A scroll that STARTS while the menu is open is a new user intent — arm on it, then let this
-      // same event dismiss. A continuation of the sequence the menu was opened during does neither.
-      if (isNewDocScrollSequence()) arm()
-      if (!armedRef.current) return
-      setOpen(false)
-      setActiveIdx(-1)
-    }
-    window.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', reposition)
     const vv = window.visualViewport
     if (vv) {
@@ -330,7 +296,6 @@ export default function CustomSelect({
     })
     barObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
     return () => {
-      window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('resize', reposition)
       if (vv) {
         vv.removeEventListener('resize', reposition)
@@ -338,9 +303,8 @@ export default function CustomSelect({
       }
       barObserver.disconnect()
     }
-    // Depend on [open] alone. measurePanel closes over nothing render-specific (only the
-    // stable ref/setPanelPos) and setOpen/setActiveIdx are React's stable
-    // setters, so calling a "stale" copy is behavior-identical; listing them would just
+    // Depend on [open] alone. measurePanel closes over nothing render-specific (only the stable
+    // ref/setPanelPos), so calling a "stale" copy is behavior-identical; listing it would just
     // re-subscribe the listeners every render. useCallback isn't an option here — it reads
     // ref.current, which trips preserve-manual-memoization. The React Compiler memoizes
     // measurePanel automatically, making this exactly correct at runtime.

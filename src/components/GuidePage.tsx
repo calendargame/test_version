@@ -46,14 +46,6 @@ const panelDomId = (id: string) => `guide-panel-${id}`
 // scroll input (touchstart/wheel) cancels the writer instantly — the user always wins —
 // and the returned cancel function serves mid-flight re-toggles, leaving the guide for
 // another mode, the app being backgrounded, and unmount (see scrollWriterRef below).
-// ⚠ This is the app's ONE bare window.scrollTo, and deliberately so (Q8, round 11). Every other
-// instant window jump goes through scrollWindowTo (lib/docScrollFlight), which declares the scroll
-// sequence over. This one is not a jump that PLACES the page — it is the app RUNNING a scroll
-// animation, and its frames are exactly the "a scroll is in flight" that flag describes. Declaring
-// completion on every frame would make a glide read as stationary, so a menu opened during one
-// would arm and then dismiss itself on the next frame. It ends like any other scroll: the frames
-// stop, and the GAP after the last one is what marks the sequence over.
-// tests/docScrollFlight pins the split.
 function startScrollWriter(from: number, to: number, durationMs: number): () => void {
   let raf = 0
   let start: number | null = null
@@ -498,10 +490,11 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           </li>
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
-            release to switch (or just tap to open the menu and tap a mode, as before). Start
-            scrolling this How to Play page while the menu is open and it closes, the same as
-            tapping outside it — but a scroll that was already gliding when you opened the menu is
-            left to finish, so opening it right after a flick no longer shuts it again instantly.
+            release to switch (or just tap to open the menu and tap a mode, as before). Once it's
+            open it stays open until you choose a mode, tap outside it, or press Esc. Touching this
+            page to scroll it counts as tapping outside, so that closes it — but the page moving on
+            its own doesn't: tap the iPhone status bar to jump back to the top and the menu simply
+            stays where it is, under its button in the bar.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it

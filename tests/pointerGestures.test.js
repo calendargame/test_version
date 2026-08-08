@@ -444,4 +444,50 @@ describe('pointerGestures controller — pointer latch + click suppression', () 
     trigger.click()
     expect(trigClicks).not.toHaveBeenCalled() // suppressed — pointerdown already toggled
   })
+
+  // ── pointercancel (fixed 2026-08-07) ──────────────────────────────────────────────────────────
+  // A gesture the system takes away resolves to NOTHING — no release point, so nothing may
+  // activate — and therefore has to suppress the start button's click exactly as every other
+  // non-activating outcome does. It did not, and on touch the click is delayed and fires the
+  // pressed button anyway, so it landed on top of whatever pointerdown had already done.
+  it('a cancelled gesture suppresses the start button’s delayed click (it resolved to nothing)', () => {
+    const a = btn()
+    const aClicks = clicksOn(a)
+    a.dispatchEvent(ptr('pointerdown'))
+    document.dispatchEvent(ptr('pointercancel'))
+    a.click() // the click the browser delivers anyway, after the cancel
+    expect(aClicks).not.toHaveBeenCalled()
+    a.click() // …and the suppression is spent, so a later real tap still works
+    expect(aClicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('a cancelled press on a menu TRIGGER cannot double-toggle it (open-then-instantly-shut)', () => {
+    // The mode selector toggles on POINTERDOWN, so a click arriving after the cancel is a SECOND
+    // toggle: the menu opens on the press and shuts again in the same gesture. This is the exact
+    // shape of the owner's "the menu will not stay open" report, and reverting onCancel's
+    // armSuppress makes this fail.
+    const trigger = domEl(
+      'button',
+      { 'data-select-trigger': '', 'aria-controls': 'menu-c' },
+      document.body,
+    )
+    const menu = domEl('div', { id: 'menu-c' })
+    const trigClicks = clicksOn(trigger)
+    trigger.dispatchEvent(ptr('pointerdown')) // opens the menu…
+    document.body.appendChild(menu)
+    document.dispatchEvent(ptr('pointercancel')) // …then iOS takes the touch away
+    trigger.click()
+    expect(trigClicks).not.toHaveBeenCalled() // no second toggle: the menu stays open
+  })
+
+  it('a cancel belonging to ANOTHER pointer leaves the live gesture (and its outcome) alone', () => {
+    const a = btn()
+    const aClicks = clicksOn(a)
+    a.dispatchEvent(ptr('pointerdown', { pointerId: 7 }))
+    document.dispatchEvent(ptr('pointercancel', { pointerId: 8, isPrimary: false }))
+    hit = a
+    document.dispatchEvent(ptr('pointerup', { pointerId: 7 })) // released ON it → click passes
+    a.click()
+    expect(aClicks).toHaveBeenCalledTimes(1)
+  })
 })

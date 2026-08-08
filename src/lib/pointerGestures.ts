@@ -340,9 +340,22 @@ export function installPointerGestures(): () => void {
     if (suppressStart) armSuppress(start)
     if (activate && activate !== start) (activate as HTMLElement).click()
   }
+  // A gesture the SYSTEM took away (pointercancel: the touch became a scroll/pinch, the app was
+  // suspended mid-press, an OS gesture won). It resolves to nothing — there is no release point, so
+  // nothing may activate — which means it must suppress the start button's click exactly as onUp
+  // does for every non-activating outcome. That is not belt-and-braces: on touch the click is
+  // DELAYED and fires the pressed button regardless, so a cancel that skipped the suppression let
+  // the click through on top of the work pointerdown had already done. On the mode selector — whose
+  // pointerdown toggles the menu — that click was a second toggle, opening the menu and shutting it
+  // in the same gesture. (resolveRelease(start, null, group) says the same thing for both the group
+  // and no-group paths: suppressStart true, activate nothing. A cancel is a release on nothing.)
+  // The suppression is cleared by the click that consumes it, by the next pointerdown, or by
+  // armSuppress's fallback timer — so a later genuine tap is never swallowed.
   const onCancel = (e: PointerEvent) => {
     if (!startEl || e.pointerId !== pointerId) return
+    const start = startEl
     endGesture()
+    armSuppress(start)
   }
   const onClick = (e: MouseEvent) => {
     if (
