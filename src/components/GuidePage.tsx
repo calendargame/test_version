@@ -305,10 +305,24 @@ export default function GuidePage({ visible }: { visible: boolean }) {
       const durationMs = accordionToggleMs(closingH, openingH)
       setMotionMs(durationMs)
       setOpen(opens ? id : null)
-      // Scroll coordination needs the document scroller's geometry on top (jsdom has no
-      // scrollingElement — there the panels still toggle on the shared clock, writer-less).
+      // Scroll coordination needs the scroller's geometry on top of the two panel measurements.
+      // TWO preconditions, and they are not the same guard wearing two shapes:
+      //   • a scroller to read at all. Today that is document.scrollingElement, which jsdom does
+      //     not implement.
+      //   • a scroller with MEASURABLE EXTENT. scrollHeight 0 means the platform has laid nothing
+      //     out: there is no scroll range, every number the target would be built from is a zero,
+      //     and gliding is meaningless. A real engine cannot report it — a rendered document (or a
+      //     rendered overflow box) is at least as tall as its own content — so this costs
+      //     production nothing.
+      // ⚠ THE SECOND ONE IS THE TEST SEAM, and it is deliberate. The first guard only holds the
+      // writer out of a layout-less DOM by accident of jsdom's coverage; the moment the scroller
+      // becomes a ref to a real element it can never be absent, and the writer would start driving
+      // a zero-height page in every test that so much as taps a guide header. Stating the
+      // precondition in terms of the geometry instead keeps that out BY RULE, on both sides of
+      // that change: a test that wants the writer stands up the extent the glide travels through,
+      // which is the same geometry the target is computed from anyway.
       const doc = document.scrollingElement
-      if (!tapped || !doc) return
+      if (!tapped || !doc || doc.scrollHeight <= 0) return
       const scrollY = window.scrollY
       const tappedRect = tapped.getBoundingClientRect()
       const rootStyle = getComputedStyle(document.documentElement)

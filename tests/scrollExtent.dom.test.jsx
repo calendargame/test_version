@@ -9,10 +9,11 @@
 //     viewport BY CONSTRUCTION. The ResizeObserver watching it was watching the one number no
 //     content change can ever move — open Show Codes while resting at the top and the bottom fade
 //     kept painting the answer from before it opened.
-//   • GUIDE mode: the document is the scroller and there was no observer at all, only window
-//     scroll + resize. An accordion toggle produces neither (a tap that seats an already-seated
-//     panel scrolls nowhere, and the panel keeps growing for the rest of its animation after the
-//     glide's last scroll event), so the bottom doc-fade froze.
+//   • GUIDE mode: the guide's scroller had no observer at all, only scroll + resize. An accordion
+//     toggle produces neither (a tap that seats an already-seated panel scrolls nowhere, and the
+//     panel keeps growing for the rest of its animation after the glide's last scroll event), so
+//     the bottom edge froze. That half is pinned in tests/guideScroll.dom, through the scroller
+//     abstraction that survives the guide moving onto an inner scroller.
 // Both are now `observeScrollExtent` (components/scrollRegion), which watches the CONTENT: the
 // scroller, each of its element children, and a childList MutationObserver for children arriving
 // or leaving.
@@ -31,7 +32,7 @@
 // is the owner's device.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useCallback, useRef } from 'react'
-import { render, cleanup, act, fireEvent } from '@testing-library/react'
+import { render, cleanup, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import LookupCard from '../src/components/LookupCard.jsx'
 import {
@@ -243,12 +244,8 @@ function mountApp() {
   return render(<App />)
 }
 
-// H toggles guide; the container is the div carrying the inline paddingTop (the one style BOTH
-// branches keep — it is deliberately classless in guide mode).
-const pressKey = (key) =>
-  act(() => {
-    fireEvent.keyDown(window, { key })
-  })
+// The container is the div carrying the inline paddingTop (the one style BOTH scroll branches
+// keep — it is deliberately classless in guide mode).
 const scrollContainer = (container) =>
   [...container.querySelectorAll('div')].find((d) => d.style.paddingTop === 'var(--bar-h)')
 
@@ -264,8 +261,6 @@ describe('the app scroller — content changes with no scroll event (round 11 Q4
     cleanup()
     ro.restore()
     document.getElementById('root')?.remove()
-    document.documentElement.removeAttribute('data-doc-scroll')
-    delete document.scrollingElement
     document.documentElement.style.removeProperty('--fade-h')
   })
 
@@ -335,43 +330,7 @@ describe('the app scroller — content changes with no scroll event (round 11 Q4
     expect(el.className).toContain('fade-scroll-bottom')
   })
 
-  it('watches the same container in guide mode, where the document is the scroller', () => {
-    // The guide branch had no observer at all — window scroll + resize only. The container is a
-    // plain flow block there, so its own height is what the document scrolls: it and its child are
-    // both the content, and both are watched.
-    const { container } = mountApp()
-    pressKey('H')
-    const el = scrollContainer(container)
-    expect(el.className).toBe('') // the precondition: classless flow block, not a scroll box
-    expect([ro.isObserved(el), ro.isObserved(el.firstElementChild)]).toEqual([true, true])
-  })
-
-  it('follows the guide document growing with neither a scroll nor a resize event', () => {
-    // The doc-fade freeze. An accordion toggle changes the DOCUMENT's height: a tap that seats an
-    // already-seated panel scrolls nowhere, and the panel keeps growing for the rest of its
-    // animation after the glide's last scroll event. Neither window event fires — and this test
-    // fires neither, deliberately. The one strip driven by the bottom edge is the subject.
-    const { container } = mountApp()
-    pressKey('H')
-    const wrapper = scrollContainer(container).firstElementChild
-    const bottom = container.querySelector('.doc-fade-bottom')
-    // A document that exactly fills the (jsdom-default 768px) viewport: nothing below to signal.
-    const se = { scrollTop: 0, scrollHeight: 768 }
-    Object.defineProperty(document, 'scrollingElement', { configurable: true, get: () => se })
-    act(() => ro.resize(wrapper))
-    expect(shade(bottom)).toBe('0.000')
-    // The panel opens, one animation frame at a time. The strip's strength is continuous, so this
-    // is the fixture that shows it TRACKING the growth rather than snapping at the end of it:
-    // the bottom ramp starts where the 4px dead band ends and reaches full at --fade-h.
-    for (const [scrollHeight, expected] of [
-      [768, '0.000'],
-      [780, '0.400'], // 12px below → (12 − 4) / (24 − 4)
-      [790, '0.900'],
-      [800, '1.000'], // 32px below → past the feather, clamped
-    ]) {
-      se.scrollHeight = scrollHeight
-      act(() => ro.resize(wrapper))
-      expect(shade(bottom)).toBe(expected)
-    }
-  })
+  // The guide's own branch — its content under observation, and the bottom edge following a panel
+  // growing with neither a scroll nor a resize event — is pinned in tests/guideScroll.dom instead,
+  // through the scroller abstraction, so it survives the guide moving onto an inner scroller.
 })

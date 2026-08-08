@@ -137,9 +137,9 @@ describe('index.css expander rules (the styles the structure above keys into)', 
       expect(rule).not.toMatch(/max-height|will-change/)
     }
   })
-  it('the guide-scoped overflow-anchor kill pairs with the coordinator (no engine anchors against it)', () => {
-    expect(css).toContain('html[data-doc-scroll] *{overflow-anchor:none}')
-  })
+  // The guide-scoped overflow-anchor kill that pairs with the scroll coordinator is pinned in
+  // tests/docScroll.dom, with the rest of the rules scoped to the document scroller — it moves
+  // with them when the guide moves onto an inner scroller.
 })
 
 describe('cross-module timing contracts (Q5 — ACCORDION_MS_FLOOR is the one number)', () => {
