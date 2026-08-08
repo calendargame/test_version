@@ -1,45 +1,41 @@
 // THE GUIDE'S SCROLLER, as an ABSTRACTION — the one place in the suite that is allowed to know
 // HOW How to Play scrolls.
 //
-// WHY THIS FILE EXISTS. The guide is the app's one long reading page and the only screen that does
-// not scroll an inner box: <html data-doc-scroll> releases the app's three clamps and the DOCUMENT
-// becomes the scroller (main.tsx, index.css). That is an implementation choice, and it is on its
-// way out — the guide is being moved onto an inner overflow div like every other screen. A test
-// written against `window.scrollY`, `document.scrollingElement` or the attribute would have to be
-// rewritten on the far side of that move, which is exactly the situation rule 10 exists to
-// prevent: a safety net you have to edit is not a safety net.
+// WHY THIS FILE EXISTS, and what it has already done. It was written in round 13 group 2, one
+// group ahead of the move it was built for: the guide used to be the only screen that did not
+// scroll an inner box (<html data-doc-scroll> released the app's three clamps and the DOCUMENT
+// scrolled it), and it was about to be moved onto App's #appScroll container like everything else.
+// A behaviour test that read window.scrollY, document.scrollingElement or the attribute would have
+// had to be rewritten on the far side, which is exactly the situation rule 10 exists to prevent: a
+// safety net you have to edit is not a safety net. So the net asks this file the questions instead
+// — "where is the reader", "how much content is there", "how strong is each edge indicator", "what
+// has the app written" — and this file answered them against whichever scroller was live, by
+// walking up from the guide's own root for the shared SCROLLER_CORE_CLASS token and falling back
+// to the document when it found none.
 //
-// So the net asks this file the questions instead — "where is the reader", "how much content is
-// there", "how strong is each edge indicator", "what has the app written" — and this file answers
-// them against whichever scroller is live. It RESOLVES, it does not assume:
-//
-//   • if the guide's content sits inside a real overflow scroller (any ancestor carrying the shared
-//     SCROLLER_CORE_CLASS token, components/scrollRegion), that element is the scroller. Reads and
-//     writes go through its scrollTop / scrollHeight / clientHeight, and a scroll event is
-//     dispatched from it.
-//   • otherwise the DOCUMENT is the scroller — today's shape. Reads and writes go through
-//     window.scrollY / window.scrollTo / document.scrollingElement against window.innerHeight, and
-//     a scroll event is dispatched from the window.
-//
-// Neither branch is named by any test. That is the whole point: the same behaviour test reads
-// correctly on both sides of the move, and "the net passed unchanged" becomes the move's proof.
+// THE MOVE HAS LANDED, and tests/guideScroll.dom passed it unchanged — all 34 of it, which was the
+// move's proof. The document fallback is therefore unreachable, and unreachable code modelling an
+// architecture the app no longer has is precisely the kind of leftover this project does not keep.
+// It is gone; what remains is the same abstraction with one backing. The BEHAVIOUR net still names
+// no mechanism, and this file is still the only place that may.
 //
 // ⚠ THE MODEL IS STATEFUL, AND DELIBERATELY SO. jsdom lays nothing out, so a real scroller has to
 // be stood up by hand — and the suite's habit of stubbing one number per test is what let three
 // scroll bugs ship (the round-10 resting-state shadow, both round-11 freezes). This models the
 // thing rather than the read: the app's own writes MOVE it, a test's scroll MOVES it, and every
 // read — the app's and the test's — comes back from the same number. That is what lets a test say
-// "the reader is still at 640" instead of "window.scrollTo was called with (0, 640)", which is the
-// difference between a behaviour pin and a mechanism pin.
+// "the reader is still at 640" instead of "el.scrollTop was assigned 640", which is the difference
+// between a behaviour pin and a mechanism pin.
 //
 // ⚠ AND A HIDDEN SCREEN REPORTS 0, which is the model's one piece of real platform fidelity and it
-// is load-bearing. A display:none element has no layout: its scrollTop is 0, and a document whose
-// clamps have just been re-applied has collapsed to a screenful and clamped its offset the same
-// way. So the app CANNOT read the guide's reading position after React has hidden it — it has to
+// is load-bearing. A display:none element has no layout, so its scrollTop is 0 — flatly, on every
+// engine. So the app CANNOT read the guide's reading position after React has hidden it; it has to
 // take the number synchronously, inside the event that switches the mode. Modelling that here is
 // what makes "the reader's place survives a detour" a discriminating test instead of a formality:
 // an implementation that read the position one commit late would capture 0 and land the reader at
-// the top, and the net would catch it.
+// the top, and the net would catch it. (It was true of the document scroller too — a re-clamped
+// document collapsed to a screenful and clamped its offset the same way — so this survived the
+// move as an argument, not just as code.)
 import { act } from '@testing-library/react'
 import { SCROLLER_CORE_CLASS } from '../../src/components/scrollRegion.js'
 
@@ -55,85 +51,20 @@ const guideRoot = (container) =>
 // shared contract rather than by position or by name.
 const SCROLLER_TOKEN = SCROLLER_CORE_CLASS.split(' ')[0]
 
-// The guide's scroll box, or null when its content is not inside one — walking UP from the guide's
-// own root, so it finds a scroller whether the app hands the whole screen stack one container or
-// the guide gets its own.
+// The guide's scroll box — walking UP from the guide's own root, so it finds the scroller whether
+// the app hands the whole screen stack one container (today) or the guide ever gets its own.
 const scrollerAncestor = (container) => {
   for (let node = guideRoot(container); node && node !== container; node = node.parentElement)
     if (typeof node.className === 'string' && node.className.includes(SCROLLER_TOKEN)) return node
   return null
 }
 
-// The app's main content container — the div carrying the inline paddingTop:var(--bar-h), the one
-// style both scroll branches keep. Used only for the DOCUMENT branch, where it is the plain flow
-// block whose height IS what the document scrolls, and therefore the element main.tsx hands to
-// observeScrollExtent.
-const appContainer = (container) =>
-  [...container.querySelectorAll('div')].find((d) => d.style.paddingTop === 'var(--bar-h)') ?? null
-
-// The viewport height every fixture measures against. jsdom's window.innerHeight default, pinned
-// here so BOTH branches answer the "how much room is there" question with the same number — an
-// element's clientHeight is 0 in jsdom, and leaving that asymmetry in place would make the same
-// arithmetic give two answers across the move.
+// The viewport height every fixture measures against — jsdom's window.innerHeight default, kept as
+// the number the whole net's arithmetic is written in. An element's clientHeight is 0 in jsdom, so
+// this is what the model reports for it.
 const VIEWPORT_H = 768
 
-// ── The two backings ─────────────────────────────────────────────────────────────────────────
-// Both expose the identical surface; nothing above this line branches on which one is live.
-
-function documentBacking(visible, writes, startY) {
-  let y = startY
-  let content = 0
-  const reported = () => (visible() ? y : 0)
-  const savedScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
-  const savedInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
-  const savedScrollTo = window.scrollTo
-  // ONE object, not a fresh literal per read: the app reads .scrollTop and .scrollHeight off it in
-  // the same evaluate() pass and both must answer from the same state.
-  const scrollingElement = {
-    get scrollTop() {
-      return reported()
-    },
-    get scrollHeight() {
-      return content
-    },
-  }
-  Object.defineProperty(window, 'scrollY', { configurable: true, get: reported })
-  Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => VIEWPORT_H })
-  Object.defineProperty(document, 'scrollingElement', {
-    configurable: true,
-    get: () => scrollingElement,
-  })
-  window.scrollTo = (a, b) => {
-    const next = typeof a === 'object' && a !== null ? a.top : b
-    y = next
-    writes.push(next)
-  }
-  return {
-    raw: () => y,
-    pos: reported,
-    setPos: (next) => {
-      y = next
-    },
-    setContent: (next) => {
-      content = next
-    },
-    scrollSource: () => window,
-    restore: () => {
-      // Put back the descriptor that was there, or remove the shadow outright when the property
-      // was inherited rather than own — jsdom defines both of these on the Window instance today,
-      // but restoring by descriptor is only correct if one existed.
-      for (const [name, saved] of [
-        ['scrollY', savedScrollY],
-        ['innerHeight', savedInnerHeight],
-      ])
-        if (saved) Object.defineProperty(window, name, saved)
-        else delete window[name]
-      delete document.scrollingElement
-      window.scrollTo = savedScrollTo
-    },
-  }
-}
-
+// ── The backing ──────────────────────────────────────────────────────────────────────────────
 function elementBacking(el, visible, writes, startY) {
   let y = startY
   let content = 0
@@ -171,9 +102,8 @@ function elementBacking(el, visible, writes, startY) {
 
 // ── The handle ───────────────────────────────────────────────────────────────────────────────
 // Install AFTER the app is in guide mode — "the guide's scroller" is only a well-defined question
-// while the guide is on screen (in a clamped mode the container the guide is hidden inside is the
-// GAME screen's scroller, and resolving against it would model the wrong thing). Restore in an
-// afterEach: the document branch stubs three window/document properties.
+// while the guide is on screen, and the model's hidden-screen fidelity above needs a root to read
+// the display of. Restore in an afterEach.
 export function installGuideScroller(container) {
   let target = container
   const writes = []
@@ -182,19 +112,8 @@ export function installGuideScroller(container) {
     return !root || root.style.display !== 'none'
   }
   let backing = null
-  let kind = null
-  // ⚠ RESOLVED ONCE, IN GUIDE MODE, and re-used from then on. The fork can only be read while the
-  // guide is on screen: in a clamped mode the container the hidden guide sits inside is the GAME
-  // screens' scroll box, so a re-resolution there would answer "element" about the wrong element.
-  // Which shape the app uses is a property of the build, not of the moment, so a remount carries
-  // the kind across and re-resolves only the node it applies to.
-  const attach = (carriedY, forcedKind) => {
+  const attach = (carriedY) => {
     const el = scrollerAncestor(target)
-    kind = forcedKind ?? (el ? 'element' : 'document')
-    if (kind === 'document') {
-      backing = documentBacking(visible, writes, carriedY)
-      return
-    }
     if (!el)
       throw new Error('installGuideScroller: the guide’s scroll box is no longer in the tree')
     backing = elementBacking(el, visible, writes, carriedY)
@@ -202,21 +121,11 @@ export function installGuideScroller(container) {
   if (!visible())
     throw new Error('installGuideScroller: enter guide mode before installing the scroller model')
   attach(0)
-  // The element main.tsx hands to observeScrollExtent — the thing whose height IS the scroll
-  // extent. That is the scroll box itself once there is one, and the flow block the document
-  // scrolls until then.
-  const extentHost = () => scrollerAncestor(target) ?? appContainer(target)
   return {
-    // Which shape resolved. The BEHAVIOUR net never reads this — it exists so the mechanism file
-    // can state, in one place, what the guide currently scrolls.
-    get kind() {
-      return kind
-    },
     // Where the reader is. 0 whenever the guide is off screen: a hidden screen has no layout.
     pos: () => backing.pos(),
-    // Put the scroller at y and deliver the scroll event that follows — the reader dragging, a
-    // status-bar tap, the platform placing it. Wrapped in act() so a listener that touches React
-    // state (the clamped branch does) never warns.
+    // Put the scroller at y and deliver the scroll event that follows — the reader dragging, the
+    // platform placing it. Wrapped in act() so the listener's React state writes never warn.
     scrollTo: (y) => {
       backing.setPos(y)
       act(() => {
@@ -236,7 +145,9 @@ export function installGuideScroller(container) {
     clearWrites: () => writes.splice(0, writes.length),
     // The reading line the accordion seats a tapped panel on (--bar-h + --guide-panel-gap). Set on
     // the root AND on the scroll box, so it resolves whichever element the coordinator reads its
-    // computed style from — jsdom does not inherit custom properties down the tree.
+    // computed style from — jsdom does not inherit custom properties down the tree. (Since the
+    // move it reads the box, because scroll-padding-top — the ladder's second rung — is a
+    // non-inherited property and is declared there.)
     setSeat: (px) => {
       document.documentElement.style.setProperty('--seat-top', `${px}px`)
       scrollerAncestor(target)?.style.setProperty('--seat-top', `${px}px`)
@@ -246,26 +157,28 @@ export function installGuideScroller(container) {
     // inherits @property's initial-value of 1 — a full-strength shadow).
     //   top    — the fixed bar's boundary shadow.
     //   bottom — the guide's bottom soft edge.
-    // ⚠ THE ONE LINE THAT MAY NEED THE MOVE'S ATTENTION: the bottom surface is the fixed
-    // .doc-fade-bottom strip today. If the guide's bottom edge becomes the container's own mask
-    // instead, this resolution changes — and nothing in any test file does.
+    // The move KEPT the fixed .doc-fade-* strips rather than folding the guide onto the container's
+    // own mask fades — deliberately, since the masks are boolean state classes and these two are
+    // the app's only progressive edges — so this resolution is unchanged and stable.
     topShade: () => target.querySelector('.htp-sticky-bar')?.style.getPropertyValue('--shade'),
     bottomShade: () => target.querySelector('.doc-fade-bottom')?.style.getPropertyValue('--shade'),
     // The element under extent observation, and the child whose growth IS the content growing.
     // Delivering a resize for either is how a test performs the change no scroll event reports.
     get extentHost() {
-      return extentHost()
+      return scrollerAncestor(target)
     },
     get contentEl() {
-      return extentHost().firstElementChild
+      return scrollerAncestor(target).firstElementChild
     },
     // The app remounted — carry the platform's scroller across, the way a reload hands the next
-    // instance the offset the last one left. Re-resolves, so a fresh element is picked up.
+    // instance the offset the last one left. Re-resolves against the new tree, which is safe in
+    // ANY mode now that every screen scrolls the same box (it was not while the guide had its own
+    // shape: re-resolving in a clamped mode would have answered about the game screens' scroller).
     retarget: (next) => {
       const carried = backing.raw()
       backing.restore()
       target = next
-      attach(carried, kind)
+      attach(carried)
     },
     restore: () => backing.restore(),
   }

@@ -9,9 +9,12 @@
 // overflow-y-scroll, overflow-scroll, camelCase overflowY) anywhere in src markup files or
 // index.html — outside the one definition module — fails the suite, listing the exact
 // file:line sites. Horizontal scrollers (overflow-x-*) are deliberately out of scope: the lane
-// and the top/bottom fades are vertical concepts. index.css is exempt by design — the guide's
-// html[data-doc-scroll]{overflow-y:auto} document scroller legitimately lives there (owner
-// call, 2026-07-19: the far-right document scrollbar already clears everything).
+// and the top/bottom fades are vertical concepts. index.css is outside the scan, which used to be
+// a real exemption — the guide's html[data-doc-scroll]{overflow-y:auto} document scroller lived
+// there and was the one scroller this guard could not see. Round 13 moved the guide onto the app
+// container and deleted that rule, so the stylesheet now declares no vertical scroller at all and
+// the exemption is vacuous. tests/docScroll.dom pins it that way, which is what keeps this guard's
+// coverage total rather than nearly-total.
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

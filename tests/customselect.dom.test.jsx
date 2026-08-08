@@ -108,10 +108,11 @@ describe('CustomSelect — active-cursor highlight', () => {
 // containing block is the viewport in both of the app's layouts and its coordinates are simply
 // the trigger's viewport rect — no scroll term, no mode-dependent correction. That replaces the
 // round-4 ± window.scrollY patch, which existed only because the panel was position:absolute
-// while guide mode (html[data-doc-scroll]) makes #root static, moving the panel's containing
-// block to the document origin. The assertion here is deliberately STRONGER than the one it
-// replaces: the old test pinned a particular scroll term, this one pins that the panel's
-// position does not depend on the document scroll AT ALL.
+// while guide mode (html[data-doc-scroll]) MADE #root static, moving the panel's containing block
+// to the document origin. Both halves of that are history now — round 13 deleted the document
+// scroller, so #root is fixed in every mode — and the assertion here is deliberately STRONGER than
+// either: the old test pinned a particular scroll term, this one pins that the panel's position
+// does not depend on any scroll AT ALL.
 // The auto-flip-up branch is gone with it (owner's call): at the only call site the trigger is
 // inside the bar the flip measured its ceiling from, so the space above is structurally negative
 // and the branch was unreachable. Its three tests are gone for the same reason — testing an

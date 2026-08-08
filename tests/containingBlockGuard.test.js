@@ -27,7 +27,7 @@ const BANNED_PROPS =
   /(?:^|;)\s*(transform|translate|rotate|scale|perspective|filter|backdrop-filter|-webkit-backdrop-filter|will-change|contain)\s*:/gi
 
 // A selector targets one of the three iff it ENDS in html, body or #root (possibly with
-// attribute/pseudo qualifiers) — `html[data-doc-scroll] #root` counts, `#root .panel` does not,
+// attribute/pseudo qualifiers) — `html[data-theme="light"] #root` counts, `#root .panel` does not,
 // and neither does `[data-theme="light"] #boot`.
 const TARGETS_ROOT_CHAIN = /(?:^|[\s>+~])(?:html|body|#root)(?:\[[^\]]*\])*(?::[a-z-]+)*$/i
 
@@ -96,8 +96,12 @@ describe('containing-block guard (Q8) — nothing may make html/body/#root the f
     const hit = (sel) => rules(css).some(({ selectors }) => selectors.includes(sel))
     expect(hit('html')).toBe(true) // the overflow clamp (html,body{…})
     expect(hit('body')).toBe(true)
-    expect(hit('#root')).toBe(true) // the fixed 100dvh box
-    expect(hit('html[data-doc-scroll] #root')).toBe(true) // …and its guide-mode release
+    expect(hit('#root')).toBe(true) // the fixed 100dvh box — now unconditional (round 13)
+    // There used to be a fourth real rule here, `html[data-doc-scroll] #root`, which released that
+    // box for the guide's document scroller. It is gone with the whole mechanism, and with it the
+    // stylesheet's only QUALIFIED chain onto one of the three. That shape still has to be covered,
+    // since it is the one an innocent-looking future rule would wear — the synthetic case below
+    // holds it, and this line is deliberately not replaced by a weaker real-rule stand-in.
     expect(inlineStyleBlocks.length).toBeGreaterThan(0)
     expect(rootChainClasses.map(([el]) => el)).toEqual(['<html>', '<body>', '#root'])
     // …and the class attributes really were read, not silently missed by the tag patterns.
@@ -127,9 +131,10 @@ describe('containing-block guard (Q8) — nothing may make html/body/#root the f
   it('the scanner recognises a violation when one is present (it is not vacuously green)', () => {
     // Each half, fed the exact shape it exists to catch.
     expect(scanRules('#root{transform:translateZ(0)}', 'x').length).toBe(1)
-    expect(scanRules('html[data-doc-scroll] #root{will-change:scroll-position}', 'x').length).toBe(
-      1,
-    )
+    // The qualified-chain shape, which no live rule wears any more (see the note above).
+    expect(
+      scanRules('html[data-theme="light"] #root{will-change:scroll-position}', 'x').length,
+    ).toBe(1)
     expect(scanRules('body{backdrop-filter:blur(2px)}', 'x').length).toBe(1)
     expect(scanRules('#root .panel{transform:scale(1)}', 'x')).toEqual([]) // a descendant is fine
     expect(scanRules('html,body{overscroll-behavior-y:contain}', 'x')).toEqual([]) // value, not property

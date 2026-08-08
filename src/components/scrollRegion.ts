@@ -15,13 +15,13 @@ import type { RefObject } from 'react'
 //      exactly when content extends past that edge — driven by useScrollEdgeState below.
 //
 // SCROLLER_CORE_CLASS exists for the ONE scroller that is not an inner region: the app's main
-// container (main.tsx appScrollRef), which fills the viewport, so its scrollbar already paints
-// at the screen edge past the content wrapper's own px-4 — it takes the core without the lane
-// (its fades still come from scrollFadeClass). The guide's document scroller is excluded
-// entirely (owner call, 2026-07-19: the far-right document scrollbar already clears everything;
-// its viewport fades are the doc-fade-* strips). tests/scrollRegionGuard.test.js fails the
-// suite on any raw vertical-overflow literal outside this file, so every scroll region must
-// come through these tokens.
+// container (main.tsx appScrollRef / #appScroll), which fills the viewport, so its scrollbar
+// already paints at the screen edge past the content wrapper's own px-4 — it takes the core
+// without the lane (its fades still come from scrollFadeClass). Since round 13 that container is
+// the WHOLE app: How to Play used to scroll the document instead and was exempt from this file
+// entirely, and it is now governed code like everything else. tests/scrollRegionGuard.test.js
+// fails the suite on any raw vertical-overflow literal outside this file, so every scroll region
+// must come through these tokens — with no scroller left anywhere that the guard cannot see.
 export const SCROLLER_CORE_CLASS = 'overflow-y-auto overscroll-contain'
 export const SCROLL_REGION_CLASS = `${SCROLLER_CORE_CLASS} px-4`
 

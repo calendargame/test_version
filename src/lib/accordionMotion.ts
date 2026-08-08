@@ -5,7 +5,7 @@
 // decision here is trivially unit-testable without rendering anything. GuidePage owns the
 // DOM reads (rendered heights, rects, the --seat-top / --motion-scale vars) and the rAF
 // scroll writer; this module owns what the numbers MEAN: how long a toggle takes, the
-// curve the panels and the writer both run, and where the window scroll must land.
+// curve the panels and the writer both run, and where the scroller must land.
 //
 // Q5 (round 8) widened it from "the HTP coordinator's math" to the ONE motion law: the
 // codes panel (components/MethodBreakdown) now runs the same duration floor and the same
@@ -79,18 +79,26 @@ export const accordionEase = (t: number): number => {
   return 3 * u * u - 2 * u * u * u
 }
 
-// ── Scroll target: where the window must land for the toggle to read as ONE motion ───
+// ── Scroll target: where the scroller must land for the toggle to read as ONE motion ─
+// ⚠ NOTHING HERE IS ABOUT A DOCUMENT, and three of the field names below say otherwise. They were
+// coined in round 7, when the guide released the app's clamps and the DOCUMENT scrolled it; round
+// 13 moved it onto App's #appScroll container and NOT ONE LINE of the arithmetic changed, because
+// the arithmetic was always about "a scroller" — an offset, a visible height, a content height, a
+// target's position in content space. Read scrollY/docH/headerDocTop as scrollTop/scrollHeight/
+// content-space-top and the module is exactly what it claims to be. (They keep their names because
+// tests/accordionMotion pins them; a rename is a separate, test-touching change.)
 // All inputs are pre-computed geometry, fully known at tap time (before any animation). They
 // arrive FRACTIONAL — GuidePage measures every one of them with getBoundingClientRect (round 10),
 // and docH is the single exception, an integer because the platform offers nothing else:
-//   scrollY       window scroll at the tap (may sit negative mid rubber-band)
-//   viewportH     window.innerHeight. NOT documentElement.clientHeight: the tempting case for
-//                 that swap is "innerHeight shrinks with Safari's bottom toolbar" — but it does
-//                 NOT, which is why the app reaches for visualViewport.height wherever the
-//                 toolbar-free height is what it actually wants (an iOS-QA'd finding; it was
-//                 CustomSelect's flip test that established it, before round 11 deleted that
-//                 unreachable branch). Owner decision (round 10): leave it; revisit only on a
-//                 real symptom.
+//   scrollY       the scroller's offset at the tap (may sit negative mid rubber-band)
+//   viewportH     the scroller's own clientHeight — the height of the box the reader sees through.
+//                 Round 10 argued at length here about window.innerHeight vs
+//                 documentElement.clientHeight, because with a document scroller there were two
+//                 plausible whole-viewport measures and no definition to choose between them. That
+//                 question is GONE, not answered: a scroll box's clientHeight is its visible
+//                 content height by definition, it includes the padding-top that seats the content
+//                 below the fixed bar, and scrollHeight includes that same padding — so the two
+//                 terms of every range below are measured in one consistent frame.
 //   seatTop       the reading line: the viewport y a tapped panel's top edge should land on,
 //                 = the fixed bar's height PLUS one guide panel gap (--seat-top, registered in
 //                 index.css as --bar-h + --guide-panel-gap). The gap is what makes it exact —
@@ -99,10 +107,10 @@ export const accordionEase = (t: number): number => {
 //                 alone (that seats the previous panel's bottom a full gap into view) and NOT
 //                 bar + fade, which round 8 used and which overshot by fade − gap, leaving a
 //                 15.5px sliver of the previous panel showing.
-//   docH          the document's current scrollHeight — an INTEGER by spec, with no fractional
+//   docH          the scroller's current scrollHeight — an INTEGER by spec, with no fractional
 //                 twin to switch to. Its half-pixel worst case reaches only finalMaxScroll,
 //                 which is a clamp, so nothing downstream compounds it.
-//   headerDocTop  the tapped section wrapper's current document-space top
+//   headerDocTop  the tapped section wrapper's current top in the scroller's content space
 //   closingH      the closing panel's current RENDERED height (0 when nothing closes;
 //                 mid-flight re-toggles pass the interpolated value, keeping the math exact)
 //   closingAbove  true when that panel sits above the tapped header, so its collapse

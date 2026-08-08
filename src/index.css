@@ -67,9 +67,9 @@
 [data-theme="nebula"]{--bg1:#0b0714;--bg2:#0b0714;--tc:#0b0714}
 [data-theme="parchment"]{--bg1:#f0e8d5;--bg2:#f0e8d5;--tc:#f0e8d5;--card-bg:rgba(255,252,244,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(120,53,175,.07);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(120,53,175,.1);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(120,53,175,.18);--stgl-bg:rgba(120,53,175,.07);--stgl-hov:rgba(120,53,175,.14);--chip-bg:rgba(120,53,175,.09);--chip-bd:rgba(120,53,175,.22);--bar-bg:rgba(120,53,175,.09);--bar-bd:rgba(120,53,175,.22);--body-color:#2e1065;--sec-color:rgba(46,16,101,.78);--mut-color:rgba(46,16,101,.62);--fnt-color:rgba(46,16,101,.5);--shadow-elev-c:46 16 101;--shadow-elev-a:.18;--drag-ring:rgba(120,53,175,.5);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.07)}
 [data-theme="light"]{--bg1:#f2f2f7;--bg2:#f2f2f7;--tc:#f2f2f7;--card-bg:rgba(255,255,255,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(237,233,254,.48);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(237,233,254,.65);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(237,233,254,.88);--stgl-bg:rgba(237,233,254,.42);--stgl-hov:rgba(237,233,254,.65);--chip-bg:rgba(237,233,254,.75);--chip-bd:rgba(120,53,175,.22);--bar-bg:rgba(237,233,254,.75);--bar-bd:rgba(120,53,175,.22);--body-color:#1e1b4b;--sec-color:rgba(30,27,75,.78);--mut-color:rgba(30,27,75,.62);--fnt-color:rgba(30,27,75,.5);--shadow-elev-c:30 27 75;--shadow-elev-a:.15;--drag-ring:rgba(120,53,175,.45);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.07)}
-/* Layout architecture: body never scrolls (body+html have overflow:hidden and
-   overscroll-behavior:none — no rubber-band on locked body). Three structural
-   pieces inside #root:
+/* Layout architecture: the document never scrolls (html+body have overflow:hidden and
+   overscroll-behavior:none — no rubber-band on a locked body) in EVERY mode, with no
+   exception and no release. Three structural pieces inside #root:
      1. .htp-sticky-bar: position:fixed at the top of the viewport. NOT a flex
         child or part of normal flow — it's a chrome-style fixed element above
         everything. Has its own bg-[var(--bg1)]. syncBarHeight in JS measures
@@ -81,9 +81,12 @@
         inset:0, with padding-top:var(--bar-h) so its content starts below the
         bar instead of being covered by it. overflow-y:auto with
         overscroll-contain keeps rubber-band bounce LOCAL — the bounce happens
-        inside this container and cannot affect the fixed bar above.
-     3. Inner scrollables (settings popover inner, Lookup history): also use
-        overscroll-contain for the same reason.
+        inside this container and cannot affect the fixed bar above. THE APP HAS
+        EXACTLY ONE MAIN SCROLLER and this is it: How to Play, the app's one long
+        reading page, scrolls this same box on the same terms as every game screen
+        (round 13 — the reversal is argued at `switchMode` in main.tsx).
+     3. Inner scrollables (settings popover inner, Lookup history, the Save Defaults
+        card): also use overscroll-contain for the same reason.
    Why the bar is position:fixed (not sticky or a flex item): iOS PWA samples
    the status bar color from the topmost fixed/sticky element with its own
    background. The bar being explicitly position:fixed with bg-[var(--bg1)]
@@ -91,12 +94,7 @@
    theme changes, so the status bar / URL bar tinting updates live. A plain
    flex child without explicit positioning does NOT give iOS this cue, so it
    falls back to the theme-color meta tag, which iOS PWA reads only at launch
-   and never updates on JS changes.
-   EXCEPTION — guide mode (How to Play): App stamps data-doc-scroll on <html> while HtP
-   is open, and the release rules below #root unclamp the document so IT becomes the
-   scroller — the only way iOS's tap-status-bar-to-scroll-to-top can work (it targets the
-   root scroller exclusively). The bar stays position:fixed throughout, so the status-bar
-   sampling above is untouched. */
+   and never updates on JS changes. */
 /* Initial default for --bar-h (the fixed top bar's height) so the FIRST paint already reserves
    the bar's space. Without it, padding-top:var(--bar-h) resolves to 0 on first paint and the
    content jumps down ~57px the moment the JS ResizeObserver measures the bar and writes --bar-h
@@ -115,28 +113,59 @@ body{background:var(--bg1);color:var(--body-color)}
    sized to the full screen via vh (see the fluid font-size below), so the toolbar never shrinks text
    — it only adds scroll, which is the intended behavior. */
 #root{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;overflow:hidden}
-/* Q3 document scroll — HtP only. While <html> carries data-doc-scroll (App sets it in guide
-   mode, nowhere else) the three clamps above are released and the DOCUMENT becomes the
-   scroller: html scrolls vertically (overflow-x stays hidden from the shorthand above), body
-   unhides, and #root returns to normal flow so its content height drives the document scroll
-   range. VERTICAL overscroll flips none → contain: `none` doesn't just block pull-to-refresh —
-   since iOS 16.4 it also kills the rubber-band bounce itself, leaving the page dead-stopped at
-   its edges. `contain` restores the native bounce-back while still blocking refresh/scroll
-   chaining (pull-to-refresh can never fire — the owner's hard constraint; `auto` would allow
-   it). -y ONLY: the horizontal axis keeps the shorthand's none. Neither value blocks the
-   status-bar tap. Every other mode keeps the locked app-like architecture untouched. */
-html[data-doc-scroll]{overflow-y:auto}
-html[data-doc-scroll] body{overflow:visible}
-html[data-doc-scroll],html[data-doc-scroll] body{overscroll-behavior-y:contain}
-html[data-doc-scroll] #root{position:static;height:auto;overflow:visible}
-/* Q8 — the guide's accordion motion coordinator (GuidePage) drives the window scroll per-frame
-   while panels resize. Chromium and Firefox scroll anchoring would pick an anchor node during the
-   resize and counter-adjust the scroll position against the writer (Safari never anchors — the
-   engines visibly diverged). Guide-scoped only — every other mode keeps the clamped architecture
-   where anchoring never engages — and on * because anchoring is evaluated per scroller against
-   candidate anchor NODES: suppressing it at every node makes the coordinator the sole scroll
-   authority, identically on every engine. */
-html[data-doc-scroll] *{overflow-anchor:none}
+/* THE THREE CLAMPS ABOVE ARE NOW PERMANENT, AND THAT IS THE POINT (round 13). Rounds 7–12
+   carried a release beside them — <html data-doc-scroll>, stamped by App for the whole of guide
+   mode, which unclamped html/body/#root so the DOCUMENT scrolled How to Play. It bought exactly
+   one thing: iOS's tap-the-status-bar-to-scroll-to-top, which targets the root scroller
+   exclusively and can never reach an overflow div. That trade is reversed, knowingly and by the
+   owner's own call — the argument, and the price he accepted, is written out at `switchMode` in
+   main.tsx, which is where the decision lives.
+   What the reversal BUYS here, structurally rather than by rule: with no mode able to unclamp the
+   root, `overscroll-behavior:none` on html/body is unconditional, so pull-to-refresh is not
+   merely blocked — there is no scrollable root for it to fire from, in any mode, ever. That was
+   the owner's hard constraint, and it used to rest on a four-rule release staying exactly right
+   (the -y-only `contain` override existed solely to keep the native bounce that `none` kills on
+   iOS ≥16.4 while still refusing the refresh). Four rules and their caveat are gone; the
+   guarantee is now a property of the layout. */
+/* #appScroll is PROGRAMMATICALLY FOCUSABLE (tabIndex −1 in main.tsx) so that Space / PageDown /
+   Home / End scroll How to Play the moment it opens, instead of only after the reader has clicked
+   into the page — the desktop keyboard behaviour the document scroller used to give for free and
+   an overflow div does not. Focus is placed by App on entry to the guide, never by the user: −1
+   keeps the element out of the tab order entirely, so nothing about Tab (bound app-wide to the
+   mode selector) or the modal tab traps changes.
+   No focus indicator, and that is a decision rather than an omission. This app draws NO focus
+   rings at all — .focus-ring has been a documented no-op since the Tab binding landed (see the
+   note further down) — so a UA outline here would be the only one on the site, and it would be a
+   box around the entire viewport. Nor is it hiding one from anybody: a scroll container is not a
+   control, it is never focused by a user gesture, and the feedback for "this is what the arrow
+   keys move" is the page moving. `outline:none` flatly rather than :focus-visible, so the answer
+   cannot depend on an engine's guess about whether a programmatic focus followed a keypress. */
+#appScroll{outline:none}
+/* Scroll anchoring, killed across the guide's subtree — the pair to GuidePage's scroll
+   coordinator. The coordinator computes where the scroller must land from geometry measured
+   BEFORE the panels animate, then drives it per frame; Chromium and Firefox would meanwhile pick
+   an anchor node inside the resizing content and counter-adjust against the writer (Safari never
+   anchors, so the engines visibly diverged). Two things about the scope, both deliberate:
+     • [data-guide] is GuidePage's own root, so this is now scoped to the only subtree that has a
+       coordinator — strictly tighter than the old html[data-doc-scroll] *, which hit every node
+       in the document. The other five screens are display:none while the guide is up and are
+       not anchor candidates anyway, but the game screens keep native anchoring for their own
+       scrolling, which they never had while this rule was document-wide.
+     • the descendant half is written out rather than left to inheritance: anchoring is evaluated
+       per scroller against candidate anchor NODES, and suppressing it at every node makes the
+       coordinator the sole scroll authority identically on every engine, instead of resting on
+       each engine's reading of "excluded, and its descendants with it".
+   ⚠ WHAT THE SELECTION WALK FALLS BACK TO, checked rather than assumed, because narrowing the
+   scope is what raises the question. Anchor selection descends the scroller's children, skipping
+   excluded ones and recursing into partially-visible ones; if a recursion finds nothing it selects
+   the parent it descended into. In guide mode #appScroll's only child is the mode-content wrapper,
+   whose own children are five display:none screens (no boxes, never candidates) and the excluded
+   guide — so the wrapper is what the walk lands on. That is INERT, and provably so: the wrapper is
+   a normal-flow block at the scroller's content origin, so its block-start edge cannot move when
+   its descendants grow, and scroll anchoring adjusts by exactly how far the anchor moved. Zero,
+   every frame. Excluding the wrapper too would have cost the game screens their native anchoring
+   for no gain, which is why it is not excluded. */
+[data-guide],[data-guide] *{overflow-anchor:none}
 /* Disable text selection globally to prevent accidental selection during rapid
    practice taps (long-press-and-drag, double-tap, etc.). Two specific opt-ins:
    input/textarea elements (so typing/editing stays functional everywhere they
@@ -180,18 +209,28 @@ input,textarea{user-select:text;-webkit-user-select:text}
    mask-image declarations from separate classes). The combined gradient fades
    both edges at once. */
 .fade-scroll-both{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent)}
-/* Doc-scroll (guide mode) edge fades: the mask fades above sit ON the scroll container and
-   fade its CONTENT box — meaningless when the document is the scroller (the bottom mask edge
-   would sit at the end of the whole document, off-screen). These fixed --fade-h strips paint
-   the same feather over the VIEWPORT edges instead: solid --bg1 → transparent, indistinguishable
-   from the masks on the flat one-color --bg1 background every theme uses. pointer-events:none
-   keeps them untouchable; the top strip starts under the fixed bar. JSX mounts them for the
-   whole of guide mode and nothing else — round 10 took the on/off away: their opacity is the
-   same continuous --shade (below) that drives the bar's shadow, so the guide's two soft edges
-   and the boundary above them ramp on one number. They are the ONLY mask/fade sites that are
-   progressive; every fade-scroll-* mask elsewhere is still the on/off state class it always
-   was. That mix is deliberate, not an oversight — this is the page the reader dwells on, and
-   the one whose indicators the status-bar tap freezes in frame.
+/* The guide's two edge fades — ⚠ KEPT, AND DELIBERATELY NOT THE MASKS ABOVE. Read this before
+   "harmonising" them, because folding the guide onto .fade-scroll-* would compile, would leave
+   every shipped test name passing, and would silently revert round 10's progressive edges on the
+   single page they were built for.
+   They were born because the fade-scroll-* masks sit ON a scroll container and fade its CONTENT
+   box, which was meaningless while the DOCUMENT scrolled the guide (the bottom mask edge would
+   have sat at the end of the whole document, off-screen). Round 13 moved the guide onto #appScroll
+   and that particular reason expired — the container's content box IS the viewport now, so a mask
+   would land in the right place. The strips stay anyway, on the reason that outlived it:
+     • the masks are a BOOLEAN state class. They snap on the moment an edge overflows and off when
+       it is reached, and How to Play is the one screen where that snap is the whole complaint —
+       these two strips are progressive, their opacity being the same continuous --shade (below)
+       that drives the bar's shadow, so the guide's soft edges and the boundary above them ramp on
+       one number and a stopped scroller is already at its final value.
+     • that mix is the design, not an oversight: every OTHER fade site in the app is still the
+       on/off state class it always was, because nobody dwells on a settings popover.
+   position:fixed remains exactly right after the move: the strips paint over the VIEWPORT, and
+   #appScroll's box is `absolute inset-0` — the viewport — so the two boxes coincide by
+   construction. What changed is only that they now sit OUTSIDE the scroller rather than outside
+   the document; the top strip still tucks under the fixed bar, the bottom still hugs the viewport
+   floor, and pointer-events:none keeps both untouchable. JSX mounts them for the whole of guide
+   mode and nothing else — round 10 took the on/off away, so a strip at --shade 0 paints nothing.
    top:var(--bar-h) is why --bar-h has to be EXACT (round 10 made it fractional): the feather
    starts precisely where the bar ends, so it covers whatever the bar itself doesn't. While
    --bar-h rounded up to a whole pixel the strip started ~0.234px low, leaving a sub-pixel band
@@ -224,6 +263,19 @@ input,textarea{user-select:text;-webkit-user-select:text}
    Both consumers want that same line and both read this one value: scroll-padding-top gives the
    native scrollport the identical seat (a Tab into a guide header lands where a tap lands), and
    lib/accordionMotion's seatTop is read off it in JS.
+   WHERE IT IS DECLARED, and why that is not a guide-mode rule any more (round 13). It used to
+   ride on html[data-doc-scroll], because the scrollport was the document and the attribute was
+   the only way to say "guide mode". The scrollport is now #appScroll in EVERY mode, and the rule
+   went onto it UNCONDITIONALLY rather than being re-gated behind some replacement stamp — because
+   unconditional is what is actually true: the bar is fixed over the top --bar-h of that scrollport
+   on every screen, so content the browser scrolls to the scrollport's top edge lands UNDER the bar
+   on every screen. A seat below the bar is a property of the scroller, not of the guide. The extra
+   --guide-panel-gap is the accordion's tuning and costs the game screens ~8px of seat depth on the
+   native scroll paths they had no seat at all on before, which is a fix in the same direction.
+   The JS read moved with the declaration: GuidePage reads its ladder off the scroll container, not
+   off <html> — rung 2 (scroll-padding-top) is a NON-inherited property and would read `auto`
+   anywhere else. --seat-top itself is registered inherits:true below, so it resolves on the
+   container whether it is declared there or higher up.
    @property REGISTRATION makes the JS read cheap: registered, the computed value is a resolved
    <length> in px. It is NOT a guarantee, because @property itself is not universal (Safari ≤16.3,
    Firefox <128 — Tailwind emits an @supports fallback for this very token further up this
@@ -239,7 +291,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    inherits:true so descendants can read it too; the 0px initial value only ever applies outside
    guide mode, where nothing reads it. */
 @property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
-html[data-doc-scroll]{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
+#appScroll{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
 /* --shade — how strongly a boundary asserts itself, 0…1 (round 10 item B). It is the scroller's
    distance from that edge, measured in px and divided by --fade-h (the same feather depth the
    masks use — the app's one "you are near a boundary" ramp, so the shadow and the fade speak
@@ -385,9 +437,15 @@ button:focus,select:focus{outline:none}
 /* C2 press-drag menus: the two bar [data-select-trigger] buttons (the ⚙ gear + the mode selector) are
    press-drag-into-menu gestures, never scroll starts — touch-action:none (mirroring the answer grids
    above) so the browser can't claim the touch for panning and pointercancel the gesture mid-drag.
-   Moot in the clamped modes (no scrollable ancestor exists), but ESSENTIAL in guide mode:
-   html[data-doc-scroll] (above) makes the document a scrollable ancestor of the fixed bar, and iOS
-   Safari would otherwise steal every bar press-drag for page panning. */
+   ⚠ KEEP IT, THOUGH ITS ORIGINAL REASON IS GONE (round 13). It was written for guide mode, where
+   html[data-doc-scroll] made the DOCUMENT a scrollable ancestor of the fixed bar and iOS Safari
+   would steal every bar press-drag for page panning; in the clamped modes it was moot, because the
+   bar's ancestors — #root, body, html — are all unscrollable. That is now true in every mode: the
+   one scroller is #appScroll, which is the bar's SIBLING, not its ancestor.
+   It stays because "moot" is a fact about today's ancestor chain, not a property of the gesture.
+   These two buttons are press-drag controls, so the declaration states what they are; the day one
+   of them is moved into or under something that scrolls, the gesture survives instead of silently
+   turning into a pan. It costs nothing to keep and the failure it prevents is invisible in review. */
 [data-select-trigger]{touch-action:none}
 .drag-target{outline:2px solid var(--drag-ring);outline-offset:-2px}
 /* The mode-selector dropdown (the only [data-select-group] portal) has a theme-INVARIANT frosted-light

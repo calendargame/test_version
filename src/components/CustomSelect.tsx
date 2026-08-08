@@ -27,7 +27,7 @@ import { useBackButton } from './useBackButton.js'
 //
 // ⚠ DISMISS RULE — A SCROLL DOES NOT CLOSE THIS MENU, and that is a decision, not an omission
 // (owner's call, 2026-08-07). What closes it: choosing an option, a touch/mouse press OUTSIDE it,
-// Escape, Tab, and Android Back. A document scroll does nothing at all.
+// Escape, Tab, and Android Back. A scroll of any kind does nothing at all.
 //
 // WHY, because two shipped designs died proving it. The old rule closed on a scroll the user
 // STARTED while the menu was open, but not on one that was already gliding when it opened — a
@@ -36,14 +36,25 @@ import { useBackButton } from './useBackButton.js'
 // Chromium and each FAILED on the owner's iPhone. The root cause of the harder half was never a
 // timing bug at all: WebKit SUPPRESSES the entire touch sequence of a tap that interrupts momentum
 // deceleration (UIKitUtilities' _wk_isInterruptingDeceleration — no touchstart, no pointerdown, no
-// click), deliberately, since ~2017, with no `touch-action` opt-out. So a tap on a coasting page
-// cannot open this menu on ANY design, which is exactly the iOS convention every native app follows:
-// the first tap stops the page, the second one opens the menu.
+// click), deliberately, since ~2017, with no `touch-action` opt-out. That is the iOS convention
+// every native app follows: the first tap stops the page, the second one opens the menu.
 // Given that, the owner chose to give up scroll-dismissal outright rather than keep a rule that can
 // only be approximated. It costs nothing visually: the trigger lives in the FIXED top bar (the
 // caller contract above), so a page scrolling under an open panel leaves the panel exactly where it
 // belongs — glued under its own trigger — instead of drifting away from it.
 // tests/customselect pins the non-dismissal; tests/scrollEndGuard keeps the `scrollend` route shut.
+//
+// ⚠ THE SUPPRESSION IS ABOUT THE MAIN SCROLL VIEW, NOT ABOUT TAPS — a correction round 13 earned,
+// and the reason that round happened. The paragraph above used to end "so a tap on a coasting page
+// cannot open this menu on ANY design", and the owner disproved it on his own device, unprompted,
+// by comparing the guide against the app's inner scrollers: fling an INNER scroll region, lift, and
+// press this trigger while it is still coasting, and the menu opens first try while the region
+// finishes gliding. _wk_isInterruptingDeceleration guards the WKWebView's own main scroll view; an
+// overflow:auto box coasting under a position:fixed bar is not it. How to Play was the app's only
+// screen scrolling the document, which is why it was the only screen this bit — and it now scrolls
+// the same inner container as everything else (src/main.tsx, `switchMode`). What survives untouched
+// is the dismiss rule itself: it was the right call for its own reasons, and re-deriving a timing
+// rule on top of a platform that never needed one is not on the table.
 //
 // The panel always opens DOWNWARD. The auto-flip-up branch was deleted in round 11 (Q8): at the
 // only call site the space above is structurally negative (measured −45px against a 325px panel —
@@ -134,11 +145,16 @@ export default function CustomSelect({
     const rect = ref.current.getBoundingClientRect()
     // documentElement.clientWidth, NOT window.innerWidth: the CSS `right` offset resolves against
     // the containing block's right edge, and a fixed element's containing block — like
-    // clientWidth, unlike innerWidth — EXCLUDES a classic document scrollbar. In guide mode
-    // (html[data-doc-scroll]) the document can show one, and innerWidth painted every dropdown one
-    // scrollbar-width LEFT of its trigger on the How-to-Play page (desktop Windows browsers;
-    // overlay-scrollbar platforms were unaffected). In app mode the document can't scroll, so
-    // clientWidth === innerWidth — bit-identical to the iOS-QA-confirmed values.
+    // clientWidth, unlike innerWidth — EXCLUDES a classic document scrollbar. The bug that
+    // established this was guide-mode-only: html[data-doc-scroll] let the DOCUMENT scroll, so
+    // desktop Windows browsers put a classic scrollbar on it and innerWidth painted every dropdown
+    // one scrollbar-width LEFT of its trigger on the How-to-Play page (overlay-scrollbar platforms
+    // were unaffected). Round 13 took the document scroller away, so no mode can show that
+    // scrollbar any more and the two reads are equal everywhere today — the app's one scrollbar
+    // lives INSIDE #appScroll, which is the bar's sibling and shrinks neither the viewport nor the
+    // bar. The clientWidth read stays because it is the containing block's own width BY DEFINITION,
+    // which is what this arithmetic needs; innerWidth agreeing with it is a fact about the current
+    // layout, not a reason to depend on it.
     // Round 10's sub-pixel sweep (--bar-h, GuidePage's panel heights) deliberately left this
     // read alone: same rounding class, but horizontal, worth ≤0.5px, and sitting on the
     // iOS-QA'd portal geometry path. Nothing here stacks against a hairline border.
@@ -225,8 +241,13 @@ export default function CustomSelect({
     // Closed: NO key opens the dropdown from the trigger — only the global Tab shortcut, or a mouse
     // click, opens it (owner's call 2026-06-06). The Tab shortcut leaves the trigger focused, and the
     // owner doesn't want a focused-but-invisible trigger to spring open on Enter/Space/arrows. Swallow
-    // Enter + Space so the browser's default button activation can't open it either; arrows fall through
-    // to normal page scrolling. (Once open, ↑/↓ navigate, Enter selects, Esc/Tab close — branch above.)
+    // Enter + Space so the browser's default button activation can't open it either; arrows are simply
+    // left alone. They used to fall through to scrolling the page, which was true only while the guide
+    // scrolled the DOCUMENT — a focused trigger's nearest scrollable ancestor was the document itself.
+    // Round 13 made #appScroll the one scroller and it is this bar's SIBLING, not its ancestor, so an
+    // arrow press here now scrolls nothing. Not swallowed even so: preventDefault would claim a key
+    // this control has no use for, and the app's own keydown handler already owns ←/→ (the date
+    // stepper). (Once open, ↑/↓ navigate, Enter selects, Esc/Tab close — branch above.)
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
     }
@@ -264,12 +285,12 @@ export default function CustomSelect({
     }
   }, [open, ref])
   // While open: what RE-MEASURES the panel — and that is now this effect's whole job. Nothing here
-  // dismisses (see the dismiss-rule note on the component), and NO DOCUMENT SCROLL IS SUBSCRIBED TO,
-  // which is the point twice over: dismissal is gone, and re-measuring per scroll event through
+  // dismisses (see the dismiss-rule note on the component), and NO SCROLL OF ANY KIND IS SUBSCRIBED
+  // TO, which is the point twice over: dismissal is gone, and re-measuring per scroll event through
   // momentum is the jitter round 5 chased and Q8 deleted. The panel does not need it — it is
   // position:fixed under a trigger that lives in fixed chrome, so a moving page moves neither.
   //
-  // The three things that DO move the trigger, none of them a document scroll: window resize
+  // The three things that DO move the trigger, none of them a page scroll: window resize
   // (rotation); the visualViewport, whose own resize/scroll report iOS moving the VISUAL viewport
   // independently of the layout viewport a fixed element lives in (pinch-zoom pan, the URL bar
   // collapsing) — a different box from the one a page scroll moves; and --bar-h, the trigger's own

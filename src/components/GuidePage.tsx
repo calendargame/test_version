@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import Expander from './Expander.jsx'
 import { Kbd, SectionLabel, SECTION_LABEL_CLASS } from './primitives.jsx'
 import { DAY } from '../lib/format.js'
@@ -18,8 +26,18 @@ import {
 // per toggle it measures both affected panels, computes one distance-scaled
 // duration for the shared clock, and — when the layout change would carry the
 // tapped section off-screen or clamp the shrinking scroll range — drives the
-// window scroll per-frame on the panels' own clock and curve, so the slide and
-// the travel read as one motion (the math lives in lib/accordionMotion).
+// scroll per-frame on the panels' own clock and curve, so the slide and the
+// travel read as one motion (the math lives in lib/accordionMotion).
+//
+// ⚠ THE SCROLLER IS HANDED IN (round 13), and that is a cost worth naming. Until
+// then this component drove `window` — the guide released the app's clamps and the
+// DOCUMENT scrolled it, so the thing to move needed no introduction. It now shares
+// #appScroll with every other screen (the reversal is argued at `switchMode` in
+// main.tsx), and an overflow div has to be named, so App passes `scrollerRef`. Every
+// read below that used to be a window global — scrollY, innerHeight,
+// document.scrollingElement.scrollHeight — is that element's scrollTop, clientHeight
+// and scrollHeight instead. The arithmetic in lib/accordionMotion did not move a byte:
+// it was always about "a scroller", and only its INPUT NAMES still say document.
 //
 // Extracted from main.jsx in Stage C, Step 4e. Rewritten for scannability — every
 // section now leads with a one-line summary, then tight chunks / bulleted lists;
@@ -30,23 +48,38 @@ import {
 // contract — the header button's aria-controls points at the panel body, which
 // carries the id — and the coordinator leans on the same ids to re-derive every
 // element it needs at tap time (the wrapper for geometry, the body for heights)
-// from nothing but the two section-id strings in state: no ref plumbing.
+// from nothing but the two section-id strings in state. That kept the whole
+// component ref-free until round 13, when the scroller itself had to be handed in;
+// it is still what keeps the SECTIONS ref-free, which is the part that scales with
+// the number of sections.
 const sectionDomId = (id: string) => `guide-sec-${id}`
 const panelDomId = (id: string) => `guide-panel-${id}`
 
-// startScrollWriter — the coordinator's per-frame window-scroll driver. Runs the SAME
-// clock and curve as the panel transitions: durationMs is the very value stamped into
-// --expander-ms (pre-multiplied by --motion-scale, so Reduce Motion passes 0 here), and
-// accordionEase is the numeric twin of the panels' CSS cubic-bezier. rAF callbacks fire
-// before a frame's style/paint, so the first callback lands on the same frame the CSS
-// transition first renders — treating its timestamp as t=0 keeps writer and panels in
-// step — and a 0 duration jumps straight to the end state on that first pre-paint
-// callback: the snapped layout and the corrected scroll appear together (the Reduce
-// Motion instant path, which also fixes the old teleport-past-max clamp). Any real user
-// scroll input (touchstart/wheel) cancels the writer instantly — the user always wins —
-// and the returned cancel function serves mid-flight re-toggles, leaving the guide for
-// another mode, the app being backgrounded, and unmount (see scrollWriterRef below).
-function startScrollWriter(from: number, to: number, durationMs: number): () => void {
+// startScrollWriter — the coordinator's per-frame scroll driver, pointed at the element
+// the guide scrolls. Runs the SAME clock and curve as the panel transitions: durationMs
+// is the very value stamped into --expander-ms (pre-multiplied by --motion-scale, so
+// Reduce Motion passes 0 here), and accordionEase is the numeric twin of the panels' CSS
+// cubic-bezier. rAF callbacks fire before a frame's style/paint, so the first callback
+// lands on the same frame the CSS transition first renders — treating its timestamp as
+// t=0 keeps writer and panels in step — and a 0 duration jumps straight to the end state
+// on that first pre-paint callback: the snapped layout and the corrected scroll appear
+// together (the Reduce Motion instant path, which also fixes the old teleport-past-max
+// clamp). Any real user scroll input (touchstart/wheel) cancels the writer instantly —
+// the user always wins — and the returned cancel function serves mid-flight re-toggles,
+// leaving the guide for another mode, the app being backgrounded, and unmount (see
+// scrollWriterRef below).
+// ⚠ THE CANCEL LISTENERS STAY ON `window`, deliberately, now that the scrolled thing is
+// not the window. They are not scroll listeners — they are "the reader touched the page"
+// listeners, and a touch or a wheel anywhere on the screen means the same thing whether or
+// not it landed inside the scroll box. Narrowing them to the element would let a wheel
+// over the fixed bar, or a finger that starts on a panel's margin, run the glide on under
+// a user who has already begun to take over.
+function startScrollWriter(
+  el: HTMLElement,
+  from: number,
+  to: number,
+  durationMs: number,
+): () => void {
   let raf = 0
   let start: number | null = null
   const cancel = () => {
@@ -59,7 +92,7 @@ function startScrollWriter(from: number, to: number, durationMs: number): () => 
   const step = (now: number) => {
     if (start === null) start = now
     const p = durationMs <= 0 ? 1 : Math.min(1, (now - start) / durationMs)
-    window.scrollTo(0, from + (to - from) * accordionEase(p))
+    el.scrollTop = from + (to - from) * accordionEase(p)
     if (p < 1) raf = requestAnimationFrame(step)
     else cancel()
   }
@@ -220,7 +253,17 @@ function DotDiagram() {
 // to Play no longer destroys the open panel or the reading position), and it tells the component
 // it has left the screen — the moment a running scroll glide has to be dropped, since there is no
 // unmount left to do it.
-export default function GuidePage({ visible }: { visible: boolean }) {
+// `scrollerRef` is the element this screen scrolls: App's one #appScroll container, shared with
+// every other screen (round 13). Passed as a REF rather than an element because App fills it on
+// mount, so a value read during render would be null on the first pass — and because the
+// coordinator reads it at tap time, when "current" is the only honest answer.
+export default function GuidePage({
+  visible,
+  scrollerRef,
+}: {
+  visible: boolean
+  scrollerRef: RefObject<HTMLDivElement | null>
+}) {
   const [open, setOpen] = useState<string | null>(null)
   // The shared per-toggle motion clock (ms), stamped onto every section (see GuideSection).
   // null until the first toggle — pre-toggle renders never animate, so the sections simply
@@ -229,9 +272,10 @@ export default function GuidePage({ visible }: { visible: boolean }) {
   // The in-flight scroll writer's cancel function (null = none running). Canceled on any
   // user scroll input by the writer itself, on re-toggle mid-flight by the coordinator
   // below, and by the effect on three occasions: leaving the guide for another mode, the app
-  // being BACKGROUNDED, and unmount. Leaving matters because the writer drives the WINDOW —
-  // a survivor would go on scrolling whatever screen replaced the guide (and this component
-  // stays mounted now, so nothing else would stop it).
+  // being BACKGROUNDED, and unmount. Leaving matters MORE since round 13, not less: the writer
+  // drives the shared #appScroll container, so a survivor would literally be scrolling the
+  // screen that replaced the guide, in that screen's own scroll units, fighting the mode
+  // switch's own reset (and this component stays mounted, so nothing else would stop it).
   // The backgrounded case matters because rAF stops firing while hidden: a writer caught
   // mid-flight would resume on return against a timestamp gap, snapping the page to a target
   // computed for a tap the reader has long since forgotten. Cancelling leaves the panels to
@@ -267,7 +311,7 @@ export default function GuidePage({ visible }: { visible: boolean }) {
   // tapped wrapper's document position. lib/accordionMotion turns those into the shared
   // clock d(max(hClosing, hOpening)) and the scroll target (above-the-reading-line rule for
   // opens, clamp rule for shrinks, null when the current position stays coherent); the
-  // writer then glides the window on that same clock and curve. --motion-scale
+  // writer then glides the scroller on that same clock and curve. --motion-scale
   // pre-multiplies the writer's duration exactly as the panels' CSS calc does, so Reduce
   // Motion (scale 0) jumps instantly to the correct end state (jsdom's empty var read is
   // NaN → treated as 1, animate).
@@ -307,30 +351,42 @@ export default function GuidePage({ visible }: { visible: boolean }) {
       setOpen(opens ? id : null)
       // Scroll coordination needs the scroller's geometry on top of the two panel measurements.
       // TWO preconditions, and they are not the same guard wearing two shapes:
-      //   • a scroller to read at all. Today that is document.scrollingElement, which jsdom does
-      //     not implement.
+      //   • a scroller to read at all — App's container, which is null only before it mounts.
       //   • a scroller with MEASURABLE EXTENT. scrollHeight 0 means the platform has laid nothing
       //     out: there is no scroll range, every number the target would be built from is a zero,
-      //     and gliding is meaningless. A real engine cannot report it — a rendered document (or a
-      //     rendered overflow box) is at least as tall as its own content — so this costs
-      //     production nothing.
-      // ⚠ THE SECOND ONE IS THE TEST SEAM, and it is deliberate. The first guard only holds the
-      // writer out of a layout-less DOM by accident of jsdom's coverage; the moment the scroller
-      // becomes a ref to a real element it can never be absent, and the writer would start driving
-      // a zero-height page in every test that so much as taps a guide header. Stating the
-      // precondition in terms of the geometry instead keeps that out BY RULE, on both sides of
-      // that change: a test that wants the writer stands up the extent the glide travels through,
-      // which is the same geometry the target is computed from anyway.
-      const doc = document.scrollingElement
-      if (!tapped || !doc || doc.scrollHeight <= 0) return
-      const scrollY = window.scrollY
+      //     and gliding is meaningless. A real engine cannot report it — a rendered overflow box is
+      //     at least as tall as its own content — so this costs production nothing.
+      // ⚠ THE SECOND ONE IS THE TEST SEAM, and round 13 is exactly the change it was written for.
+      // It used to read document.scrollingElement, and the first guard held the writer out of a
+      // layout-less DOM only by accident of jsdom not implementing that property. Now that the
+      // scroller is a ref to a real element it can never be absent, and a writer gated on presence
+      // alone would drive a zero-height page in every test that so much as taps a guide header.
+      // Stating the precondition in terms of the GEOMETRY survived the move untouched: a test that
+      // wants the writer stands up the extent the glide travels through, which is the same geometry
+      // the target is computed from anyway.
+      const scroller = scrollerRef.current
+      if (!tapped || !scroller || scroller.scrollHeight <= 0) return
+      const scrollY = scroller.scrollTop
       const tappedRect = tapped.getBoundingClientRect()
-      const rootStyle = getComputedStyle(document.documentElement)
-      const motionScale = parseFloat(rootStyle.getPropertyValue('--motion-scale'))
-      const seatTop = parseFloat(rootStyle.getPropertyValue('--seat-top'))
+      // --motion-scale is an app-wide token and stays a documentElement read. The SEAT is read off
+      // the scroller, because that is where index.css now declares it — and rung 2 of the ladder
+      // below, scroll-padding-top, is a non-inherited property that would answer `auto` anywhere
+      // else. --seat-top itself is registered inherits:true, so it resolves here whether it is
+      // declared on this element or above it.
+      const motionScale = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--motion-scale'),
+      )
+      const scrollerStyle = getComputedStyle(scroller)
+      const seatTop = parseFloat(scrollerStyle.getPropertyValue('--seat-top'))
       const target = accordionScrollTarget({
         scrollY,
-        viewportH: window.innerHeight,
+        // The scroller's own visible height. This is where round 10's caveat about
+        // window.innerHeight vs documentElement.clientHeight DIES rather than moves: the question
+        // was which of two whole-viewport measures the document scroller meant, and there is no
+        // longer a document scroller. clientHeight is the box's content height by definition —
+        // including the padding-top that seats the content below the fixed bar, which is inside the
+        // box and therefore inside scrollHeight too, so the two agree by construction.
+        viewportH: scroller.clientHeight,
         // The guide's READING LINE (index.css): the fixed bar's height plus ONE panel gap, so a
         // tapped panel seated there pushes the bottom edge of the panel above it exactly onto the
         // bar's underside. --seat-top is registered with @property, so on engines that implement
@@ -348,24 +404,33 @@ export default function GuidePage({ visible }: { visible: boolean }) {
         //      expected to resolve its calc() to an absolute length at computed-value time. That
         //      is the behaviour of every engine we can test, but it is an expectation about the
         //      untestable ones, not a proof, which is why it is not the last rung.
-        //   3. --bar-h, a literal px token written by App's syncBarHeight (and defaulted in
-        //      index.css) — fractional since round 10, which parseFloat handles exactly as well as
-        //      a whole number, so this rung CANNOT fail on any engine. It is the seat minus one
-        //      panel gap — a few px shallow, hiding the panel above a hair less completely, and
+        //   3. --bar-h, a literal px token written by App's syncBarHeight onto <html> (and
+        //      defaulted in index.css) — fractional since round 10, which parseFloat handles
+        //      exactly as well as a whole number, and it INHERITS down to this element, so this
+        //      rung cannot fail on any engine that inherits custom properties. It is the seat minus
+        //      one panel gap — a few px shallow, hiding the panel above a hair less completely, and
         //      nothing worse. --guide-panel-gap cannot be added back here: it computes to
         //      calc(.25rem * 2), NaN by the same rule as rung 1.
         // jsdom applies no stylesheets and returns '' for all three, landing on 0 — there the
         // panels still toggle on the shared clock, writer-less.
         seatTop: Number.isFinite(seatTop)
           ? seatTop
-          : parseFloat(rootStyle.scrollPaddingTop) ||
-            parseFloat(rootStyle.getPropertyValue('--bar-h')) ||
+          : parseFloat(scrollerStyle.scrollPaddingTop) ||
+            parseFloat(scrollerStyle.getPropertyValue('--bar-h')) ||
             0,
-        // scrollHeight has no fractional twin to switch to — the spec defines it as a rounded
-        // integer and exposes nothing else, so this one read stays as it is. Its error is bounded
-        // at half a pixel and lands only in finalMaxScroll, which is itself a clamp.
-        docH: doc.scrollHeight,
-        headerDocTop: tappedRect.top + scrollY,
+        // The height of everything the scroller can scroll through. scrollHeight has no fractional
+        // twin to switch to — the spec defines it as a rounded integer and exposes nothing else, so
+        // this one read stays as it is. Its error is bounded at half a pixel and lands only in
+        // finalMaxScroll, which is itself a clamp. (lib/accordionMotion still calls this field
+        // docH; it was named when the document was the scroller and its test pins the name.)
+        docH: scroller.scrollHeight,
+        // The tapped wrapper's top in the SCROLLER's content space: its viewport y, minus the
+        // scroller's own viewport y, plus how far the scroller has already been scrolled. The
+        // middle term was structurally 0 while the document scrolled — the document's box starts at
+        // the viewport origin by definition — which is why this used to read `rect.top + scrollY`.
+        // #appScroll is `absolute inset-0` so it too is at the origin today, but that is a layout
+        // choice rather than a definition, and the general form costs one rect read.
+        headerDocTop: tappedRect.top - scroller.getBoundingClientRect().top + scrollY,
         closingH,
         // A closing panel above the tapped header pulls it up by its own collapse; the
         // tapped section's own panel sits BELOW its header, so a plain close never does.
@@ -375,12 +440,13 @@ export default function GuidePage({ visible }: { visible: boolean }) {
       })
       if (target !== null)
         scrollWriterRef.current = startScrollWriter(
+          scroller,
           scrollY,
           target,
           durationMs * (Number.isFinite(motionScale) ? motionScale : 1),
         )
     },
-    [open, cancelScrollWriter],
+    [open, cancelScrollWriter, scrollerRef],
   )
   return (
     // This root is the whole screen, so it carries all three of the screen's outer properties:
@@ -395,7 +461,13 @@ export default function GuidePage({ visible }: { visible: boolean }) {
     //     line (--seat-top) from the same --guide-panel-gap, so seating a tapped panel one gap
     //     below the fixed bar hides the panel above it exactly. A literal space-y-2 here would be
     //     a second home for that number and the two would drift.
+    // data-guide is a STYLING HOOK, not state: index.css kills scroll anchoring across this
+    // subtree, which is the pair to the coordinator above (an engine that anchors would move the
+    // scroller underneath the writer while the panels grow). It sits on this element because this
+    // element IS the guide's subtree, and it is a separate attribute rather than another class so
+    // the className stays the one literal the panel-gap pin reads.
     <div
+      data-guide
       className="mt-2.5 space-y-(--guide-panel-gap)"
       style={{ display: visible ? 'block' : 'none' }}
     >
@@ -509,8 +581,8 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             same key that opens it — see Keyboard Input), and your device's Back button (described
             below). Starting a scroll by touching the page outside the menu is one of those presses
             outside, so that closes it — but a touch that lands on the menu itself is not, and
-            neither is the page moving on its own: tap the iPhone status bar to jump back to the top
-            and the menu simply stays where it is, under its button in the bar.
+            neither is the page moving on its own: it stays put under its button in the bar while a
+            page coasts to a stop behind it, and you can open it mid-glide.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it
@@ -1334,8 +1406,7 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             median.
           </li>
           <li>
-            <b>Lookup history</b> — your 100 most recent lookups; older ones drop off the bottom on
-            their own.
+            <b>Lookup history</b> — the dates you've looked up.
           </li>
         </UL>
         <p>Saved Average and Median use a rolling window of your most recent 1000 solves.</p>

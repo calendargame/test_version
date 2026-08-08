@@ -429,7 +429,7 @@ const ReactDOM = { createRoot, createPortal }
       // scroll-ownership effect below: on a mode change the bar's height and the guide's scroll
       // range change in the SAME commit, and a ResizeObserver callback lands only after every
       // layout effect has run — so a scroll restore that trusted the observer would clamp against
-      // a document 10px too short. Calling it directly reads the post-commit truth (the rect read
+      // a scroller 10px too short. Calling it directly reads the post-commit truth (the rect read
       // forces layout), which is why it's a callback rather than a closure inside the effect.
       // ⚠ THE THREE EFFECTS BELOW ARE ONE ORDERED CHAIN, and the order is the declaration order:
       // React runs layout effects top-down, so this one measures the bar, the scroll-ownership
@@ -449,7 +449,10 @@ const ReactDOM = { createRoot, createPortal }
       //   1. --seat-top (index.css) — the accordion's reading line, --bar-h + one panel gap.
       //   2. scroll-padding-top on that same rule — the native scrollport seat (Tab to a header).
       //   3. .doc-fade-top's top offset — where the guide's top feather starts.
-      //   4. the app scroller's paddingTop below — the content's start, i.e. the document height.
+      //   4. the app scroller's paddingTop below — where its content starts. Padding on a scroll
+      //      box lives INSIDE the box, so this reader feeds that scroller's own scrollHeight and
+      //      therefore its scroll range. (Until round 13 the guide released the clamps and this
+      //      same padding fed the DOCUMENT's height instead; one scroller now, one meaning.)
       //   5. the settings popover's max-height calc.
       //   6. CustomSelect's open dropdown, which WATCHES this property: its trigger is in the bar,
       //      so a change here means the trigger moved and the fixed panel must re-measure.
@@ -477,111 +480,160 @@ const ReactDOM = { createRoot, createPortal }
         ro.observe(el);
         return()=>ro.disconnect();
       },[syncBarHeight]);
-      // Q3 document scroll — HtP ONLY. iOS's tap-the-status-bar-to-scroll-to-top targets the
-      // ROOT scroller exclusively; an inner overflow-y div can never receive it (no JS event
-      // exists to intercept the tap), so it was a no-op on every page. In guide mode — the one
-      // true reading page — <html data-doc-scroll> releases the app's three scroll clamps
-      // (html/body overflow:hidden + the fixed 100dvh #root box; the release rules live next
-      // to those clamps in index.css) so the DOCUMENT becomes the scroller and the native
-      // affordance works. All other modes keep the locked fit-to-screen architecture, and the
-      // bar stays position:fixed throughout (the iOS status-bar tint sampling depends on it).
-      const docScroll=mode==="guide";
+      // ★ ONE SCROLLER, EVERY SCREEN (round 13) — and this is the REVERSAL of rounds 7-12, so the
+      // whole trade is written out here rather than inferred from what is missing.
+      //
+      // WHAT WAS TRADED AWAY, AND WHY IT WAS. iOS's tap-the-status-bar-to-scroll-to-top targets the
+      // ROOT scroller exclusively: an inner overflow-y div can never receive it, WebKit sets
+      // scrollsToTop = NO on every overflow scroller it creates, and no JS event exists to
+      // intercept the tap — so it cannot be detected, polyfilled or faked. Round 7 bought that one
+      // affordance for How to Play by stamping <html data-doc-scroll> in guide mode and releasing
+      // the app's three scroll clamps, so the DOCUMENT scrolled the guide while every other screen
+      // kept the locked fit-to-screen box.
+      //
+      // WHAT IT COST, which is what reversed it. The mode selector lives in the fixed bar, and on
+      // the owner's iPhone it would not open on the first tap while the page was still coasting
+      // from a flung scroll — two separate designs were shipped at that, both PASSING in Chromium
+      // and both FAILING on the device. He then established the fix himself, unprompted, by
+      // testing the app's OTHER scrollers: "if I do a big scroll in the inner scrollable region
+      // then lift my finger then press the mode selector while the inner part is still scrolling,
+      // the selector opens first try while the inner region finishes scrolling." An inner scroller
+      // coasting under a fixed bar does not fight a tap on that bar; a coasting DOCUMENT does.
+      // So the guide moves onto #appScroll on the same terms as every other screen.
+      //
+      // ⚠ THE PRICE, ACCEPTED KNOWINGLY BY THE OWNER — do not try to soften it, and do NOT build a
+      // replacement. Tap-the-status-bar-to-scroll-to-top is gone on How to Play, permanently and
+      // for the structural reason above. He was offered a substitute affordance and declined it.
+      // Safari's URL bar also stops collapsing on that page, because the document no longer
+      // scrolls; also accepted, also not fixable from here. If either comes up again, the answer is
+      // "yes, that is the deal we made", not a patch.
+      //
+      // What the reversal SIMPLIFIES is most of the rest of this section: one scroller means one
+      // listener, one evaluate(), one scroll-position language, one set of edge arithmetic, and no
+      // <html> attribute to keep in step with a React state. It also makes the app's hard
+      // no-pull-to-refresh guarantee structural rather than conditional — see index.css.
       const appScrollRef=useRef<HTMLDivElement | null>(null);
       // The guide's two fixed soft edges (index.css .doc-fade-*), refs so the edge effect below can
       // write their --shade. Mounted for the whole of guide mode now that their strength is
       // continuous — a strip at --shade 0 paints nothing, so there is no on/off left to render.
       const docFadeTopRef=useRef<HTMLDivElement | null>(null);
       const docFadeBottomRef=useRef<HTMLDivElement | null>(null);
-      // The mask fades on the CLAMPED-mode container, and nothing else — the bar's shadow and the
-      // guide's strips are continuous now and read --shade instead (see the effect below). Guide
-      // mode therefore leaves these untouched and un-rendered-from: scrolling How to Play sets no
-      // React state at all, which is the point on the app's one long reading page. They are
-      // deliberately kept, not vestigial: fade-scroll-* is a state CLASS, so the container's two
-      // masks still need the booleans.
+      // The container's two mask fades, as state CLASSES (fade-scroll-*, index.css) — so unlike the
+      // continuous --shade the boundaries read, these genuinely need booleans. They are pinned OFF
+      // for the whole of guide mode by the one evaluate() below, which is what keeps the guide's
+      // soft edges the progressive doc-fade strips and not a feather that snaps on and off. Two
+      // consequences, both wanted: the strips stay the only progressive fade in the app, and
+      // scrolling How to Play sets no React state at all (React bails on a write of the value
+      // already held), which is the point on the app's one long reading page.
       const [appAtBottom,setAppAtBottom]=useState(true);
       const [appScrolledFromTop,setAppScrolledFromTop]=useState(false);
-      // The guide's reading position, in document scroll units — the app's ONLY per-mode scroll
-      // memory (the game modes always open at their own top; only the guide is a reading page).
-      // A ref because nothing renders from it, and deliberately NOT persisted anywhere: a refresh
-      // or a cold start opens Classic with a fresh ref and a fresh GuidePage, which is the whole
-      // of "a new launch starts at the top with every panel closed".
+      // The guide's reading position, in the scroll container's own scrollTop units — the app's
+      // ONLY per-mode scroll memory (the game modes always open at their own top; only the guide is
+      // a reading page). A ref because nothing renders from it, and deliberately NOT persisted
+      // anywhere: a refresh or a cold start opens Classic with a fresh ref and a fresh GuidePage,
+      // which is the whole of "a new launch starts at the top with every panel closed".
       const guideScrollYRef=useRef(0);
+      // saveReadingPosRef — how switchMode below takes that reading, and the answer to "what
+      // replaces the attribute test?". It holds a closure, installed by the scroll-ownership effect
+      // for exactly as long as the guide is the screen on show, that copies the live scroller's
+      // scrollTop into guideScrollYRef; it is null the rest of the time.
+      // ⚠ IT IS NOT A MODE MIRROR, and that is the whole point. The old gate could ask <html> a
+      // question that WAS the mechanism — "is the document the scroller right now" — so it could
+      // not disagree with reality. With one shared scroller that question is gone, and the honest
+      // replacement is not `mode==='guide'` (switchMode must keep [] deps — the keyboard effect
+      // depends on its identity — so it cannot read state without going stale) nor a boolean ref
+      // shadowing the mode (a second copy of a fact, i.e. a thing that can drift). A closure that
+      // only EXISTS while the guide is up cannot drift: its lifetime is React's own effect cleanup,
+      // it is published by the one effect that already owns the guide's position, and it closes
+      // over the very element it reads, so it stays right even if the scroller's node changes.
+      const saveReadingPosRef=useRef<(()=>void) | null>(null);
       // switchMode — the ONE door every mode change goes through. It exists to take the guide's
       // scroll reading at the only moment the number can be trusted: synchronously inside the
       // event that switches the mode, BEFORE React re-renders and hides the guide. Read it one
-      // commit later — from an effect cleanup, the obvious place — and a real engine has already
-      // collapsed the document to a screenful and clamped its scroll offset to ~0, so the reader
-      // silently loses their place; jsdom lays nothing out, so no test could ever catch that.
-      // Hence a door rather than a guard. The condition is <html data-doc-scroll>, not
-      // mode==='guide': the effect below owns that attribute, so it states exactly what the
-      // reading needs — "the DOCUMENT is the scroller right now, so window.scrollY is this
-      // screen's position". Stable identity ([] deps) because the keyboard effect depends on it.
+      // commit later — from an effect cleanup, the obvious place — and the guide is already
+      // display:none, an element with no layout and therefore a scrollTop of 0, so the reader
+      // silently loses their place; jsdom lays nothing out, so no test could ever catch that by
+      // accident (tests/docScroll.dom forces the point). Hence a door rather than a guard. That
+      // hazard did NOT go away with the document scroller — it sharpened: a re-clamped document
+      // collapsed to a screenful and clamped its offset to ~0, while a hidden div is at a flat 0.
+      // Stable identity ([] deps) because the keyboard effect depends on it.
       const switchMode=useCallback((next: React.SetStateAction<string>)=>{
-        if(document.documentElement.hasAttribute('data-doc-scroll'))guideScrollYRef.current=window.scrollY;
+        saveReadingPosRef.current?.();
         setMode(next);
       },[]);
       // Scroll ownership on a mode change — ONE effect, no second opinion. Every scroll position
-      // the app sets when you switch screens is set here, and the whole policy is two rules:
-      //   • guide → RESTORE the reader's place (switchMode saved it on the way out). The attribute
-      //     releases the clamps so the document can scroll at all, and only then does the offset
-      //     land — it is clamped against the document's height on the way in.
-      //   • every other mode → TOP, by resetting the inner container. Without it, leaving a
-      //     scrolled screen would show the next mode from the middle.
-      // syncBarHeight comes FIRST and applies to BOTH branches, because the bar's guide-only
-      // pb-2.5 makes a mode change a bar-height change in EITHER direction: entering, --bar-h feeds
-      // the container's padding-top, i.e. the document's height, i.e. what the restored offset gets
-      // clamped against; leaving, a --bar-h left 10px too tall pads the game screen it hands over
-      // to, and the edge-indicator effect below would read that inflated scrollHeight and paint a
-      // bottom fade on a mode with nothing to scroll. The bar's own ResizeObserver cannot cover
-      // either case — it fires after every layout effect has run, i.e. a frame late. It can sit
-      // ahead of the attribute because the bar does not care about it: the bar is position:fixed
-      // against the viewport, so releasing #root's clamps changes nothing about its height. What
-      // IS load-bearing is that both land before the window.scrollTo below — the attribute because
-      // the document cannot scroll without it, the measurement because it sets the height the offset
-      // is clamped against.
-      // A LAYOUT effect so all of that happens before the browser paints the new mode, and on
-      // leave the window is zeroed BEFORE the attribute comes off — a residual document scrollTop
-      // would permanently offset the re-clamped fixed layout. That leave-zero is also the only
-      // one needed: the document cannot scroll in a clamped mode, so the game-mode branch has no
-      // window reset to make. Nothing else in the app moves a scroller on a mode change, which is
-      // what makes the restore safe — there is no later effect left to overwrite it.
+      // the app sets when you switch screens is set here, on the one container every screen
+      // scrolls, and the whole policy is two rules:
+      //   • guide → RESTORE the reader's place (switchMode saved it on the way out). The write is
+      //     clamped by the engine against the scroller's height, which is why the bar measure has
+      //     to land first.
+      //   • every other mode → TOP. Without it, leaving a scrolled screen would show the next mode
+      //     from the middle.
+      // syncBarHeight comes FIRST and applies to BOTH branches, because the bar's guide-only pb-2.5
+      // makes a mode change a bar-height change in EITHER direction: entering, --bar-h feeds the
+      // container's padding-top, which is INSIDE the scroll box and so part of its scrollHeight,
+      // i.e. what the restored offset gets clamped against; leaving, a --bar-h left 10px too tall
+      // pads the game screen it hands over to, and the edge-indicator effect below would read that
+      // inflated scrollHeight and paint a bottom fade on a mode with nothing to scroll. The bar's
+      // own ResizeObserver cannot cover either case — it fires after every layout effect has run,
+      // i.e. a frame late.
+      // FOCUS, guide only: the container is tabIndex −1 (see the JSX) and is focused on entry so
+      // Space / PageDown / Home / End scroll the page immediately. A document scroller gave that
+      // away free — the document is the default keyboard scroll target — and an overflow div does
+      // not: without this, a desktop reader's first Space does nothing until they click into the
+      // page. preventScroll because focus() is specified to scroll the target into view, and this
+      // element's "into view" is the top of the very range the line above just restored.
+      // It is the LAST focus write of the switch, deliberately: CustomSelect returns focus to its
+      // trigger when an option is chosen, and it does so inside the click handler, i.e. before this
+      // commit — so arriving at the guide from the mode menu still lands on the scroller. Nothing is
+      // lost by taking it: Tab opens that menu from anywhere (a window-level shortcut), so the
+      // trigger never needed to hold focus to stay reachable.
+      // A LAYOUT effect so all of it happens before the browser paints the new mode. Nothing else
+      // in the app moves this scroller on a mode change, which is what makes the restore safe —
+      // there is no later effect left to overwrite it.
       useLayoutEffect(()=>{
         syncBarHeight();
-        if(docScroll){
-          document.documentElement.setAttribute('data-doc-scroll','');
-          window.scrollTo(0,guideScrollYRef.current);
-          return()=>{window.scrollTo(0,0);document.documentElement.removeAttribute('data-doc-scroll');};
-        }
-        const el=appScrollRef.current;if(el)el.scrollTop=0;
-      },[mode,docScroll,syncBarHeight]);
-      // App-wide scroll-state tracking, sourced from ONE of two scrollers, branched on docScroll:
-      //   • clamped modes: the confined scroll container (appScrollRef) via its own scroll
-      //     listener. Container scrolls when content overflows the viewport-below-bar (any mode
-      //     where content can't fit at the current viewport size).
-      //   • guide mode: the DOCUMENT (data-doc-scroll) via window scroll/resize, reading
-      //     document.scrollingElement against window.innerHeight.
-      // BOTH branches then add observeScrollExtent (components/scrollRegion) on the container,
-      // because a scroll event answers only "where is the scroller" and the edge question also
-      // asks "how much content is there" — see round 11 Q4 below.
+        const el=appScrollRef.current;if(!el)return;
+        if(mode!=="guide"){el.scrollTop=0;return;}
+        el.scrollTop=guideScrollYRef.current;
+        el.focus({preventScroll:true});
+        saveReadingPosRef.current=()=>{guideScrollYRef.current=el.scrollTop;};
+        return()=>{saveReadingPosRef.current=null;};
+      },[mode,syncBarHeight]);
+      // App-wide scroll-state tracking. ONE scroller, one listener, one evaluate() — since round 13
+      // there is no second sourcing path to keep honest. It was two: the clamped container via its
+      // own scroll event, and the guide's DOCUMENT via window scroll/resize reading
+      // document.scrollingElement against window.innerHeight, each answering the same question a
+      // different way (this file used to carry an apology for exactly that). Both are now the
+      // container.
+      // The listener is paired with observeScrollExtent (components/scrollRegion) on the same
+      // element, because a scroll event answers only "where is the scroller" and the edge question
+      // also asks "how much content is there" — see round 11 Q4 below.
       // What it drives, in two languages (round 10 item B):
-      //   • CONTINUOUS, both branches — the bar's boundary shadow, and in guide mode the two
-      //     doc-fade strips, all via the 0…1 --shade written straight onto those elements. That
-      //     is what killed the shadow that lingered after a status-bar tap: strength is a
-      //     function of position, so a stopped scroller is already at its final value.
-      //   • BOOLEAN, clamped branch only — the container's own fade-scroll-* masks, which are
-      //     state classes and so still need appScrolledFromTop / appAtBottom.
+      //   • CONTINUOUS — the bar's boundary shadow, and in guide mode the two doc-fade strips, all
+      //     via the 0…1 --shade written straight onto those elements. Strength is a function of
+      //     position, so a stopped scroller is already at its final value, which is what killed the
+      //     shadow that used to linger after the page had stopped dead.
+      //   • BOOLEAN — the container's own fade-scroll-* masks, which are state classes and so still
+      //     need appScrolledFromTop / appAtBottom.
+      // ★ THE ONE PLACE THE GUIDE IS STILL DIFFERENT, and it is deliberate: in guide mode the two
+      // booleans are pinned to their no-mask values inside evaluate() rather than computed. The
+      // guide's edges are the PROGRESSIVE strips; letting the boolean masks paint the same two
+      // edges as well would put a feather that snaps on at 4px of overflow on top of one that
+      // ramps — reverting round 10 on the single page it was built for, while every shipped test
+      // name kept passing. Pinning them here rather than branching the className is what makes that
+      // one fact do both jobs: the masks stay off, AND entering the guide RESETS whatever the game
+      // screen left in those booleans (React then bails on every identical write, so a scrolling
+      // guide re-renders nothing).
       // The arithmetic is NOT written out here: scrollEdgeGaps and its two predicates
       // (components/scrollRegion) are the one owner of "how far is this scroller from its edges",
       // shared with useScrollEdgeState, so the shadow and the mask can never answer differently.
-      // What stays bespoke is only the SOURCING — the document scroller has no element to observe,
-      // so this branch reads document.scrollingElement and listens on window; the inner regions
-      // (popover, changelog, lookup) go through the shared hook.
-      // A missing scrollingElement is treated as an unscrollable document rather than skipped, so
-      // even then every boundary gets written to a defined resting 0 instead of being left at the
-      // @property initial value.
+      // What stays bespoke is only that this screen has THREE shade surfaces (bar + two strips) and
+      // a mode-dependent boolean, which the shared hook's two-surface shape does not cover; the
+      // inner regions (popover, changelog, lookup, the defaults card) go through it.
       // Defaults: appAtBottom true / appScrolledFromTop false (no indicators on first
       // paint before scroll state is evaluated). The listener runs on every mode change
-      // so it picks up the right scroller and re-evaluates against new content.
+      // so it re-evaluates against new content and picks up the strips as they mount.
       // A LAYOUT effect, and the LAST of the three declared above, so React runs it third: the
       // first evaluate() of a mode therefore measures a bar already re-synced and a position
       // already applied, and the indicators are right on the FIRST painted frame. As a passive
@@ -600,71 +652,66 @@ const ReactDOM = { createRoot, createPortal }
         };
         // Same rule as scrollRegion's no-scroller path: a boundary surface with no scroller to
         // track must REST at 0, never at @property's initial 1. Unreachable today (the container
-        // renders unconditionally) and hoisted ABOVE the branch so both modes obey it — leaving
-        // the hole on either side would make the pattern "safe here, unsafe there", and its twin
-        // in Lookup was a live full-strength-shadow bug.
+        // renders unconditionally) and kept anyway, because the twin of this hole in Lookup was a
+        // live full-strength-shadow bug on every cold start of a fresh install — a shape that is
+        // only ever noticed once, and cheaper to make impossible than to re-notice.
         const el=appScrollRef.current;if(!el){paint(0,0,0);return;}
-        // ROUND 11 Q4 — the container is handed to observeScrollExtent in BOTH modes, because in
-        // both it is the thing the CONTENT hangs off:
-        //   • clamped: it is the scroll box, and `absolute inset-0` pins that box to the viewport
-        //     BY CONSTRUCTION — so the ResizeObserver that used to watch it was watching the one
-        //     number no content change can move, and every mask froze the moment content changed
-        //     without a scroll (open Show Codes while resting at the top and the bottom fade kept
-        //     the answer from before it opened). The helper reaches the one child, the mode-content
-        //     wrapper, whose height IS this scroller's scrollHeight.
-        //   • guide: it is a plain flow block, so its own height is what the document scrolls, and
-        //     there was no observer here at all — window scroll + resize only. An accordion toggle
-        //     changes the document's height and produces neither event (a tap that seats an already
-        //     seated panel scrolls nowhere, and the panel keeps growing for the rest of its
-        //     animation after the glide's last scroll event), which is the doc-fade freeze.
-        // It also makes the two branches answer the same question the same way, which the one
-        // watching a pinned box and the one watching nothing did not.
-        // The observer now fires once per animation FRAME while content is transitioning — that is
-        // the point (the indicators track a panel opening instead of snapping after it) and it
-        // costs nothing on the frames that move no boundary: writeShade skips an unchanged number
-        // and React bails on a setState to the value already held, so those frames re-render
-        // nothing. tests/scrollExtent.dom pins the whole contract, fixtures included.
-        if(docScroll){
-          const evaluate=()=>{const se=document.scrollingElement;paint(se?se.scrollTop:0,se?se.scrollHeight:0,window.innerHeight);};
-          evaluate();
-          window.addEventListener('scroll',evaluate,{passive:true});
-          window.addEventListener('resize',evaluate);
-          const stopExtent=observeScrollExtent(el,evaluate);
-          return()=>{window.removeEventListener('scroll',evaluate);window.removeEventListener('resize',evaluate);stopExtent();};
-        }
+        // ROUND 11 Q4 — the container is handed to observeScrollExtent rather than watched with a
+        // plain ResizeObserver, because it is the thing the CONTENT hangs off. `absolute inset-0`
+        // pins its own box to the viewport BY CONSTRUCTION, so an observer on the box alone was
+        // watching the one number no content change can move, and every mask froze the moment
+        // content changed without a scroll (open Show Codes while resting at the top and the bottom
+        // fade kept the answer from before it opened). The helper reaches the one child, the
+        // mode-content wrapper, whose height IS this scroller's scrollHeight.
+        // ⚠ It is what covers the guide's accordion, which is the same freeze wearing the other
+        // face: a toggle changes the content height and produces NO scroll event at all (a tap that
+        // seats an already-seated panel scrolls nowhere, and the panel keeps growing for the rest
+        // of its animation after the glide's last scroll event).
+        // The observer fires once per animation FRAME while content is transitioning — that is the
+        // point (the indicators track a panel opening instead of snapping after it) and it costs
+        // nothing on the frames that move no boundary: writeShade skips an unchanged number and
+        // React bails on a setState to the value already held, so those frames re-render nothing.
+        // tests/scrollExtent.dom pins the whole contract, fixtures included.
+        const guide=mode==="guide";
         const evaluate=()=>{
           const gaps=paint(el.scrollTop,el.scrollHeight,el.clientHeight);
-          setAppAtBottom(isAtBottom(gaps));
-          setAppScrolledFromTop(isScrolledFromTop(gaps));
+          // Pinned, not computed, in guide mode — see the ★ note above.
+          setAppAtBottom(guide||isAtBottom(gaps));
+          setAppScrolledFromTop(!guide&&isScrolledFromTop(gaps));
         };
         evaluate();
         el.addEventListener('scroll',evaluate,{passive:true});
         const stopExtent=observeScrollExtent(el,evaluate);
         return()=>{el.removeEventListener('scroll',evaluate);stopExtent();};
-      },[mode,docScroll]);
+      },[mode]);
       // Root-scroll invariant on MOUNT and on BFCache restore — nothing else. The division of
       // labour, stated explicitly because this effect used to overreach (Q6, round 8):
       //   • the scroll-ownership layout effect above owns the position on a mode switch (restore
       //     for the guide, top for everything else), and fullReset owns it on a reset (it zeroes
-      //     both scrollers inline, and clears the guide's saved position with them).
-      //   • THIS effect owns only the clamped-layout root invariant: the app mounts in Classic
-      //     (the current tab is never persisted, so a cold start or refresh ALWAYS lands there)
-      //     where html/body/#root are clamped and a non-zero root scrollTop would permanently
-      //     offset the fixed layout. A FRESH LOAD can hand back exactly that — history scroll
-      //     restoration on a reload replays the offset the document had last session, which may
-      //     have been guide mode's legitimately-scrolled document, into a layout that is now
-      //     clamped — so mount + a non-persisted pageshow re-assert it, with rAF + setTimeout
-      //     because iOS Safari applies that restoration AFTER the event fires. Resets
-      //     window/documentElement/body (defense-in-depth — body has overflow:hidden so it can't
-      //     scroll, but a restore might try anyway) AND the inner container, the surface the user
-      //     actually scrolls in the clamped modes.
+      //     the scroller inline, and clears the guide's saved position with it).
+      //   • THIS effect owns the load-time invariant, and since round 13 that is TWO writes, not
+      //     one write plus belt-and-braces. The app mounts in Classic (the current tab is never
+      //     persisted, so a cold start or refresh ALWAYS lands there) and html/body/#root are
+      //     clamped in every mode now, so a non-zero ROOT scrollTop would permanently offset the
+      //     fixed layout — the original concern, unchanged.
+      //     ⚠ `appScrollRef.current.scrollTop=0` IS NOW LOAD-BEARING — do not trim it as the
+      //     defence-in-depth it used to be. History scroll restoration on a reload replays the
+      //     offsets the last session left, and the surface a reader could actually have scrolled is
+      //     no longer the document (which can no longer move at all): it is this container. A
+      //     reload from a scrolled How to Play hands its offset straight back, into a fresh
+      //     instance that is showing CLASSIC from the top — i.e. a game screen scrolled to a
+      //     position that belongs to a page it is not showing. Zeroing it here is the whole of
+      //     "a fresh load starts at the top".
+      //     rAF + setTimeout because iOS Safari applies that restoration AFTER the event fires.
+      //     window/documentElement/body are still reset alongside (body has overflow:hidden so it
+      //     cannot scroll, but a restore might try anyway).
       //   • A BFCACHE RESTORE (event.persisted) IS SKIPPED ENTIRELY (Q3, round 11) — the opposite
       //     case, and the reason the gate exists. `pageshow` fires for both a genuine load and a
       //     back-forward-cache restore, and a restore is not a navigation: the JS heap is kept
       //     alive, so the app comes back in the SAME mode with the SAME DOM it left. Whatever
       //     scroll offset the browser hands back is therefore the one that belongs to this layout
-      //     — in guide mode the reader's place, in a clamped mode a zero the document could not
-      //     have moved off — and zeroing it is pure loss. That is exactly the mistake round 8
+      //     — the reader's place in the guide, the player's place on a long game screen — and
+      //     zeroing it is pure loss. That is exactly the mistake round 8
       //     removed from visibilitychange (come back, lose your place in How to Play), surviving
       //     in a second event; round 9 then built the guide's position preservation on top of it.
       //     The invariant above is untouched by the gate: a restore cannot smuggle in a stale
@@ -1461,11 +1508,11 @@ const ReactDOM = { createRoot, createPortal }
         setBlitzResetKey(k=>k+1);
         setDeductionResetKey(k=>k+1);
         setGuideResetKey(k=>k+1);
-        // Scroll window + app container to top (synchronous, avoids a visual flash before the
-        // scroll-ownership effect would do it; the window jump is defense-in-depth, body can't
-        // scroll). The guide's saved reading position goes with them — switchMode above captured
-        // it on the way out, and a Full Reset means there is nothing to come back to.
-        if(typeof window!=="undefined")window.scrollTo(0,0);
+        // App container to the top, synchronously — the scroll-ownership effect would do it one
+        // commit later, and this avoids the flash in between. The guide's saved reading position
+        // goes with it: switchMode above already captured the live position on the way out of the
+        // guide, and a Full Reset means there is nothing to come back to, so it is cleared AFTER
+        // that capture rather than instead of it.
         if(appScrollRef.current)appScrollRef.current.scrollTop=0;
         guideScrollYRef.current=0;
       };
@@ -1994,10 +2041,9 @@ const ReactDOM = { createRoot, createPortal }
         {/* Bar (position:fixed): the bar is a CHROME-STYLE fixed element above
             everything — explicitly positioned at the viewport top so iOS PWA recognizes
             it as chrome UI and live-samples its bg-(--bg1) (theme-aware) for the
-            status bar color. Sibling appScrollRef container sits below with
-            padding-top:var(--bar-h) so its content starts below the bar
-            (position:absolute in the clamped modes; a plain flow block in guide mode,
-            where the document scrolls — see docScroll).
+            status bar color. Sibling appScrollRef container (#appScroll) sits below it,
+            position:absolute inset-0 with padding-top:var(--bar-h) so its content starts
+            below the bar — in EVERY mode since round 13, the guide included.
             syncBarHeight elsewhere in App writes the bar's fractional rect height to --bar-h.
             Full width (no max-w) so theme bg + elevation shadow span edge-to-edge on
             screens wider than 480px; inner max-w-[30rem] wrapper holds the title row.
@@ -2072,28 +2118,37 @@ const ReactDOM = { createRoot, createPortal }
             {changelogJsx}
           </div>
         </div>
-        {/* Scroll container. Clamped modes (everything but HtP): position:absolute inset:0
-            with padding-top:var(--bar-h) so content starts immediately below the bar;
-            overscroll-contain keeps rubber-band bounce LOCAL to this container (bar is
-            unaffected); the fade-scroll-* masks mark overflowing edges. This is the one
-            scroller on SCROLLER_CORE_CLASS rather than SCROLL_REGION_CLASS
-            (components/scrollRegion): it fills the viewport, so its scrollbar already paints
-            at the screen edge past the content wrapper's px-4 — no inner lane needed. Guide
-            mode (docScroll): the DOCUMENT scrolls instead — same div, same ref, same
-            padding-top, but a plain classless flow block (no clamp/overflow/mask classes; the
-            doc-fade strips below replace the masks), and the inner wrapper trades pb-3 for the
-            same 0.75rem plus the safe-area inset — in document flow the 100dvh #root clamp no
-            longer keeps the last panel above the iPhone home indicator. */}
-        <div ref={appScrollRef} style={{paddingTop:'var(--bar-h)'}} className={docScroll?undefined:`absolute inset-0 ${SCROLLER_CORE_CLASS} ${scrollFadeClass(appScrolledFromTop,appAtBottom)}`}>
-        {/* Mode-content wrapper. min-h-full + flex column: the clamped scroller above has a
-            definite height, so "at least a screenful" gives a mode that wants to FIT the screen
-            (Lookup) a definite box to fill, while a mode taller than the screen still grows
-            normally and keeps its pb-3 under the content. Every child is a plain non-growing flex
-            item pinned to the top, so the six always-mounted screens look exactly as before (the
-            hidden ones are display:none and drop out of flex layout entirely). In guide mode the
-            scroller is a classless auto-height block, so min-height:100% resolves against an
-            indefinite height and is INERT there — the document scrolls as it always did. */}
-        <div className={`mx-auto px-4 w-full max-w-[30rem] min-h-full flex flex-col ${docScroll?" pb-[calc(0.75rem_+_env(safe-area-inset-bottom))]":" pb-3"}`}>
+        {/* THE app scroll container, and since round 13 there is no "except in guide mode" left in
+            this comment: position:absolute inset:0 with padding-top:var(--bar-h) so content starts
+            immediately below the bar; overscroll-contain keeps rubber-band bounce LOCAL to this
+            container (the fixed bar above is unaffected); the fade-scroll-* masks mark overflowing
+            edges. This is the one scroller on SCROLLER_CORE_CLASS rather than SCROLL_REGION_CLASS
+            (components/scrollRegion): it fills the viewport, so its scrollbar already paints at the
+            screen edge past the content wrapper's px-4 — no inner lane needed.
+            id="appScroll" is a real styling hook, not decoration: index.css hangs the scrollport's
+            seat (--seat-top + scroll-padding-top) and the focus-outline suppression off it, and
+            neither can be expressed as a Tailwind utility.
+            tabIndex −1 makes it PROGRAMMATICALLY focusable and nothing more — it is not in the tab
+            order, so the app-wide Tab binding and the modals' tab traps (which enumerate
+            button,input) are untouched. App focuses it on entry to the guide so the desktop
+            keyboard scroll keys work immediately; see that effect for why. */}
+        <div ref={appScrollRef} id="appScroll" tabIndex={-1} style={{paddingTop:'var(--bar-h)'}} className={`absolute inset-0 ${SCROLLER_CORE_CLASS} ${scrollFadeClass(appScrolledFromTop,appAtBottom)}`}>
+        {/* Mode-content wrapper. min-h-full + flex column: the scroller above has a definite
+            height, so "at least a screenful" gives a mode that wants to FIT the screen (Lookup) a
+            definite box to fill, while a mode taller than the screen still grows normally and keeps
+            its pb-3 under the content. Every child is a plain non-growing flex item pinned to the
+            top, so the six always-mounted screens look exactly as before (the hidden ones are
+            display:none and drop out of flex layout entirely).
+            min-h-full is ACTIVE in guide mode now (round 13) where it used to be inert — the
+            scroller was a classless auto-height block then, so min-height:100% resolved against an
+            indefinite height and did nothing. It is benign and in fact correct: the guide is always
+            far taller than a screenful, so the floor never binds, and on the one occasion it could
+            (a section-less guide, i.e. never) it would do what it does for Lookup.
+            pb-3 is likewise the same 0.75rem every other screen gets. It used to carry
+            env(safe-area-inset-bottom) on top, and ONLY because document flow removed the 100dvh
+            #root clamp that keeps the last panel above the iPhone home indicator; back inside the
+            clamped box that term is dead, and adding it would pad the guide past every sibling. */}
+        <div className="mx-auto px-4 w-full max-w-[30rem] min-h-full flex flex-col pb-3">
           {/* key={aoxResetKey} forces remount on Full Reset since AoxMode is always-mounted
               (display:none toggle on visible prop, not conditional rendering) and its internal
               state would otherwise persist across resets. See aoxResetKey declaration upstream
@@ -2136,24 +2191,32 @@ const ReactDOM = { createRoot, createPortal }
               lengthening them past the viewport (a phantom bottom fade and a scrollbar on modes
               that used to fit exactly). display:none generates no box at all, so the other five
               modes are untouched. `visible` also tells GuidePage to drop any in-flight scroll
-              glide — with no unmount to do it, that is now the component's own job. */}
-          <ModeErrorBoundary key={"guide-"+guideResetKey} mode="How to Play" active={mode==="guide"}><GuidePage visible={mode==="guide"}/></ModeErrorBoundary>
+              glide — with no unmount to do it, that is now the component's own job.
+              scrollerRef HANDS IT THE SCROLLER (round 13), and that is a real property given up:
+              the coordinator used to need no ref plumbing at all, because the thing it scrolled was
+              the window and every screen in every browser has one. An overflow div has to be named,
+              so App — which owns the container — passes it down. The ref itself, not its current
+              value: App's own layout effects and GuidePage's toggle read it at different moments,
+              and a value read at render time would be null on the first pass. */}
+          <ModeErrorBoundary key={"guide-"+guideResetKey} mode="How to Play" active={mode==="guide"}><GuidePage visible={mode==="guide"} scrollerRef={appScrollRef}/></ModeErrorBoundary>
         </div>
         </div>
-        {/* Doc-scroll edge fades (guide mode only): the fade-scroll-* masks live ON the scroll
-            container and fade its CONTENT box — meaningless once the document scrolls (the
-            mask's bottom edge would sit at the end of the whole document, off-screen). These
-            fixed, untouchable strips paint the same --fade-h feather over the VIEWPORT edges
-            instead (see index.css). position:fixed is correct here — this is the real app
-            viewport, not a transformed portal; the top strip tucks under the fixed bar at
-            --bar-h, the bottom strip hugs the viewport floor.
-            Mounted for the WHOLE of guide mode, not per edge state: each strip's opacity is the
-            --shade the edge effect writes onto it, so a strip whose edge is unreached is already
-            invisible and mounting it conditionally would only re-add the on/off this round took
-            out (round 10 item B). Guide mode is also the one place these are progressive; every
-            other panel's mask fade is still a state class — see the index.css note. */}
-        {docScroll?<div ref={docFadeTopRef} aria-hidden="true" className="doc-fade-top"/>:null}
-        {docScroll?<div ref={docFadeBottomRef} aria-hidden="true" className="doc-fade-bottom"/>:null}
+        {/* The guide's two soft edges — ⚠ KEPT ACROSS ROUND 13, and the reason changed. They exist
+            because How to Play's edges are PROGRESSIVE: each strip's opacity is the same continuous
+            --shade the edge effect writes onto the bar, so the whole screen's boundaries ramp on
+            one number. The container's own fade-scroll-* masks are boolean state classes and are
+            pinned off in guide mode (see the edge effect) precisely so these two are not doubled by
+            a feather that snaps. Folding them into the shared masks would compile and would leave
+            every shipped test name green — and would silently revert round 10 on the one page it
+            was built for. index.css carries the same warning at the rules.
+            position:fixed survives the move untouched: it paints over the VIEWPORT, and the
+            scroller's box is `absolute inset-0` — the viewport — so the strips sit exactly over its
+            edges while living outside it. The top strip tucks under the fixed bar at --bar-h, the
+            bottom hugs the viewport floor, and both are pointer-events:none.
+            Mounted for the WHOLE of guide mode, not per edge state: a strip at --shade 0 paints
+            nothing, so a conditional mount would only re-add the on/off round 10 removed. */}
+        {mode==="guide"?<div ref={docFadeTopRef} aria-hidden="true" className="doc-fade-top"/>:null}
+        {mode==="guide"?<div ref={docFadeBottomRef} aria-hidden="true" className="doc-fade-bottom"/>:null}
         </>
       );
     }
