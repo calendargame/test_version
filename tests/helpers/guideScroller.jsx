@@ -19,6 +19,12 @@
 // It is gone; what remains is the same abstraction with one backing. The BEHAVIOUR net still names
 // no mechanism, and this file is still the only place that may.
 //
+// WHAT ELSE THE MOVE PUT HERE: renderGuidePage, at the foot of the file. The guide stopped being a
+// component you can render on its own the moment it started taking the scroller as a prop, so the
+// two files that render it without App (tests/expander.dom, tests/dotDiagram.dom) come through
+// here for the mount. Same charter, one sentence wider: how How to Play scrolls, and what it takes
+// to stand one up.
+//
 // ⚠ THE MODEL IS STATEFUL, AND DELIBERATELY SO. jsdom lays nothing out, so a real scroller has to
 // be stood up by hand — and the suite's habit of stubbing one number per test is what let three
 // scroll bugs ship (the round-10 resting-state shadow, both round-11 freezes). This models the
@@ -36,7 +42,9 @@
 // the top, and the net would catch it. (It was true of the document scroller too — a re-clamped
 // document collapsed to a screenful and clamped its offset the same way — so this survived the
 // move as an argument, not just as code.)
-import { act } from '@testing-library/react'
+import { useRef } from 'react'
+import { act, render } from '@testing-library/react'
+import GuidePage from '../../src/components/GuidePage.jsx'
 import { SCROLLER_CORE_CLASS } from '../../src/components/scrollRegion.js'
 
 // The guide's own root — the element that carries the display toggle (App keeps every screen
@@ -65,13 +73,23 @@ const scrollerAncestor = (container) => {
 const VIEWPORT_H = 768
 
 // ── The backing ──────────────────────────────────────────────────────────────────────────────
-function elementBacking(el, visible, writes, startY) {
+// `afterWrite` is a one-slot box the handle owns (see onWrite): a callback run immediately after
+// the app moves the scroller, re-entrancy-guarded so a callback that itself writes cannot loop.
+function elementBacking(el, visible, writes, startY, afterWrite) {
   let y = startY
   let content = 0
+  let inWrite = false
   const reported = () => (visible() ? y : 0)
   const write = (next) => {
     y = next
     writes.push(next)
+    if (inWrite || !afterWrite.fn) return
+    inWrite = true
+    try {
+      afterWrite.fn()
+    } finally {
+      inWrite = false
+    }
   }
   // scrollTop is a prototype accessor in jsdom, so an own accessor shadows it and `delete` puts the
   // element back exactly as it was. Both write paths are covered — a plain assignment and the
@@ -107,6 +125,7 @@ function elementBacking(el, visible, writes, startY) {
 export function installGuideScroller(container) {
   let target = container
   const writes = []
+  const afterWrite = { fn: null }
   const visible = () => {
     const root = guideRoot(target)
     return !root || root.style.display !== 'none'
@@ -116,7 +135,7 @@ export function installGuideScroller(container) {
     const el = scrollerAncestor(target)
     if (!el)
       throw new Error('installGuideScroller: the guide’s scroll box is no longer in the tree')
-    backing = elementBacking(el, visible, writes, carriedY)
+    backing = elementBacking(el, visible, writes, carriedY, afterWrite)
   }
   if (!visible())
     throw new Error('installGuideScroller: enter guide mode before installing the scroller model')
@@ -143,13 +162,27 @@ export function installGuideScroller(container) {
     // WHICH call moved it is mechanism and the resulting position is already covered by pos().
     writes,
     clearWrites: () => writes.splice(0, writes.length),
+    // Run `cb` the instant the app moves the scroller — how a test delivers something (a frame, a
+    // gesture) at the one moment the app itself is writing, which is the only moment an ORDERING
+    // bug between two writers of this one element can be seen. A test cannot manufacture that
+    // moment for itself: React commits a whole phase before it hands control back, so everything a
+    // test does is either wholly before or wholly after. Re-entrancy-guarded in the backing, so a
+    // callback that writes does not re-enter itself.
+    onWrite: (cb) => {
+      afterWrite.fn = cb
+    },
     // The reading line the accordion seats a tapped panel on (--bar-h + --guide-panel-gap). Set on
-    // the root AND on the scroll box, so it resolves whichever element the coordinator reads its
-    // computed style from — jsdom does not inherit custom properties down the tree. (Since the
-    // move it reads the box, because scroll-padding-top — the ladder's second rung — is a
-    // non-inherited property and is declared there.)
+    // THE SCROLL BOX AND NOWHERE ELSE, which is the whole value of this line.
+    // ⚠ It used to be set on <html> as well, "because jsdom does not inherit custom properties down
+    // the tree". jsdom does — verified against the 29.1.1 this repo runs: a property set on
+    // documentElement reads back off a descendant through getComputedStyle. So the second write was
+    // not belt-and-braces, it was a BLINDFOLD: with the seat resolvable from <html>, no test could
+    // tell whether the coordinator reads it off the scroller (where index.css declares it) or off
+    // the document. Off the document it would find the registered initial-value of 0px, which is
+    // finite, so the read succeeds, the fallback ladder never engages, and every tapped panel seats
+    // at the scrollport's top edge — UNDER the fixed bar — with the whole suite still green.
+    // One writer, on the element the app names, so the seating tests discriminate.
     setSeat: (px) => {
-      document.documentElement.style.setProperty('--seat-top', `${px}px`)
       scrollerAncestor(target)?.style.setProperty('--seat-top', `${px}px`)
     },
     // The two surfaces this screen writes its 0…1 --shade onto, as RAW strings: '' means never
@@ -182,4 +215,46 @@ export function installGuideScroller(container) {
     },
     restore: () => backing.restore(),
   }
+}
+
+// ── Mounting the guide on its own ─────────────────────────────────────────────────────────────
+// THE ONE WAY A TEST MAY RENDER GuidePage WITHOUT App, and the reason this file owns it: since
+// round 13 the guide does not know how to scroll itself. App hands it `scrollerRef`, the ref to the
+// one #appScroll box, and the coordinator dereferences that ref on every header tap. A bare
+// `render(<GuidePage visible />)` therefore hands the coordinator `undefined` and every tap throws
+// — which the suite could not see, because the throw lands AFTER the state flip, so the assertions
+// still passed while the run exited non-zero and the whole second half of the coordinator went
+// unexercised. Making the prop optional would have hidden the same class of mistake in production
+// (App forgetting the ref would silently cost the guide its glides), so the prop stays required and
+// the mount comes here instead, where "how How to Play scrolls" already lives.
+//
+// The harness is App's own shape, minus everything the guide does not read: the scroller carrying
+// the shared overflow token (so scrollerAncestor resolves it exactly as it does in the app tree),
+// the max-width content wrapper the model treats as the growing content, and the guide inside.
+// The scroller is stood up with real EXTENT because that is the coordinator's second precondition
+// — a scroller reporting scrollHeight 0 is one it refuses to glide — so a tap in a caller of this
+// runs the whole callback rather than stopping at the guard.
+// `visible` is fixed at true: the model resolves and reports against a screen that is on show, so a
+// hidden standalone guide is not a state this harness can describe. Whether the guide survives
+// being hidden is a MODE question, and mode belongs to App — tests/guideScroll.dom asks it there.
+function GuideHarness() {
+  const scrollerRef = useRef(null)
+  return (
+    <div ref={scrollerRef} id="appScroll" className={`absolute inset-0 ${SCROLLER_CORE_CLASS}`}>
+      <div className="mx-auto px-4 w-full max-w-[30rem] min-h-full flex flex-col pb-3">
+        <GuidePage visible scrollerRef={scrollerRef} />
+      </div>
+    </div>
+  )
+}
+
+// Returns Testing Library's render result plus the scroller model, standing on a reading page
+// several screenfuls long — the state every caller wants and none has yet wanted to vary, so it is
+// a fact rather than a parameter (guide.setContent is there for the day one does). Call
+// `guide.restore()` in an afterEach, as with installGuideScroller.
+export function renderGuidePage() {
+  const view = render(<GuideHarness />)
+  const guide = installGuideScroller(view.container)
+  guide.setContent(3000)
+  return { ...view, guide }
 }

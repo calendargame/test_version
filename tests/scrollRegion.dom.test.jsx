@@ -22,7 +22,7 @@
 // hid in — resting, empty, exactly fitting, growing with no scroll event — are named fixtures now
 // (tests/helpers/scrollGeometry) swept across every region in tests/scrollExtent.dom, instead of
 // being pinned one point test at a time here after each one ships.
-// Round 12 added the fourth region and the last describe here: the shared defaults card. It is the
+// Round 13 added the fourth region and the last describe here: the shared defaults card. It is the
 // one region whose reason for existing is a SHORT VIEWPORT rather than long content — the card
 // cannot shrink past the fluid root font's floor, so below ~615px of viewport it is a fixed 269.5px
 // hanging out of both ends of a scrim that cannot scroll. Nothing pinned that before.
@@ -252,7 +252,7 @@ describe('Lookup date input on the interactive-border rule (round-7 Q7)', () => 
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// The shared defaults card on the same recipe (round 12) — the region a SHORT VIEWPORT creates.
+// The shared defaults card on the same recipe (round 13) — the region a SHORT VIEWPORT creates.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 const CARD_PREFS = { aoxN: '12', flashMs: 2000, blitzSec: 60, blitzQSec: 10 }
 const noop = () => {}
@@ -282,7 +282,7 @@ const scrollerOf = (container) =>
 // card fits in 212px: the header and footer take what they take and the four rows are what gives.
 const SHORT_VIEWPORT = { scrollTop: 0, scrollHeight: 172, clientHeight: 88 }
 
-describe('the shared defaults card caps itself against a short viewport (round 12)', () => {
+describe('the shared defaults card caps itself against a short viewport (round 13)', () => {
   afterEach(() => {
     cleanup()
     document.documentElement.style.removeProperty('--fade-h')
@@ -303,7 +303,11 @@ describe('the shared defaults card caps itself against a short viewport (round 1
     expect(scrollerOf(container).className).toContain('min-h-0')
   })
 
-  it('the four rows are the part that gives — the shared region, lane and fades included', () => {
+  it('the four rows are the part that gives — and they are what the shared region holds', () => {
+    // Two claims, and the finder carries the first: scrollerOf resolves by SCROLL_REGION_CLASS, so
+    // finding one at all IS "a scroller built from the shared recipe, px-4 lane included". The
+    // fades are a live state rather than a fixed class, so they are the test below's, not this
+    // one's. What is left here is WHICH content the region holds.
     const { container } = render(defaultsCard())
     const scroller = scrollerOf(container)
     expect(scroller).toBeTruthy()
@@ -342,17 +346,10 @@ describe('the shared defaults card caps itself against a short viewport (round 1
     expect(container.querySelector('[role="dialog"]').style.boxShadow).toContain('0 0 8px')
   })
 
-  it('a card that FITS is the card that shipped before the cap: no mask, both boundaries at 0', () => {
-    // The cap must be invisible on every ordinary screen. WRITTEN to 0, not merely absent: an
-    // unset --shade inherits @property's initial-value of 1, which is a full-strength shadow.
-    document.documentElement.style.setProperty('--fade-h', '24px')
-    const { container } = render(defaultsCard())
-    const scroller = scrollerOf(container)
-    expect(scroller.className).not.toContain('fade-scroll')
-    for (const el of [scroller.previousElementSibling, scroller.nextElementSibling])
-      expect(el.style.getPropertyValue('--shade')).toBe('0.000')
-  })
-
+  // "The cap is invisible on every ordinary screen" — no mask, both boundaries written to a
+  // resting 0 — is NOT asserted here. It is the shared hook's resting contract, proved once
+  // against the hook in tests/scrollExtent.dom for all four of its callers; what this file owes is
+  // the proof that this card is wired to that hook, which the live-edge test below is.
   it('at the viewport that produced the bug, the rows scroll and each boundary takes its turn', () => {
     document.documentElement.style.setProperty('--fade-h', '24px')
     const { container } = render(defaultsCard())

@@ -14,15 +14,19 @@
 // scrolls #appScroll, the same container every other screen scrolls. The argument in full lives at
 // `switchMode` in src/main.tsx.
 //
-// ★ THE FILENAME IS DELIBERATELY UNCHANGED even though "doc scroll" is exactly what went away:
-// tests/expander.dom points at this file by name for two of its own pins, and that file is frozen.
-// Read the name as a fossil and the describes below as the truth.
+// ★ THE FILENAME IS DELIBERATELY UNCHANGED even though "doc scroll" is exactly what went away.
+// The reason is not that anything is frozen — tests/expander.dom, which points here by name for
+// two of its own pins, was reopened the moment the move gave GuidePage a required prop its
+// standalone renders did not pass. It is that a rename buys nothing a reader does not get from the
+// first paragraph, and costs every cross-reference in the suite. Read the name as a fossil and the
+// describes below as the truth.
 //
 // ★ THE BEHAVIOUR the mechanism exists to deliver is pinned in tests/guideScroll.dom, through an
 // abstraction that resolves whichever scroller is live — the reading position surviving a mode
-// switch and a resume, the accordion seating a tapped panel, the progressive edges. That file
-// passed the move UNCHANGED, all 34 of it, which is the move's proof. Nothing from it is repeated
-// here; nothing here is a substitute for it.
+// switch and a resume, the accordion seating a tapped panel, the progressive edges. Every case it
+// held passed the move UNCHANGED, which is the move's proof; the one case added afterwards is the
+// hazard the move itself created (a glide and a mode switch now write the same element). Nothing
+// from that file is repeated here; nothing here is a substitute for it.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -31,7 +35,7 @@ import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { SCROLLER_CORE_CLASS } from '../src/components/scrollRegion.js'
-import { installGuideScroller } from './helpers/guideScroller.js'
+import { installGuideScroller } from './helpers/guideScroller.jsx'
 import { setScrollGeometry } from './helpers/scrollGeometry.js'
 
 // CustomSelect portals into #root, so the harness must provide one (see app-mount.dom).
@@ -178,29 +182,28 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     // the guide is on screen and 0 the instant React hides it, which is precisely what a browser
     // does. An implementation that read the position one commit later — from an effect cleanup,
     // the obvious place — captures that 0 and lands the reader at the top.
+    // The hidden-reports-0 model is the SHARED one (tests/helpers/guideScroller), not a private
+    // copy: it is the same piece of platform fidelity the behaviour net's own cases rest on, and
+    // two hand-rolled copies of one platform rule is exactly the drift that rule cannot afford.
+    // What this test adds on top is the WRITE LOG, which is mechanism and therefore this file's:
+    // the net can only say where the reader ended up, and "ended up at 640" does not distinguish
+    // an app that restored 640 from an app that never moved the scroller at all.
     const { container } = mountApp()
     pressKey('H')
-    const el = scrollContainer(container)
-    const writes = []
-    let position = 640
-    Object.defineProperty(el, 'scrollTop', {
-      configurable: true,
-      get: () => (guideRoot(container).style.display === 'none' ? 0 : position),
-      set: (v) => {
-        writes.push(v)
-        position = v
-      },
-    })
+    const g = installGuideScroller(container)
+    g.setContent(3000)
+    g.scrollTo(640)
+    g.clearWrites()
     pressKey('K') // leave — the capture has to happen inside this event, before the re-render
-    expect(writes).toEqual([0]) // the mode switch reset the container it handed over
+    expect(g.writes).toEqual([0]) // the mode switch reset the container it handed over
     // …and for good measure the OTHER way an implementation can cheat: reading the live position
     // back at restore time instead of the number the door saved.
-    position = 12345
-    writes.length = 0
+    g.setPos(12345)
+    g.clearWrites()
     pressKey('H')
-    expect(writes).toEqual([640])
+    expect(g.writes).toEqual([640])
     expect(container.querySelector('#guide-sec-overview button')).not.toBeNull()
-    delete el.scrollTop
+    g.restore()
   })
 
   // ── REPLACES: "sources the edge indicators from window scroll AND resize" ──────────────────
@@ -208,9 +211,10 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     // Two claims the behaviour net cannot make, because both are about the mechanism: which event
     // is the source, and that the top strip is handed the SAME number as the bar's shadow — one
     // edge, two surfaces, so they can never disagree. The ramp's arithmetic is the net's, not this
-    // file's. The old version asserted the mirror image of the first claim (window scroll AND
-    // window resize, read off document.scrollingElement); both of those listeners are gone, and
-    // the second half of this test is what proves it rather than assuming it.
+    // file's — so the numbers here are CAPTURED and compared, never restated. The old version
+    // asserted the mirror image of the first claim (window scroll AND window resize, read off
+    // document.scrollingElement); both of those listeners are gone, and the second half of this
+    // test is what proves it rather than assuming it.
     const { container } = mountApp()
     pressKey('H')
     const el = scrollContainer(container)
@@ -220,8 +224,9 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     act(() => {
       fireEvent.scroll(el)
     })
-    expect(shade(bar)).toBe(0.25) // 6px into a 24px ramp
-    expect(shade(top)).toBe(shade(bar))
+    const nearTheTop = shade(bar)
+    expect(nearTheTop).toBeGreaterThan(0) // the container's own event was heard …
+    expect(shade(top)).toBe(nearTheTop) // … and both surfaces of that edge got the one number
     // Move the scroller and announce it the two ways the old mechanism listened for. Neither is
     // subscribed any more, so neither may move a boundary.
     setScrollGeometry(el, { scrollTop: 24, scrollHeight: 2000, clientHeight: 768 })
@@ -229,12 +234,12 @@ describe('How to Play scrolls the app container — one scroller, every screen',
       fireEvent.scroll(window)
       fireEvent(window, new Event('resize'))
     })
-    expect(shade(bar)).toBe(0.25)
+    expect(shade(bar)).toBe(nearTheTop)
     // The container's own event does.
     act(() => {
       fireEvent.scroll(el)
     })
-    expect(shade(bar)).toBe(1)
+    expect(shade(bar)).toBeGreaterThan(nearTheTop)
     expect(shade(top)).toBe(shade(bar))
   })
 
@@ -289,12 +294,20 @@ describe('the scroll container is the guide’s keyboard target', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('focuses the container on entering the guide, and only there', () => {
+  it('focuses the container on entering the guide, and hands the focus back on the way out', () => {
+    // BOTH halves, because the second one is the half that can rot silently. Focus is taken FOR the
+    // guide — it is what makes Space/PageDown scroll a reading page — and every other screen is a
+    // set of controls where a scroll box holding focus is simply wrong. Left held, it also made the
+    // result depend on the door: leaving through the mode menu takes it away as a side effect
+    // (CustomSelect returns focus to its trigger), while H, the mode letters and Android Back do
+    // not — so one route left every game screen quietly keyboard-scrollable and the other did not.
     const { container } = mountApp() // Classic
     const el = scrollContainer(container)
     expect(document.activeElement).not.toBe(el)
     pressKey('H')
     expect(document.activeElement).toBe(el)
+    pressKey('K') // out by the keyboard, the door that has no focus restore of its own
+    expect(document.activeElement).not.toBe(el)
   })
 
   it('is focusable only programmatically — the tab order and the modal traps are untouched', () => {
@@ -359,11 +372,10 @@ describe('index.css — the rules the move re-hosted, and the clamps it made per
     // for their own scrolling. The descendant half is written out rather than left to inheritance,
     // so no engine's reading of "excluded, and its descendants with it" can matter.
     expect(css).toContain('[data-guide],[data-guide] *{overflow-anchor:none}')
-    const guideSource = srcFile('components', 'GuidePage.tsx')
-    expect(guideSource).toContain('data-guide')
-    // …and the hook is a separate attribute, so the className stays the one literal the panel-gap
-    // pin in tests/guideScroll.dom reads.
-    expect(guideSource).toContain('className="mt-2.5 space-y-(--guide-panel-gap)"')
+    // …and the selector has a subject: the attribute is on GuidePage's root, as an ATTRIBUTE. That
+    // it is not folded into the className is what leaves that string the one literal the panel-gap
+    // pin in tests/guideScroll.dom reads — which is that file's assertion, not a second copy here.
+    expect(srcFile('components', 'GuidePage.tsx')).toContain('data-guide')
   })
 
   it('clamps html, body and #root unconditionally — nothing releases them in any mode', () => {
@@ -374,9 +386,12 @@ describe('index.css — the rules the move re-hosted, and the clamps it made per
     expect(cssCode).toContain('html,body{overflow:hidden;overscroll-behavior:none}')
     expect(ruleBody(/#root\{([^}]*)\}/)).toContain('overflow:hidden')
     expect(cssCode).not.toMatch(/overscroll-behavior-y/)
-    // The stylesheet declares no vertical scroller at all now. It used to declare exactly one —
-    // the guide's — which is why tests/scrollRegionGuard exempts index.css from its sweep; that
-    // exemption is now vacuous, and this is what keeps it that way.
+    // The stylesheet declares no vertical scroller at all now; it used to declare exactly one, the
+    // guide's. This is the STYLESHEET half of "every scroll region comes from
+    // components/scrollRegion" and it is asserted here rather than in tests/scrollRegionGuard
+    // because that guard scans markup with utility-shaped patterns and cannot read a CSS
+    // declaration (its header argues why it is not being taught to). index.css's scroll story is
+    // this file's subject, so the pin belongs to this file.
     expect(cssCode).not.toMatch(/overflow(-y)?:\s*(auto|scroll)/)
   })
 

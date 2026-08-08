@@ -2,24 +2,25 @@
 //
 // HOW TO PLAY — THE SCROLL BEHAVIOUR NET. ⚠ NOTHING IN THIS FILE MAY NAME THE MECHANISM.
 //
-// The guide is the app's one long reading page, and it is the only screen that does not scroll an
-// inner box: today <html data-doc-scroll> releases the app's three clamps and the DOCUMENT is the
-// scroller. That is an implementation choice with a real cost (it is the reason iOS's
-// tap-the-status-bar affordance works here and nowhere else), and it is on its way out — the guide
-// is being moved onto an inner overflow div like every other screen.
+// The guide is the app's one long reading page. Until round 13 it was also the only screen that did
+// not scroll an inner box — <html data-doc-scroll> released the app's three clamps and the DOCUMENT
+// scrolled it — and it now scrolls #appScroll like every other screen.
 //
-// Rule 10 says a restructuring of live logic happens behind tests written FIRST, against the app
-// as a black box, that stay valid on BOTH sides of the change. A test that read window.scrollY,
-// document.scrollingElement or the attribute would fail that test of a test: every assertion would
-// have to be rewritten on the far side, and a net you rewrite proves nothing. So every question
-// this file asks goes through tests/helpers/guideScroller — "where is the reader", "how much
-// content is there", "how strong is each edge", "what has the app written" — and that helper
-// RESOLVES the live scroller instead of assuming one: an overflow ancestor of the guide's content
-// if there is one, the document otherwise.
+// Rule 10 says a restructuring of live logic happens behind tests written FIRST, against the app as
+// a black box, that stay valid on BOTH sides of the change. A test that read window.scrollY,
+// document.scrollingElement or the attribute would have failed that test of a test: every assertion
+// would have needed rewriting on the far side, and a net you rewrite proves nothing. So every
+// question this file asks goes through tests/helpers/guideScroller — "where is the reader", "how
+// much content is there", "how strong is each edge", "what has the app written" — and that helper
+// RESOLVES the live scroller rather than assuming one, by walking up from the guide's own root for
+// the shared overflow token.
 //
-// ★ THE GATE THAT MATTERS: this file passes UNCHANGED after the guide moves onto an inner
-// scroller. Anything that genuinely depends on the document being the scroller lives in
-// tests/docScroll.dom.test.jsx instead, which is the complete inventory of what the move replaces.
+// ★ THE GATE WAS MET: every case here passed the move UNCHANGED, all 34 of them, which is the
+// move's proof and is banked in the history (git diff cd10065..8197fa5). One case has been ADDED
+// since — the glide-versus-mode-switch ordering, a hazard the move created by giving the two
+// writers the same element, which no pre-move test could have had a reason to ask about. Anything
+// that depends on WHICH element scrolls still lives in tests/docScroll.dom.test.jsx instead, the
+// complete inventory of the mechanism.
 //
 // WHAT JSDOM CANNOT DO, stated plainly: it lays nothing out, so the scroller's three numbers are
 // supplied by the model and rAF is driven by hand. This is a test of the app's decisions — where
@@ -32,7 +33,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
-import { installGuideScroller } from './helpers/guideScroller.js'
+import { installGuideScroller } from './helpers/guideScroller.jsx'
 import { installResizeObserver } from './helpers/scrollGeometry.js'
 
 // CustomSelect and the Save Defaults popup portal into #root, so the harness must provide one.
@@ -131,7 +132,9 @@ afterEach(() => {
   document.getElementById('root')?.remove()
   delete document.visibilityState
   document.documentElement.scrollTop = 0
-  for (const prop of ['--fade-h', '--seat-top', '--bar-h', '--motion-scale'])
+  // --seat-top is NOT in this list, deliberately: the model writes it on the scroll box alone (the
+  // element the app reads it from), which dies with the tree cleanup() takes down.
+  for (const prop of ['--fade-h', '--bar-h', '--motion-scale'])
     document.documentElement.style.removeProperty(prop)
 })
 
@@ -517,6 +520,32 @@ describe('tapping a section carries the reading position with it', () => {
     expect(frames[pending - 1]).toBeNull() // cancelled on hide …
     expect(frames.length).toBe(pending) // … and never re-armed on the way back
     expect(g.writes).toHaveLength(1)
+  })
+
+  it('drops an in-flight glide the instant the mode changes, before the switch moves the scroller', () => {
+    // ⚠ AN ORDERING CLAIM, and the reason it is worth a test of its own: the glide and the mode
+    // switch write the SAME element now, and the switch writes the top exactly once. So a frame
+    // that survived the switch would not be fighting the reset, it would be landing after it —
+    // scrolling a game screen to a position computed for a guide, with nothing left to put it
+    // back. None of the cancels the reader can trigger covers the case: leaving by the H shortcut,
+    // by a mode letter, by a desktop mouse click on the mode selector or by Android Back involves
+    // neither a touch nor a wheel.
+    // ⚠ THE FRAME IS DELIVERED AT THE INSTANT THE APP MOVES THE PAGE (onWrite), and that is what
+    // makes this discriminating rather than decorative. A test cannot otherwise stand inside the
+    // switch: React hands control back only once the whole thing has run, so anything the test does
+    // is wholly before or wholly after, and both orderings look identical from there. Writing the
+    // frame INTO the app's own write puts it exactly where a browser's next paint could fall — and
+    // a drop that waited any longer would leave the writer armed to run right over the reset.
+    const { container, g } = readingPage(2500)
+    const frames = manualFrames()
+    tap(container, 'overview') // scenario B: nothing measurable opens, the page shrinks
+    act(() => frames.at(-1)(0))
+    g.clearWrites()
+    g.onWrite(() => frames.at(-1)?.(10000)) // whatever the glide has scheduled RIGHT NOW
+    pressKey('K')
+    // One write, and it is the switch's own reset. A second would be the glide finishing its
+    // journey on the screen that had already replaced the guide, with nothing left to undo it.
+    expect(g.writes).toEqual([0])
   })
 
   it('refuses to glide a scroller it cannot measure', () => {

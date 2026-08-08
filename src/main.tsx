@@ -540,8 +540,10 @@ const ReactDOM = { createRoot, createPortal }
       // ⚠ IT IS NOT A MODE MIRROR, and that is the whole point. The old gate could ask <html> a
       // question that WAS the mechanism — "is the document the scroller right now" — so it could
       // not disagree with reality. With one shared scroller that question is gone, and the honest
-      // replacement is not `mode==='guide'` (switchMode must keep [] deps — the keyboard effect
-      // depends on its identity — so it cannot read state without going stale) nor a boolean ref
+      // replacement is not `mode==='guide'` (switchMode is declared with [] deps because it needs
+      // nothing from render — two refs and a stable setter — so a `mode` read inside it would be
+      // frozen at the FIRST render's value forever; the stable identity is a bonus that spares the
+      // keydown effect a re-subscribe per render, not the reason) nor a boolean ref
       // shadowing the mode (a second copy of a fact, i.e. a thing that can drift). A closure that
       // only EXISTS while the guide is up cannot drift: its lifetime is React's own effect cleanup,
       // it is published by the one effect that already owns the guide's position, and it closes
@@ -556,7 +558,9 @@ const ReactDOM = { createRoot, createPortal }
       // accident (tests/docScroll.dom forces the point). Hence a door rather than a guard. That
       // hazard did NOT go away with the document scroller — it sharpened: a re-clamped document
       // collapsed to a screenful and clamped its offset to ~0, while a hidden div is at a flat 0.
-      // Stable identity ([] deps) because the keyboard effect depends on it.
+      // [] deps because it needs nothing from render: a ref call and a stable setter. The stable
+      // identity that falls out of that is what keeps the keydown effect from re-subscribing on
+      // every render — a nicety, not a requirement (that effect only swaps one window listener).
       const switchMode=useCallback((next: React.SetStateAction<string>)=>{
         saveReadingPosRef.current?.();
         setMode(next);
@@ -588,13 +592,21 @@ const ReactDOM = { createRoot, createPortal }
       // commit — so arriving at the guide from the mode menu still lands on the scroller. Nothing is
       // lost by taking it: Tab opens that menu from anywhere (a window-level shortcut), so the
       // trigger never needed to hold focus to stay reachable.
+      // …AND IT IS GIVEN BACK ON THE WAY OUT, which is the half the focus write cannot be shipped
+      // without. Focus is taken FOR the guide — it is what makes Space/PageDown scroll a reading
+      // page — and every other screen is a form of controls where a scroll target holding focus is
+      // simply wrong. Leaving it held also made the behaviour depend on which door the reader used:
+      // through the mode menu CustomSelect's own focus restore takes it away as a side effect, but
+      // H, the mode letters and Android Back do not, so one route left every game screen quietly
+      // keyboard-scrollable and the other did not. blur() only when the container is the one holding
+      // it, so a switch that has already parked focus somewhere real (the menu trigger) is untouched.
       // A LAYOUT effect so all of it happens before the browser paints the new mode. Nothing else
       // in the app moves this scroller on a mode change, which is what makes the restore safe —
       // there is no later effect left to overwrite it.
       useLayoutEffect(()=>{
         syncBarHeight();
         const el=appScrollRef.current;if(!el)return;
-        if(mode!=="guide"){el.scrollTop=0;return;}
+        if(mode!=="guide"){el.scrollTop=0;if(document.activeElement===el)el.blur();return;}
         el.scrollTop=guideScrollYRef.current;
         el.focus({preventScroll:true});
         saveReadingPosRef.current=()=>{guideScrollYRef.current=el.scrollTop;};

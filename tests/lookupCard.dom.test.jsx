@@ -460,7 +460,7 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// The history WINDOW and the count beside the heading (round 12).
+// The history WINDOW and the count beside the heading (round 13).
 // The cap has always existed and nothing described it; it moved 20 → 100 this round, and the
 // count is what makes it visible without opening a menu. The rule's one owner is
 // store/progress (addLookupEntry), so this reads the real number rather than restating it.
@@ -471,7 +471,7 @@ const header = () => document.querySelector('.lookup-history-header')
 // Clear History button from the first entry on.
 const heading = () => header().firstElementChild.textContent
 
-describe('Lookup history: the window, and the count beside the heading (round 12)', () => {
+describe('Lookup history: the window, and the count beside the heading (round 13)', () => {
   beforeEach(() => localStorage.clear())
   afterEach(cleanup)
 

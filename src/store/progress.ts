@@ -80,8 +80,9 @@ export interface LookupEntry {
 // was a test: main.tsx's pushLookupHistory and the controlled host in tests/lookupCard.dom each
 // wrote `[entry, ...prev].slice(0, 20)` out by hand, so the number lived in three places (this
 // comment being the third) and could drift in any of them.
-// (Keep the How-to-Play wording in sync with this number — GuidePage's Lookup section and its
-// Saved Progress list both state it.)
+// (Keep the How-to-Play wording in sync with this number — GuidePage's Lookup section states it,
+// once. The Saved Progress list carried a second copy for one commit and now just names the thing
+// that is saved, which is what that list is for.)
 export const LOOKUP_HISTORY_CAP = 100
 export const addLookupEntry = (prev: LookupEntry[], entry: LookupEntry): LookupEntry[] =>
   [entry, ...prev].slice(0, LOOKUP_HISTORY_CAP)

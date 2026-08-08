@@ -21,10 +21,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const css = readFileSync(join(root, 'src/index.css'), 'utf8')
 const html = readFileSync(join(root, 'index.html'), 'utf8')
 
-// The six properties, plus the vendor-prefixed backdrop-filter the app actually ships (the panel's
-// own frosted glass uses it — on the PANEL, which is fine; on an ancestor it is fatal).
+// The six properties (transform and its three individual-transform siblings count as one trigger),
+// each with an OPTIONAL vendor prefix. The prefix half started as a single hand-listed
+// -webkit-backdrop-filter, because that is the one the app actually ships — the panel's own frosted
+// glass uses it, on the PANEL, which is fine; on an ancestor it is fatal. Hand-listing one of them
+// was an arbitrary line: -webkit-transform and -webkit-filter create a containing block in WebKit
+// exactly as the unprefixed spellings do, and a guard against an invisible dependency should not
+// depend on which spelling somebody reaches for. Making the prefix optional covers all of them for
+// one token and costs nothing — no unprefixed match is lost, and the self-check below feeds it the
+// prefixed shape.
 const BANNED_PROPS =
-  /(?:^|;)\s*(transform|translate|rotate|scale|perspective|filter|backdrop-filter|-webkit-backdrop-filter|will-change|contain)\s*:/gi
+  /(?:^|;)\s*((?:-(?:webkit|moz|ms|o)-)?(?:transform|translate|rotate|scale|perspective|filter|backdrop-filter|will-change|contain))\s*:/gi
 
 // A selector targets one of the three iff it ENDS in html, body or #root (possibly with
 // attribute/pseudo qualifiers) — `html[data-theme="light"] #root` counts, `#root .panel` does not,
@@ -136,6 +143,12 @@ describe('containing-block guard (Q8) — nothing may make html/body/#root the f
       scanRules('html[data-theme="light"] #root{will-change:scroll-position}', 'x').length,
     ).toBe(1)
     expect(scanRules('body{backdrop-filter:blur(2px)}', 'x').length).toBe(1)
+    // …and the same declarations wearing a vendor prefix, which is the half that used to be one
+    // hand-listed property rather than a rule.
+    expect(scanRules('#root{-webkit-transform:translateZ(0)}', 'x')).toEqual([
+      'x — #root declares -webkit-transform',
+    ])
+    expect(scanRules('body{-webkit-backdrop-filter:blur(2px)}', 'x').length).toBe(1)
     expect(scanRules('#root .panel{transform:scale(1)}', 'x')).toEqual([]) // a descendant is fine
     expect(scanRules('html,body{overscroll-behavior-y:contain}', 'x')).toEqual([]) // value, not property
     expect(BANNED_CLASSES.test('min-h-screen backdrop-blur-xl')).toBe(true)

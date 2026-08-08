@@ -9,12 +9,22 @@
 // overflow-y-scroll, overflow-scroll, camelCase overflowY) anywhere in src markup files or
 // index.html — outside the one definition module — fails the suite, listing the exact
 // file:line sites. Horizontal scrollers (overflow-x-*) are deliberately out of scope: the lane
-// and the top/bottom fades are vertical concepts. index.css is outside the scan, which used to be
-// a real exemption — the guide's html[data-doc-scroll]{overflow-y:auto} document scroller lived
-// there and was the one scroller this guard could not see. Round 13 moved the guide onto the app
-// container and deleted that rule, so the stylesheet now declares no vertical scroller at all and
-// the exemption is vacuous. tests/docScroll.dom pins it that way, which is what keeps this guard's
-// coverage total rather than nearly-total.
+// and the top/bottom fades are vertical concepts.
+//
+// ⚠ THE REAL BOUNDARY, stated straight, because it was described here for two rounds as an
+// "index.css exemption" and it never was one in either direction. This guard scans MARKUP —
+// src/**/*.{ts,tsx,js,jsx} plus index.html — and its patterns are UTILITY-shaped
+// (`overflow-y-auto`, the camelCase `overflowY` style key). A stylesheet is neither: index.css is
+// not in the file list at all, and the patterns could not match `overflow-y:auto` if it were,
+// because CSS declaration syntax uses a colon. So there was no carve-out to make vacuous.
+// It is not being widened to cover CSS syntax either, and that is a decision rather than an
+// omission: this file's whole subject is a scroll region built in markup, which is the shape that
+// drifted three times and the shape the shared recipe replaces. A pattern that also matched a CSS
+// declaration would fire on the PROSE in these files — src/components/CustomSelect.tsx already
+// writes "overflow:auto box" in a comment — so it would need a comment stripper, machinery whose
+// only new claim is one tests/docScroll.dom already makes about index.css directly ("the
+// stylesheet declares no vertical scroller at all"). That file owns the stylesheet half; this one
+// owns the markup half; between them the app has no unexamined scroller.
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

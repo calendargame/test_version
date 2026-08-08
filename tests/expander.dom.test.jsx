@@ -27,15 +27,25 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Expander from '../src/components/Expander.jsx'
-import GuidePage, { GuideSection } from '../src/components/GuidePage.jsx'
+import { GuideSection } from '../src/components/GuidePage.jsx'
 import { MethodBreakdownSection } from '../src/components/MethodBreakdown.jsx'
+import { renderGuidePage } from './helpers/guideScroller.jsx'
 import {
   ACCORDION_EASE_CSS,
   ACCORDION_MS_FLOOR,
   CODES_CLOSE_MS,
 } from '../src/lib/accordionMotion.js'
 
-afterEach(cleanup)
+// The whole-page cases go through renderGuidePage (tests/helpers/guideScroller), which mounts the
+// guide the way App does — inside the one scroll box, holding the ref the coordinator dereferences
+// on every tap, with real extent behind it. GuideSection on its own needs none of that: it is the
+// row, and the coordinator lives a level up.
+let guide = null
+afterEach(() => {
+  guide?.restore()
+  guide = null
+  cleanup()
+})
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css'),
@@ -138,8 +148,9 @@ describe('index.css expander rules (the styles the structure above keys into)', 
     }
   })
   // The guide-scoped overflow-anchor kill that pairs with the scroll coordinator is pinned in
-  // tests/docScroll.dom, with the rest of the rules scoped to the document scroller — it moves
-  // with them when the guide moves onto an inner scroller.
+  // tests/docScroll.dom, with the rest of the rules that say HOW How to Play scrolls. It used to
+  // ride on the released document scroller; round 13 rescoped it to [data-guide], and it stayed in
+  // that file because the file is the mechanism inventory, not the mechanism it inventoried.
 })
 
 describe('cross-module timing contracts (Q5 — ACCORDION_MS_FLOOR is the one number)', () => {
@@ -252,16 +263,24 @@ describe('GuideSection accordion contract (Q8 — aria + coordinator landmarks)'
     // Q6 (round 8) deleted the scroll-mt that used to sit here. It never had a consumer:
     // nothing in src/ calls scrollIntoView, there is no fragment navigation, and native
     // focus scrolling targets the focused HEADER BUTTON, not this wrapper. The reading
-    // line is now declared once, as scroll-padding-top on the doc-scroll scrollport
-    // (index.css --seat-top), which the focus path DOES honour — pinned in docScroll.dom.
+    // line is declared once, as scroll-padding-top on the app's one scrollport
+    // (index.css --seat-top on #appScroll), which the focus path DOES honour — pinned in
+    // docScroll.dom.
     expect(wrapper.className).not.toContain('scroll-mt')
   })
 })
 
 describe('GuidePage toggle coordinator (Q8 — the shared clock, exclusive open)', () => {
+  // ⚠ THE MOUNT IS PART OF THE TEST. The coordinator's second half — read the scroller, measure it,
+  // ask lib/accordionMotion for a target — runs on every tap, after the state flip that these two
+  // cases assert. Mount the guide without its scroller and the tap still opens the panel and then
+  // throws, so both cases pass while everything past the state flip goes unrun. renderGuidePage
+  // stands up the real shape, extent included, so a tap here executes the callback end to end; what
+  // it LANDS on is tests/guideScroll.dom's, and is not restated below.
   const headers = (container) => [...container.querySelectorAll('button[aria-controls]')]
   it('a toggle stamps ONE shared --expander-ms on every section and opens exactly the tapped one', () => {
-    const { container } = render(<GuidePage visible />)
+    const { container, guide: g } = renderGuidePage()
+    guide = g
     const all = headers(container)
     fireEvent.click(all[0])
     // jsdom lays out at zero height, so the distance-scaled clock lands on its 240ms floor —
@@ -273,7 +292,8 @@ describe('GuidePage toggle coordinator (Q8 — the shared clock, exclusive open)
     expect(all.filter((h) => h.getAttribute('aria-expanded') === 'true')).toHaveLength(1)
   })
   it('tapping another section switches the single open panel; re-tapping closes it', () => {
-    const { container } = render(<GuidePage visible />)
+    const { container, guide: g } = renderGuidePage()
+    guide = g
     const all = headers(container)
     fireEvent.click(all[0])
     fireEvent.click(all[3])

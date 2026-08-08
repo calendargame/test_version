@@ -13,7 +13,7 @@
 //     toggle produces neither (a tap that seats an already-seated panel scrolls nowhere, and the
 //     panel keeps growing for the rest of its animation after the glide's last scroll event), so
 //     the bottom edge froze. That half is pinned in tests/guideScroll.dom, through the scroller
-//     abstraction that survives the guide moving onto an inner scroller.
+//     abstraction that carried it unchanged across the guide's move onto an inner scroller.
 // Both are now `observeScrollExtent` (components/scrollRegion), which watches the CONTENT: the
 // scroller, each of its element children, and a childList MutationObserver for children arriving
 // or leaving.
@@ -149,8 +149,14 @@ describe('observeScrollExtent — the content, not the box', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The RESTING states, through the shared hook — so Lookup's history list, the settings popover,
-// the changelog popup and the shared defaults card (round 12) are all covered by construction
+// the changelog popup and the shared defaults card (round 13) are all covered by construction
 // (they are its only four callers).
+// ★ THE DIVISION OF LABOUR that claim rests on, so it is not taken on trust: the resting ARITHMETIC
+// — every geometry with nothing to scroll writes both boundaries to a literal 0 rather than leaving
+// them at @property's initial-value of 1 — is proved here, once, against the hook itself. What each
+// caller's own file has left to prove is that it is WIRED to the hook at all, which its live-edge
+// test does (scrollRegion.dom for the defaults card and Lookup, changelog.dom for the popup). A
+// caller re-asserting the resting numbers would be the same fact twice with two places to drift.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The hook's whole public surface in one component: a scroller, the two boundary surfaces it can
 // be handed, and the mask class its two booleans produce.
@@ -235,7 +241,9 @@ describe('the resting states — nothing to scroll means nothing to signal', () 
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// The app's own two branches: the clamped container and the guide document.
+// The app's own scroller. It was two branches when this was written — the clamped container and
+// the guide's released document — and round 13 made it one container in every mode, so what is
+// swept below is now the whole of it rather than one of a pair.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 function mountApp() {
   const root = document.createElement('div')
@@ -244,8 +252,9 @@ function mountApp() {
   return render(<App />)
 }
 
-// The container is the div carrying the inline paddingTop (the one style BOTH scroll branches
-// keep — it is deliberately classless in guide mode).
+// The container is the div carrying the inline paddingTop. Found by that style rather than by its
+// id or classes, which is how these tests kept working across round 13: the same node used to
+// render classless in guide mode and now renders identically in every mode.
 const scrollContainer = (container) =>
   [...container.querySelectorAll('div')].find((d) => d.style.paddingTop === 'var(--bar-h)')
 

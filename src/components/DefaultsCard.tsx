@@ -4,7 +4,7 @@
 // (it was deliberately defined beside it rather than with the other input tokens).
 //
 // ── THE HEIGHT CAP, and the measurement that earned it ───────────────────────────────────────
-// This card is the tallest thing the app centres in a scrim, and until round 12 it had no cap at
+// This card is the tallest thing the app centres in a scrim, and until round 13 it had no cap at
 // all. The app's usual defence against a short screen is the fluid root font
 // (index.css: html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}) — every
 // rem in here shrinks with the viewport. But that clamp bottoms out: 1.95vh reaches the 0.75rem

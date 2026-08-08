@@ -1,7 +1,7 @@
 import {
   useState,
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
   type CSSProperties,
   type ReactNode,
@@ -274,8 +274,10 @@ export default function GuidePage({
   // below, and by the effect on three occasions: leaving the guide for another mode, the app
   // being BACKGROUNDED, and unmount. Leaving matters MORE since round 13, not less: the writer
   // drives the shared #appScroll container, so a survivor would literally be scrolling the
-  // screen that replaced the guide, in that screen's own scroll units, fighting the mode
-  // switch's own reset (and this component stays mounted, so nothing else would stop it).
+  // screen that replaced the guide, in that screen's own scroll units — and it would not be
+  // FIGHTING the mode switch's reset but landing after it, since the switch writes the top once
+  // and never again (and this component stays mounted, so nothing else would stop it). Which is
+  // why the effect below has to run in the layout phase; the ⚠ block on it argues that in full.
   // The backgrounded case matters because rAF stops firing while hidden: a writer caught
   // mid-flight would resume on return against a timestamp gap, snapping the page to a target
   // computed for a tap the reader has long since forgotten. Cancelling leaves the panels to
@@ -287,7 +289,18 @@ export default function GuidePage({
     scrollWriterRef.current?.()
     scrollWriterRef.current = null
   }, [])
-  useEffect(() => {
+  // ⚠ A LAYOUT EFFECT, and that is the whole of the guard's correctness since round 13. React runs
+  // layout effects child-first and passive effects in a LATER task, so a passive version of this
+  // would be ordered AFTER App's mode-switch layout effect (main.tsx), which resets #appScroll to
+  // the top. A frame that slipped into that gap would write a guide-space offset onto the game
+  // screen that had just replaced the guide, and nothing would put it back — the reset had already
+  // run. As a layout effect the cancel lands BEFORE the reset, in the same commit, with no window
+  // for a frame at all. It cost nothing before the move only because the writer drove `window` in a
+  // clamped mode, where the write was a guaranteed no-op; the move removed that accident, so the
+  // ordering has to be stated rather than inherited. The touchstart/wheel cancels do not cover it:
+  // the keyboard mode shortcuts, a desktop mouse click on the mode selector and Android Back all
+  // change modes without either event. tests/guideScroll.dom pins the ordering.
+  useLayoutEffect(() => {
     // Off-screen: drop anything in flight, and listen for nothing — a hidden guide can neither
     // start a glide nor be scrolled, so there is no visibility case left to handle.
     if (!visible) {
@@ -581,8 +594,8 @@ export default function GuidePage({
             same key that opens it — see Keyboard Input), and your device's Back button (described
             below). Starting a scroll by touching the page outside the menu is one of those presses
             outside, so that closes it — but a touch that lands on the menu itself is not, and
-            neither is the page moving on its own: it stays put under its button in the bar while a
-            page coasts to a stop behind it, and you can open it mid-glide.
+            neither is the page moving on its own: it stays put under its button in the bar while
+            the page coasts to a stop behind it.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it

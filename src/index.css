@@ -148,9 +148,12 @@ body{background:var(--bg1);color:var(--body-color)}
    anchors, so the engines visibly diverged). Two things about the scope, both deliberate:
      • [data-guide] is GuidePage's own root, so this is now scoped to the only subtree that has a
        coordinator — strictly tighter than the old html[data-doc-scroll] *, which hit every node
-       in the document. The other five screens are display:none while the guide is up and are
-       not anchor candidates anyway, but the game screens keep native anchoring for their own
-       scrolling, which they never had while this rule was document-wide.
+       in the document. That width cost the game screens NOTHING at the time (the attribute was
+       only ever on in guide mode, when all five of them were display:none, so they never lost
+       anchoring for a frame) — the rescope is not a fix, it is the scope the rule always meant.
+       What it buys is that the guide is now the only subtree the app suppresses anchoring in, so
+       the day another screen grows content above the reader it keeps the native behaviour by
+       default instead of by an attribute nobody would think to check.
      • the descendant half is written out rather than left to inheritance: anchoring is evaluated
        per scroller against candidate anchor NODES, and suppressing it at every node makes the
        coordinator the sole scroll authority identically on every engine, instead of resting on
@@ -288,8 +291,10 @@ input,textarea{user-select:text;-webkit-user-select:text}
    one panel gap shallow and nothing worse; the ladder is written out in full at the read site.
    ⚠ Whatever fed the seat must stay parseable in isolation — do not fold --guide-panel-gap into
    --bar-h to "simplify", or the floor becomes a calc() and NaNs with everything above it.
-   inherits:true so descendants can read it too; the 0px initial value only ever applies outside
-   guide mode, where nothing reads it. */
+   inherits:true so descendants can read it too. The 0px initial value is what any element OUTSIDE
+   #appScroll's subtree computes — the fixed bar, the portaled menus and modals, <html> itself —
+   in every mode, guide included; nothing out there reads the token, and the one JS reader is
+   handed the scroll container precisely so it never asks an element that would answer 0. */
 @property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
 #appScroll{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
 /* --shade — how strongly a boundary asserts itself, 0…1 (round 10 item B). It is the scroller's
@@ -445,7 +450,16 @@ button:focus,select:focus{outline:none}
    It stays because "moot" is a fact about today's ancestor chain, not a property of the gesture.
    These two buttons are press-drag controls, so the declaration states what they are; the day one
    of them is moved into or under something that scrolls, the gesture survives instead of silently
-   turning into a pan. It costs nothing to keep and the failure it prevents is invisible in review. */
+   turning into a pan. It costs nothing to keep and the failure it prevents is invisible in review.
+   ⚠ AND THE READER LOST SOMETHING IN THAT SAME SENTENCE, which is worth stating plainly rather
+   than leaving as an implication of "moot". While the document scrolled the guide, the bar was
+   INSIDE the scroller's ancestor chain, so a finger that came down anywhere on the bar — the empty
+   space beside the two buttons included — panned How to Play. #appScroll is the bar's sibling, so
+   the top --bar-h of the screen (≈57-67px, the app's own measurement) has stopped being a scroll
+   surface on the one screen where it was one. That is a real loss on the app's only long reading
+   page and it is not being engineered back: it is the same rule every other screen has always
+   lived by, and the alternative is the ancestor chain that cost the mode selector its first tap
+   on the owner's device twice. Recorded here so nobody rediscovers it as a bug. */
 [data-select-trigger]{touch-action:none}
 .drag-target{outline:2px solid var(--drag-ring);outline-offset:-2px}
 /* The mode-selector dropdown (the only [data-select-group] portal) has a theme-INVARIANT frosted-light

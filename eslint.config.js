@@ -87,9 +87,16 @@ export default defineConfig([
   // Tests run under vitest in Node with a jsdom DOM, so they need BOTH browser globals (the DOM tests
   // touch document/window) AND Node globals (the fuzz harness reads process.env.FUZZ_SCALE to scale a
   // one-time sweep). The base block above grants only browser globals.
+  // react-refresh is off here for the same reason it is off for src/main.tsx, only more plainly: the
+  // rule exists so the dev server can hot-replace a component MODULE, and nothing under tests/ is in
+  // the dev server's graph at all. Test fixtures and helpers legitimately define a component beside
+  // the functions that drive it (tests/helpers/guideScroller mounts the guide inside a stand-in for
+  // App's scroll box), and moving those apart would split one idea across two files to satisfy a
+  // rule about a build step they never take part in.
   {
     files: ['tests/**/*.{js,jsx,ts,tsx}'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
   // MUST be last: turns off any ESLint rules that would conflict with Prettier's
   // formatting, so the two tools never fight (ESLint = correctness, Prettier = style).

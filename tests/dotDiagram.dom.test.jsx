@@ -7,8 +7,8 @@
 // order. These tests pin BOTH ends: the canonical physical layout in DOT_CELL itself (so a data edit
 // can't silently pass a derivation-only check), and the rendered SVG/aria-label against that data.
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
-import GuidePage from '../src/components/GuidePage.jsx'
+import { cleanup } from '@testing-library/react'
+import { renderGuidePage } from './helpers/guideScroller.jsx'
 import { DOT_CELL } from '../src/lib/dotLayout.js'
 import { DAY } from '../src/lib/format.js'
 
@@ -27,14 +27,25 @@ const CANONICAL_CELLS = [
 
 // GuideSection content sits inside an always-mounted Expander (collapsed 0fr grid row, never
 // unmounted), so the diagram is queryable without opening its section.
+// The mount goes through renderGuidePage (tests/helpers/guideScroller) rather than rendering
+// GuidePage bare. Nothing here scrolls or taps, so the scroller is not what this file is about —
+// but since round 13 the guide cannot be rendered without one (the coordinator dereferences the
+// ref App hands it), and a mount that is merely one click away from throwing is not a mount this
+// file should own a private copy of.
+let guide = null
 const renderDiagram = () => {
-  const { container } = render(<GuidePage visible />)
+  const { container, guide: g } = renderGuidePage()
+  guide = g
   const svg = container.querySelector('svg[role="img"]')
   expect(svg).not.toBeNull()
   return svg
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  guide?.restore()
+  guide = null
+  cleanup()
+})
 
 describe('DotDiagram / DOT_CELL / DAY consistency', () => {
   it('DOT_CELL is the canonical 7-dot layout: weekday-indexed, unique cells, (1,2)+(3,2) empty', () => {
