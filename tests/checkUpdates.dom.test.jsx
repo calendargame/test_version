@@ -22,6 +22,12 @@ import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { BUILD_ID_META, UPDATE_CHECK_LABEL, CHECK_PARAM } from '../src/lib/updateCheck.js'
 
+// The applier reports a failed update() to Sentry, so what it does NOT report is testable too — see
+// the abandonment pair at the end. Mocked (rather than spied) because the real module buffers into a
+// private array with no way to read it back.
+const sentry = vi.hoisted(() => ({ captureError: vi.fn(), initObservability: vi.fn() }))
+vi.mock('../src/observability/sentry', () => sentry)
+
 const OWN_ID = 'a5983de731e1224c945b1abe288e502d'
 const NEWER_ID = 'f762bedd56f680561b8a8a1232c1fe1a'
 
@@ -58,7 +64,12 @@ describe('Check for updates (Q7 — check, then apply)', () => {
         addEventListener: (type, fn) => {
           ;(swListeners[type] ??= []).push(fn)
         },
-        removeEventListener: () => {},
+        // A REAL removal, so "did the applier detach what it attached?" is answerable by reading
+        // swListeners rather than by trusting a spy. (It was a no-op stub, which quietly made every
+        // detach look identical to no detach at all.)
+        removeEventListener: (type, fn) => {
+          swListeners[type] = (swListeners[type] ?? []).filter((f) => f !== fn)
+        },
       },
     })
   }
@@ -112,6 +123,7 @@ describe('Check for updates (Q7 — check, then apply)', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    sentry.captureError.mockClear()
     localStorage.clear()
     sessionStorage.clear() // the skip-boot-hold assertions must see THIS test's stamp
     useSettings.getState().resetSettings()
@@ -418,6 +430,55 @@ describe('Check for updates (Q7 — check, then apply)', () => {
       })
       expect(unregister).not.toHaveBeenCalled()
       expect(reload).toHaveBeenCalledTimes(1)
+    })
+
+    it('an update() the applier ABANDONED is not reported — the app never files its own error', async () => {
+      // A real Sentry event class, manufactured by this code. Past the handoff deadline the applier
+      // gives up and forceReloadLatest takes over — and forceReloadLatest UNREGISTERS the worker,
+      // which makes the reg.update() still in flight reject with InvalidStateError. That rejection
+      // went straight to captureError({where:'update-apply'}), so every hammer fallback that
+      // happened to still have an update() outstanding reported a failure the app had caused by
+      // walking away. Abandoning an operation now settles the applier first: nothing it started can
+      // report, hand off, or hold a listener afterwards.
+      let rejectUpdate
+      const reg = {
+        waiting: null,
+        installing: null,
+        update: vi.fn(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectUpdate = reject
+            }),
+        ),
+      }
+      globalThis.fetch = serveBuildId(NEWER_ID)
+      installServiceWorker(reg)
+      mountApp()
+      openSettings()
+      await press()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(UPDATE_HANDOFF_MS + 50)
+      })
+      expect(reload).toHaveBeenCalledTimes(1) // the hammer took over
+      expect(swListeners.controllerchange ?? []).toEqual([]) // …and took its listener down with it
+      await act(async () => {
+        rejectUpdate(new DOMException('The ServiceWorker was unregistered', 'InvalidStateError'))
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(sentry.captureError).not.toHaveBeenCalled()
+    })
+
+    it('an update() that fails while the applier is still LIVE is reported', async () => {
+      // The other half, so the fix above can never become "silence everything". A genuine update()
+      // failure inside the handoff window is still the actionable signal it always was.
+      const boom = new Error('update failed')
+      const reg = { waiting: null, installing: null, update: vi.fn().mockRejectedValue(boom) }
+      globalThis.fetch = serveBuildId(NEWER_ID)
+      installServiceWorker(reg)
+      mountApp()
+      openSettings()
+      await press()
+      expect(sentry.captureError).toHaveBeenCalledWith(boom, { where: 'update-apply' })
     })
   })
 })

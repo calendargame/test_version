@@ -789,11 +789,20 @@ const ReactDOM = { createRoot, createPortal }
         // No service worker at all (unsupported, blocked, or a registration that failed — the state
         // Q10a now reports): there is nothing to hand off to, so the hammer IS the update path.
         if(!reg){window.setTimeout(forceReloadLatest,MIN_UPDATING_MS);return;}
-        let reloaded=false;
-        const gate=makeUpdateReloadGate({minHoldMs:MIN_UPDATING_MS,reload:()=>{reloaded=true;markSkipBootHold();window.location.reload();}});
+        // `settled` = this applier is FINISHED — it has either navigated (the gate's reload) or given
+        // up (the handoff deadline below, which hands over to forceReloadLatest). Nothing it started
+        // still matters after that, and one thing actively harms: reg.update() may still be in flight
+        // when forceReloadLatest unregisters the worker, and the browser then rejects it with
+        // InvalidStateError — an error the app MANUFACTURED by abandoning the operation, reported as
+        // if the update had failed on its own. So the deadline marks the applier settled first, and
+        // everything the applier still owns (the report below, the SKIP_WAITING handoff, the
+        // controllerchange listener) is torn down or suppressed against that one flag.
+        let settled=false;
+        const gate=makeUpdateReloadGate({minHoldMs:MIN_UPDATING_MS,reload:()=>{settled=true;markSkipBootHold();window.location.reload();}});
         gate.armHold();
-        navigator.serviceWorker.addEventListener('controllerchange',()=>gate.onHandoff(),{once:true});
-        const handOff=(w: ServiceWorker|null|undefined)=>{if(w)w.postMessage({type:'SKIP_WAITING'});};
+        const onControllerChange=()=>gate.onHandoff();
+        navigator.serviceWorker.addEventListener('controllerchange',onControllerChange,{once:true});
+        const handOff=(w: ServiceWorker|null|undefined)=>{if(w&&!settled)w.postMessage({type:'SKIP_WAITING'});};
         // A worker already parked in `waiting` is the update — messaging it directly is the whole
         // job. Only when there is none do we go to the network, and update() is used here as the
         // APPLIER it is: it fetches + installs, and the new worker arrives as `waiting` (or as
@@ -804,8 +813,8 @@ const ReactDOM = { createRoot, createPortal }
           if(reg.waiting){handOff(reg.waiting);return;}
           const installing=reg.installing;
           if(installing)installing.addEventListener('statechange',()=>{if(installing.state==='installed')handOff(reg.waiting??installing);});
-        }).catch(err=>captureError(err,{where:'update-apply'}));
-        window.setTimeout(()=>{if(reloaded)return;gate.cancel();forceReloadLatest();},UPDATE_HANDOFF_MS);
+        }).catch(err=>{if(!settled)captureError(err,{where:'update-apply'});});
+        window.setTimeout(()=>{if(settled)return;settled=true;navigator.serviceWorker.removeEventListener('controllerchange',onControllerChange);gate.cancel();forceReloadLatest();},UPDATE_HANDOFF_MS);
       },[]);
       const onCheckUpdates=useCallback(()=>{
         if(updateCheck==='checking')return;
@@ -883,14 +892,14 @@ const ReactDOM = { createRoot, createPortal }
         return ()=>{disposed=true;window.clearTimeout(id);if(cssFallbackId!==undefined)window.clearTimeout(cssFallbackId);window.removeEventListener('app-css-ready',finish);};
       },[]);
       // Q3 auto-update-on-open: in PRODUCTION only, register the SW (src/sw.ts, DYNAMICALLY imported so
-      // the virtual:pwa-register module never loads in dev/tests; registering also kicks off src/sw.ts's
+      // the registration never runs in dev/tests and its chunk never loads there; registering also kicks off src/sw.ts's
       // background registration.update() prefetch) and — IN PARALLEL, since this check needs only the
       // browser's registration, never that module — look for a new version that installed on a previous
       // visit and is WAITING. If one is: claim the #boot handoff, wait for the css-ready gate the normal
       // boot path enforces (the Updating overlay is styled by the real stylesheet — entering sooner would
       // paint it unstyled), show the Updating screen (the updating effect below removes #boot AFTER the
       // overlay commits), message the waiting worker DIRECTLY ({type:'SKIP_WAITING'} — a handler the
-      // generateSW worker ships natively, so unlike registerSW's returned updateSW(true) this cannot race
+      // generateSW worker ships natively, so unlike any handle src/sw.ts could hand back this cannot race
       // the register module's own registration and no-op), and reload exactly ONCE through the reload
       // gate (makeUpdateReloadGate): only after BOTH the SW handoff (controllerchange — which can also
       // fire for unrelated SW handoffs, hence the gate's one-shot guard — or the 4s safety net) AND the
@@ -917,6 +926,11 @@ const ReactDOM = { createRoot, createPortal }
         let cancelled=false;
         let engageOnCss: (()=>void) | null=null;
         let gate: ReturnType<typeof makeUpdateReloadGate> | null=null;
+        // Held so the cleanup can DETACH it: {once:true} only removes a listener that actually fired,
+        // and the whole point of the 4s safety net is that controllerchange may never arrive at all.
+        // Without both halves this effect leaks a live listener onto navigator.serviceWorker — a
+        // global that outlives the component — holding its gate and closure alive for the page's life.
+        let onControllerChange: (()=>void) | null=null;
         import('./sw.js').catch(err=>captureError(err,{where:'sw-module-import'})); // Q10a: never swallowed — a chunk that won't load means NO service worker at all (see the note above)
         navigator.serviceWorker.getRegistration().then(reg=>{
           if(cancelled)return;
@@ -942,7 +956,8 @@ const ReactDOM = { createRoot, createPortal }
             // once, and stamp the next boot's splash skip just before navigating away.
             gate=makeUpdateReloadGate({minHoldMs:MIN_UPDATING_MS,reload:()=>{markSkipBootHold();window.location.reload();}});
             gate.armHold();
-            navigator.serviceWorker.addEventListener('controllerchange',()=>{clearUpdateAttempts();gate?.onHandoff();}); // success — reset the loop breaker, then the gated one-shot reload
+            onControllerChange=()=>{clearUpdateAttempts();gate?.onHandoff();};
+            navigator.serviceWorker.addEventListener('controllerchange',onControllerChange,{once:true}); // success — reset the loop breaker, then the gated one-shot reload. {once:true} costs nothing: the gate is already one-shot, so only the FIRST controllerchange has ever done anything
             waiting.postMessage({type:'SKIP_WAITING'});
             // Safety net: if activation never fires controllerchange (skipWaiting failed), don't leave the
             // Updating screen stuck — a PLAIN reload after a few seconds (the old worker serves the old app
@@ -956,7 +971,7 @@ const ReactDOM = { createRoot, createPortal }
           if(appCssApplied())engage();
           else{engageOnCss=engage;window.addEventListener('app-css-ready',engage,{once:true});}
         }).catch(()=>{});
-        return ()=>{cancelled=true;gate?.cancel();if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
+        return ()=>{cancelled=true;gate?.cancel();if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);if(onControllerChange)navigator.serviceWorker.removeEventListener('controllerchange',onControllerChange);};
       },[]);
       // Q2 (round 6): the cold-open build-change "Updating" flash — the visible signal for updates
       // that land SILENTLY, with nothing waiting for the auto flow above to bridge. The primary case:

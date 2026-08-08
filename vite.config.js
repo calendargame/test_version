@@ -170,9 +170,10 @@ const distFiles = (dir, prefix = '') =>
 // the deployed one, which is what makes "Check for updates" a check instead of an unconditional
 // reload. src/lib/updateCheck.ts carries the full reasoning for the design; the mechanics here:
 //
-//   1. HASH the finished build — every file in dist, icons and all. Source maps are excluded (they
-//      are uploaded to Sentry and deleted, never shipped) and the identity file itself does not
-//      exist yet. Path AND bytes go into the hash, so a pure RENAME is a different build too.
+//   1. HASH the finished build — every file in dist, icons and all. Source maps are excluded (no
+//      build produces one today, and if the Sentry upload below is ever switched on they are
+//      uploaded then deleted, so they are never shipped either way) and the identity file itself
+//      does not exist yet. Path AND bytes go into the hash, so a pure RENAME is a different build too.
 //   2. INJECT <meta name="cg-build"> into dist/index.html. That is how the running app knows which
 //      build it is: the document it was parsed from says so. Nothing is written into the hashed
 //      JS/CSS assets — those carry their content hash in their FILENAME and are precached with
@@ -334,7 +335,10 @@ export default defineConfig(({ command, mode }) => ({
     // manifest + a Workbox service worker that precaches the whole build (so the app runs
     // with no network). registerType 'prompt' + injectRegister null (Q3): a newly-deployed SW
     // INSTALLS but WAITS — it does NOT silently activate + reload mid-session. We register the SW
-    // ourselves (src/sw.ts via virtual:pwa-register) and apply a waiting update on the NEXT launch,
+    // ourselves with a direct navigator.serviceWorker.register() (src/sw.ts — the plugin's
+    // virtual:pwa-register client helper, and the workbox-window chunk behind it, were dropped in
+    // round 12; only the GENERATOR half of this plugin is load-bearing now) and apply a waiting
+    // update on the NEXT launch,
     // behind the "Updating…" screen (App's boot effect messages the waiting worker directly with
     // {type:'SKIP_WAITING'} — a handler generateSW ships natively — and reloads once on
     // controllerchange). This makes updates land cleanly + visibly on open instead of a silent reload,
@@ -389,12 +393,28 @@ export default defineConfig(({ command, mode }) => ({
           }),
         ]
       : []),
-    // Sentry source-map upload (Current Work C1b): makes crash stack traces READABLE (real file/line,
-    // not minified gibberish). Runs ONLY in a production build that has a SENTRY_AUTH_TOKEN — a GitHub
-    // Actions SECRET set in both repos; local builds (no token) skip it cleanly. It uploads the source
-    // maps to Sentry (matched to events by injected debug IDs, so the lazy SDK chunk resolves too),
-    // then DELETES them from dist so they're never publicly served. Must be last (processes the final
-    // output). org/project slugs are public, not secret. telemetry off.
+    // Sentry source-map upload (Current Work C1b) — WIRED BUT NEVER YET ACTIVE. Read this before
+    // trusting a stack trace.
+    //
+    // WHAT IT WOULD DO: make crash stack traces READABLE (real file/line, not minified gibberish) by
+    // uploading the source maps to Sentry, matched to events by injected debug IDs so the lazy SDK
+    // chunk resolves too, then DELETING them from dist so they're never publicly served.
+    //
+    // WHAT ACTUALLY HAPPENS TODAY: nothing. The branch below requires process.env.SENTRY_AUTH_TOKEN,
+    // and .github/workflows/deploy.yml has no `env:` block anywhere and passes no secret to the build
+    // step — so the token has never been present in ANY build, CI included. This plugin has therefore
+    // never run once: no source maps uploaded, no debug IDs injected, no release created. The
+    // `build.sourcemap` gate below reads the same variable, so no .map files are generated either.
+    // Every Sentry event this project has ever received is minified. (The comment here used to claim
+    // the opposite — that CI uploads hidden source maps — which was never true; corrected round 12.)
+    //
+    // TO TURN IT ON: create a Sentry auth token with project-releases write scope, add it as a
+    // repository secret named SENTRY_AUTH_TOKEN in BOTH the live and the staging repo, and pass it to
+    // the build step in .github/workflows/deploy.yml (`env: SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}`).
+    // The secret has to exist first, so the workflow is deliberately left untouched here. Local builds
+    // (no token) skip the plugin cleanly either way.
+    //
+    // Must be last (processes the final output). org/project slugs are public, not secret. telemetry off.
     ...(command === 'build' && process.env.SENTRY_AUTH_TOKEN
       ? [
           sentryVitePlugin({
@@ -412,11 +432,13 @@ export default defineConfig(({ command, mode }) => ({
     buildIdentity(),
     precacheIntegrity(),
   ],
-  // Generate hidden source maps ONLY when we're uploading them to Sentry (CI deploys with the auth
-  // token). 'hidden' emits the .map files but omits the //# sourceMappingURL comment from the shipped
-  // JS, so browsers never fetch them and they aren't referenced; the Sentry plugin above uploads then
-  // deletes them. Local builds (no token) generate none — no clutter, no cost — and .map files never
-  // count toward the JS size budget anyway (the size script globs *.js only).
+  // Generate hidden source maps ONLY when we're uploading them to Sentry. 'hidden' emits the .map
+  // files but omits the //# sourceMappingURL comment from the shipped JS, so browsers never fetch
+  // them and they aren't referenced; the Sentry plugin above uploads then deletes them. Gated on the
+  // SAME variable as that plugin, deliberately: maps must never be emitted with nothing to consume
+  // and delete them. Since no build has ever had SENTRY_AUTH_TOKEN (see the plugin note above), this
+  // has always resolved to `false` — no .map file has ever been produced by CI or locally. (.map
+  // files would not count toward the JS size budget anyway; the size script globs *.js only.)
   build: {
     sourcemap: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false,
   },
