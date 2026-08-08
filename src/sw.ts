@@ -4,13 +4,27 @@ import { captureError } from './observability/sentry'
 //
 // ONE native call, deliberately. This module used to go through vite-plugin-pwa's
 // `virtual:pwa-register` helper, which pulled workbox-window in as its own ~5.6 KB precached chunk
-// to do exactly one effective thing: navigator.serviceWorker.register(swUrl, {scope, type}). Every
-// listener that helper wires (installed / waiting / controlling / activated) fans out to
-// onNeedRefresh / onOfflineReady callbacks this app has never passed, so all of them were no-ops,
-// and its returned updateSW() is deliberately unused (see the LAUNCH bullet below). Everything the
-// app actually needs is hand-rolled against the native API in main.tsx already — waiting detection,
-// the direct {type:'SKIP_WAITING'} message, the controllerchange handoff, and update(). So the
-// dependency bought nothing and cost a chunk, a precache entry, and the crash below.
+// for one thing this app wanted — navigator.serviceWorker.register(swUrl, {scope, type}) — and one
+// it very much did not.
+//
+// In the registerType:'prompt' branch the helper wires two Workbox listeners, `installed` and
+// `waiting` (node_modules/vite-plugin-pwa/dist/client/build/register.js). `installed` only fans out
+// to onNeedRefresh / onOfflineReady, which this app never passed, so it really was a no-op.
+// `waiting` WAS NOT: it runs showSkipWaitingPrompt, which attaches a `controlling` listener whose
+// handler reloads the page — `onNeedReload()` if one was passed, and otherwise, taken precisely
+// BECAUSE this app passed none, a bare `window.location.reload()`. So the app carried TWO reload
+// paths racing the same controllerchange: main.tsx's gated one (hold the "Updating…" screen for
+// MIN_UPDATING_MS, then markSkipBootHold() immediately before navigating) and the helper's ungated
+// one. Whenever the helper's won, it cut the Updating screen short of its hold AND skipped the
+// skip-boot-hold stamp, so the boot it caused then sat through the splash's full artificial hold
+// instead. Deleting it is why the update sequence's VISIBLE TIMING changes: what the user sees is
+// now exactly, and only, what main.tsx specifies.
+//
+// The helper's returned updateSW() is deliberately unused (see the LAUNCH bullet below), and
+// everything the app actually needs is hand-rolled against the native API in main.tsx already —
+// waiting detection, the direct {type:'SKIP_WAITING'} message, the controllerchange handoff, and
+// update(). So the dependency bought nothing it was wanted for, and cost a chunk, a precache entry,
+// a rogue reload, and the crash below.
 //
 // THE CRASH. workbox-window 7.4.1's Workbox.register() reads `this._registration.waiting` with no
 // guard — the only unguarded `.waiting` of the four in that file. On a device whose Service Worker
@@ -61,8 +75,10 @@ import { captureError } from './observability/sentry'
 // register()'s own default, and it is stated explicitly because generateSW emits a classic script
 // and that must never be silently re-derived. All three are pinned by the test file above.
 //
-// Calling at module scope, not on window 'load', is the helper's `immediate: true` — the one option
-// this app passed it, and all that option ever did was skip an `await` on the load event.
+// Calling at module scope, not on window 'load', is the helper's `immediate: true` — one of the two
+// options this app passed it, and all that option ever did was skip an `await` on the load event.
+// (The other was onRegisteredSW, whose only job — the background update() prefetch — is the .then()
+// below.)
 navigator.serviceWorker
   .register(`${import.meta.env.BASE_URL}sw.js`, {
     scope: import.meta.env.BASE_URL,

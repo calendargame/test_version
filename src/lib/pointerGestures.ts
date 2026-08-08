@@ -43,9 +43,14 @@
 // element under the release point (elementFromPoint) and decide. To override the native click — which on
 // touch targets the pressed button regardless of drift — we SUPPRESS it in a capture-phase `click`
 // listener (it runs before React's root listener, so a suppressed click never reaches the component's
-// onClick), and for a drag-to-select we synthesize a `.click()` on the release member instead. Keyboard
-// activation (the app's shortcut handler calls `.click()`) is unaffected: those clicks have no preceding
-// gesture, so they pass.
+// onClick), and for a drag-to-select we synthesize a `.click()` on the release member instead. Programmatic
+// `.click()`s — the keyboard shortcut handler (main.tsx: Tab → the mode trigger, 0–9 → the answer grid, the
+// [data-key] walk) and PillGroup's roving-focus arrows — pass through that same capture listener and so are
+// NOT exempt by construction: one is swallowed if it targets the exact element an armed suppression names,
+// while that arming is live (armed by a slide-off release, or by a cancelled press on a [data-select-trigger]
+// — see onCancel; cleared when a click consumes it, when the next pointerdown lands, or by armSuppress's 1s
+// fallback). Reaching that needs a keyboard activation of the very button a gesture just cancelled on, within
+// a second of it — and the swallowed click consumes the arming, so the next one passes.
 //
 // TESTABILITY: resolveRelease, resolveTriggerRelease, nextHilite, menuFor, bandDirection, and scrollDelta are pure
 // (or layout-free DOM reads) and unit-tested, as are the pointer latch + click suppression via synthetic
@@ -341,21 +346,28 @@ export function installPointerGestures(): () => void {
     if (activate && activate !== start) (activate as HTMLElement).click()
   }
   // A gesture the SYSTEM took away (pointercancel: the touch became a scroll/pinch, the app was
-  // suspended mid-press, an OS gesture won). It resolves to nothing — there is no release point, so
-  // nothing may activate — which means it must suppress the start button's click exactly as onUp
-  // does for every non-activating outcome. That is not belt-and-braces: on touch the click is
-  // DELAYED and fires the pressed button regardless, so a cancel that skipped the suppression let
-  // the click through on top of the work pointerdown had already done. On the mode selector — whose
-  // pointerdown toggles the menu — that click was a second toggle, opening the menu and shutting it
-  // in the same gesture. (resolveRelease(start, null, group) says the same thing for both the group
-  // and no-group paths: suppressStart true, activate nothing. A cancel is a release on nothing.)
-  // The suppression is cleared by the click that consumes it, by the next pointerdown, or by
-  // armSuppress's fallback timer — so a later genuine tap is never swallowed.
+  // suspended mid-press, an OS gesture won). There is no release point, so nothing may activate — and
+  // for a [data-select-trigger] press the click the browser still delivers afterwards must be
+  // suppressed. WHY ONLY TRIGGERS: a trigger's pointerdown has ALREADY acted (it toggled its menu),
+  // and the ⚙ Settings button + the mode selector are the app's only two press-acting controls — both
+  // carry the marker, so it is the exact discriminator, not a special case. A click after the cancel is
+  // therefore a SECOND toggle: the menu opens on the press and shuts again in the same gesture, which
+  // is the owner's "the menu will not stay open" report. onUp's trigger branch suppresses
+  // unconditionally for that same reason; a cancel is that situation with the release lost.
+  // Every OTHER button is deliberately left exactly as it was: its pointerdown did nothing, so a
+  // delayed click is a FIRST activation rather than a duplicate — and onUp would not suppress it
+  // either when the finger never left it, because onUp feeds resolveRelease the REAL release target
+  // (targetAt) and a release on the start element returns suppressStart FALSE. Suppressing there would
+  // be a new rule resting on an untestable claim about what a real browser delivers after
+  // pointercancel, and its failure mode is swallowing an answer whose grid the engine reclaimed.
+  // The arming is cleared by the click that consumes it, by the next pointerdown, or by armSuppress's
+  // fallback timer — so a later genuine tap is never swallowed.
   const onCancel = (e: PointerEvent) => {
     if (!startEl || e.pointerId !== pointerId) return
     const start = startEl
+    const wasTrigger = trigger !== null // endGesture clears it — read before
     endGesture()
-    armSuppress(start)
+    if (wasTrigger) armSuppress(start)
   }
   const onClick = (e: MouseEvent) => {
     if (

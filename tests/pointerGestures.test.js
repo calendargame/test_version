@@ -446,22 +446,23 @@ describe('pointerGestures controller — pointer latch + click suppression', () 
   })
 
   // ── pointercancel (fixed 2026-08-07) ──────────────────────────────────────────────────────────
-  // A gesture the system takes away resolves to NOTHING — no release point, so nothing may
-  // activate — and therefore has to suppress the start button's click exactly as every other
-  // non-activating outcome does. It did not, and on touch the click is delayed and fires the
-  // pressed button anyway, so it landed on top of whatever pointerdown had already done.
-  it('a cancelled gesture suppresses the start button’s delayed click (it resolved to nothing)', () => {
+  // A gesture the system takes away (the touch became a scroll, the app was suspended mid-press)
+  // arrives with no release point. For a [data-select-trigger] the browser's follow-on click is a
+  // SECOND toggle — pointerdown already opened the menu — so it must be suppressed. For every other
+  // button that click is a FIRST activation, so the cancel path leaves it strictly alone.
+  it('a cancelled press on an ORDINARY button changes nothing — its delayed click still activates it', () => {
+    // The scope guard. Suppressing here would be a NEW rule (onUp only suppresses when the release
+    // target isn't the start button — a finger that never moved releases ON it and the click passes),
+    // and its failure mode is eating an answer whose grid the engine reclaimed as a pan.
     const a = btn()
     const aClicks = clicksOn(a)
     a.dispatchEvent(ptr('pointerdown'))
     document.dispatchEvent(ptr('pointercancel'))
-    a.click() // the click the browser delivers anyway, after the cancel
-    expect(aClicks).not.toHaveBeenCalled()
-    a.click() // …and the suppression is spent, so a later real tap still works
+    a.click() // the click the browser delivers after the cancel
     expect(aClicks).toHaveBeenCalledTimes(1)
   })
 
-  it('a cancelled press on a menu TRIGGER cannot double-toggle it (open-then-instantly-shut)', () => {
+  it('a cancelled press on the MODE SELECTOR cannot double-toggle it (open-then-instantly-shut)', () => {
     // The mode selector toggles on POINTERDOWN, so a click arriving after the cancel is a SECOND
     // toggle: the menu opens on the press and shuts again in the same gesture. This is the exact
     // shape of the owner's "the menu will not stay open" report, and reverting onCancel's
@@ -478,16 +479,36 @@ describe('pointerGestures controller — pointer latch + click suppression', () 
     document.dispatchEvent(ptr('pointercancel')) // …then iOS takes the touch away
     trigger.click()
     expect(trigClicks).not.toHaveBeenCalled() // no second toggle: the menu stays open
+    trigger.click() // …and the arming is spent, so the next real tap still toggles
+    expect(trigClicks).toHaveBeenCalledTimes(1)
+  })
+
+  it('…and so does a cancelled press on the ⚙ SETTINGS trigger, whose aria-controls appears only after', () => {
+    // The gear's shape differs from the mode selector's: it carries data-select-trigger always but
+    // names its panel (aria-controls="settings-popover") only while OPEN, so at pointerdown there is
+    // no menu to pair with. The marker alone is what the cancel path keys on, so the closed→open
+    // gear is covered too — main.tsx's gear carries the same onPointerDown-toggle + onClick-toggle
+    // pair the mode selector does, and would double-toggle identically without this.
+    const gear = domEl('button', { 'data-select-trigger': '' }, document.body)
+    const gearClicks = clicksOn(gear)
+    gear.dispatchEvent(ptr('pointerdown')) // opens the panel…
+    gear.setAttribute('aria-controls', 'settings-popover')
+    domEl('div', { id: 'settings-popover' }, document.body)
+    document.dispatchEvent(ptr('pointercancel'))
+    gear.click()
+    expect(gearClicks).not.toHaveBeenCalled() // the panel stays open
   })
 
   it('a cancel belonging to ANOTHER pointer leaves the live gesture (and its outcome) alone', () => {
     const a = btn()
+    const b = btn()
     const aClicks = clicksOn(a)
     a.dispatchEvent(ptr('pointerdown', { pointerId: 7 }))
-    document.dispatchEvent(ptr('pointercancel', { pointerId: 8, isPrimary: false }))
-    hit = a
-    document.dispatchEvent(ptr('pointerup', { pointerId: 7 })) // released ON it → click passes
+    document.dispatchEvent(ptr('pointercancel', { pointerId: 8, isPrimary: false })) // must be ignored
+    hit = b
+    document.dispatchEvent(ptr('pointerup', { pointerId: 7 })) // pointer 7's real release: slid off a
     a.click()
-    expect(aClicks).toHaveBeenCalledTimes(1)
+    expect(aClicks).not.toHaveBeenCalled() // the slide-off still resolved → had the foreign cancel
+    // ended the gesture, onUp would have bailed and this click would have gone through
   })
 })

@@ -50,14 +50,30 @@ const mountApp = async () => {
   await act(async () => {
     view = render(<App />)
   })
-  await settle()
+  await settleBoot()
   return view
 }
-// Let every pending microtask (the dynamic import, getRegistration, fetch) and any due timer run.
+// Let every pending MICROTASK and any due fake timer run. Enough for anything whose promise is
+// already settled or settles on the microtask queue (getRegistration, fetch — both mocks here).
 const settle = async () => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
+}
+// Finish the boot effect's async tail. The effect fires two promises it never awaits: a REAL dynamic
+// import of src/sw.js and navigator.serviceWorker.getRegistration(). getRegistration is a mock, so
+// settle() covers it — but the import is resolved by Vitest's module runner (fetch + transform + the
+// mock factory), which is I/O, and no number of microtask flushes can conjure I/O that has not
+// finished. Awaiting the SAME module request here is what makes the mount deterministic: the runner
+// keys its in-flight requests by resolved id, so `../src/sw.js` here and `./sw.js` in main.tsx are
+// one promise — when this returns, the effect's .catch is queued and the settle() below delivers it.
+// Without it this file was load-dependent: alone, the import happened to land inside the one settle()
+// turn; in a saturated full-suite run it did not, and the file failed wholesale. (The suite's
+// standing lesson: a test that only passes when the machine is idle is a broken TEST, and the fix is
+// to remove the race — never to raise a timeout. There is no timeout in this file to raise.)
+const settleBoot = async () => {
+  await import('../src/sw.js').catch(() => {}) // rejects by design — this file mocks it to throw
+  await settle()
 }
 const updatingOverlay = () => document.querySelector('.boot-updating')
 

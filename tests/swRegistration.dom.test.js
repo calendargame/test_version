@@ -49,6 +49,8 @@ beforeEach(() => {
 })
 afterEach(() => {
   delete navigator.serviceWorker
+  vi.unstubAllEnvs() // the base-relativity case below stubs BASE_URL; undone here so a failed
+  // assertion can never leak a staging base into the next test
 })
 
 describe('service-worker registration (src/sw.ts)', () => {
@@ -57,13 +59,30 @@ describe('service-worker registration (src/sw.ts)', () => {
     // passed `buildBase + filename` and `scope || basePath` — both of which ARE Vite's resolved base
     // — so the direct call has to reproduce exactly `${BASE_URL}sw.js` and `BASE_URL`. Any drift
     // (a leading './', a trimmed slash, a missing scope) would leave every existing installation
-    // beside a second worker at a different scope. BASE_URL is '/' under Vitest and in the live
-    // build, and '/test_version/' on staging; the interpolation is what makes one call correct for
-    // both, and both were verified against the built bundle when this replaced the plugin's helper.
+    // beside a second worker at a different scope. Both forms were verified against the BUILT bundle
+    // when this replaced the plugin's helper.
+    // LITERALS, deliberately — not `${import.meta.env.BASE_URL}sw.js`. An expectation written in the
+    // implementation's own expression cannot fail on what that expression RESOLVES to, so it would
+    // wave through a hard-coded '/sw.js' in sw.ts and leave staging broken. '/' is a stable pin on
+    // every machine and in CI for BOTH repos: vite.config derives the Pages base from
+    // GITHUB_REPOSITORY only when `command === 'build'`, and Vitest resolves the config as 'serve'.
+    // The staging base is then covered for real by the next case, rather than assumed.
     await loadSwWith(async () => ({ update: vi.fn().mockResolvedValue(undefined) }))
     expect(register).toHaveBeenCalledTimes(1)
-    expect(register).toHaveBeenCalledWith(`${import.meta.env.BASE_URL}sw.js`, {
-      scope: import.meta.env.BASE_URL,
+    expect(register).toHaveBeenCalledWith('/sw.js', { scope: '/', type: 'classic' })
+  })
+
+  it('FOLLOWS the base — driven to the staging base it registers there, not at the root', async () => {
+    // The half a single-base assertion can never see. This app ships from two bases — '/' live and
+    // '/test_version/' on staging — and BASE_URL interpolation is the whole reason one call is
+    // correct for both. Stubbing the base is what proves the call is base-RELATIVE: a '/sw.js'
+    // literal in sw.ts passes the case above and fails this one, and that drift is precisely what
+    // would put a second worker at the wrong scope beside every installation on staging.
+    vi.stubEnv('BASE_URL', '/test_version/')
+    await loadSwWith(async () => ({ update: vi.fn().mockResolvedValue(undefined) }))
+    expect(register).toHaveBeenCalledTimes(1)
+    expect(register).toHaveBeenCalledWith('/test_version/sw.js', {
+      scope: '/test_version/',
       type: 'classic',
     })
   })

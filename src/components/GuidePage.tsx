@@ -491,10 +491,12 @@ export default function GuidePage({ visible }: { visible: boolean }) {
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
             release to switch (or just tap to open the menu and tap a mode, as before). Once it's
-            open it stays open until you choose a mode, tap outside it, or press Esc. Touching this
-            page to scroll it counts as tapping outside, so that closes it — but the page moving on
-            its own doesn't: tap the iPhone status bar to jump back to the top and the menu simply
-            stays where it is, under its button in the bar.
+            open, five things close it: choosing a mode, pressing anywhere outside it, Esc, Tab (the
+            same key that opens it — see Keyboard Input), and your device's Back button (described
+            below). Starting a scroll by touching the page outside the menu is one of those presses
+            outside, so that closes it — but a touch that lands on the menu itself is not, and
+            neither is the page moving on its own: tap the iPhone status bar to jump back to the top
+            and the menu simply stays where it is, under its button in the bar.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it
@@ -502,6 +504,14 @@ export default function GuidePage({ visible }: { visible: boolean }) {
             change it; the panel closes and the change applies. Releasing on a Year Range field
             opens the keyboard to type instead, and the buttons at the foot of the panel keep the
             panel open.
+          </li>
+          <li>
+            Your device's own Back — Android's Back button, or your browser's back arrow or
+            back-swipe — closes whatever is open on top rather than leaving the app: the mode menu,
+            the ⚙ panel and its popups, Show Codes, or this guide. Press it again for the next layer
+            down. (This is the phone or browser's Back, not the <b>&lt;</b> button inside the game,
+            which walks back through dates.) Installed on an iPhone home screen there's no Back to
+            press, and the app deliberately adds none.
           </li>
           <li>
             Timer sliders (Flash speed and both Blitz timers) — tap the value beside the slider to

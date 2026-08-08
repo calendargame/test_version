@@ -542,6 +542,58 @@ describe('Settings — THE PICKER RULE', () => {
   })
 })
 
+// ── The two Dates adjacencies the How-to-Play guide states as fact ───────────────────────────
+describe('Settings → Dates — the pairings the guide depends on', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // The Dates section is one flat space-y-2 column, so its row CAPTIONS read in DOM order are the
+  // visible row order. Captions are leaf label elements; the PillGroup wrappers between them hold
+  // pill text that matches none of these, so they filter themselves out.
+  const DATE_CAPTIONS = [
+    'Year Range',
+    'Leap Year Chance',
+    'Jan/Feb Chance on Leap Years',
+    'Julian Calendar (pre-Oct 15, 1582)',
+    'Julian Chance',
+  ]
+  const datesRowOrder = () => {
+    const section = panel().getByText('Dates').parentElement
+    return [...section.querySelectorAll('div,span')]
+      .map((el) => el.textContent.trim())
+      .filter((t) => DATE_CAPTIONS.includes(t))
+  }
+
+  it('Jan/Feb Chance sits directly under Leap Year Chance, and Julian Chance directly under its switch', () => {
+    // DELIBERATELY NOT the whole order. Which block goes first is a design call the owner may
+    // revisit (round-12 already moved the Julian pair to the foot), and a test that froze all five
+    // rows would fail every such call for no reason. What is NOT free is splitting either PAIR,
+    // because the guide states both as fact to the reader: Jan/Feb Chance is documented as a
+    // sub-case of Leap Year Chance, and the Julian Chance section tells the user in so many words
+    // that "The Julian Calendar toggle ABOVE is off" is one of the three reasons the row greys out.
+    // Move one half of a pair and that sentence is simply untrue on screen, with nothing to catch
+    // it — the reorder that created this risk protected the pairings with a source COMMENT, which
+    // cannot fail a build. (What this still cannot see: the guide's Settings Overview enumerates
+    // all five rows in prose. That list has to be re-read by hand on any reshuffle — pinning it
+    // here would be pinning the whole order through the back door.)
+    mountApp()
+    const order = datesRowOrder()
+    expect(order).toHaveLength(DATE_CAPTIONS.length) // else the index math below proves nothing
+    expect(order.indexOf('Jan/Feb Chance on Leap Years')).toBe(
+      order.indexOf('Leap Year Chance') + 1,
+    )
+    expect(order.indexOf('Julian Chance')).toBe(
+      order.indexOf('Julian Calendar (pre-Oct 15, 1582)') + 1,
+    )
+  })
+})
+
 // ── Parts E + F: identical semantics everywhere, and the dropdowns are gone ──────────────────
 describe('Settings → Display — radio semantics and the retired theme dropdowns', () => {
   beforeEach(() => {
