@@ -8,12 +8,20 @@ import type { RefObject } from 'react'
 // commit, so that a half-typed "19" is not read as the year 19. The two strings, the two commits
 // and the two store→text sync effects are one unit, and this module is that unit.
 //
-// ★ WHY IT IS CALLED BY App AND NOT BY THE PANEL, even though the only markup that reads it is the
-// panel's. The panel is conditionally rendered: it unmounts on close and remounts on open. State it
-// owned would be re-initialised from the store on every open — and today a half-typed year SURVIVES
-// closing and reopening the panel, which is pinned behaviour (tests/settingsPanel.yearRange.dom,
-// "PINS TODAY: a half-typed year survives closing and reopening the panel"). Owning the pair up in
-// App is what keeps that true.
+// ★ WHY IT IS CALLED BY App AND NOT BY THE PANEL. Two reasons now, and they point the same way.
+// FIRST, LIFETIME: the panel is conditionally rendered — it unmounts on close and remounts on open.
+// State it owned would be re-initialised from the store on every open, and today a half-typed year
+// SURVIVES closing and reopening the panel, which is pinned behaviour
+// (tests/settingsPanel.yearRange.dom, "PINS TODAY: a half-typed year survives closing and reopening
+// the panel"). Owning the pair up in App is what keeps that true.
+// SECOND, AUDIENCE (round 15): the panel is no longer the only reader. App's settingsAtDefaults
+// compares both strings, and the ⚙ gear draws the answer while the panel is CLOSED — the owner's
+// call that a typed-but-uncommitted year counts as "changed" for all four offers. A hook the panel
+// owned could not answer a question asked while the panel does not exist.
+// ⚠ App therefore re-renders on every keystroke in a year box. It always did — these two useStates
+// have been App's since before the extraction, and setMinInputVal has always re-rendered App —
+// so reading the values in App's own render costs nothing extra. Nothing here memoises the change
+// away, and nothing should try to: the whole point is that the gear reacts to the keystroke.
 //
 // ★ WHY THE TWO REFS ARE PARAMETERS RATHER THAN PART OF THE RETURN. They are the same shape as
 // settingsPopoverRef: created by App, attached by the panel, read by App-side code — here the two
@@ -60,29 +68,25 @@ export function useYearRangeMirrors(
   minInputRef: RefObject<HTMLInputElement | null>,
   maxInputRef: RefObject<HTMLInputElement | null>,
 ): YearRangeMirrors {
-  // ★ THE BOOT-COMMIT WINDOW (pre-existing defect D8), re-checked after the round-14 extraction and
-  // deliberately left as it is. These two initialise to the FACTORY literals rather than to the
-  // persisted store, so a user with a saved range of, say, 1900–2100 has mirrors reading "1"/"10000"
-  // for exactly one commit — until the store→text effects below run on mount.
+  // ★ SEEDED FROM THE STORE, and round 15 is the round that had to do it. These two used to
+  // initialise to the FACTORY literals '1' / '10000' rather than to the persisted minY/maxY, so a
+  // user whose saved range is, say, 1900–2100 had mirrors reading "1"/"10000" for exactly one
+  // commit — until the store→text effects below ran on mount. That was pre-existing defect D8, and
+  // round 14 left it alone on a MOUNT argument: nothing outside the panel read these strings, and
+  // the panel cannot be on screen that early, so the wrong value was never rendered.
   //
-  // IT IS UNOBSERVABLE, and that is a structural fact, not a happy accident. Enumerated by hand
-  // (round 14) — the complete reader list of these two strings is:
-  //   1. the two <input value={yearRange.*.value}> in components/SettingsPanel;
-  //   2. commitMin / commitMax, reachable only via those inputs' onBlur / Enter;
-  //   3. resetTo, which only WRITES them.
-  // Every one of (1) and (2) requires the panel to be MOUNTED, and main.tsx mounts it behind
-  // `settingsOpen && <SettingsPanel …>` with `settingsOpen` initialised to false and no boot-time
-  // path that opens it — the gear tap, the G key and the Back-button restore are all user events,
-  // and React flushes pending passive effects before a discrete event, so the mirrors are already
-  // in sync by the time any of them can render a box. Round 14 narrowed it further from the other
-  // side: the mirrors were removed from every at-defaults boolean, so App itself no longer reads
-  // them at all.
-  // ⚠ THAT MAKES THE GUARANTEE A MOUNT GUARANTEE, NOT A VALUE GUARANTEE. It breaks the moment
-  // anything renders these strings outside the panel, or the panel is mounted while closed (e.g. an
-  // animated open). If you do either, seed these from minY/maxY here first — a lazy initialiser is
-  // all it takes — and delete this note.
-  const [minInputVal, setMinInputVal] = useState('1')
-  const [maxInputVal, setMaxInputVal] = useState('10000')
+  // The note that stood here spelled out the exact condition that would retire the argument —
+  // "it breaks the moment anything renders these strings outside the panel … seed these from
+  // minY/maxY here first, a lazy initialiser is all it takes" — and round 15's first change is
+  // precisely that: App's settingsAtDefaults now compares both strings, and the ⚙ gear renders the
+  // result while the panel is CLOSED. On a boot with a saved range the old literals would have
+  // disagreed with the store for one render and lit the gear's violet bar on a launch state that is
+  // at its defaults. So the seed is no longer a tidiness fix; it is what makes change 1 correct.
+  //
+  // Lazy on purpose: the initialiser is read once, so this costs one String() at mount rather than
+  // one per render, and it CANNOT drift from the effects below — both spell String(minY).
+  const [minInputVal, setMinInputVal] = useState(() => String(minY))
+  const [maxInputVal, setMaxInputVal] = useState(() => String(maxY))
   function applyMinValue(val: number) {
     if (val !== minY) setMinY(val)
   }

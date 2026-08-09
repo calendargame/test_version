@@ -265,7 +265,15 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(screen.getByRole('slider', { name: 'Blitz Question Timer' }).value).toBe('25')
   })
 
-  it("the popup's N field applies the AoX validation trio (digits only, clamp on commit, Escape revert)", () => {
+  it("the popup's N field applies the AoX validation trio (digits only, clamp on commit, Escape discards)", () => {
+    // ⚠ RE-BLESSED (round 15, B6) — AND IT WAS STILL GREEN WHEN THE BEHAVIOUR CHANGED UNDER IT,
+    // which is the more useful half of this note. Escape here used to normalize-COMMIT; it now
+    // discards back to the value the field held when the keyboard entered it. This case went on
+    // passing only because it focused the field AFTER typing, so the "value at focus" it discarded
+    // to was the half-typed 1 — which then normalize-committed to 2 on the blur and matched the old
+    // assertion exactly. A route no finger can take: you cannot type into a field you have not
+    // focused. The focus has moved above the typing below, which is both the real order and the
+    // order that makes the assertion mean what it says.
     mountApp()
     openSettings()
     makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
@@ -278,18 +286,19 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     act(() => fireEvent.change(nField(), { target: { value: '2000' } }))
     act(() => fireEvent.keyDown(nField(), { key: 'Enter' }))
     expect(nField().value).toBe('1000') // Enter commits with the 2–1000 clamp
-    act(() => fireEvent.change(nField(), { target: { value: '1' } }))
-    // Focus first (as a real keypress implies): the popup's document-level Escape handler skips
-    // the press only while an input holds focus — the field's own handler then normalize-commits
-    // (the AoX field's Escape semantics) and dismisses the keyboard, NOT the popup or the panel.
+    // Focus first, as a real keypress implies twice over: it is what the field captures its discard
+    // target from, and it is what makes the popup's document-level Escape handler skip the press
+    // (that handler bails only while an input holds focus). The field's own handler then discards
+    // the edit and dismisses the keyboard, NOT the popup or the panel.
     act(() => {
       nField().focus()
-      fireEvent.keyDown(nField(), { key: 'Escape' })
+      fireEvent.change(nField(), { target: { value: '1' } })
     })
-    expect(nField().value).toBe('2') // Escape commits the clamped current value
+    act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
+    expect(nField().value).toBe('1000') // discarded back to the value at focus — Enter's commit above
     expect(popupTitle()).toBeInTheDocument() // …and the popup (and panel) survived the press
     act(() => fireEvent.click(btn('Save')))
-    expect(useUserDefaults.getState().saved.prefs.aoxN).toBe('2')
+    expect(useUserDefaults.getState().saved.prefs.aoxN).toBe('1000')
   })
 
   it('gear indicator + Save-Defaults dim derive from ONE at-defaults comparison across both stores', () => {

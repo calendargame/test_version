@@ -103,6 +103,10 @@ function DefaultsCard({
   const dirtyQ = prefs.blitzQSec !== seed.blitzQSec
   const dirty = dirtyAox || dirtyFlash || dirtyBlitz || dirtyQ
   const commitAoxN = () => setPrefs((p) => ({ ...p, aoxN: normalizeAoxN(p.aoxN) }))
+  // WHAT ESCAPE IN THE N FIELD REVERTS TO (round 15, B6): the value the field held when the
+  // keyboard entered it. A ref, not state — it is written on focus and read on one keypress, and
+  // nothing renders it. See the long note at the input for why it has to be remembered at all.
+  const aoxNAtFocusRef = useRef(prefs.aoxN)
   // The scroll region and its two boundary surfaces (see the height-cap note at the top).
   // `active` is the literal true, and honestly so: this component only exists while its modal is
   // open, so there is no open flag to gate on and nothing for a changing identity to re-attach
@@ -139,10 +143,33 @@ function DefaultsCard({
       >
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-(--tx-200-80) shrink-0">AoX Run Length</span>
-          {/* The Escape branch STOPS PROPAGATION: it blurs the field, and without the stop the
-                same native event would reach the document-level settings Escape handler AFTER the
-                blur — its input-has-focus skip no longer applies, and it would slam the whole
-                panel (and this popup) shut on what the user meant as a keyboard dismiss. */}
+          {/* ★ ESCAPE DISCARDS — round 15 (B6). It used to normalize-COMMIT, which made this the
+                only field in the popup where Escape kept the edit: the tap-to-type readouts beside
+                the three sliders (SliderValueEditor, the `manage` branch below) have reverted
+                WITHOUT committing since round 2, and the ⚙ Year Range boxes since round 14. Escape
+                now means one thing in every box you can type a NUMBER into — Enter keeps the edit
+                and lets go, Escape throws it away and lets go, and the container is left for a
+                second Escape (here, the popup's own capture-phase handler once the field is empty
+                of focus). Cancel is still the way to discard the WHOLE popup; this is the field.
+                ⚠ NOT app-wide: the Lookup date box (components/LookupCard) handles Enter only, so
+                Escape does nothing there. It is the one text field outside the contract — an open
+                gap, not a decision, and the guide's Keyboard Input bullet says so out loud.
+                ⚠ THE DISCARD TARGET IS CAPTURED ON FOCUS, because `prefs.aoxN` is the pending
+                snapshot itself — onChange rewrites it on every keystroke, so the value being
+                discarded back to is gone by the time Escape arrives. Same shape, same reason, as
+                the AoX mode screen's own run-length box.
+                ⚠ NO flushSync HERE, unlike the ⚙ year boxes, and the difference is real rather
+                than an inconsistency: commitAoxN is a FUNCTIONAL setPrefs updater, so the commit
+                the blur below fires reads the reverted value React has already queued instead of a
+                stale render closure. The year boxes' commit parses a text mirror and clamps it
+                against the other field, which no updater can express — hence flushSync there.
+                ⚠ IT STOPS PROPAGATION, and that was already true and still is: it blurs the field,
+                and without the stop the same native event would reach the document-level settings
+                Escape handler AFTER the blur — its input-has-focus skip no longer applies, and it
+                would slam the whole panel (and this popup) shut on what the user meant as a
+                keyboard dismiss. The popup's OWN Escape handler is capture-phase and so runs
+                BEFORE this one, where the field still holds focus and its text-entry guard bails —
+                which is what leaves the press to the field. */}
           {manage ? (
             <SliderValueEditor
               value={+normalizeAoxN(prefs.aoxN)}
@@ -169,6 +196,9 @@ function DefaultsCard({
                 const v = e.target.value
                 if (v === '' || /^\d*$/.test(v)) setPrefs((p) => ({ ...p, aoxN: v }))
               }}
+              onFocus={() => {
+                aoxNAtFocusRef.current = prefs.aoxN
+              }}
               onBlur={commitAoxN}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -177,7 +207,8 @@ function DefaultsCard({
                   e.currentTarget.blur()
                 } else if (e.key === 'Escape') {
                   e.stopPropagation()
-                  commitAoxN()
+                  const at = aoxNAtFocusRef.current
+                  setPrefs((p) => ({ ...p, aoxN: at }))
                   e.currentTarget.blur()
                 }
               }}

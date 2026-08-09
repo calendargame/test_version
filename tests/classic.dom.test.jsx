@@ -92,7 +92,7 @@ describe('Classic — characterization (batch 1: basics)', () => {
     // The settings store is a persisted singleton — clear + reset, then pin a deterministic
     // config: fixed numeric-ymd format (parseable) and a Gregorian-only year range.
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -173,7 +173,7 @@ describe('Classic — characterization (batch 1: basics)', () => {
 describe('Classic — characterization (batch 2: live Override paths)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -214,7 +214,7 @@ describe('Classic — characterization (batch 2: live Override paths)', () => {
 describe('Classic — characterization (batch 3: Back/Forward + history Override paths)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -274,7 +274,7 @@ describe('Classic — characterization (batch 3: Back/Forward + history Override
 describe('Classic — characterization (batch 4: Show Codes, streaks, Reset Stats)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -329,7 +329,7 @@ describe('Classic — characterization (batch 4: Show Codes, streaks, Reset Stat
 describe('Classic — characterization (batch 5: timing-on, history & override nuances)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -418,7 +418,7 @@ describe('Classic — characterization (batch 5: timing-on, history & override n
 describe('Classic — Save Stats / Override availability (fix 2026-06-06)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -475,7 +475,7 @@ describe('Classic — Save Stats / Override availability (fix 2026-06-06)', () =
 describe('Classic — Show Codes while browsing back is read-only (fix 2026-06-06)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -511,7 +511,7 @@ describe('Classic — Show Codes while browsing back is read-only (fix 2026-06-0
 describe('Classic — Override credits a question at most once (fix 2026-06-06)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -646,7 +646,7 @@ describe('Classic — Override credits a question at most once (fix 2026-06-06)'
 describe('Classic — back-browse Override past a live miss (fix 2026-06-08)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -698,7 +698,7 @@ describe('Classic — back-browse Override past a live miss (fix 2026-06-08)', (
 describe('Classic — Q2 (settings regen deferred to popover close)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -744,7 +744,7 @@ describe('Classic — Q2 (settings regen deferred to popover close)', () => {
 describe('Classic — Reset Stats two-tap confirm (Q2)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)

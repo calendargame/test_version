@@ -45,12 +45,21 @@ export type ChangelogEntry = {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  // ⚠ THIS ENTRY WAS REWRITTEN BY THE SECOND DEPLOY OF 2026-08-09, under the charter's same-day
+  // rule: one entry per Pacific day, restating that day's NET effect versus yesterday's build. The
+  // first deploy shipped "Reset Settings and Full Reset now wait until you leave the year box"; the
+  // second reversed exactly that on the owner's call, so the line describing it is GONE rather than
+  // followed by its own contradiction. Everything else it shipped is still true and is untouched,
+  // in its original order, with the day's new lines placed around it.
   {
     date: '2026-08-09',
     items: [
-      'Reset Settings and Full Reset now wait until you leave the year box, the same way the ⚙ button already did. A year you have started typing but not left yet no longer counts as a change on its own.',
+      'How to Play has a new Accessibility section: what the app does for screen readers, keyboards and reduced-motion settings — and, said plainly, where it still falls short.',
+      'Typing in a Year Range box now counts as a change straight away, for everything the Settings menu does about it: the violet bar under the ⚙ button, Save Defaults, Reset Settings and Full Reset all react to the typing instead of waiting for you to leave the box. Dates still come from the stored range until the year counts.',
+      'The three buttons at the foot of the Settings menu now tell a screen reader when they are unavailable, instead of only looking grey — and on a computer the pointer shows the not-allowed cursor over them.',
       'Fixed: pressing Esc in a Year Range box now throws away what you typed and puts the stored year back. It used to do the opposite and keep the year you were trying to discard.',
       'Fixed: pressing Esc in a Year Range box no longer closes the whole Settings menu with it. It just leaves the box, and pressing Esc again closes the menu.',
+      'Fixed: pressing Esc in the AoX run-length box now throws the typing away too, on the AoX screen and inside the Save Defaults box alike. Those were the last two places where Esc kept the number you were trying to discard.',
       'Fixed: the three buttons at the foot of the Settings menu now do nothing at all while they are dimmed. Save Defaults could previously be opened with a keyboard when there was nothing to save.',
     ],
   },

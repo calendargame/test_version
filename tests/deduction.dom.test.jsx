@@ -177,7 +177,7 @@ function answerWrong() {
 function pin({ minY = 1583, maxY = 10000, useJulian = true } = {}) {
   localStorage.clear()
   const s = useSettings.getState()
-  s.resetSettings()
+  s.resetToFactory()
   s.setRandomFormat(false)
   s.setDateFormat('numeric-ymd')
   s.setUseJulian(useJulian)

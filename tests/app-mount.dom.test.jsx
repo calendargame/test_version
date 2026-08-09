@@ -29,7 +29,7 @@ describe('App mounts in the harness (sub-step 0b)', () => {
     // The settings store is a module singleton persisted to localStorage — reset both so
     // each test starts from the documented defaults regardless of order.
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     cleanup()

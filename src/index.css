@@ -401,7 +401,16 @@ input,textarea{user-select:text;-webkit-user-select:text}
 @media (hover: hover){
   .surface-button:hover{background:var(--sbtn-hov)}
   .surface-toggle:hover{background:var(--stgl-hov)}
-  .btn-solid:hover{background:#6d28d9}
+  /* ⚠ THE :not() PAIR IS NOT DECORATION (round 15, B7). Until B7 every withheld .btn-solid also
+     wore pointer-events-none, so it could not be hovered and a bare .btn-solid:hover was safe. The
+     ⚙ footer's three buttons dropped pointer-events-none — that is what lets the not-allowed cursor
+     in the rule below actually paint, since a pointer-events:none element is never hit-tested — so
+     without this guard a dimmed Save Defaults would BRIGHTEN under the pointer while simultaneously
+     showing not-allowed. Equal specificity with the rule below (both 0,2,0) and different
+     properties, so source order would not have saved it. Every other .btn-solid that carries
+     aria-disabled (locked picker segments, Show Codes, an accented slider readout) still has
+     pointer-events-none as well, so for those this changes nothing. */
+  .btn-solid:not([aria-disabled="true"]):not(:disabled):hover{background:#6d28d9}
   /* CustomSelect option press-highlight — only on hover-capable (desktop/mouse) devices, so a
      touch tap on mobile doesn't flash a dark highlight on the option being selected. Tailwind's
      `active:` variant isn't hover-guarded (unlike `hover:`), so it's gated here instead. The
@@ -499,9 +508,14 @@ button:focus,select:focus{outline:none}
    values when none are saved — store/userDefaults). ⚠ "in effect" is load-bearing, not filler: it
    is NOT every menu setting. The theme trio is compared by what is IN EFFECT, so at least one of
    the three is always excluded — manualTheme while Use System is On, BOTH darkTheme and lightTheme
-   while it is Off — and the dormant values never count (settingsStoreAtDefaults in main.tsx says
-   why). That makes the compared set 17 of the snapshot's 18 values with Use System On, 16 with it
-   Off. Since round 14 the same boolean also dims Save Defaults AND Reset Settings, so this
+   while it is Off — and the dormant values never count (settingsAtDefaults in main.tsx says
+   why). ⚠ AND IT IS NOT ONLY SETTINGS: since round 15 the two Year Range TEXT BOXES are compared
+   too, so a year you have TYPED but not yet committed lights this bar on its own. That makes the
+   compared set 19 with Use System On and 18 with it Off — 17 or 16 of the Save Defaults snapshot's
+   18 values, PLUS the two box texts, which the snapshot does not hold at all. Deliberately NOT a
+   subset of it: those two are compared and never saved, so pressing Save Defaults on a half-typed
+   year leaves this bar lit until the box commits or discards (main.tsx says why at length).
+   Since round 14 the same boolean also dims Save Defaults AND Reset Settings, so this
    paragraph describes all three.
    Violet, not the rose reset red — "customized" is a benign state, not a
    warning. App applies the class only while the popover is CLOSED (the open gear is solid purple). */

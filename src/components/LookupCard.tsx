@@ -459,6 +459,19 @@ export default function LookupCard({
               appearance-none (Q4 round-8) is the same kind of statement for behaviour: the box
               declares its own border, background and radius, so appearance:auto would be a false
               declaration that also leaves iOS's native inner shadow and focus treatment live. */}
+          {/* ⚠ THE ONE TEXT FIELD IN THE APP WITH NO ESCAPE CONTRACT, recorded here because round 15
+              (B6) put every other one on the same rule and this is where a reader will look for the
+              exception. Enter runs the lookup and the box KEEPS focus (deliberate — you are meant
+              to type the next date straight after); Escape does nothing whatever, because there is
+              no branch for it here and App's document-level Escape listener is registered only
+              while the ⚙ panel is open AND bails while any text input holds focus.
+              ⚠ IT IS A GAP, NOT A DECISION. Every OTHER typing surface — both ⚙ Year Range boxes,
+              the Save Defaults popup's N field, the AoX screen's run length, the tap-to-type slider
+              readouts — means "throw this edit away" by Escape. Giving this box the same contract
+              is a real behaviour change with a real question behind it (what does "the edit" revert
+              TO when the box also carries a committed lookup?), so it is the owner's call and not a
+              tidy-up. Until he takes it, nothing in src/ or in How to Play may say the rule is
+              app-wide: the guide's Keyboard Input bullet names the fields it covers and stops. */}
           <input
             ref={lookupInputRef}
             value={li}

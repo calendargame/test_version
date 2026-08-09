@@ -37,6 +37,7 @@ import {
 import {
   RESET_BTN_CLASS,
   FOOTER_RESET_BTN_CLASS,
+  NOT_OFFERED_BTN_CLASS,
   FOOTER_LINK_ROW_CLASS,
   NUM_INPUT_CLASS,
 } from './controlClasses.js'
@@ -337,7 +338,7 @@ export function SettingsPanel({
 
   // Escape cancels the POPUP first — registered in the CAPTURE phase with stopPropagation so App's
   // settings Escape handler (bubble phase, on document) never sees the same press and the panel
-  // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field normalize-commits),
+  // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field discards its edit),
   // mirroring that handler's guard — and like it, the guard excludes type="range": the popup's
   // three sliders keep focus after an adjust and must not swallow the dismiss.
   useEffect(() => {
@@ -487,9 +488,14 @@ export function SettingsPanel({
   // timer (3s), the any-other-press listener below, and — since the panel became a component that
   // unmounts on close — simply by this state ceasing to exist when the panel closes.
   const armFullReset = () => {
-    // Defense in depth — the pointer-events-none className keeps taps from reaching here, but if
-    // some keyboard/programmatic path bypasses CSS, this short-circuit ensures we never arm/fire
-    // when the action would be a no-op.
+    // ⚠ THIS SHORT-CIRCUIT IS NOW THE ONLY THING MAKING THE DIMMED BUTTON INERT — for a mouse tap,
+    // a keyboard press and an assistive-technology activation alike. It was written in round 14 as
+    // defense in depth behind a pointer-events-none className, and B7 (round 15) removed that
+    // className: a pointer-events:none element is never hit-tested, so the not-allowed cursor could
+    // not paint through it (controlClasses' NOT_OFFERED_BTN_CLASS tells the other half of the
+    // story). Nothing replaced it as a tap blocker, deliberately — the announcement (aria-disabled)
+    // and the drawing (the dim + cursor) are what the user is TOLD, and this line is what is TRUE.
+    // Do not delete it as redundant; there is no longer anything for it to be redundant with.
     if (isFullyReset) return
     if (fullResetArmed) {
       if (fullResetTimerRef.current) {
@@ -549,8 +555,9 @@ export function SettingsPanel({
   // watches mousedown/touchstart, so no press ever cancels the arm, and if the rest of the app was
   // already fresh then settings returning to default is the thirteenth term falling into place.
   // What it prevents is cosmetic but real: the button would sit at "Confirm?" on a control that is
-  // simultaneously dimmed and pointer-events-none (see its className below), and that pressFullReset
-  // refuses at its first line anyway — a promise the UI is in no position to keep.
+  // simultaneously dimmed, announced unavailable and refused by armFullReset's own first line (B7
+  // took its pointer-events-none away in round 15, so that guard is now the whole of its inertness)
+  // — a promise the UI is in no position to keep.
   //
   // ★ WHY IT ADJUSTS STATE DURING RENDER RATHER THAN IN AN EFFECT. The moved-in version was a
   // useEffect calling disarmFullReset(). That is a setState synchronously inside an effect body —
@@ -624,8 +631,11 @@ export function SettingsPanel({
   // SliderValueEditor readouts — the popup seeds from the LIVE prefs, so its ranges must stay a
   // superset of every committable value) and the N field shares the AoX input's validation trio
   // (Q18 — one idiom, one clamp): digits only while typing (the pending snapshot never holds junk),
-  // and blur, Enter and Escape all normalize-commit with the shared normalizeAoxN clamp (2–1000,
-  // fallback 10) — the AoX field's Escape likewise commits; the popup's real discard is Cancel.
+  // and blur and Enter normalize-commit with the shared normalizeAoxN clamp (2–1000, fallback 10).
+  // ESCAPE DISCARDS THE FIELD'S EDIT (round 15, B6 — both this field and the AoX screen's own moved
+  // off normalize-commit together, so Escape means one thing app-wide). Cancel is still the discard
+  // for the WHOLE popup; Escape on the field is the smaller undo, and a second Escape — with the
+  // field no longer focused — reaches the popup's capture-phase handler and cancels it.
   const saveDefaultsJsx =
     saveDefaultsOpen &&
     createPortal(
@@ -974,7 +984,7 @@ export function SettingsPanel({
                 switch never jumps the user to a different look: the pill that was lit stays lit, now
                 as the single manual pick. Both values are read from the RENDER closure, BEFORE the
                 flip. An OFF→ON round trip leaves manualTheme wherever the OFF pass parked it, but
-                that value is DORMANT while the OS decides, and App's settingsStoreAtDefaults
+                that value is DORMANT while the OS decides, and App's settingsAtDefaults
                 compares only the theme values actually in effect — so the round trip cannot leave
                 the gear falsely reading "modified". */}
             <div className="flex items-center justify-between">
@@ -1252,8 +1262,39 @@ export function SettingsPanel({
             >
               Full Reset
             </span>
-            {/* Save Defaults (Q7): constructive → btn-solid purple (the Begin-button language),
-                keeping rose exclusively for the two destructive neighbors. Dims when live state
+            {/* ★ HOW THESE THREE SAY "NOT RIGHT NOW" — one convention, stated three ways, and B7
+                (round 15) is the round that finished it. Each is
+                  (a) DRAWN unavailable — NOT_OFFERED_BTN_CLASS (controlClasses);
+                  (b) ANNOUNCED unavailable — aria-disabled, so a screen reader stops calling it an
+                      ordinary button while it does nothing;
+                  (c) INERT — the handler guard inside each onClick, which round 14 added and which
+                      is the only one of the three that is actually the BEHAVIOUR.
+                Belt and braces on purpose: (a) and (b) are what the user is told, (c) is what is
+                true. Delete any one of them and the other two start lying.
+                ⚠ AND (b) DOES ONE MORE JOB, off this file: lib/pointerGestures reads aria-disabled
+                to decide these are not gesture targets, so a press-drag from the ⚙ gear neither
+                rings one under the finger nor synthesizes a click on it. That job used to belong to
+                the pointer-events-none this round removed — see NOT_OFFERED_BTN_CLASS. So the
+                attribute is load-bearing twice over; it is not decoration you can drop for a
+                `title` or a tooltip.
+                ⚠ aria-disabled AND NOT `disabled`, decided on evidence and not on taste:
+                  • It is already this app's convention — PillGroup, PillTray, SliderValueEditor and
+                    MethodBreakdown's Show Codes all withhold with aria-disabled, and index.css
+                    names `.btn-solid[aria-disabled="true"]` FIRST in its unavailable rule. The one
+                    real `disabled` is Check for updates, which is a different thing: momentarily
+                    busy, not conditionally meaningless.
+                  • A real `disabled` DROPS FOCUS when it is applied to the focused element. These
+                    three go dim as a RESULT of being pressed — press Reset Settings and it dims
+                    itself — so a keyboard user would be thrown back to <body> by their own
+                    successful action. aria-disabled leaves focus where it is and re-announces.
+                  • It keeps them discoverable. `disabled` removes them from the tab order outright,
+                    which trades "reachable but silent" for "not there at all"; the complaint B7
+                    fixes is the silence, not the reachability.
+                  • And it keeps the guards TESTABLE: jsdom refuses to dispatch activation on a real
+                    `disabled` button, so the net could no longer ask what pressing a dimmed button
+                    does — the exact question round 14's guards exist to answer.
+                Save Defaults (Q7) is constructive → btn-solid purple (the Begin-button language),
+                keeping rose exclusively for the two destructive neighbors. It dims when live state
                 already equals the saved defaults (factory when none saved) — nothing new to save.
                 Each caption sits in a data-fitlabel span (whitespace-nowrap so it MEASURES at full
                 width instead of wrapping; overflow-hidden on the button contains the pre-fit
@@ -1261,7 +1302,8 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={openSaveDefaults}
-              className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden ${!settingsModified ? ' opacity-60 pointer-events-none' : ''}`}
+              aria-disabled={!settingsModified || undefined}
+              className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden ${!settingsModified ? NOT_OFFERED_BTN_CLASS : ''}`}
             >
               <span data-fitlabel className="whitespace-nowrap">
                 Save Defaults
@@ -1270,17 +1312,24 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={onResetSettings}
-              className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${!settingsModified ? 'opacity-60 pointer-events-none' : ''}`}
+              aria-disabled={!settingsModified || undefined}
+              className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${!settingsModified ? NOT_OFFERED_BTN_CLASS : ''}`}
             >
               <span data-fitlabel className="whitespace-nowrap">
                 Reset Settings
               </span>
             </button>
+            {/* Full Reset additionally carries the ARMED ring and is the element App's document-level
+                capture-phase disarm listener resolves through fullResetBtnRef. aria-disabled changes
+                neither: it is an ATTRIBUTE, so the ref still points at the same node, the node is
+                still focusable, and no focus moves when it flips. A real `disabled` would have moved
+                focus out from under that listener the moment a reset completed. */}
             <button
               ref={fullResetBtnRef}
               type="button"
               onClick={armFullReset}
-              className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${fullResetArmed ? ' ring-2 ring-rose-200' : ''}${isFullyReset ? ' opacity-60 pointer-events-none' : ''}`}
+              aria-disabled={isFullyReset || undefined}
+              className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${fullResetArmed ? 'ring-2 ring-rose-200 ' : ''}${isFullyReset ? NOT_OFFERED_BTN_CLASS : ''}`}
             >
               <span data-fitlabel className="whitespace-nowrap">
                 {fullResetArmed ? 'Confirm?' : 'Full Reset'}

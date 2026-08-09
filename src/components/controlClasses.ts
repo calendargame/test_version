@@ -26,6 +26,34 @@ export const FOOTER_RESET_BTN_CLASS = RESET_BTN_CLASS.replace('text-sm', 'text-x
   'py-2',
   'py-1.5',
 )
+// HOW A BUTTON SAYS "YOU CANNOT PRESS THIS" (round 15, B7) — appended by the ⚙ footer's three
+// buttons (Save Defaults / Reset Settings / Full Reset) while the app is not offering them, and
+// ALWAYS alongside aria-disabled on the same element. The pair is the whole convention: the class
+// draws it, the attribute announces it, and the button's own handler guard is what actually makes
+// it inert. Three independent statements of one fact, deliberately — see the note at the footer.
+//
+// ⚠ NO pointer-events-none, and its ABSENCE is the load-bearing part. These three carried
+// `opacity-60 pointer-events-none` until round 15 and nothing else: CSS-only withholding, which
+// leaves a control that is greyed, unhittable by a mouse, silent to a screen reader — and still a
+// tab stop. A keyboard user reached it, was told nothing, pressed it and got nothing. Removing
+// pointer-events-none is what lets the cursor below actually paint (a pointer-events:none element
+// is never hit-tested, so any cursor declared on it is dead), and it is why the hover rule in
+// index.css now excludes aria-disabled: without that, a dimmed Save Defaults would brighten under
+// the pointer while telling it not-allowed.
+//
+// ⚠ AND IT IS WHY lib/pointerGestures NOW FILTERS aria-disabled EXPLICITLY (gestureTarget). Becoming
+// hit-testable made these three visible to the press-drag controller for the first time: a drag from
+// the ⚙ gear into the panel drew the drag-select ring on a greyed-out footer button that then did
+// nothing on release. The invariant "a ring means a release will act" used to ride on
+// pointer-events-none too, so removing the block here means the gesture layer has to state it. If
+// you ever put pointer-events-none back on these, that filter stays — it is the honest rule and no
+// longer a workaround for this class.
+//
+// ⚠ NOT SHARED WITH MethodBreakdown's CODES_BTN_DISABLED_CLASS, which is the same three tokens
+// PLUS pointer-events-none. It looks like a dedup and is not: that button keeps the pointer block,
+// so the strings genuinely differ. Converging them means deciding whether Show Codes should also
+// become hittable-but-inert, which is its own change with its own gate.
+export const NOT_OFFERED_BTN_CLASS = 'opacity-60 cursor-not-allowed'
 // Compact Reset Stats button variant (smaller py + col-span fit for stats panel).
 export const RESET_STATS_BTN_CLASS =
   'w-full px-3 py-1.5 rounded-xl btn-solid border border-transparent text-sm font-medium'

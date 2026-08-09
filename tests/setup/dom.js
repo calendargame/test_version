@@ -59,7 +59,7 @@ if (typeof window !== 'undefined') {
 
 // Saved progress (Stage D1) is a module singleton the app reads, so — like the settings store —
 // it can leak stats / bests / Lookup history between tests. Reset it before EVERY test (the
-// DOM tests also localStorage.clear() + resetSettings() in their own beforeEach). Cheap + idempotent.
+// DOM tests also localStorage.clear() + resetToFactory() in their own beforeEach). Cheap + idempotent.
 beforeEach(() => {
   useProgress.getState().resetProgress()
   // The per-mode setup store (Stage D follow-up) is the same kind of persisted singleton.

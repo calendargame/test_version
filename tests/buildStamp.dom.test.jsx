@@ -69,7 +69,7 @@ describe('App boot — the cold-open build-change flash', () => {
     vi.useFakeTimers()
     localStorage.clear()
     sessionStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     vi.runOnlyPendingTimers()

@@ -9,8 +9,8 @@
 // so that none of it names a component, a parent element or a class string. The three groups here
 // are the ones where a plausible, tidy-looking rewrite silently changes what the user gets:
 //
-//   G7 — RESET SETTINGS' REACH. The settings store exposes a conveniently-named `resetSettings`
-//        action that restores FACTORY, and app code never calls it: App's own resetSettings uses
+//   G7 — RESET SETTINGS' REACH. The settings store exposes a `resetToFactory` action that restores
+//        FACTORY, and app code never calls it: App's own resetSettings uses
 //        applySettings(defSettings), the user's saved personal defaults. A rewrite that reaches for
 //        the store action reverts the entire saved-defaults feature, invisibly to anyone with no
 //        snapshot. The case that catches it is "with personal defaults saved, one tap lands on the
@@ -31,10 +31,11 @@
 //
 // ⚠ THIS NET PINS TODAY'S BEHAVIOUR, INCLUDING ITS QUIRKS, and nothing here is a fix. Two of the
 // spec's known defects are load-bearing for this file:
-//   • D4, the "dead-ish" store action — src/store/settings exports a `resetSettings` that restores
+//   • D4, the "dead-ish" store action — src/store/settings exports a `resetToFactory` that restores
 //     FACTORY and that no app code calls. It stays exactly where it is; the case that would catch a
 //     rewrite reaching for it is G7's saved-values case, and that is the whole of this file's answer
-//     to it.
+//     to it. (Round 15 renamed the action from `resetSettings`, so it no longer shares a name with
+//     the panel's button — but a name is not a gate, and G7's case is still the only one.)
 //   • D7, the guard asymmetry, is CLOSED as of round 14: all three ⚙ footer buttons short-circuit
 //     when they would be a no-op, so a dimmed Save Defaults no longer opens its popup for a
 //     keyboard or a programmatic press. Cases below whose subject is the popup therefore arrange a
@@ -239,7 +240,7 @@ describe('⚙ Reset Settings — its full reach, positive and negative (net grou
   })
 
   it('with personal defaults saved, one tap lands on the SAVED values and never on the factory ones', () => {
-    // ★ THE R3 GATE. The settings store's own `resetSettings` action restores FACTORY and no app
+    // ★ THE R3 GATE. The settings store's own `resetToFactory` action restores FACTORY and no app
     // code calls it. A rewrite that reaches for it passes every other case in this file and every
     // case in the existing suite for any user who has never saved a snapshot — and silently
     // deletes the whole saved-defaults feature for everyone who has.
@@ -415,15 +416,23 @@ describe('⚙ Full Reset — reach, outcomes and the two-tap machine (net group 
     expect(prefs(NON_CAPTURABLE)).toEqual(factoryPrefs(NON_CAPTURABLE)) // the other thirteen
   })
 
-  it('afterwards the bytes no offer in the panel can see — a dormant theme, a half-typed year — are back at their defaults too', () => {
+  it('afterwards the ONE byte no offer in the panel can see — a dormant theme — is back at its default too', () => {
     // ★ THE GATE ON FULL RESET'S DELEGATED SETTINGS RESTORE. fullReset writes no settings of its
     // own — it hands the whole store, both year-box text mirrors and the four capturable prefs to
     // resetSettings and does nothing else about them. So anything that makes THAT call conditional
     // narrows Full Reset silently, and until this case nothing in 1112 tests would have noticed:
-    // no other case asks Full Reset about a theme or a year box's TEXT, and "modified" is
-    // deliberately blind to both. (Round 14 shipped exactly that guard for one review cycle,
-    // inside resetSettings rather than on the button that needed it.) The two values below are
-    // therefore chosen as the pair "modified" cannot see — they are the whole exposure.
+    // no other case asks Full Reset about a value "modified" is deliberately blind to. (Round 14
+    // shipped exactly that guard for one review cycle, inside resetSettings rather than on the
+    // button that needed it.) The value below is therefore chosen as the one "modified" cannot see
+    // — it is the whole exposure.
+    //
+    // ⚠ RE-BLESSED (round 15) — AND THE HALF-TYPED YEAR HAD TO LEAVE THIS CASE, which is a change
+    // of PREMISE and not a loosening. It used to be the second invisible byte, and round 15's first
+    // change makes all four offers read the year boxes' TEXT (the owner's reversal). A typed year
+    // therefore now lights `settingsModified` — so leaving it here would have set the state up so
+    // that a guard keyed on `settingsModified` inside resetSettings PASSES, and this case would
+    // have stopped catching the very regression it exists for. Removing it restores the bite. The
+    // year's own claim moved to the case below, where it is now a claim about a VISIBLE value.
     //
     // THE STATE IS THE ONE tests/settings.dom ALREADY PINS AS LEGITIMATE: flipping Use System off
     // seeds manualTheme from what is on screen so the look never jumps, and flipping it back on
@@ -440,16 +449,31 @@ describe('⚙ Full Reset — reach, outcomes and the two-tap machine (net group 
     toggleSwitch('Use System Settings')
     toggleSwitch('Use System Settings')
     expect(useSettings.getState().manualTheme).toBe('light') // parked, and ≠ the 'dusk' default
-    typeYear('min', '1800') // …and a year the user typed but never committed, so nothing sees it
     expect(offers()).toMatchObject({
       gear: false,
       saveDefaults: false,
       resetSettings: false,
       fullReset: true,
     })
-    expect(yearValue('min')).toBe('1800') // the text really is there, so the check below is not vacuous
     fireFullReset()
     expect(useSettings.getState().manualTheme).toBe(SETTINGS_DEFAULTS.manualTheme)
+  })
+
+  it('afterwards a year box left half-typed is back at its default too — the mirror Full Reset writes but never saves', () => {
+    // THE YEAR HALF OF THE CASE ABOVE, split out in round 15 because the two halves stopped being
+    // the same claim. A typed-but-uncommitted year is no longer invisible: it lights all four
+    // offers, so Full Reset is offered here for THAT reason alone and no Lookup seed is needed.
+    //
+    // What it still gates is the other thing round 14 found — the two text mirrors are written by
+    // resetSettings and are in NO snapshot, so Save Defaults cannot put them right and Reset
+    // Settings / Full Reset are the only routes back. A restore that skipped them would leave the
+    // box reading 1800 on a state that calls itself freshly launched.
+    mountApp()
+    openSettings()
+    typeYear('min', '1800')
+    expect(offers()).toMatchObject({ fullReset: true }) // the text alone is enough now
+    expect(yearValue('min')).toBe('1800') // the text really is there, so the check below is not vacuous
+    fireFullReset()
     // The mirrors outlive the panel — they are App state, not the panel's — so reopening is the
     // only way to read them, and it is also how the user would meet a year box left half-typed.
     openSettings()
@@ -857,17 +881,29 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
     }
   })
 
-  it('Escape in a numeric field commits and normalises it; Escape on a slider dismisses the popup', () => {
+  it('Escape in a numeric field DISCARDS its edit and keeps the popup up; Escape on a slider dismisses the popup', () => {
+    // ⚠ RE-BLESSED (round 15, B6). This asserted that Escape here COMMITTED through the 2–1000
+    // clamp, leaving 2 in the box — the last field in the app where Escape kept an edit. It now
+    // discards back to the value the field held when the keyboard entered it, matching the ⚙ Year
+    // Range boxes (round 14) and the tap-to-type slider readouts beside this very field (round 2).
+    // Cancel is still the discard for the whole popup; this is the discard for one field.
+    // ★ WHAT THE CASE IS REALLY GUARDING IS UNCHANGED, and it is the second half of the title: the
+    // press must not reach the popup's capture-phase Escape handler or App's panel one. That is
+    // why the two "still standing" assertions below matter more than the value does — a field that
+    // discarded correctly but took the popup down with it would be a worse regression than the one
+    // this case was written for.
     makeSaveable() // round 14 (D7): a dimmed Save Defaults is inert now, so the popup needs a real offer
     mountApp()
     openSettings()
     openModal('save')
+    // The seed matters: the discard target is captured on FOCUS, so the box must be focused before
+    // the edit — which is also the only way a finger reaches it. 10 is the value it opens holding.
     act(() => {
       saveCardAoxBox().focus()
       fireEvent.change(saveCardAoxBox(), { target: { value: '1' } })
     })
     act(() => fireEvent.keyDown(saveCardAoxBox(), { key: 'Escape' }))
-    expect(saveCardAoxBox().value).toBe('2') // committed through the 2–1000 clamp, not dismissed
+    expect(saveCardAoxBox().value).toBe('10') // DISCARDED back to the value at focus, not clamped to 2
     expect(queryModalCard('save')).not.toBeNull()
     expect(isSettingsOpen()).toBe(true)
     act(() => {

@@ -72,7 +72,7 @@ const srcFile = (...parts) =>
 describe('How to Play scrolls the app container — one scroller, every screen', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     document.documentElement.style.setProperty('--fade-h', '24px')
   })
   afterEach(() => {
@@ -287,7 +287,7 @@ describe('How to Play scrolls the app container — one scroller, every screen',
 describe('the scroll container is the guide’s keyboard target', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     cleanup()

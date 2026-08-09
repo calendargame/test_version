@@ -29,12 +29,12 @@ const v2Entry = (over = {}) => ({
 describe('progress store — v1 envelope rehydrates through the migration', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useProgress.getState().resetProgress()
   })
   afterEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useProgress.getState().resetProgress()
   })
 
@@ -203,12 +203,12 @@ describe('progress store — v1 envelope rehydrates through the migration', () =
 describe('progress store — save/rehydrate round-trip fuzz + corruption tolerance (C2)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useProgress.getState().resetProgress()
   })
   afterEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useProgress.getState().resetProgress()
   })
 

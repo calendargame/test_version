@@ -82,7 +82,7 @@ beforeEach(() => {
   vi.stubEnv('PROD', true)
   localStorage.clear()
   sessionStorage.clear()
-  useSettings.getState().resetSettings()
+  useSettings.getState().resetToFactory()
   sentry.captureError.mockClear()
   cacheDelete = vi.fn().mockResolvedValue(true)
   globalThis.caches = {

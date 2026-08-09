@@ -415,7 +415,7 @@ const mountApp = () => {
 describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', () => {
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     cleanup()

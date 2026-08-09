@@ -116,7 +116,7 @@ const installGuide = (container) => {
 
 beforeEach(() => {
   localStorage.clear()
-  useSettings.getState().resetSettings()
+  useSettings.getState().resetToFactory()
   // index.css is not loaded here, so the ramp distance the shade writer reads is stood up by hand
   // at its real value. Without it the ramp degrades to the boolean — the documented fallback, and
   // what the one test that clears it checks.

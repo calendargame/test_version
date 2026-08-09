@@ -262,7 +262,7 @@ describe('the app scroller — content changes with no scroll event (round 11 Q4
   let ro
   beforeEach(() => {
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     document.documentElement.style.setProperty('--fade-h', '24px')
     ro = installResizeObserver() // BEFORE mount — the app builds its observers in layout effects
   })

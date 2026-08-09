@@ -323,7 +323,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // numbers live in this area and conflating them is how the old comments went wrong:
       //   14 = the settings the ⚙ store HOLDS AND PERSISTS (store/settings SETTINGS_DEFAULTS, and
       //        therefore PERSISTED_KEYS). App binds all 14 as values below: it needs every one for
-      //        settingsStoreAtDefaults, and several again for date generation and the mode props.
+      //        settingsAtDefaults, and several again for date generation and the mode props.
       //    3 = the store FUNCTIONS App binds — setMinY, setMaxY (they feed the year-range mirrors
       //        below) and applySettings (Reset Settings / Full Reset write all 14 in one shot). The
       //        other eleven per-value setters are NOT bound here: the only writer of a settings
@@ -352,7 +352,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       const julianChance=useSettings(s=>s.julianChance);
       const applySettingsStore=useSettings(s=>s.applySettings);
       // Personal defaults (Q7 Save Defaults): `saved` is the user's snapshot (null = none). The
-      // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsStoreAtDefaults,
+      // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsAtDefaults,
       // and the gear's "modified" indicator; the mode components read their own slices for their
       // freshness checks. Survives Full Reset by design (see store/userDefaults).
       const savedDefaults=useUserDefaults(s=>s.saved);
@@ -1226,7 +1226,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
           setSettingsOpen(false);
         }};document.addEventListener('mousedown',h);document.addEventListener('touchstart',h);return()=>{document.removeEventListener('mousedown',h);document.removeEventListener('touchstart',h);};},[settingsOpen]);
       // Escape closes the settings popover. It bails when a TEXT-ENTRY input has focus, because
-      // those have Escape semantics of their own (the defaults card's numeric fields normalize-commit)
+      // those have Escape semantics of their own (since round 15 every one of them DISCARDS the
+      // edit — the year boxes, the defaults card's N field, the tap-to-type slider readouts)
       // and this listener would otherwise double-handle the same press. The guard is deliberately
       // NOT "any INPUT": range sliders keep focus after an adjust and have no Escape semantics of
       // their own — bailing on them would leave Escape dead until something else got focus.
@@ -1261,12 +1262,17 @@ import BlitzMode from './modes/BlitzMode.jsx'
       //   18 RESTORED / SAVED = the 14 store settings + the 4 capturable prefs. (This restore also
       //      rewrites the 2 year-range text mirrors, which are stored nowhere and so have nothing to
       //      copy back — hence 20 written here, 18 in the snapshot.)
-      //   17 or 16 COMPARED by the gear's "modified" bar, which is a strict SUBSET of the 18: 11
-      //      plain settings + the 4 prefs + the theme trio judged BY WHAT IS IN EFFECT — 2 of the
-      //      three with Use System On (darkTheme/lightTheme), 1 with it Off (manualTheme). The
-      //      dormant value(s) — one with Use System On, TWO with it Off — are never compared;
-      //      settingsStoreAtDefaults below says why at length.
-      // A subset either way, so one tap always clears a lit gear
+      //   19 or 18 COMPARED by the gear's "modified" bar: 11 plain settings + the 4 prefs + the
+      //      theme trio judged BY WHAT IS IN EFFECT (2 of the three with Use System On —
+      //      darkTheme/lightTheme; 1 with it Off — manualTheme) + the 2 year-range TEXT MIRRORS.
+      //      The dormant theme value(s) — one with Use System On, TWO with it Off — are never
+      //      compared; settingsAtDefaults below says why at length.
+      // ⚠ SO IT IS NO LONGER A SUBSET OF THE 18, and round 15 is what changed that: the 2 mirrors
+      // are compared but not saved. Nothing breaks, because this restore WRITES them (the resetTo
+      // line below) even though the snapshot has nothing to write back — the 20-written / 18-saved
+      // asymmetry above is exactly what keeps "one tap clears a lit gear" true for the two terms
+      // that are compared and not stored.
+      // One tap therefore still always clears a lit gear
       // whatever diverged (round-6 extension: it used to touch the panel alone, stranding a gear lit
       // only by a mode-screen pref). Still leaves the NON-capturable
       // mode config (Blitz Per-Round/Question, Allow Mistakes, One-by-One, the Deduction sub-type, the
@@ -1292,10 +1298,14 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // and the two year-box text mirrors — and no offer in the panel could have told the user, since
       // by construction none of them reads those. Pinned by the Full Reset dormant-theme case in
       // tests/settingsPanel.defaults.dom.
-      // The guard itself is defense in depth, the same shape as armFullReset's below: the
-      // opacity-60/pointer-events-none className stops taps, but CSS cannot stop a keyboard — Tab to
-      // a dimmed button and press Enter and the handler runs. Without it a dimmed Reset Settings
-      // still rewrote the year boxes' text and that dormant theme value.
+      // ⚠ THE GUARD IS NOW THE ONLY THING MAKING THE DIMMED BUTTON INERT, the same shape as
+      // armFullReset's in the panel. Round 14 wrote it as defense in depth behind a
+      // pointer-events-none className that stopped taps while CSS could not stop a keyboard; B7
+      // (round 15) removed that className so the not-allowed cursor could paint at all — a
+      // pointer-events:none element is never hit-tested — leaving this line to refuse the pointer,
+      // the keyboard and an assistive-technology press alike (components/controlClasses'
+      // NOT_OFFERED_BTN_CLASS records why). Without it a dimmed Reset Settings still rewrote the
+      // year boxes' text and that dormant theme value.
       const pressResetSettings=()=>{if(!settingsModified)return;resetSettings();};
       // Retires the Changelog link's dot. The FLAG is App's — the build-stamp detection above
       // sets it, and the gear's twin lives beside it — but the only reader and the only retirer
@@ -1380,19 +1390,34 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // panel that hosts its link, so 'settings' is still underneath all four and Back still
       // closes the modal first.
       useBackButton(mode==='guide', ()=>switchMode(prevNonGuideModeRef.current||'classic'), 'guide');
-      // True when every popover-controlled STORE value THAT IS CURRENTLY IN EFFECT matches its
-      // EFFECTIVE default — the user's saved personal defaults when they exist (Q7,
-      // store/userDefaults), the factory launch values otherwise. ⚠ NOT "every store value": at
+      // True when the whole ⚙ PANEL sits at its EFFECTIVE defaults — the user's saved personal
+      // defaults when they exist (Q7, store/userDefaults), the factory launch values otherwise.
+      // ⚠ NOT "every store value": at
       // least one of the theme trio is ALWAYS excluded (BOTH darkTheme and lightTheme while Use
       // System is Off), which is the whole point of themeAtDefaults just below —
       // 13 of the 14 settings are compared with Use System On, 12 with it Off. Say it that way; an
       // "every value" phrasing here is the over-claim this comment used to make.
-      // STORE values only, and that is now the SINGLE definition of "changed"
-      // behind all four offers (the ⚙ indicator, Save Defaults, Reset Settings, Full Reset):
-      // half-typed year-range text changes nothing until it commits on blur/Enter. (Round 14, the
-      // owner's call. Before it, Reset Settings and Full Reset additionally read the two year-range
-      // input-text mirrors, so a half-typed year offered those two while the gear stayed dark and
-      // Save Defaults stayed dimmed — three buttons, two meanings of "changed".)
+      // ★ AND IT IS THE PANEL, NOT THE STORE: the last two terms are the two year-range TEXT
+      // MIRRORS (components/useYearRangeMirrors), so a year that has been TYPED but not yet
+      // committed reads as diverged. That is round 15's change and the OWNER'S REVERSAL of the call
+      // he made in round 14 — "I want the reset settings and the full reset buttons not to wait
+      // anymore for you to leave the year range boxes, and also apply that behavior to the settings
+      // gear button bottom line thing", and, asked explicitly, "yeah include save defaults too".
+      // ★ THE SHAPE IS THE POINT, AND IT IS NOT WHAT ROUND 13 HAD. Round 13 also let the mirrors
+      // count, but through a SECOND binding that only Reset Settings and Full Reset read, so a
+      // half-typed year offered those two while the gear stayed dark and Save Defaults stayed
+      // dimmed — three buttons, two meanings of "changed" (hazard HC2 of the map). Round 14
+      // collapsed that to one definition by DROPPING the mirrors; round 15 keeps the one definition
+      // and ADDS them back to it. All four offers read this one expression, so they cannot disagree
+      // about a half-typed year — or about anything else. Do not reintroduce a second at-defaults
+      // boolean to "just" cover one button; extend this line instead.
+      // ⚠ SAVE DEFAULTS CANNOT CLEAR A DIRTY BOX, and that is honest rather than a defect. Its
+      // snapshot copies STORE values (openSaveDefaults reads useSettings.getState()), and a
+      // half-typed "19" is not a value — there is nothing to save. So on a dirty box Save Defaults
+      // is offered, saves everything else, and the gear STAYS lit until the box commits (blur /
+      // Enter) or discards (Escape). The alternative — committing the boxes on the user's behalf
+      // when he presses Save Defaults — would put a year he never confirmed into his permanent
+      // defaults, which is worse than a bar that stays lit while a box is still mid-edit.
       // The theme trio is compared BY WHAT IS IN EFFECT, not by what is stored. Use System ON
       // means darkTheme/lightTheme are the live pair and manualTheme is dormant; OFF is the
       // reverse. Comparing a dormant value would make "modified" mean "some invisible byte
@@ -1403,21 +1428,24 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // both offered, permanently. Comparing only the live pair is both the honest definition and
       // the fix, and it retires the whole class of dormant-value false positives.
       const themeAtDefaults=useSystem?(darkTheme===defSettings.darkTheme&&lightTheme===defSettings.lightTheme):(manualTheme===defSettings.manualTheme);
-      const settingsStoreAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&themeAtDefaults;
+      const settingsAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&themeAtDefaults&&yearRange.min.value===String(defSettings.minY)&&yearRange.max.value===String(defSettings.maxY);
       // The one derived boolean behind THREE of the four offers: the ⚙ gear indicator (Q8), the Save
       // Defaults dim AND the Reset Settings dim. True when live state diverges from the effective
-      // defaults in EITHER store — any menu setting, or any of the four capturable mode-screen prefs.
+      // defaults in EITHER store — any menu setting, either year BOX, or any of the four capturable
+      // mode-screen prefs.
       // Its complement means "nothing new to save, and nothing for Reset Settings to undo", so those
       // three are literally the same expression and cannot drift apart. (Reset Settings watching the
       // panel alone would strand a gear lit only by a divergent mode-screen pref — round-6 Q7.)
-      const settingsModified=!(settingsStoreAtDefaults&&prefsAtDefaults);
+      const settingsModified=!(settingsAtDefaults&&prefsAtDefaults);
       // Every per-mode piece of state now lives in the always-mounted mode components, which
       // each report a comprehensive freshness flag (config + stats + history + UI toggles) up
-      // via onFreshChange. So isFullyReset = the launch mode (classic) + the settings store at its
+      // via onFreshChange. So isFullyReset = the launch mode (classic) + the ⚙ panel at its
       // effective defaults + the Lookup state (which lives here in App) + all five freshness flags.
-      // It reads settingsStoreAtDefaults, NOT settingsModified: the four capturable mode prefs reach
+      // It reads settingsAtDefaults, NOT settingsModified: the four capturable mode prefs reach
       // it through the freshness flags instead, which also cover the thirteen non-capturable ones.
-      const isFullyReset=mode==='classic'&&settingsStoreAtDefaults&&lookupHistory.length===0&&lookupInput===""&&lookupOutput===""&&lookupCalcDate===null&&lookupSelectedHistoryId===null&&lookupCalcOpen===false&&aoxIsFresh&&classicIsFresh&&flashIsFresh&&blitzIsFresh&&deductionIsFresh;
+      // Sharing that one term is what puts Full Reset on the SAME reading of a half-typed year as
+      // the other three offers (round 15, the owner's call — see the note above it).
+      const isFullyReset=mode==='classic'&&settingsAtDefaults&&lookupHistory.length===0&&lookupInput===""&&lookupOutput===""&&lookupCalcDate===null&&lookupSelectedHistoryId===null&&lookupCalcOpen===false&&aoxIsFresh&&classicIsFresh&&flashIsFresh&&blitzIsFresh&&deductionIsFresh;
       // The "disarm if state flips to fully-reset while armed" safety net went into the panel with
       // the rest of the two-tap machine. It used to have to sit exactly HERE, after the declaration
       // above, because its dependency array read isFullyReset and an earlier position was a real

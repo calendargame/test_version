@@ -95,7 +95,7 @@ describe('Flash — characterization (batch 1: the brief-reveal flow)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -174,7 +174,7 @@ describe('Flash — characterization (batch 2: Reveal, Override, consecutive rou
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -261,7 +261,7 @@ describe('Flash — bug fixes (Reveal availability + Show Codes freeze)', () => 
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -347,7 +347,7 @@ describe('Flash — bug fix (back-browse shows the browsed date, C2)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -405,7 +405,7 @@ describe('Flash — C2: mode switch mid-flash stops the flash', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -445,7 +445,7 @@ describe('Flash — Q7 round-6 (Reset Settings restoring the Flash speed re-sync
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useModePrefs.getState().resetModePrefs()
     useUserDefaults.getState().clearDefaults()
     useProgress.getState().resetProgress()

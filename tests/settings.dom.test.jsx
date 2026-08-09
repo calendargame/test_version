@@ -1018,6 +1018,53 @@ describe('Settings — PIXEL GATES (implementation-coupled on purpose)', () => {
     expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
   })
 
+  // ★ THE ⚙ FOOTER'S THREE BUTTONS — NEW IN ROUND 15 (B7), and the honest note is that this gate
+  // did NOT cover them before. B7 was expected to force a re-blessing here and could not, because
+  // nothing in this describe had ever named a footer class string: the owner's zero-pixel rule was
+  // being enforced over the pickers, the theme rows and the panel's layout, and the one row that
+  // was about to change its look was outside it. So this is the gate catching up, not a drift being
+  // blessed — and from here a future edit to the footer's treatment cannot be silent.
+  //
+  // ★ WHAT CHANGED, AND THAT THE OWNER APPROVED IT. Until B7 a withheld footer button wore
+  // `opacity-60 pointer-events-none`. It now wears `opacity-60 cursor-not-allowed` and carries
+  // aria-disabled. pointer-events-none had to GO for the cursor to exist at all — a
+  // pointer-events:none element is never hit-tested, so a cursor declared on it can never paint —
+  // and the not-allowed cursor on a dimmed button is the visible change the owner was told about
+  // and accepted. Inertness did not move with it: the handler guards round 14 added are what make
+  // these buttons do nothing, and they are untouched.
+  //
+  // ⚠ THE TRAILING SPACE IN THE OFFERED STRINGS IS REAL AND IS PINNED AS SUCH. It comes from
+  // tests/classGlueGuard, which fails the build unless a className literal puts a space BEFORE its
+  // `${`; when the conditional then contributes nothing, that space is what is left. Normalising it
+  // away here would be pinning a string the app does not emit.
+  it('pins the footer buttons’ offered and not-offered class strings, and how they announce', () => {
+    mountPanel()
+    const foot = (label) =>
+      screen.getAllByRole('button').find((b) => b.textContent.trim() === label)
+    const SOLID =
+      'flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden '
+    const ROSE =
+      'flex-1 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white border border-transparent text-xs font-medium overflow-hidden '
+    const OFF = 'opacity-60 cursor-not-allowed'
+    // A pristine launch: nothing to save, nothing to reset, nothing to undo — all three withheld.
+    expect(foot('Save Defaults').className).toBe(SOLID + OFF)
+    expect(foot('Reset Settings').className).toBe(ROSE + OFF)
+    expect(foot('Full Reset').className).toBe(ROSE + OFF)
+    for (const label of ['Save Defaults', 'Reset Settings', 'Full Reset'])
+      expect(foot(label).getAttribute('aria-disabled'), label).toBe('true')
+    // One committed setting change offers all three, and the treatment comes off cleanly — no
+    // orphaned token, and the attribute ABSENT rather than aria-disabled="false".
+    act(() => st().setLeapChance('75'))
+    expect(foot('Save Defaults').className).toBe(SOLID)
+    expect(foot('Reset Settings').className).toBe(ROSE)
+    expect(foot('Full Reset').className).toBe(ROSE)
+    for (const label of ['Save Defaults', 'Reset Settings', 'Full Reset'])
+      expect(foot(label).getAttribute('aria-disabled'), label).toBeNull()
+    // Armed adds the confirm ring and nothing else — the one footer state with two live modifiers.
+    fireEvent.click(foot('Full Reset'))
+    expect(foot('Confirm?').className).toBe(ROSE + 'ring-2 ring-rose-200 ')
+  })
+
   // ★ THE PANEL'S OWN LAYOUT CONTRACT, and it lives here for the reason the block header gives.
   // These four tokens are what MAKE the panel scroll its list instead of growing off the bottom of
   // a phone, and every one of them is invisible to any behavioural test — jsdom lays nothing out,

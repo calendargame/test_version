@@ -72,7 +72,7 @@ export { isOffered, isDimmed }
 // as a line nobody can account for.
 export function resetAppState() {
   localStorage.clear()
-  useSettings.getState().resetSettings()
+  useSettings.getState().resetToFactory()
   useModePrefs.getState().resetModePrefs()
   useUserDefaults.getState().clearDefaults()
   useProgress.getState().resetProgress()
@@ -731,10 +731,15 @@ export const fullResetButton = () => footerButton(/^(Full Reset|Confirm\?)$/)
 // link — the dot reader, the modal opener — comes through here, so there is one definition.
 export const changelogLink = () => footerButton(/^Changelog/)
 
-// Press a footer control. Deliberately usable on a control the app is NOT offering: the dim is
-// CSS-only (pointer-events-none), and jsdom does not enforce it — which is precisely how the net
-// can ask what a programmatic or keyboard activation of a dimmed button does. Full Reset has a
-// handler guard; the other two do not. Pinning that asymmetry is the point.
+// Press a footer control. Deliberately usable on a control the app is NOT offering, and it stays
+// usable BY DESIGN across two rounds of changing how the app withholds these three. The dim has
+// never been enforced by jsdom — first because it was pure CSS, now because these three withhold
+// with `aria-disabled`, which is an announcement and not a browser-level block. Either way a
+// programmatic or keyboard activation still reaches the handler, which is precisely how the net can
+// ask what pressing a dimmed button DOES.
+// ⚠ AND THAT QUESTION IS THE REASON THE APP DOES NOT USE A REAL `disabled`: jsdom refuses to
+// dispatch activation on one, so the guards would become unaskable. All three carry a guard now
+// (round 14 added the two that were missing); this helper is how the net proves it.
 export const tapFooter = (name) => tap(footerButton(name))
 
 // THE FOUR OFFERS, in one read — the question G6 asks nine different ways and G5 asks about a
@@ -750,6 +755,27 @@ export function offers() {
     saveDefaults: isOffered(footerButton('Save Defaults')),
     resetSettings: isOffered(footerButton('Reset Settings')),
     fullReset: isOffered(fullResetButton()),
+  }
+}
+
+// THE WHOLE "NOT OFFERED" TREATMENT ON A FOOTER BUTTON, ASSERTED AS ONE CLAIM — the same shape as
+// expectLock above, and for the same reason. Round 15 (B7) made withholding a THREE-part statement
+// and the only useful question is whether the parts agree: the class DRAWS it unavailable, the
+// aria-disabled ANNOUNCES it unavailable, and the handler guard makes it INERT. Asked one facet at
+// a time, "greyed and unpressable but announced to a screen reader as an ordinary live button"
+// passes every assertion and is precisely the defect B7 was opened for.
+//
+// ⚠ `tabStop` IS EXPECTED TRUE IN BOTH STATES, and that is the decision rather than an oversight.
+// B7 chose aria-disabled over a real `disabled` so a keyboard user can still REACH the button and
+// be told why it does nothing. A `disabled` would report tabStop false here, which is why the facet
+// is in the tuple: it is the one that tells the two spellings apart.
+export function footerOfferState(name) {
+  const el = name === 'Full Reset' ? fullResetButton() : footerButton(name)
+  return {
+    offered: isOffered(el),
+    dimmed: isDimmed(el),
+    announced: el.getAttribute('aria-disabled'),
+    tabStop: el.tabIndex === 0,
   }
 }
 
@@ -854,7 +880,9 @@ export const focusYear = (which) => act(() => yearInput(which).focus())
 // which is the assertion, rather than being blocked by the test harness.
 //
 // Does NOT commit. Committing is blur or Enter, and the gap between typed and committed is the
-// state three of the four at-defaults booleans disagree about.
+// state the at-defaults booleans used to disagree about — three of them, before round 14 collapsed
+// them into one. They agree now, and since round 15 that one boolean COUNTS the typed text, so this
+// helper is what moves all four offers without moving a single setting.
 export const typeYear = (which, text) =>
   act(() => fireEvent.change(yearInput(which), { target: { value: text } }))
 

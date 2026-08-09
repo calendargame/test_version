@@ -1001,9 +1001,23 @@ export default function GuidePage({
           </li>
           <li>
             <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use{' '}
-            <Kbd>Esc</Kbd> or <Kbd>Enter</Kbd> to leave an input first if you'd rather; in the Year
-            Range boxes those two do opposite things — see Dates — Year Range). Tab plus any
-            modifier (Ctrl+Tab, Ctrl+Shift+Tab, etc.) passes through to the browser.
+            <Kbd>Esc</Kbd> or <Kbd>Enter</Kbd> to leave an input first if you'd rather; the next
+            note says what each of those does). Tab plus any modifier (Ctrl+Tab, Ctrl+Shift+Tab,
+            etc.) passes through to the browser.
+          </li>
+          <li>
+            In the boxes you type a <i>number</i> into — the Year Range boxes, the AoX run length,
+            and every time readout you tap to type into — those two keys do opposite things:{' '}
+            <Kbd>Enter</Kbd> keeps what you typed and leaves the box, <Kbd>Esc</Kbd> throws the
+            typing away and leaves the box. Whatever the box sits inside stays open — a second{' '}
+            <Kbd>Esc</Kbd> closes that. What <Kbd>Esc</Kbd> puts back is the value the setting is
+            really on: for a Year Range box that&apos;s the stored year, for the others the value
+            the box held when you started typing.
+          </li>
+          <li>
+            The date box on the Lookup screen is the exception, and the only one: there{' '}
+            <Kbd>Enter</Kbd> runs the lookup and stays in the box, and <Kbd>Esc</Kbd> does nothing
+            at all.
           </li>
           <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
           <li>
@@ -1021,6 +1035,146 @@ export default function GuidePage({
             pressing it in Blitz, AoX, or Lookup is a no-op, since those modes have no separate
             Reset Stats button (their round/run Reset clears in-round/in-run stats; persistent bests
             update only when set).
+          </li>
+        </UL>
+      </GuideSection>
+      {/* ACCESSIBILITY (B4) — its own section, deliberately, rather than more bullets under
+          Keyboard Input. The URL is printed in the book, so readers arrive cold with no way to
+          discover what is supported by poking at it; a titled row in the accordion is findable and
+          a bullet buried in another section's Notes is not. It leans on Keyboard Input above for
+          every KEY (the arrow contract, Enter/Esc, the letter map) and never restates one — this
+          section is about how the app is MARKED UP and what it does with focus and motion.
+          ★ EVERY CLAIM BELOW WAS READ OUT OF THE CODE, and nothing here describes what a screen
+          reader SAYS. Sources, in order: the named groups = PillGroup's role/aria-label (all six
+          pickers pass a `label`; the Theme block's name follows Use System Settings, which is why
+          the wording is "the setting you're changing" and not a fixed list); the four switches +
+          both year boxes = their aria-labels in components/SettingsPanel; the gear = its computed
+          aria-label in main.tsx; the dots = WeekdayAnswer's per-dot aria-label; the popups =
+          SettingsPanel's four focus-on-open effects and the shared trapModalTab; the panel NOT
+          taking focus = the absence of any such effect for settingsOpen; the accordions =
+          aria-expanded/aria-controls here and in MethodBreakdown; the mode list = CustomSelect's
+          open-state key handler; the motion paragraph = a full grep of --motion-scale, which has
+          exactly TWO consumers — index.css's .expander rule and this file's own inline
+          transitionDuration + scroll glide — so those are the only things the paragraph may claim,
+          and index.css's own words for the rest are "Functional motion — the .bar countdown and the
+          color flashes — is deliberately NOT scaled". The two decorative things that are NOT scaled
+          and are named out loud instead: .boot-d's bootPulse and the three
+          `transition:background-color .2s` rules. An earlier draft said "sliding panels, fades, and
+          this guide's own scrolling" — there is no scaled fade anywhere in the app, and the one
+          real fade (the boot dots) ignores the setting, so the word was inventing support.
+          ★ THE KNOWN-GAPS BLOCK IS LOAD-BEARING, not throat-clearing. Each line is a thing the
+          code does NOT do, checked one at a time: button:focus{outline:none} is global
+          (index.css) and .focus-ring has been a no-op since the Tab binding landed; index.html
+          sets user-scalable=no on purpose; the < and > history buttons carry only their glyph and
+          the mode-screen range inputs carry no aria-label (the DefaultsCard copies do); and the
+          GAME SCREENS' dimmed buttons are opacity-60 + pointer-events-none and announce nothing.
+          ⚠ THAT LAST ONE IS ABOUT THE GAME SCREENS, NOT ABOUT aria-disabled BEING RARE — the
+          attribute appears in five places (the ⚙ footer's three buttons, MethodBreakdown's Show
+          Codes, the locked ⚙ pickers via PillGroup/PillTray, and SliderValueEditor's accented
+          readout). The ⚙ footer and Show Codes are the two the prose names as announced; the
+          pickers and the readout are announced too but are also pointer-blocked, which is why the
+          bullet is about the game's Reveal/Override/history buttons specifically. An earlier draft
+          of this note claimed the footer was aria-disabled's only site, which the section's own
+          Show Codes sentence — and GAP 4's exemption for it — already contradicted.
+          If any of these is ever fixed, delete its
+          line here in the same change. Overstating support would be worse than saying nothing. */}
+      <GuideSection
+        id="accessibility"
+        title="Accessibility"
+        openId={open}
+        onToggle={toggle}
+        durationMs={motionMs}
+      >
+        <Lead>
+          How the app is built for screen readers, keyboards, and reduced-motion settings — and
+          where it falls short.
+        </Lead>
+        <p>
+          This describes what the app does, not what any particular screen reader says about it.
+          Wording varies between VoiceOver, TalkBack, NVDA and the rest, and the site hasn&apos;t
+          been tested against each of them.
+        </p>
+        <Subhead>Controls that name themselves</Subhead>
+        <UL>
+          <li>
+            Every picker in the ⚙ menu is one named group of choices, not a row of loose buttons,
+            and it&apos;s named for the setting you&apos;re changing — Date Format, Input, Theme,
+            Leap Year Chance, Jan/Feb Chance on Leap Years, Julian Chance. Landing on an option is
+            choosing it; the keys that move within a group are under Keyboard Input above.
+          </li>
+          <li>
+            The four On/Off switches carry their setting&apos;s name — Random Format, Use System
+            Settings, Julian Calendar, Save Stats — rather than reading as four identical buttons
+            called &quot;On&quot;. Both Year Range boxes name themselves Earliest Year and Latest
+            Year.
+          </li>
+          <li>
+            The ⚙ button says what&apos;s behind it: that a setting has been changed, and that an
+            update is waiting, whenever either is true.
+          </li>
+          <li>
+            In the seven-dot answer layout every dot carries its weekday name, so the dots offer the
+            same seven named choices the labelled buttons do.
+          </li>
+        </UL>
+        <Subhead>Panels and popups</Subhead>
+        <UL>
+          <li>
+            The four ⚙ popups — Save Defaults, the saved-defaults list, the confirmation before
+            clearing them, and the Changelog — are proper dialogs. Opening one puts the keyboard
+            inside it, <Kbd>Tab</Kbd> and <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> cycle that popup&apos;s
+            own controls and wrap around at the ends rather than wandering into the menu beneath,
+            and <Kbd>Esc</Kbd> closes it.
+          </li>
+          <li>
+            The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button, and it
+            doesn&apos;t take the keyboard when it opens. <Kbd>Esc</Kbd> closes it, unless
+            you&apos;re typing in one of its boxes, in which case the first <Kbd>Esc</Kbd> belongs
+            to the box.
+          </li>
+          <li>
+            Each section header in this guide, and the Show Codes button, states whether it&apos;s
+            open and which panel it opens.
+          </li>
+          <li>
+            The mode selector is a list of modes. Once it&apos;s open, ↑ and ↓ move through it,{' '}
+            <Kbd>Home</Kbd> and <Kbd>End</Kbd> jump to the ends, <Kbd>Enter</Kbd> chooses, and{' '}
+            <Kbd>Esc</Kbd> or <Kbd>Tab</Kbd> closes it. While it&apos;s closed, <Kbd>Tab</Kbd> is
+            the only key that opens it.
+          </li>
+        </UL>
+        <Subhead>Motion</Subhead>
+        <p>
+          If your device is set to reduce motion, the panels that slide open — the sections of this
+          guide, and Show Codes — open instantly instead, and this guide stops gliding when it
+          scrolls itself. Countdown bars and the right/wrong colour flashes are unchanged, because
+          those are telling you something rather than decorating. Two things do keep moving: the
+          three pulsing dots on the loading screen, and the short colour fade a button does as you
+          press it.
+        </p>
+        <Subhead>Where it falls short</Subhead>
+        <p>Stated plainly, so you know before you try:</p>
+        <UL>
+          <li>
+            Nothing on the site draws a focus ring, so on a computer there&apos;s no outline showing
+            which button the keyboard is on. Inside a ⚙ picker the selection stands in for one —
+            landing on an option chooses it, so the option you&apos;re on is the lit one — but
+            inside the popups above, <Kbd>Tab</Kbd> moves with nothing drawn to say where it went.
+          </li>
+          <li>
+            Pinch-to-zoom is switched off deliberately, to keep the app feeling like an app rather
+            than a page.
+          </li>
+          <li>
+            Not everything is named yet: the <b>&lt;</b> and <b>&gt;</b> history buttons are only
+            their symbols, and the timer sliders on the Flash and Blitz screens have no name of
+            their own (the copies inside Save Defaults do).
+          </li>
+          <li>
+            Two kinds of greying out, not one. The three buttons at the foot of the ⚙ menu, and Show
+            Codes, are marked unavailable while they&apos;re greyed. The rest of the game&apos;s
+            buttons — Reveal, Override, <b>&lt;</b> and <b>&gt;</b> — are only dimmed, so they still
+            read as ordinary buttons even when pressing one would do nothing.
           </li>
         </UL>
       </GuideSection>
@@ -1055,6 +1209,14 @@ export default function GuidePage({
           <b>View saved defaults</b> link — joined, once you've saved your own defaults, by{' '}
           <b>Clear saved defaults</b>; then your Contact email, the Last Updated timestamp, and the{' '}
           <b>Check for updates</b> and <b>Changelog</b> links.
+        </p>
+        <p>
+          Each of those three buttons greys out whenever pressing it would do nothing — there is
+          nothing to save, nothing to reset, or nothing left to clear. A greyed one really is
+          inactive: it does nothing to a tap, a keypress, or a screen reader's press. You can still
+          reach it with <Kbd>Tab</Kbd>, and it's marked unavailable rather than left looking like an
+          ordinary button; on a computer the pointer shows the not-allowed cursor over it. (See
+          Accessibility.)
         </p>
         <p className="text-(--tx-300-70) text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
@@ -1204,9 +1366,17 @@ export default function GuidePage({
           <li>
             A year you type counts once you leave the box — press <Kbd>Enter</Kbd>, or tap anywhere
             else. <Kbd>Esc</Kbd> does the opposite: it throws the typing away, puts the stored year
-            back, and leaves the ⚙ menu open. Typing on its own moves nothing else either: the ⚙
-            button and the three buttons at the foot of the menu stay exactly as they were until the
-            year counts.
+            back, and leaves the ⚙ menu open.
+          </li>
+          <li>
+            Dates keep coming from the stored range until the year counts — but the menu notices the
+            typing straight away. As soon as a box shows something other than the stored year, the ⚙
+            button&apos;s violet bar lights and all three buttons at the foot of the menu become
+            active, the same as any other change. Finishing the year does not put them back: once it
+            counts, your range differs from your defaults, which is a change in its own right. They
+            settle only when nothing is left that differs — so pressing <Kbd>Esc</Kbd> on a year you
+            never meant to type clears them, while typing 1900 and pressing <Kbd>Enter</Kbd> keeps
+            them lit, now for something you really can save.
           </li>
           <li>
             Changing the range always regenerates the current date — but if you've already
@@ -1486,8 +1656,14 @@ export default function GuidePage({
             While anything the snapshot covers differs from your defaults, the closed gear (⚙) shows
             a small violet bar along its bottom edge, and the Save Defaults button is active; once
             everything already matches your defaults, the bar disappears and the button dims —
-            nothing new to save. The bar is separate from the light-blue update dot at the gear's
-            top-right corner (see Updates in the first section), and the two can show at once.
+            nothing new to save. A year you have typed but not yet left also lights the bar, even
+            though there is nothing to save for it yet — pressing Save Defaults then saves
+            everything else and leaves the bar lit until the year is finished or dropped. Finishing
+            it does not clear the bar either, unless the year you finished on is the one your
+            defaults already hold: a stored range that differs from your defaults lights the bar in
+            its own right. <Kbd>Esc</Kbd> is what puts a year you never meant to type back. The bar
+            is separate from the light-blue update dot at the gear&apos;s top-right corner (see
+            Updates in the first section), and the two can show at once.
           </li>
           <li>
             Your saved defaults survive Full Reset — that's the point: Full Reset restores{' '}

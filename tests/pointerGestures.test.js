@@ -9,6 +9,7 @@
 // there.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+  gestureTarget,
   resolveRelease,
   resolveTriggerRelease,
   nextHilite,
@@ -165,6 +166,28 @@ describe('pointerGestures.resolveTriggerRelease — press-drag menu release', ()
       action: 'click',
       dismiss: false,
     })
+  })
+})
+
+// ── gestureTarget — the announced-unavailable filter (round 15). Every target this controller
+// resolves goes through it: the button a press latches onto, the member the ring is drawn on, and the
+// member a release acts on. Until B7 the filter was implicit — every withheld control also wore
+// pointer-events-none, so elementFromPoint and pointerdown both walked past it — and B7 removing that
+// block from the ⚙ footer's three buttons is what made the rule need saying out loud.
+describe('pointerGestures.gestureTarget — an announced-unavailable control is not a target', () => {
+  it('an ordinary element passes through unchanged', () => {
+    const b = domEl('button')
+    expect(gestureTarget(b)).toBe(b)
+  })
+  it('aria-disabled="true" resolves to nothing — the pointer reads as landing on empty space', () => {
+    expect(gestureTarget(domEl('button', { 'aria-disabled': 'true' }))).toBe(null)
+  })
+  it('aria-disabled="false" is NOT withheld — the attribute\'s value is the statement, not its presence', () => {
+    const b = domEl('button', { 'aria-disabled': 'false' })
+    expect(gestureTarget(b)).toBe(b)
+  })
+  it('null in, null out (no hit under the pointer)', () => {
+    expect(gestureTarget(null)).toBe(null)
   })
 })
 
@@ -408,6 +431,55 @@ describe('pointerGestures controller — pointer latch + click suppression', () 
     trigger.click() // the browser's delayed click on the trigger — must not double-toggle
     expect(trigClicks).not.toHaveBeenCalled()
     document.removeEventListener('drag-dismiss', dismiss)
+  })
+
+  it('trigger flow: a WITHHELD member is never ringed and never activated — the ⚙ footer regression B7 opened', () => {
+    // The gesture is the app's signature one: press the ⚙ gear, drag into the panel, release on a
+    // control. The panel's footer holds three buttons that go aria-disabled when the app has nothing
+    // to save / reset / clear. B7 took pointer-events-none off them so the not-allowed cursor could
+    // paint — and pointer-events-none was the only thing keeping them out of this controller, so the
+    // ring started appearing on a greyed-out button that then did nothing on release. A ring is a
+    // promise that a release will act; this asserts the promise is never made.
+    // ⚠ THE STAY MEMBER IS PART OF THE SHAPE, not decoration: the real footer row carries
+    // data-drag-stay, so even the release path resolved dismiss:false and the whole defect was
+    // VISUAL. Nothing but a hilite assertion could have caught it.
+    const trigger = domEl(
+      'button',
+      { 'data-select-trigger': '', 'aria-controls': 'menu-w' },
+      document.body,
+    )
+    const menu = domEl('div', { id: 'menu-w', 'data-drag-dismiss': '' })
+    const footer = domEl('div', { 'data-drag-stay': '' }, menu)
+    const withheld = domEl('button', { 'aria-disabled': 'true' }, footer)
+    const live = domEl('button', {}, footer)
+    const withheldClicks = clicksOn(withheld)
+    trigger.dispatchEvent(ptr('pointerdown'))
+    document.body.appendChild(menu)
+    hit = withheld
+    document.dispatchEvent(ptr('pointermove'))
+    expect(withheld.classList.contains('drag-target')).toBe(false) // no ring on a withheld control
+    // …and the one beside it, offered, still rings — so this is a filter, not a dead hilite path.
+    hit = live
+    document.dispatchEvent(ptr('pointermove'))
+    expect(live.classList.contains('drag-target')).toBe(true)
+    hit = withheld
+    document.dispatchEvent(ptr('pointerup'))
+    expect(withheldClicks).not.toHaveBeenCalled() // nor does the release synthesize a click on it
+  })
+
+  it('a press that STARTS on a withheld button latches no gesture at all', () => {
+    // The other half of the same rule, and the one that keeps a stray click-suppression from being
+    // armed: with the start filtered, a dimmed footer button behaves exactly as it did when
+    // pointer-events-none meant the pointerdown never found a button in the first place. Were the
+    // start left unfiltered, targetAt would resolve its own release to null, resolveRelease would
+    // read that as a slide-off, and the button's next second of clicks would be swallowed.
+    const withheld = domEl('button', { 'aria-disabled': 'true' }, document.body)
+    const clicks = clicksOn(withheld)
+    withheld.dispatchEvent(ptr('pointerdown'))
+    hit = null
+    document.dispatchEvent(ptr('pointerup'))
+    withheld.click() // the browser's own click still arrives — and must not be suppressed
+    expect(clicks).toHaveBeenCalledTimes(1)
   })
 
   it('trigger flow: releasing on a data-drag-focus member FOCUSES it — no click, no dismiss', () => {

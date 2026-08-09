@@ -131,7 +131,7 @@ const dayState = (name) => {
 function pin() {
   localStorage.clear()
   const s = useSettings.getState()
-  s.resetSettings()
+  s.resetToFactory()
   s.setRandomFormat(false)
   s.setDateFormat('numeric-ymd')
   s.setMinY(1583)
@@ -969,7 +969,17 @@ describe('AoX — Q18 (the run-length field shares the popup N field validation 
   // lookup here is itself the regression test for it.
   const nField = () => screen.getByRole('textbox', { name: 'AoX run length' })
 
-  it('rejects non-digits outright and normalize-commits on blur/Enter/Escape (normalizeAoxN)', () => {
+  it('rejects non-digits outright, normalize-commits on blur/Enter, and DISCARDS on Escape', () => {
+    // ⚠ RE-BLESSED (round 15, B6) — the Escape leg at the foot of this case asserted the opposite
+    // until now: "Escape commits the clamped current value too", so typing 1 and pressing Escape
+    // left the field on 2. That was the app's own comment as well, and it made this the last field
+    // where Escape KEPT an edit — the ⚙ Year Range boxes discard (round 14) and the tap-to-type
+    // slider readouts have since round 2. The owner's rule is now uniform: Enter keeps the edit and
+    // lets go, Escape throws it away and lets go.
+    // The leg below is also STRENGTHENED, because the old one could not have told the two apart on
+    // its own: it discarded back to 10, which is both the value at focus AND normalizeAoxN's
+    // fallback. Committing to a non-default 25 first makes the answer unambiguous — a discard
+    // gives 25 back, a normalize-commit would give 2.
     mountApp()
     switchToAox()
     // Seed a known committed value first (the modePrefs singleton carries state across tests).
@@ -987,9 +997,64 @@ describe('AoX — Q18 (the run-length field shares the popup N field validation 
     act(() => fireEvent.change(nField(), { target: { value: '2000' } }))
     act(() => fireEvent.keyDown(nField(), { key: 'Enter' }))
     expect(nField().value).toBe('1000') // Enter commits with the shared 2–1000 clamp
-    act(() => fireEvent.change(nField(), { target: { value: '1' } }))
+    // The Escape leg. focus() first and deliberately — the field remembers its discard target when
+    // the keyboard ENTERS it (aoxNAtFocusRef), because `aoxN` is the stored pref itself and every
+    // keystroke overwrites it, so without a focus there is nothing to go back to. That is also how
+    // a real edit starts, so leaving it out would have tested a route no finger can take.
+    // ⚠ A REAL .blur(), not fireEvent.blur(). fireEvent dispatches the EVENT without moving the
+    // browser's focus, so the element stays document.activeElement and the .focus() below would be
+    // a no-op that never fires onFocus — the discard target would still be whatever the field held
+    // at the FIRST focus, and this leg would silently be testing nothing. (It caught itself doing
+    // exactly that while this case was being written.) The legs above use fireEvent.blur happily
+    // because they only ask what a commit does.
+    act(() => {
+      nField().focus()
+      fireEvent.change(nField(), { target: { value: '25' } })
+      nField().blur()
+    })
+    expect(nField().value).toBe('25') // a committed value that is NOT the fallback
+    act(() => {
+      nField().focus()
+      fireEvent.change(nField(), { target: { value: '1' } })
+    })
     act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
-    expect(nField().value).toBe('2') // Escape commits the clamped current value too
+    expect(nField().value).toBe('25') // Escape DISCARDS: back to the value at focus, not 2
+  })
+
+  it('Escape in the box does not take the ⚙ panel down with it (the stopPropagation, pinned)', () => {
+    // WHAT THIS PROTECTS is the `e.stopPropagation()` on the Escape branch, and it is here because
+    // round 15 shipped that line with a FALSE reason attached: "the panel is a popover, not a focus
+    // trap, so Tab can walk out of it onto this screen". Tab cannot — App intercepts plain Tab on a
+    // document keydown and redirects it to the mode selector whenever no settings MODAL is up, so
+    // the panel never leaks focus this way. The reachable order is the opposite one, and it is what
+    // this case drives: the keyboard is ALREADY in this box when the ⚙ panel opens.
+    //
+    // ⚠ fireEvent.click ON THE GEAR IS THE POINT, not a shortcut. A click event that does not move
+    // focus is exactly what a real tap does on iOS and Safari, where pressing a <button> leaves
+    // focus where it was — so this reproduces the real device rather than approximating it. (A
+    // .click() through the element's own method behaves the same way; what would NOT reproduce it
+    // is focusing the gear first, which is the desktop-Chrome path where the box blurs anyway.)
+    //
+    // Without the stop, Escape's own blur() runs first, App's document-level settings Escape
+    // listener then finds nothing focused, its input-has-focus guard no longer applies, and the
+    // whole panel closes on a press the user meant for the box.
+    mountApp()
+    switchToAox()
+    act(() => {
+      fireEvent.change(nField(), { target: { value: '10' } })
+      fireEvent.blur(nField())
+    })
+    const gear = () => screen.getByRole('button', { name: /^Settings/ })
+    act(() => {
+      nField().focus()
+      fireEvent.change(nField(), { target: { value: '1' } })
+    })
+    act(() => fireEvent.click(gear())) // the panel opens with the keyboard still in the box
+    expect(gear().getAttribute('aria-controls')).toBe('settings-popover') // …it really is open
+    expect(document.activeElement).toBe(nField()) // …and the box really still has the keyboard
+    act(() => fireEvent.keyDown(nField(), { key: 'Escape' }))
+    expect(nField().value).toBe('10') // the field's own Escape ran: the edit is discarded
+    expect(gear().getAttribute('aria-controls')).toBe('settings-popover') // and the panel stands
   })
 
   it('the box wears the shared interactive surface (border surface-tray), never the container panel (Q7 round-7)', () => {
@@ -1012,7 +1077,7 @@ describe('AoX — Q7 round-6 (Reset Settings restoring the run length reconciles
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useModePrefs.getState().resetModePrefs()
     useUserDefaults.getState().clearDefaults()
     useProgress.getState().resetProgress()

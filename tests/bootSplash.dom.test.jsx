@@ -73,7 +73,7 @@ describe('App removes the body-level #boot splash', () => {
     vi.useFakeTimers()
     localStorage.clear()
     sessionStorage.removeItem('cg-skip-boot-hold')
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     vi.runOnlyPendingTimers()

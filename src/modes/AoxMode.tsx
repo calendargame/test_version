@@ -50,6 +50,11 @@ function AoxMode({
 }: ModeProps & { fmtDate: FmtDate; genDate?: GenDate }) {
   const aoxN = useModePrefs((s) => s.aoxN),
     setAoxN = useModePrefs((s) => s.setAoxN) // persisted (mode-prefs store)
+  // WHAT ESCAPE IN THE RUN-LENGTH BOX REVERTS TO (round 15, B6): the value the field held when the
+  // keyboard entered it. A ref rather than state because nothing renders it — it is written on
+  // focus and read on one keypress, and re-rendering the screen for it would be pure cost. See the
+  // long note at the input for why the value has to be remembered at all.
+  const aoxNAtFocusRef = useRef(aoxN)
   const allowMistakes = useModePrefs((s) => s.aoxAllowMistakes),
     setAllowMistakes = useModePrefs((s) => s.setAoxAllowMistakes) // persisted (mode-prefs store)
   const oneByOne = useModePrefs((s) => s.aoxOneByOne),
@@ -508,9 +513,41 @@ function AoxMode({
               span opts back out with self-center (a stretched span rides its text at the top). */}
       <div className="mt-3 flex items-stretch gap-2 flex-nowrap">
         {/* The run-length field (Q18): the shared boxed-numeric idiom (NUM_INPUT_CLASS) + the
-                popup N field's validation trio — digits only while typing, and blur, Enter and
-                Escape all normalize-commit with the shared clamp (normalizeAoxN). text-xs on the
-                'Ao' span too, so "Ao10" reads as one flush token. */}
+                popup N field's validation trio — digits only while typing, blur and Enter
+                normalize-commit with the shared clamp (normalizeAoxN), and ESCAPE DISCARDS.
+                text-xs on the 'Ao' span too, so "Ao10" reads as one flush token.
+                ★ ESCAPE DISCARDS — round 15 (B6), and it used to normalize-COMMIT like the other
+                two. Escape now means one thing in every box you can type a NUMBER into, which the
+                ⚙ Year Range boxes have meant since round 14 and the tap-to-type slider readouts
+                since round 2: Enter keeps the edit and lets go, Escape throws it away and lets go,
+                and the container is left for a second Escape. This field was the last NUMERIC one
+                still committing the value it was asked to discard.
+                ⚠ EVERY NUMERIC BOX, NOT EVERYWHERE YOU CAN TYPE — the Lookup date field
+                (components/LookupCard) handles Enter only and has no Escape behaviour at all. It is
+                the one text field outside this contract; an open gap, not a decision.
+                ⚠ THE DISCARD TARGET HAS TO BE REMEMBERED, because this box is not a mirror. The ⚙
+                year boxes revert to minY/maxY — a committed value sitting right beside the text —
+                but `aoxN` IS the stored pref: onChange writes it on every keystroke, so by the time
+                Escape arrives the value the user is discarding BACK to no longer exists anywhere.
+                aoxNAtFocusRef captures it on focus, which is the honest definition of "the edit"
+                (an edit begins when the keyboard enters the box). Restoring an un-normalized
+                capture is safe: the blur that follows normalizes it, exactly as it would have.
+                ⚠ AND IT STOPS PROPAGATION, for the reason round 14 wrote down at the year boxes.
+                App's Escape listener is a DOCUMENT keydown in the bubble phase that decides "is
+                this press mine?" by asking what has focus; blur() below runs first, so without the
+                stop it would find nothing focused and close the ⚙ panel on what the user meant as a
+                field dismiss.
+                ⚠ THE REACHABLE PATH, named because a defensive line with a wrong reason attached is
+                worse than none. It is NOT "Tab walks out of the panel" — an earlier draft said that
+                and it is false: App intercepts plain Tab on a document keydown and, with no
+                [data-settings-modal] up, preventDefaults it and sends focus to the mode selector
+                (main.tsx), so Tab cannot leave the panel onto this screen at all. What DOES reach
+                it is the opposite order — this field already holds focus, and THEN the ⚙ panel
+                opens. Tapping a <button> does not move focus on iOS or Safari, so the gear tap
+                leaves the keyboard in this box with `settingsOpen` now true, and the very next
+                Escape is the press this stop exists for. tests/aox.dom pins exactly that sequence.
+                (App's outside-press handler blurs a focused input before closing the panel, but
+                only one INSIDE the popover — this box is on the screen behind it.) */}
         <div className="flex items-stretch shrink-0">
           <span
             className={`self-center text-xs leading-none text-(--tx-200-80) ${runPhase !== 'idle' ? ' opacity-60' : ''}`}
@@ -528,14 +565,26 @@ function AoxMode({
               const v = e.target.value
               if (runPhase === 'idle' && (v === '' || /^\d*$/.test(v))) setAoxN(v)
             }}
-            onBlur={() => setAoxN(normalizeAoxN(aoxN))}
+            onFocus={() => {
+              aoxNAtFocusRef.current = aoxN
+            }}
+            // ⚠ FUNCTIONAL UPDATERS, and that is what makes Escape work rather than a style choice.
+            // These two commits used to close over the render's `aoxN`. Escape's revert writes the
+            // store and then blurs in the SAME event, before this component has re-rendered — so a
+            // closure-read commit would have re-committed the very text Escape just discarded. That
+            // is precisely the bug round 14 found in the ⚙ year boxes, where the fix was flushSync;
+            // here the store setter already takes an updater (store/modePrefs `resolve`), so
+            // reading the live value is the smaller and more direct fix, and it is correct on the
+            // blur and Enter paths independently of Escape.
+            onBlur={() => setAoxN((v) => normalizeAoxN(v))}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                setAoxN(normalizeAoxN(aoxN))
+                setAoxN((v) => normalizeAoxN(v))
                 e.currentTarget.blur()
               } else if (e.key === 'Escape') {
-                setAoxN(normalizeAoxN(aoxN))
+                e.stopPropagation()
+                setAoxN(aoxNAtFocusRef.current)
                 e.currentTarget.blur()
               }
             }}

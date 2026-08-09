@@ -16,16 +16,18 @@
 //     behaviour change nobody can see. There were THREE when this file was written, and the third
 //     was the disagreement: half-typed text counted as a change for two of the four footer offers
 //     and not for the other two. Round 14 closed that (defect D1) on the owner's call, and the case
-//     that pinned it now asserts the agreement instead.
+//     that pinned it now asserts the agreement instead. ⚠ Round 15 then REVERSED WHICH AGREEMENT:
+//     the owner asked for half-typed text to count for all four rather than none, so that case
+//     asserts four trues today. The invariant the file protects is the AGREEMENT, not the verdict.
 //
 // ★ EVERYTHING HERE PINS WHAT THE APP DOES TODAY, INCLUDING ITS QUIRKS. That is the whole point:
 // the net is the proof that the move changed nothing, so a case written as the behaviour SHOULD be
 // would break the gate on the very move it exists to protect. Several places below pin something
 // that looks wrong; each says so and names it. Search this file for "PINS" to find every one.
-// ⚠ Cases that say "RE-BLESSED (round 14)" are the deliberate exception: those pinned a defect, the
-// defect was fixed on purpose in the round before the extraction, and each records what it used to
-// assert and why that changed. They are the only edits this file has taken, and they were made
-// BEFORE the move — so the zero-edit gate on the extraction itself is still clean.
+// ⚠ Cases that say "RE-BLESSED" are the deliberate exception: those pinned a defect or a decision,
+// it was changed on purpose, and each records what it used to assert and why that changed. The
+// round-14 ones were made BEFORE the panel moved out of App, so the zero-edit gate on the
+// extraction itself is still clean; the round-15 ones came after it and are the owner's reversal.
 //
 // ★ WHERE THE SPEC AND THE CODE DISAGREED, THE CODE WON. Three of the spec's sentences for these
 // groups describe behaviour the app does not have; each is called out at the case that corrects it
@@ -57,6 +59,7 @@ import {
   toggleSwitch,
   tapFooter,
   fullResetState,
+  footerOfferState,
   yearInput,
   yearValue,
   typeYear,
@@ -299,32 +302,56 @@ describe('Year Range — commit, revert, clamp, and what half-typed text does NO
 
   // ── The four offers agree about half-typed text (was the D1 disagreement) ────
 
-  it('with uncommitted text in a year box, none of the four offers moves', () => {
-    // RE-BLESSED (round 14, defect D1 fixed). This case used to PIN the three-way disagreement:
-    // typing a year and not committing it left the gear dark and Save Defaults dimmed while Reset
-    // Settings and Full Reset were both offered, because those two additionally read the year
-    // boxes' TEXT while the gear read the store alone. The owner's decision: "reset settings and
-    // full reset should only apply when you've left that input box, like how the gear handles it."
-    // So the two text terms are gone and there is now ONE definition of "changed" — the committed
-    // store values — which is what these four falses assert. The companion case below shows the
-    // same four moving together the moment the text commits.
+  it('with uncommitted text in a year box, all four offers move together', () => {
+    // RE-BLESSED TWICE, and the SECOND re-blessing is this one (round 15) — the owner REVERSED the
+    // call he made in round 14. Worth reading in order, because the invariant survived both:
+    //   • BEFORE round 14 this case pinned a three-way DISAGREEMENT: typing a year and not
+    //     committing it left the gear dark and Save Defaults dimmed while Reset Settings and Full
+    //     Reset were both offered, because those two read the year boxes' TEXT through a second
+    //     at-defaults binding the gear did not share (defect D1).
+    //   • ROUND 14 fixed the disagreement by DROPPING the text terms — one definition of "changed",
+    //     the committed store values, and four falses here.
+    //   • ROUND 15 keeps the one definition and ADDS the text terms back to it: "I want the reset
+    //     settings and the full reset buttons not to wait anymore for you to leave the year range
+    //     boxes, and also apply that behavior to the settings gear button bottom line thing", plus,
+    //     asked explicitly about the fourth, "yeah include save defaults too".
+    // So the assertion flipped from four falses to four trues and the CASE never changed its
+    // subject: the four offers must give the SAME answer about half-typed text. Whichever answer
+    // the owner wants, a split verdict here is the defect. Do not weaken this to three keys.
     openPanel()
     typeYear('min', '1900')
-    expect(settings().minY).toBe(1)
+    expect(settings().minY).toBe(1) // …and the store has NOT moved: this is text, not a setting
+    expect(offers()).toEqual({
+      gear: true,
+      saveDefaults: true,
+      resetSettings: true,
+      fullReset: true,
+    })
+  })
+
+  it('discarding that text with Escape puts all four back; committing it instead keeps them moved', () => {
+    // The other half, and it is what gives the case above its meaning. Since round 15 the four are
+    // lit by the TEXT ALONE, so "they light" on its own proves nothing about whether they are
+    // tracking anything — a hard-coded true would pass it. The discriminating question is whether
+    // they follow the text back DOWN.
+    // ⚠ THIS REPLACES the old companion case, which asserted that committing the same year moved
+    // all four. That was the contrast when typing left them dark; now typing already lights them,
+    // so it asserted true→true and could no longer fail for the reason it was written for. The
+    // commit leg is kept as the third step below, where it still says something: the offers stay
+    // lit across the commit, and now for a stored reason rather than a typed one.
+    openPanel()
+    typeYear('min', '1900')
+    escapeYear('min') // Escape throws the edit away (round 14) — so the offers must go with it
+    expect(yearValue('min')).toBe('1')
     expect(offers()).toEqual({
       gear: false,
       saveDefaults: false,
       resetSettings: false,
       fullReset: false,
     })
-  })
-
-  it('committing that same year moves all four offers together', () => {
-    // The other half, and the one that gives the case above its meaning: the four offers are not
-    // simply stuck dark — committing the very same year lights every one of them at once.
-    openPanel()
     typeYear('min', '1900')
     commitYear('min', 'blur')
+    expect(settings().minY).toBe(1900) // the store moved this time
     expect(offers()).toEqual({
       gear: true,
       saveDefaults: true,
@@ -652,13 +679,44 @@ describe('The four offers — gear, Save Defaults, Reset Settings, Full Reset (n
     expect(gearIndicator().name).toBe('Settings (modified, update)')
   })
 
-  // ── What a press on a NOT-OFFERED footer button actually does ───────────────
+  // ── What a NOT-OFFERED footer button says, and what a press on one does ─────
   //
-  // The dim is CSS only (pointer-events-none), which stops a finger and cannot stop a keyboard: Tab
-  // to a dimmed button, press Enter, and the handler runs. Round 14 closed that gap (defect D7) —
-  // all three now short-circuit on the same condition that dims them, so all three do NOTHING.
-  // The cases below assert each one separately, because a rewrite that drops a guard is invisible
+  // TWO ROUNDS OF THE SAME DEFECT, and it is worth reading as one story.
+  // Round 14 (D7) found the BEHAVIOUR half: the dim was CSS only (pointer-events-none), which stops
+  // a finger and cannot stop a keyboard — Tab to a dimmed button, press Enter, and the handler ran.
+  // All three now short-circuit on the same condition that dims them, so all three do NOTHING; the
+  // three cases below assert that one at a time, because a rewrite that drops a guard is invisible
   // without them and the failure it ships is a popup with nothing in it.
+  // Round 15 (B7) found the ANNOUNCEMENT half that was left: those same buttons were still a tab
+  // stop announcing themselves as ordinary live buttons, so a keyboard user reached one, was told
+  // nothing, pressed it and got nothing. They now carry aria-disabled — deliberately not a real
+  // `disabled`, which would have removed them from the tab order instead of explaining them. The
+  // first case below is that half, and it asserts all three facets together on purpose.
+
+  it('a not-offered footer button is DRAWN, ANNOUNCED and still reachable — all three of them', () => {
+    // The three facets have to be one assertion: they are three statements of a single fact, and
+    // every way of splitting them up lets a real bug through. Greyed but announced live is what B7
+    // fixed; announced dead but pressable is what round 14 fixed; and either one alone passes a
+    // per-facet test suite.
+    openPanel()
+    for (const name of ['Save Defaults', 'Reset Settings', 'Full Reset'])
+      expect(footerOfferState(name), name).toEqual({
+        offered: false,
+        dimmed: true,
+        announced: 'true',
+        tabStop: true, // aria-disabled, NOT `disabled` — still findable by keyboard
+      })
+    // …and the complement, which is what stops the above from passing on a button that is simply
+    // always dimmed. One committed setting change lights all three at once.
+    setYear('min', '1900')
+    for (const name of ['Save Defaults', 'Reset Settings', 'Full Reset'])
+      expect(footerOfferState(name), name).toEqual({
+        offered: true,
+        dimmed: false,
+        announced: null, // the attribute is ABSENT when offered, never aria-disabled="false"
+        tabStop: true,
+      })
+  })
 
   it('a press on the not-offered Full Reset does nothing at all', () => {
     openPanel()

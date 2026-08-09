@@ -4,14 +4,14 @@ import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
 // settings.test.js — the ⚙ settings store. The store is the structural beachhead
 // for the mode-untangle, so its contract must be locked: (1) the 14 defaults,
 // (2) setters accept BOTH a direct value AND a React-style functional updater,
-// (3) resetSettings restores every default. Persistence (localStorage) is
+// (3) resetToFactory restores every default. Persistence (localStorage) is
 // verified in-browser, not here, since jsdom/node localStorage timing differs
 // from the real runtime — these tests cover the pure state contract.
 
 describe('settings store', () => {
   beforeEach(() => {
     // Reset to a known baseline before each test (the store is a singleton).
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
 
   it('exposes exactly the 14 documented defaults', () => {
@@ -57,14 +57,14 @@ describe('settings store', () => {
     expect(s.dateFormat).toBe('written-mdy') // untouched
   })
 
-  it('resetSettings restores every default, even after several changes', () => {
+  it('resetToFactory restores every default, even after several changes', () => {
     const g = useSettings.getState
     g().setDateFormat('numeric-dmy')
     g().setUseJulian((v) => !v)
     g().setMinY(1900)
     g().setSaveStats(false)
     g().setManualTheme('midnight')
-    g().resetSettings()
+    g().resetToFactory()
     const s = g()
     for (const [k, v] of Object.entries(SETTINGS_DEFAULTS)) {
       expect(s[k]).toBe(v)

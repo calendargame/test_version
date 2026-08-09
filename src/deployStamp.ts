@@ -14,4 +14,4 @@
 // Deliberately NOT re-exported from main.tsx: the observable contract is the localStorage stamp the
 // detection writes (tests/buildStamp.dom), never this value, and an export from main.tsx would
 // invite a test to assert the constant instead of the behaviour.
-export const DEPLOY_TS = new Date('2026-08-09T09:00:00Z')
+export const DEPLOY_TS = new Date('2026-08-09T20:45:00Z')

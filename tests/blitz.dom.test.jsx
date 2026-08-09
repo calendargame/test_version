@@ -123,7 +123,7 @@ describe('Blitz — characterization (batch 1: Per Round)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -203,7 +203,7 @@ describe('Blitz — characterization (batch 2: Per Question / sudden death)', ()
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -236,7 +236,7 @@ describe('Blitz — characterization (batch 3: Override)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -290,7 +290,7 @@ describe('Blitz — bug fixes (override-to-wrong + Show Codes end the round)', (
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -344,7 +344,7 @@ describe('Blitz — Best Score cross-round rollback (C2)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -394,7 +394,7 @@ describe('Blitz — C2 fix (mode switch mid-round abandons the round)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -450,7 +450,7 @@ describe('Blitz — C2 Q2-A (Override resumes a misclick-ended round)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -509,7 +509,7 @@ describe('Blitz — C2 (Reveal / Show Codes then Override resumes the round)', (
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -562,7 +562,7 @@ describe('Blitz — C2 Q2-B (Save Stats off: misclick rescue, no Best recorded)'
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -615,7 +615,7 @@ describe('Blitz — Q2 (a config change on popover close resets the round)', () 
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -707,7 +707,7 @@ describe('Blitz — Q7 round-6 (Reset Settings restoring the round timer reconci
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useModePrefs.getState().resetModePrefs()
     useUserDefaults.getState().clearDefaults()
     useProgress.getState().resetProgress()
@@ -762,7 +762,7 @@ describe('Blitz — Per Question + Allow Mistakes (C3a)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -1029,7 +1029,7 @@ describe('Blitz — C3a freshness (suddenAmBest blocks fully-reset until wiped)'
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
   })
   afterEach(() => {
     vi.runOnlyPendingTimers()
@@ -1064,7 +1064,7 @@ describe('Blitz — Q8 visual-only timing hide', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -1156,7 +1156,7 @@ describe('Blitz — the settings net: an in-progress round vs Reset Settings and
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
-    useSettings.getState().resetSettings()
+    useSettings.getState().resetToFactory()
     useModePrefs.getState().resetModePrefs()
     useUserDefaults.getState().clearDefaults()
     useProgress.getState().resetProgress()

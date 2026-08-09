@@ -52,7 +52,7 @@
 // fallback). Reaching that needs a keyboard activation of the very button a gesture just cancelled on, within
 // a second of it — and the swallowed click consumes the arming, so the next one passes.
 //
-// TESTABILITY: resolveRelease, resolveTriggerRelease, nextHilite, menuFor, bandDirection, and scrollDelta are pure
+// TESTABILITY: gestureTarget, resolveRelease, resolveTriggerRelease, nextHilite, menuFor, bandDirection, and scrollDelta are pure
 // (or layout-free DOM reads) and unit-tested, as are the pointer latch + click suppression via synthetic
 // events; the full wiring (real pointer drags + elementFromPoint + auto-scroll feel) is verified
 // on-device — jsdom has no layout engine, so elementFromPoint/getBoundingClientRect don't work there.
@@ -61,6 +61,37 @@
 const HILITE = 'drag-target' // the live "this will be selected" class toggled during a drag (index.css)
 const GROUP_SELECTOR = '[data-answer-grid],[data-select-group]'
 const TARGET_SELECTOR = 'button,[data-drag-focus]' // what a release can land on: buttons everywhere, plus focus opt-ins (the Year Range inputs) inside a menu
+const WITHHELD_SELECTOR = '[aria-disabled="true"]' // …and what a gesture must never land on, however it matched above
+
+// ★ ANNOUNCED-UNAVAILABLE CONTROLS ARE NOT GESTURE TARGETS (round 15). Every element this controller
+// treats as a target — the press it latches onto, the member it rings under the finger, the member a
+// release acts on — goes through here first, and an `aria-disabled="true"` element resolves to
+// nothing, exactly as if the pointer had landed on the empty row behind it.
+//
+// ⚠ WHY IT HAD TO BECOME EXPLICIT. Until round 15 every withheld control in the app also wore
+// `pointer-events-none`, and THAT is what kept them out of this file: a pointer-events:none element is
+// never returned by elementFromPoint and never targeted by a pointerdown, so `closest('button')` walked
+// straight past it. B7 removed the pointer block from the ⚙ footer's three buttons (so the not-allowed
+// cursor could paint at all — see controlClasses' NOT_OFFERED_BTN_CLASS), and with it went the only
+// thing keeping them out: a press-drag from the ⚙ gear into the panel started drawing the drag ring on
+// a greyed-out Save Defaults / Reset Settings / Full Reset, which then did nothing on release. A ring
+// is a promise that a release will act; drawing one on a control the app has just announced as
+// unavailable is the UI lying about what pressing will do — the very defect B7 was opened to fix, one
+// channel over. So the invariant moves off a CSS side effect and into the controller, where it is
+// stated once and cannot be undone by a className.
+//
+// ⚠ ENUMERATED BY HAND, because a green suite is not a blast radius. Every OTHER aria-disabled element
+// in src/ still carries pointer-events-none as well and so was already invisible here — the locked ⚙
+// pickers (PillGroup's LOCK_CLASS on the container, PillTray's segments inside it), SliderValueEditor's
+// accented readout, and MethodBreakdown's Show Codes. The ⚙ footer's three buttons are the only
+// hit-testable aria-disabled controls in the app, so this predicate changes the behaviour of exactly
+// those three, and changes it back to what it was before B7.
+//
+// Exported for the unit net: jsdom has no layout, so elementFromPoint never fires there and the full
+// gesture cannot be driven — the predicate is the testable seam (tests/pointerGestures).
+export function gestureTarget(el: Element | null): HTMLElement | null {
+  return el && !el.matches(WITHHELD_SELECTOR) ? (el as HTMLElement) : null
+}
 
 // Pure decision: given where the press STARTED, the release target under the release point (or null),
 // and the selection group the press began inside (or null), decide whether to suppress the native click
@@ -175,7 +206,7 @@ export function installPointerGestures(): () => void {
   let prevTs: number | null = null // previous rAF timestamp; null = first frame after a (re)start → dt 0
 
   const targetAt = (x: number, y: number): HTMLElement | null =>
-    (document.elementFromPoint(x, y)?.closest(TARGET_SELECTOR) as HTMLElement | null) ?? null
+    gestureTarget(document.elementFromPoint(x, y)?.closest(TARGET_SELECTOR) ?? null)
   const memberAt = (g: Element | null, x: number, y: number): Element | null => {
     if (!g) return null
     const t = targetAt(x, y)
@@ -283,7 +314,13 @@ export function installPointerGestures(): () => void {
       clearTimer = null
     }
     suppressEl = null
-    const el = ((e.target as Element | null)?.closest?.('button') as HTMLElement | null) ?? null
+    // gestureTarget on the START too, not only on the release/hilite hit-tests: an announced-unavailable
+    // button must latch no gesture at all, which is precisely what pointer-events-none used to give
+    // these for free (the pointerdown landed on the row behind and closest('button') found nothing).
+    // Without it a press on a dimmed ⚙ footer button would latch, then resolve its own release to null
+    // through targetAt, and resolveRelease would read that as a slide-off — arming a click suppression
+    // on a button that was never going to act. Same predicate, same reason, one gesture earlier.
+    const el = gestureTarget((e.target as Element | null)?.closest?.('button') ?? null)
     if (!el) return
     pointerId = e.pointerId
     pointerKind = e.pointerType
