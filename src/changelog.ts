@@ -46,6 +46,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-08-09',
+    items: [
+      'Reset Settings and Full Reset now wait until you leave the year box, the same way the ⚙ button already did. A year you have started typing but not left yet no longer counts as a change on its own.',
+      'Fixed: pressing Esc in a Year Range box now throws away what you typed and puts the stored year back. It used to do the opposite and keep the year you were trying to discard.',
+      'Fixed: pressing Esc in a Year Range box no longer closes the whole Settings menu with it. It just leaves the box, and pressing Esc again closes the menu.',
+      'Fixed: the three buttons at the foot of the Settings menu now do nothing at all while they are dimmed. Save Defaults could previously be opened with a keyboard when there was nothing to save.',
+    ],
+  },
+  {
     date: '2026-08-08',
     items: [
       'How to Play now scrolls inside its own panel, the same way every other page in the app already did. Two things change with it: tapping the status bar no longer jumps the guide to the top, and dragging on the top bar itself no longer scrolls it.',
