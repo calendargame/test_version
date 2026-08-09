@@ -41,7 +41,7 @@ import { screen, within, render, fireEvent, act } from '@testing-library/react'
 import { App } from '../../src/main.jsx'
 import { useSettings } from '../../src/store/settings.js'
 import { useModePrefs } from '../../src/store/modePrefs.js'
-import { useUserDefaults } from '../../src/store/userDefaults.js'
+import { useUserDefaults, effectiveSettingsDefaults } from '../../src/store/userDefaults.js'
 import { useProgress } from '../../src/store/progress.js'
 // Re-exported so the panel helper's API is complete at one import, while the definition lives in
 // the file that owns the question — mode-screen tests ask "is this offered" about game controls
@@ -901,21 +901,22 @@ export function commitYear(which, via = 'blur') {
   return { prevented: false }
 }
 
-// ESCAPE in a year box. Named for the GESTURE, not for an intent, because what it does today is
-// not what the code reads like it does — and both surprises are pre-existing behaviour the net
-// PINS rather than fixes:
+// ESCAPE in a year box: throw the edit away, give up the keyboard, leave the panel standing. Still
+// named for the GESTURE rather than the intent, because this is the spot where the two of them came
+// apart — round 14 fixed both, and the history is worth keeping so neither can quietly come back:
 //
-//   1. IT COMMITS A PARSEABLE VALUE INSTEAD OF REVERTING IT. The handler queues the revert
-//      (setMinInputVal(String(minY))) and then blurs the box synchronously; onBlur's commitMin runs
-//      inside that same batch and still closes over the PRE-revert text, so the typed number wins
-//      and lands in the store. Only unparseable text actually reverts, via commitMin's NaN branch —
-//      which is presumably why nobody noticed.
-//   2. IT CLOSES THE PANEL. The panel's document-level Escape handler carves out text inputs by
-//      reading document.activeElement — but the box has already blurred itself by the time that
-//      handler runs, so the carve-out no longer applies and the panel closes on the same press.
+//   1. IT USED TO COMMIT A PARSEABLE VALUE INSTEAD OF REVERTING IT. The handler queued the revert
+//      (setMinInputVal(String(minY))) and then blurred the box synchronously; onBlur's commitMin ran
+//      inside that same batch still closing over the PRE-revert text, so the typed number won and
+//      landed in the store. Only unparseable text actually reverted, via commitMin's NaN branch —
+//      which is presumably why nobody noticed. The revert is now flushed before the blur.
+//   2. IT USED TO CLOSE THE PANEL. The panel's document-level Escape handler carves out text inputs
+//      by reading document.activeElement, and the box had already blurred itself by the time that
+//      handler ran, so the carve-out no longer applied. The box now stops the press propagating.
 //
-// Verified against the real app while building this file. Neither is listed among the spec's eight
-// known defects; both are for the owner to decide on separately, AFTER the net is green.
+// ⚠ SO THIS HELPER IS NOT A SYNONYM FOR "press Escape". It delivers the press INSIDE the box, which
+// is the only way to exercise either fix; an Escape aimed at the page takes the panel's own handler
+// and closes the panel, which is correct and is a different case.
 export const escapeYear = (which) => keyInYear(which, 'Escape')
 
 // ── Everything the panel currently reads ──────────────────────────────────────────────────────
@@ -1056,6 +1057,32 @@ export function openModal(key) {
   if (!opener) throw new Error(`openModal: no such modal "${key}" (have: ${MODAL_KEYS.join(', ')})`)
   tap(opener())
 }
+
+// THE PRECONDITION FOR REACHING THE SAVE POPUP AT ALL, and it is deliberately explicit rather than
+// folded into openModal('save').
+//
+// Round 14 closed defect D7: all three ⚙ footer buttons now short-circuit their own handlers while
+// they are dimmed, so Save Defaults opens its popup only while something actually diverges from the
+// effective defaults. Before that, the dim was CSS-only and a programmatic press opened the popup
+// from a pristine state — which is how a dozen cases whose SUBJECT is the popup (its chrome, its
+// focus trap, its five dismiss routes) happened to reach it.
+//
+// Those cases need the divergence arranged, and it has to be a value they do not otherwise read, or
+// the fixture starts answering the question. Jan/Feb Chance is that value: it is captured in the
+// snapshot like any other panel setting, it is the one chance picker that NEVER locks, and no case
+// in the net or in saveDefaults.dom.test.jsx asserts it. Call it, then open the popup.
+//
+// ⚠ It is NOT inside openModal on purpose. A helper that silently moved a setting to make a button
+// work would hide state from the cases that go on to save a snapshot and read it back.
+//
+// ⚠ It asks the app what "default" currently MEANS rather than hard-coding the factory value,
+// because several cases call it twice — once to reach the popup, and again after a Save has made
+// the value it just moved the new saved default. A fixed literal would silently stop diverging.
+export const makeSaveable = () =>
+  act(() => {
+    const def = effectiveSettingsDefaults(useUserDefaults.getState().saved).janFebChance
+    useSettings.getState().setJanFebChance(def === '50' ? '25' : '50')
+  })
 
 // EVERY WAY A MODAL GOES AWAY, and the group asserts they are not interchangeable: four of them
 // DISCARD pending edits and one of them (`save`) commits.

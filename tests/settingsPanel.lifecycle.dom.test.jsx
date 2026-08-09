@@ -39,6 +39,7 @@ import { useSettings } from '../src/store/settings.js'
 import { useModePrefs } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
 import {
+  makeSaveable,
   resetAppState,
   mountApp,
   openSettings,
@@ -229,15 +230,14 @@ describe('the settings panel — opening and closing by every route (group 1)', 
     // sees a click at all, so a click-only route would report "panel true" by never consulting the
     // rule, and would keep reporting it with the rule's `[data-settings-modal]` carve-out deleted.
     seedSavedDefaults()
+    // The snapshot leaves live == saved, so Save Defaults sits dimmed — and since round 14 closed
+    // defect D7 a dimmed footer button is genuinely inert, so the Save modal is unreachable until
+    // something diverges. One unrelated setting, and all four modals are reachable again.
+    makeSaveable()
     mountApp()
     openSettings()
     const after = []
     for (const key of MODAL_KEYS) {
-      // ⚠ PINS A PRE-EXISTING DEFECT, deliberately (D7). With a snapshot saved and nothing since
-      // changed there is nothing to save, so Save Defaults is dimmed — but the dim is CSS-only and
-      // openSaveDefaults carries no handler guard, so this press opens the popup anyway. Full
-      // Reset is the only footer button with a guard. Pinned as it is; the asymmetry is the
-      // owner's to decide on separately, after the net is green.
       openModal(key)
       expect(queryModalCard(key)).not.toBeNull()
       closeModal(key, 'scrim')
@@ -526,6 +526,7 @@ describe('the settings panel — the markers that carry its behaviour (group 13)
 
   it('every settings modal renders outside the panel card yet still counts as inside it', () => {
     seedSavedDefaults()
+    makeSaveable() // round 14 (D7): the snapshot dims Save Defaults, and a dimmed button is now inert
     mountApp()
     openSettings()
     const placed = []
@@ -548,6 +549,7 @@ describe('the settings panel — the markers that carry its behaviour (group 13)
 
   it('a Tab while a settings modal is up does not open the mode menu behind it', () => {
     seedSavedDefaults()
+    makeSaveable() // round 14 (D7): the snapshot dims Save Defaults, and a dimmed button is now inert
     mountApp()
     openSettings()
     const guarded = []

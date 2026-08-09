@@ -7,7 +7,7 @@ import { initObservability, captureError } from './observability/sentry'
 // createPortal is in 'react-dom'. Reconstruct a ReactDOM with both so the app's
 // ReactDOM.createRoot (mount) and ReactDOM.createPortal (dropdowns/popovers) both work.
 import { createRoot } from 'react-dom/client'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { rangeHasLeapYear } from './lib/calendar.js'
 import { fmt, numericFormatOf } from './lib/format.js'
 import { randomDate } from './lib/dateGen.js'
@@ -323,10 +323,10 @@ const ReactDOM = { createRoot, createPortal }
       useEffect(()=>{if(mode!=='guide')prevNonGuideModeRef.current=mode;},[mode]);
       const modeSelectRef=useRef<HTMLDivElement | null>(null);
       const [systemIsDark,setSystemIsDark]=useState(()=>typeof window!=="undefined"?window.matchMedia("(prefers-color-scheme: dark)").matches:true);
-      // ⚙ Settings store (Stage C, Step 5a). The 13 settings values + their setters
+      // ⚙ Settings store (Stage C, Step 5a). The 14 settings values + their setters
       // + resetSettings now live in the Zustand store (src/store/settings.js), bound
       // here to the SAME local names App used before so every read site, setter call
-      // (incl. functional updaters), and the settingsAtDefaults/isFullyReset booleans
+      // (incl. functional updaters), and the settingsStoreAtDefaults/isFullyReset booleans
       // keep working unchanged. minInputVal/maxInputVal stay as local useState below.
       // Each setter is selected individually so component re-renders only when the
       // specific value it reads changes (Zustand selector subscriptions).
@@ -346,7 +346,7 @@ const ReactDOM = { createRoot, createPortal }
       const julianChance=useSettings(s=>s.julianChance),setJulianChance=useSettings(s=>s.setJulianChance);
       const applySettingsStore=useSettings(s=>s.applySettings);
       // Personal defaults (Q7 Save Defaults): `saved` is the user's snapshot (null = none). The
-      // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsAtDefaults,
+      // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsStoreAtDefaults,
       // and the gear's "modified" indicator; the mode components read their own slices for their
       // freshness checks. Survives Full Reset by design (see store/userDefaults).
       const savedDefaults=useUserDefaults(s=>s.saved);
@@ -1356,11 +1356,15 @@ const ReactDOM = { createRoot, createPortal }
           if(ae&&ae.tagName==='INPUT'&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(ae))ae.blur();
           setSettingsOpen(false);
         }};document.addEventListener('mousedown',h);document.addEventListener('touchstart',h);return()=>{document.removeEventListener('mousedown',h);document.removeEventListener('touchstart',h);};},[settingsOpen]);
-      // Escape closes the settings popover. Doesn't fire when a TEXT-ENTRY input has focus — those
-      // have their own Escape handling (the year-range inputs revert their value) and stopPropagation
-      // isn't used, so this listener would double-handle the same press. The guard is deliberately
+      // Escape closes the settings popover. It bails when a TEXT-ENTRY input has focus, because
+      // those have Escape semantics of their own (the defaults card's numeric fields normalize-commit)
+      // and this listener would otherwise double-handle the same press. The guard is deliberately
       // NOT "any INPUT": range sliders keep focus after an adjust and have no Escape semantics of
       // their own — bailing on them would leave Escape dead until something else got focus.
+      // ⚠ THE GUARD IS NOT WHAT PROTECTS THE YEAR BOXES, and relying on it is exactly how they broke:
+      // it asks what has focus, and their handler blurs the box synchronously, so by the time this
+      // ran the answer was "nothing" and the panel closed mid-edit. They stopPropagation instead, so
+      // this listener never sees their press at all — see the note beside them.
       useEffect(()=>{if(!settingsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();setSettingsOpen(false);};document.addEventListener('keydown',h);return()=>document.removeEventListener('keydown',h);},[settingsOpen]);
       // Close-on-drag-activate (Q5 rework): the pointer controller dispatches a bubbling "drag-dismiss"
       // CustomEvent from a drag-clicked member of a data-drag-dismiss menu (lib/pointerGestures) — the
@@ -1404,9 +1408,13 @@ const ReactDOM = { createRoot, createPortal }
       // AND the four capturable mode-screen prefs (Flash speed, both Blitz timers, the AoX run length)
       // to their EFFECTIVE defaults: the user's saved personal defaults when they exist (Q7,
       // store/userDefaults), the factory launch values otherwise. This is the exact MIRROR of Save
-      // Defaults (which copies live → the snapshot) over the same 18-value unit the gear "modified" bar
-      // judges — so one tap clears a lit gear whatever diverged (round-6 extension: it used to touch the
-      // panel alone, stranding a gear lit only by a mode-screen pref). Still leaves the NON-capturable
+      // Defaults, which copies the same 18-value unit the other way — live → the snapshot, 14 settings
+      // + the 4 capturable prefs (this restore adds the 2 text mirrors, which are stored nowhere and so
+      // have nothing to copy back). The gear's "modified" bar judges 17 of those 18, or 16 with Use
+      // System Off: the theme trio is compared BY WHAT IS IN EFFECT, so the dormant value is excluded
+      // (settingsStoreAtDefaults below). A subset either way, so one tap always clears a lit gear
+      // whatever diverged (round-6 extension: it used to touch the panel alone, stranding a gear lit
+      // only by a mode-screen pref). Still leaves the NON-capturable
       // mode config (Blitz Per-Round/Question, Allow Mistakes, One-by-One, the Deduction sub-type, the
       // show/hide stat toggles) and stats/history untouched — Full Reset (which additionally wipes stats
       // and remounts every mode) and Reset Stats own those. The mode-screen prefs restore straight into
@@ -1422,10 +1430,28 @@ const ReactDOM = { createRoot, createPortal }
         setMinInputVal(String(defSettings.minY));setMaxInputVal(String(defSettings.maxY));
         applyModePrefs(defPrefs);
       };
+      // ★ THE FOOTER BUTTON'S HANDLER, and the round-14 dimmed-button guard lives HERE rather than
+      // inside resetSettings ON PURPOSE. resetSettings is also fullReset's delegate for the ENTIRE
+      // settings restore, so it must keep its total, unconditional contract. Guarded inside instead,
+      // Full Reset silently stopped restoring exactly the bytes "modified" is deliberately blind to
+      // — a dormant theme value (Use System ON parks manualTheme; OFF parks darkTheme/lightTheme)
+      // and the two year-box text mirrors — and no offer in the panel could have told the user, since
+      // by construction none of them reads those. Pinned by the Full Reset dormant-theme case in
+      // tests/settingsPanel.defaults.dom.
+      // The guard itself is defense in depth, the same shape as armFullReset's below: the
+      // opacity-60/pointer-events-none className stops taps, but CSS cannot stop a keyboard — Tab to
+      // a dimmed button and press Enter and the handler runs. Without it a dimmed Reset Settings
+      // still rewrote the year boxes' text and that dormant theme value.
+      const pressResetSettings=()=>{if(!settingsModified)return;resetSettings();};
       // Save Defaults (Q7): open the confirmation popup, seeding the pending snapshot from the
       // LIVE stores (panel captured whole; the four mode-screen prefs become editable rows).
       // The seed is kept alongside the pending copy for the shared card's dirty-row highlight.
       const openSaveDefaults=()=>{
+        // The same short-circuit the other two footer buttons carry — all three are now equally inert
+        // while dimmed. Without it, a keyboard user could open this popup with nothing to save. It can
+        // sit INSIDE this function because the function IS the press and nothing else calls it; that
+        // is exactly what is not true of resetSettings, whose guard had to go on the button.
+        if(!settingsModified)return;
         const s=useSettings.getState();
         pendSettingsRef.current=Object.fromEntries(Object.keys(SETTINGS_DEFAULTS).map(k=>[k,s[k as keyof SettingsValues]])) as SettingsValues;
         const p=useModePrefs.getState();
@@ -1491,6 +1517,10 @@ const ReactDOM = { createRoot, createPortal }
         // ALSO applies the 4 capturable mode prefs; the resetModePrefs()+applyModePrefs(defPrefs) pair
         // below re-establishes them over the factory modePrefs reset, so that write is subsumed here
         // (the net four-pref result is identical) — resetSettings keeps its standalone contract.
+        // ⚠ UNCONDITIONAL, AND IT HAS TO BE. This is Full Reset's ONLY write to the settings store,
+        // so resetSettings must stay total: the round-14 dimmed-button guard therefore lives on the
+        // footer button (pressResetSettings) and not in here, or a Full Reset stops restoring the
+        // very values "modified" is blind to. See the note above pressResetSettings.
         resetSettings();
         // Saved gameplay progress → wiped (Stage D1): clears lifetime stats + all-time bests + Lookup
         // history in the persisted store, making Full Reset permanent. Runs BEFORE the remount-key bumps
@@ -1589,8 +1619,12 @@ const ReactDOM = { createRoot, createPortal }
       },[]);
       // True when every popover-controlled STORE value matches its EFFECTIVE default — the user's
       // saved personal defaults when they exist (Q7, store/userDefaults), the factory launch
-      // values otherwise. STORE values only: uncommitted year-range typing must not light the
-      // gear's "modified" indicator below (it commits on blur/Enter).
+      // values otherwise. STORE values only, and that is now the SINGLE definition of "changed"
+      // behind all four offers (the ⚙ indicator, Save Defaults, Reset Settings, Full Reset):
+      // half-typed year-range text changes nothing until it commits on blur/Enter. (Round 14, the
+      // owner's call. Before it, Reset Settings and Full Reset additionally read the two year-range
+      // input-text mirrors, so a half-typed year offered those two while the gear stayed dark and
+      // Save Defaults stayed dimmed — three buttons, two meanings of "changed".)
       // The theme trio is compared BY WHAT IS IN EFFECT, not by what is stored. Use System ON
       // means darkTheme/lightTheme are the live pair and manualTheme is dormant; OFF is the
       // reverse. Comparing a dormant value would make "modified" mean "some invisible byte
@@ -1602,25 +1636,20 @@ const ReactDOM = { createRoot, createPortal }
       // the fix, and it retires the whole class of dormant-value false positives.
       const themeAtDefaults=useSystem?(darkTheme===defSettings.darkTheme&&lightTheme===defSettings.lightTheme):(manualTheme===defSettings.manualTheme);
       const settingsStoreAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&themeAtDefaults;
-      // settingsAtDefaults = the ⚙ PANEL at its effective defaults: the store values PLUS the two
-      // year-range *input text* mirrors, so a dirty (uncommitted) input reads as diverged. Feeds
-      // isFullyReset below; the Reset Settings dim extends it with the mode-screen prefs (resetSettingsAtDefaults).
-      const settingsAtDefaults=settingsStoreAtDefaults&&minInputVal===String(defSettings.minY)&&maxInputVal===String(defSettings.maxY);
-      // The ⚙ gear "modified" indicator (Q8) + the Save Defaults dim: live state diverges from the
-      // effective defaults in EITHER store (any menu setting, or any of the four capturable
-      // mode-screen prefs). Its complement means "nothing new to save".
+      // The one derived boolean behind THREE of the four offers: the ⚙ gear indicator (Q8), the Save
+      // Defaults dim AND the Reset Settings dim. True when live state diverges from the effective
+      // defaults in EITHER store — any menu setting, or any of the four capturable mode-screen prefs.
+      // Its complement means "nothing new to save, and nothing for Reset Settings to undo", so those
+      // three are literally the same expression and cannot drift apart. (Reset Settings watching the
+      // panel alone would strand a gear lit only by a divergent mode-screen pref — round-6 Q7.)
       const settingsModified=!(settingsStoreAtDefaults&&prefsAtDefaults);
-      // Reset Settings dims only when the FULL 18-value unit sits at the effective defaults — the ⚙
-      // panel (incl. the year-range text mirrors) AND the four capturable mode-screen prefs — so it is
-      // offered whenever the gear reads "modified", the exact mirror of the Save Defaults dim (round-6
-      // Q7). Before that it watched the panel alone, stranding a gear lit only by a divergent mode-screen pref.
-      const resetSettingsAtDefaults=settingsAtDefaults&&prefsAtDefaults;
       // Every per-mode piece of state now lives in the always-mounted mode components, which
       // each report a comprehensive freshness flag (config + stats + history + UI toggles) up
-      // via onFreshChange. So isFullyReset = the launch mode (classic) + settings-at-defaults +
-      // the Lookup state (which lives here in App) + all five freshness flags. No dead App-side
-      // game-state checks remain.
-      const isFullyReset=mode==='classic'&&settingsAtDefaults&&lookupHistory.length===0&&lookupInput===""&&lookupOutput===""&&lookupCalcDate===null&&lookupSelectedHistoryId===null&&lookupCalcOpen===false&&aoxIsFresh&&classicIsFresh&&flashIsFresh&&blitzIsFresh&&deductionIsFresh;
+      // via onFreshChange. So isFullyReset = the launch mode (classic) + the settings store at its
+      // effective defaults + the Lookup state (which lives here in App) + all five freshness flags.
+      // It reads settingsStoreAtDefaults, NOT settingsModified: the four capturable mode prefs reach
+      // it through the freshness flags instead, which also cover the thirteen non-capturable ones.
+      const isFullyReset=mode==='classic'&&settingsStoreAtDefaults&&lookupHistory.length===0&&lookupInput===""&&lookupOutput===""&&lookupCalcDate===null&&lookupSelectedHistoryId===null&&lookupCalcOpen===false&&aoxIsFresh&&classicIsFresh&&flashIsFresh&&blitzIsFresh&&deductionIsFresh;
       // Safety net (moved here from above so its dep array reads isFullyReset AFTER it's declared):
       // if state somehow flips to fully-reset while the Full Reset button is armed (shouldn't be
       // reachable in practice — fullReset disarms before firing — but defensive), disarm.
@@ -1796,9 +1825,31 @@ const ReactDOM = { createRoot, createPortal }
                 other stable identity, and the previous handle — data-drag-focus — is a GENERAL press-drag
                 opt-in (src/lib/pointerGestures.ts), so any third control in the panel adopting it would
                 have broken every year-range test at once. */}
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Earliest Year" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
+            {/* ★ WHAT ESCAPE DOES IN A YEAR BOX, and why it is written this awkwardly (round 14 —
+                it did neither of these things before, and the intent had always been to).
+                THROW THE EDIT AWAY: put the committed year back in the box. The revert used to be a
+                plain setMinInputVal followed by the blur() below, and the two landed in ONE React
+                batch — so onBlur's commitMin still closed over the PRE-revert text and committed the
+                very value Escape was discarding. (Only unparseable text appeared to revert, via
+                commitMin's own cannot-parse branch, which is presumably why it went unnoticed.)
+                flushSync lands the revert BEFORE the blur, so the commit that follows re-reads the
+                restored year and is a no-op. currentTarget is captured first because it is only
+                valid during dispatch.
+                AND KEEP THE PANEL OPEN: the panel's Escape handler (a document keydown, bubble
+                phase) decides "is this press mine?" by asking what has focus — and blur() has
+                already run by then, so it saw an empty answer and closed the panel out from under
+                the edit. stopPropagation says plainly that this input consumed the press. It works
+                because that listener is on DOCUMENT and BUBBLES: React 19 attaches its own listener
+                at the root container, so stopping the native event there means document never sees
+                it. The four MODAL Escape handlers are capture-phase and still fire first, which is
+                correct — they carve text inputs out themselves.
+                Escape still BLURS, deliberately. It keeps the pair the author wrote (Enter = keep
+                it and let go, Escape = discard it and let go), it drops the numeric keyboard on a
+                phone, and it leaves a second Escape free to close the panel — a dismissal ladder,
+                rather than an input that swallows Escape forever. */}
+            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Earliest Year" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){const el=e.currentTarget;e.stopPropagation();flushSync(()=>setMinInputVal(String(minY)));el.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
             <span className="text-(--tx-300-60) text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Latest Year" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
+            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Latest Year" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){const el=e.currentTarget;e.stopPropagation();flushSync(()=>setMaxInputVal(String(maxY)));el.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
           </div>
           {/* ★ THE ORDER OF THIS SECTION (round-12) — Year Range, then the two LEAP rows, then the
               JULIAN pair last. Julian Chance is locked unless the switch is ON *and* the range
@@ -1863,7 +1914,7 @@ const ReactDOM = { createRoot, createPortal }
                 a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
                 wrapping; overflow-hidden on the button contains the pre-fit paint). */}
             <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden ${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
-            <button type="button" onClick={resetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${resetSettingsAtDefaults?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
+            <button type="button" onClick={pressResetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${!settingsModified?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
             <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
           </div>
         </div>

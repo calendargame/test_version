@@ -10,16 +10,22 @@
 //   • NOTHING IN THE REPO HAD EVER TYPED INTO THE YEAR BOXES. Verified by full-text search before
 //     this file was written — the only prior references read them with getByDisplayValue. So every
 //     commit, revert and clamp below is new ground.
-//   • THE YEAR BOXES ARE THE STATE THE THREE at-defaults BOOLEANS DISAGREE ABOUT. There are three
-//     of them, they are computed over three different value sets, and all three are drawn as the
-//     same grey dim — so a rewrite that collapses them into one looks like a tidy-up and is a
-//     behaviour change nobody can see.
+//   • THE YEAR BOXES ARE THE STATE THE at-defaults BOOLEANS USED TO DISAGREE ABOUT. Two booleans
+//     survive — "has anything changed" and "is the whole app fresh" — and both are drawn as the
+//     same grey dim, so a rewrite that collapses them into one looks like a tidy-up and is a
+//     behaviour change nobody can see. There were THREE when this file was written, and the third
+//     was the disagreement: half-typed text counted as a change for two of the four footer offers
+//     and not for the other two. Round 14 closed that (defect D1) on the owner's call, and the case
+//     that pinned it now asserts the agreement instead.
 //
 // ★ EVERYTHING HERE PINS WHAT THE APP DOES TODAY, INCLUDING ITS QUIRKS. That is the whole point:
 // the net is the proof that the move changed nothing, so a case written as the behaviour SHOULD be
-// would break the gate on the very move it exists to protect. Four places below pin something that
-// looks wrong. Each says so, names it, and says it is to be changed separately AFTER the net is
-// green. Search this file for "PINS" to find every one of them.
+// would break the gate on the very move it exists to protect. Several places below pin something
+// that looks wrong; each says so and names it. Search this file for "PINS" to find every one.
+// ⚠ Cases that say "RE-BLESSED (round 14)" are the deliberate exception: those pinned a defect, the
+// defect was fixed on purpose in the round before the extraction, and each records what it used to
+// assert and why that changed. They are the only edits this file has taken, and they were made
+// BEFORE the move — so the zero-edit gate on the extraction itself is still clean.
 //
 // ★ WHERE THE SPEC AND THE CODE DISAGREED, THE CODE WON. Three of the spec's sentences for these
 // groups describe behaviour the app does not have; each is called out at the case that corrects it
@@ -88,7 +94,7 @@ const setYear = (which, text) => {
   commitYear(which)
 }
 
-describe('Year Range — commit, revert, clamp, and the three-way disagreement (net group 5)', () => {
+describe('Year Range — commit, revert, clamp, and what half-typed text does NOT move (net group 5)', () => {
   beforeEach(() => {
     resetAppState()
   })
@@ -168,44 +174,59 @@ describe('Year Range — commit, revert, clamp, and the three-way disagreement (
     expect(settings().minY).toBe(1900)
   })
 
-  it('PINS TODAY: Escape in a year box COMMITS a typed year and closes the panel', () => {
-    // ⚠⚠ THIS IS NOT WHAT ESCAPE LOOKS LIKE IT DOES, and both halves are pre-existing behaviour
-    // that the owner has yet to rule on. Neither is among the spec's eight known defects; both were
-    // found while building the panel helper and are documented in full at escapeYear() there.
-    //   1. IT COMMITS INSTEAD OF REVERTING. The handler queues the revert and then blurs the box in
-    //      the same breath; the blur's own commit runs inside that batch still holding the PRE-
-    //      revert text, so the typed number wins the race and lands in the store.
-    //   2. IT CLOSES THE PANEL. The panel's Escape handler carves out text inputs by asking what
-    //      has focus — but the box has already blurred itself by then, so the carve-out no longer
-    //      applies.
-    // SPEC CORRECTION: the net's own prose for this case says Escape "reverts the field, does NOT
-    // write the store, and does NOT close the panel" — that is the opposite of all three, on every
-    // count, verified end to end against the running app.
+  it('Escape in a year box throws the edit away and leaves the panel standing', () => {
+    // RE-BLESSED (round 14). Both halves of this case used to assert the OPPOSITE, and both were
+    // root-cause bugs rather than decisions — the handler already read
+    // `setMinInputVal(String(minY)); blur()`, which plainly means "put the stored year back".
+    //   1. IT COMMITTED INSTEAD OF REVERTING. The queued revert and the synchronous blur landed in
+    //      one React batch, so the blur's own commit still held the PRE-revert text and the typed
+    //      number won the race into the store. The revert is now flushed before the blur.
+    //   2. IT CLOSED THE PANEL. The panel's Escape handler carves out text inputs by asking what
+    //      has focus, and the box had already blurred itself, so the carve-out no longer applied.
+    //      The box now stops the press propagating: it consumed the Escape, so nothing else acts.
+    // Escape still gives up the keyboard — see the note beside the inputs in src/main.tsx for why
+    // that was kept rather than dropped.
     openPanel()
     setYear('min', '1900')
     focusYear('min')
     typeYear('min', '2500')
     escapeYear('min')
-    expect(settings().minY).toBe(2500)
+    expect(settings().minY).toBe(1900) // the stored range never heard about the edit…
+    expect(yearValue('min')).toBe('1900') // …and the box put the stored year back
+    expect(isSettingsOpen()).toBe(true)
+    // The press was consumed, not swallowed forever: with the box no longer holding the keyboard, a
+    // SECOND Escape closes the panel. That ladder is why the revert still blurs.
+    closeSettings('escape')
     expect(isSettingsOpen()).toBe(false)
-    openSettings()
-    expect(yearValue('min')).toBe('2500')
   })
 
-  it('PINS TODAY: Escape in a year box reverts text that is not a year, and still closes the panel', () => {
-    // The mirror image of the case above, and the reason nobody has ever noticed it: unparseable
-    // text DOES revert, because the racing commit falls into its own cannot-parse branch. So Escape
-    // appears to work exactly as intended for the one input a user is most likely to try it on.
-    // The panel still closes either way. Same pending owner decision.
+  it('Escape throws away text that is not a year too, and still leaves the panel standing', () => {
+    // The case that used to be the mirror image, and the reason the defect above went unnoticed for
+    // so long: unparseable text reverted even then, because the racing commit fell into commitMin's
+    // own cannot-parse branch. So Escape appeared to work exactly as intended for the one input a
+    // user is most likely to try it on. Kept as the pair to the case above — the answer must not
+    // depend on whether what you typed happened to parse.
     openPanel()
     setYear('min', '1900')
     focusYear('min')
     typeYear('min', '')
     escapeYear('min')
     expect(settings().minY).toBe(1900)
-    expect(isSettingsOpen()).toBe(false)
-    openSettings()
     expect(yearValue('min')).toBe('1900')
+    expect(isSettingsOpen()).toBe(true)
+  })
+
+  it('Escape in the LAST year box behaves the same as the first', () => {
+    // Both boxes carry their own copy of the handler, so the fix has to be asserted on both or half
+    // of it can regress in silence.
+    openPanel()
+    setYear('max', '1950')
+    focusYear('max')
+    typeYear('max', '2500')
+    escapeYear('max')
+    expect(settings().maxY).toBe(1950)
+    expect(yearValue('max')).toBe('1950')
+    expect(isSettingsOpen()).toBe(true)
   })
 
   // ── The clamps ──────────────────────────────────────────────────────────────
@@ -276,32 +297,31 @@ describe('Year Range — commit, revert, clamp, and the three-way disagreement (
     expect(yearValue('min')).toBe('1700')
   })
 
-  // ── The three-way disagreement (D1) ─────────────────────────────────────────
+  // ── The four offers agree about half-typed text (was the D1 disagreement) ────
 
-  it('PINS D1: with uncommitted text in a year box the gear stays dark and Save Defaults stays dimmed, while Reset Settings and Full Reset are offered', () => {
-    // ⚠⚠ PINS D1 AS IT BEHAVES TODAY. The owner has DECIDED this changes — see spec section 5, D1.
-    // It is pinned as-is on purpose: the follow-up change is made after the net is green precisely
-    // so this file can show exactly which assertions flip. Do not "fix" it here.
-    //
-    // WHY IT HAPPENS, so the assertion is not a mystery to whoever changes it: the gear and Save
-    // Defaults are computed from the STORE values only, and typed text has not reached the store
-    // yet; Reset Settings and Full Reset are computed from a set that also folds in the two boxes'
-    // text. The comment in main.tsx calls Reset Settings "the exact mirror of the Save Defaults
-    // dim", and this is the reachable state in which that is false.
+  it('with uncommitted text in a year box, none of the four offers moves', () => {
+    // RE-BLESSED (round 14, defect D1 fixed). This case used to PIN the three-way disagreement:
+    // typing a year and not committing it left the gear dark and Save Defaults dimmed while Reset
+    // Settings and Full Reset were both offered, because those two additionally read the year
+    // boxes' TEXT while the gear read the store alone. The owner's decision: "reset settings and
+    // full reset should only apply when you've left that input box, like how the gear handles it."
+    // So the two text terms are gone and there is now ONE definition of "changed" — the committed
+    // store values — which is what these four falses assert. The companion case below shows the
+    // same four moving together the moment the text commits.
     openPanel()
     typeYear('min', '1900')
     expect(settings().minY).toBe(1)
     expect(offers()).toEqual({
       gear: false,
       saveDefaults: false,
-      resetSettings: true,
-      fullReset: true,
+      resetSettings: false,
+      fullReset: false,
     })
   })
 
   it('committing that same year moves all four offers together', () => {
-    // The other half of the pin, and the one that gives it meaning: nothing about the VALUE splits
-    // the four apart — only the window between typed and committed does.
+    // The other half, and the one that gives the case above its meaning: the four offers are not
+    // simply stuck dark — committing the very same year lights every one of them at once.
     openPanel()
     typeYear('min', '1900')
     commitYear('min', 'blur')
@@ -384,11 +404,21 @@ describe('Year Range — commit, revert, clamp, and the three-way disagreement (
 
   it('Reset Settings while a year box is half-typed and focused leaves the box reading the default', () => {
     openPanel()
+    // RE-BLESSED (round 14). The old fixture half-typed a year and pressed Reset Settings straight
+    // away, which worked only because of the two defects this round closed: half-typed text used to
+    // count as a change (D1), so the button was offered, and it had no handler guard anyway (D7).
+    // Neither is true now, so the press needs a real offer behind it — a COMMITTED change in the
+    // other box. The claim under test is unchanged and is the one that matters: the reset reaches
+    // the year boxes' TEXT, not just the stored range, even while a box is mid-edit and focused.
+    typeYear('max', '1900')
+    commitYear('max', 'blur')
     focusYear('min')
-    typeYear('min', '1900')
+    typeYear('min', '1800')
     tapFooter('Reset Settings')
     expect(yearValue('min')).toBe('1')
+    expect(yearValue('max')).toBe('10000')
     expect(settings().minY).toBe(1)
+    expect(settings().maxY).toBe(10000)
     // And it does not close the panel — the reset is meant to be inspectable.
     expect(isSettingsOpen()).toBe(true)
   })
@@ -624,10 +654,11 @@ describe('The four offers — gear, Save Defaults, Reset Settings, Full Reset (n
 
   // ── What a press on a NOT-OFFERED footer button actually does ───────────────
   //
-  // The dim is CSS only, so a keyboard or programmatic path reaches all three handlers. Only one of
-  // them guards itself. That asymmetry is pre-existing defect D7 and an owner decision, and the
-  // three cases below pin whichever way each one currently falls — a rewrite that adds or removes a
-  // guard is invisible without them.
+  // The dim is CSS only (pointer-events-none), which stops a finger and cannot stop a keyboard: Tab
+  // to a dimmed button, press Enter, and the handler runs. Round 14 closed that gap (defect D7) —
+  // all three now short-circuit on the same condition that dims them, so all three do NOTHING.
+  // The cases below assert each one separately, because a rewrite that drops a guard is invisible
+  // without them and the failure it ships is a popup with nothing in it.
 
   it('a press on the not-offered Full Reset does nothing at all', () => {
     openPanel()
@@ -638,20 +669,22 @@ describe('The four offers — gear, Save Defaults, Reset Settings, Full Reset (n
     expect(isSettingsOpen()).toBe(true)
   })
 
-  it('PINS D7: a press on the not-offered Save Defaults still opens the popup', () => {
-    // ⚠ PINS TODAY. There is nothing to save — every value is already the default — and the popup
-    // opens anyway, because this handler has no guard. Pre-existing defect D7; an owner decision,
-    // not a bug this net resolves.
+  it('a press on the not-offered Save Defaults does not open the popup', () => {
+    // RE-BLESSED (round 14, defect D7 fixed). This used to open the popup: there was nothing to
+    // save — every value already sat at its default — and the popup came up regardless, because
+    // openSaveDefaults carried no guard and the dim was CSS-only. It now short-circuits, so a
+    // keyboard user can no longer land in a confirmation popup with nothing to confirm.
     openPanel()
     expect(offers().saveDefaults).toBe(false)
     tapFooter('Save Defaults')
-    expect(queryModalCard('save')).not.toBeNull()
+    expect(queryModalCard('save')).toBeNull()
   })
 
-  it('PINS D7: a press on the not-offered Reset Settings runs a silent no-op', () => {
-    // ⚠ PINS TODAY, and it is deliberately the OPPOSITE shape to Save Defaults above: no guard
-    // either, but the action itself is empty when everything is already at its default. Nothing the
-    // user can see changes, nothing opens, and the panel stays up.
+  it('a press on the not-offered Reset Settings does nothing', () => {
+    // The reset was ALREADY invisible here — everything is at its default, so running it changed
+    // nothing — which is why this case stayed green through the round-14 guard (defect D7). It is
+    // kept, and kept next to the two above, because the three buttons must now agree: the guard is
+    // what makes this true by construction rather than by coincidence.
     openPanel()
     const before = panelValues()
     expect(offers().resetSettings).toBe(false)

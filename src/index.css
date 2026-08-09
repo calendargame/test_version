@@ -495,7 +495,11 @@ button:focus,select:focus{outline:none}
 /* Q8 — the ⚙ gear "modified" indicator: a flush inside-bottom 2px violet bar shown while any menu
    setting or any of the four capturable mode-screen prefs (Flash speed, both Blitz timers, AoX run
    length) diverges from the user's saved defaults (the factory launch values when none are saved —
-   store/userDefaults). Violet, not the rose reset red — "customized" is a benign state, not a
+   store/userDefaults). ONE EXCLUSION, and it is deliberate: the theme trio is compared by what is
+   IN EFFECT, so the dormant value — manualTheme while Use System is On, darkTheme/lightTheme while
+   it is Off — never counts (settingsStoreAtDefaults in main.tsx says why). Since round 14 the same
+   boolean also dims Save Defaults AND Reset Settings, so this paragraph describes all three.
+   Violet, not the rose reset red — "customized" is a benign state, not a
    warning. App applies the class only while the popover is CLOSED (the open gear is solid purple). */
 .gear-modified{position:relative}
 .gear-modified::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:9999px;background:rgba(167,139,250,.85)}

@@ -1000,9 +1000,10 @@ export default function GuidePage({
             modifier (Ctrl/Cmd/Alt/Shift) is held.
           </li>
           <li>
-            <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use Esc
-            or Enter to leave an input first if you'd rather). Tab plus any modifier (Ctrl+Tab,
-            Ctrl+Shift+Tab, etc.) passes through to the browser.
+            <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use{' '}
+            <Kbd>Esc</Kbd> or <Kbd>Enter</Kbd> to leave an input first if you'd rather; in the Year
+            Range boxes those two do opposite things — see Dates — Year Range). Tab plus any
+            modifier (Ctrl+Tab, Ctrl+Shift+Tab, etc.) passes through to the browser.
           </li>
           <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
           <li>
@@ -1200,6 +1201,13 @@ export default function GuidePage({
       >
         <Lead>Controls which years dates are drawn from. Defaults to 1–10000 AD.</Lead>
         <UL>
+          <li>
+            A year you type counts once you leave the box — press <Kbd>Enter</Kbd>, or tap anywhere
+            else. <Kbd>Esc</Kbd> does the opposite: it throws the typing away, puts the stored year
+            back, and leaves the ⚙ menu open. Typing on its own moves nothing else either: the ⚙
+            button and the three buttons at the foot of the menu stay exactly as they were until the
+            year counts.
+          </li>
           <li>
             Changing the range always regenerates the current date — but if you've already
             wrong-guessed on the current date, the change is deferred so the wrong-state is

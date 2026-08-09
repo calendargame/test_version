@@ -12,7 +12,7 @@ import type { FormatId } from '../lib/format.js'
 // threaded props.
 //
 // Step 5b — PERSISTENCE: the store is wrapped in Zustand's `persist` middleware,
-// so the 13 settings save to the device (localStorage key 'cg-settings-v1') and
+// so the 14 settings save to the device (localStorage key 'cg-settings-v1') and
 // restore on reload. Only the data values are persisted (partialize strips the
 // setter functions); Zustand merges the saved values over the fresh store on
 // load, so the setters always come from the live code, never from storage. The
@@ -22,7 +22,7 @@ import type { FormatId } from '../lib/format.js'
 // updater (prev => next) — exactly like a React useState setter — so the call
 // sites in App that do setUseJulian(v=>!v) keep working verbatim. App binds the
 // store fields/setters to the SAME local names it used before, so the ~200 read
-// sites and the big settingsAtDefaults / isFullyReset boolean expressions are
+// sites and the big settingsStoreAtDefaults / isFullyReset boolean expressions are
 // untouched.
 //
 // NOT in this store (intentionally): minInputVal / maxInputVal — those are

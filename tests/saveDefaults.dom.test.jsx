@@ -24,6 +24,7 @@ import {
   modalCard,
   yearInput,
   isOffered,
+  makeSaveable,
   resetAppState,
 } from './helpers/settingsPanel.jsx'
 
@@ -174,6 +175,10 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     // A divergent visual timing pref must NOT light the gear "modified" bar (it isn't in the
     // at-defaults comparison — prefsMatchDefaults covers only the four capturable prefs).
     expect(gearIndicator().bar).toBe(false)
+    // …but the popup can only be REACHED while something the panel does capture diverges (round 14,
+    // D7 — a dimmed Save Defaults is now inert). Arranged after the assertion above, so the claim it
+    // makes about the timing toggles is still measured against an otherwise pristine app.
+    makeSaveable()
     openSettings()
     openPopup()
     act(() => fireEvent.click(btn('Save')))
@@ -219,6 +224,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it('popup Cancel discards edits; Save persists the EDITED values; live stores stay untouched', () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     act(() => fireEvent.change(flashSlider(), { target: { value: '1200' } }))
     act(() => fireEvent.change(nField(), { target: { value: '25' } }))
@@ -262,6 +268,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it("the popup's N field applies the AoX validation trio (digits only, clamp on commit, Escape revert)", () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     act(() => fireEvent.change(nField(), { target: { value: 'abc' } }))
     expect(nField().value).toBe('10') // non-digits rejected outright
@@ -314,11 +321,15 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   })
 
   it('the popup carries NO clear link (footer-only, Round-4); the footer link clears — via its confirm — while the popup is open', () => {
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     mountApp()
     openSettings()
     openPopup()
     expect(screen.queryByRole('button', { name: /Clear saved defaults/ })).toBeNull() // nothing saved yet — no link anywhere
     act(() => fireEvent.click(btn('Save')))
+    // Saving parked live == saved, which dims Save Defaults — and since round 14 (D7) a dimmed
+    // Save Defaults is inert, so getting back INTO the popup takes a fresh divergence.
+    makeSaveable()
     openPopup()
     // The Save Defaults popup's duplicate "(back to factory)" link was removed in Round-4 —
     // the ⚙ footer's "Clear saved defaults" is the ONLY clear affordance.
@@ -337,6 +348,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     openSettings()
     expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // nothing saved
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     act(() => fireEvent.click(btn('Save'))) // live == saved → the Save Defaults button dims…
     expect(isOffered(footerButton('Save Defaults'))).toBe(false) // …making the POPUP's clear link unreachable
@@ -350,6 +362,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it('the shared card in the Save popup: an edited row goes btn-solid; Cancel + Save always; no restricted-write note', () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     const dialog = modalCard('Save current settings as your defaults?')
     // An action card even while clean — never the manager's resting Close.
@@ -395,6 +408,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it('the popup is a real modal: role=dialog + aria-modal, focus moves in on open, Tab wraps inside it', () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     const dialog = modalCard('Save current settings as your defaults?')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
@@ -415,6 +429,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it('Escape closes the popup even while a slider holds focus (range inputs have no Escape semantics of their own)', () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     act(() => {
       flashSlider().focus()
@@ -427,6 +442,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   it('scrim mousedown/click and Escape cancel the POPUP only; the settings panel closes on the next Escape', () => {
     mountApp()
     openSettings()
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openPopup()
     const scrim = document.querySelector('[data-settings-modal]')
     // The settings click-outside handler must treat the scrim as "inside" (mousedown path)…
@@ -466,6 +482,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
       }
       window.removeEventListener('popstate', count)
     })
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults no longer opens its popup — see the helper
     openSettings()
     openPopup()
     expect(popupTitle()).toBeInTheDocument()

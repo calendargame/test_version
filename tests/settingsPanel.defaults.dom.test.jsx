@@ -35,10 +35,10 @@
 //     FACTORY and that no app code calls. It stays exactly where it is; the case that would catch a
 //     rewrite reaching for it is G7's saved-values case, and that is the whole of this file's answer
 //     to it.
-//   • D7, the guard asymmetry — Full Reset short-circuits when it would be a no-op, while Save
-//     Defaults and Reset Settings have no such guard and the dim is CSS-only. So several cases below
-//     open the Save popup from a DIMMED button, which is what ships today. G6 owns pinning that
-//     asymmetry as a claim; here it is simply relied on, and flagged where it happens.
+//   • D7, the guard asymmetry, is CLOSED as of round 14: all three ⚙ footer buttons short-circuit
+//     when they would be a no-op, so a dimmed Save Defaults no longer opens its popup for a
+//     keyboard or a programmatic press. Cases below whose subject is the popup therefore arrange a
+//     real offer first, via makeSaveable(). G6 owns asserting the three guards as a claim.
 //
 // ⚠ WHAT IS NOT HERE, deliberately: the footer row's no-resize under the "Confirm?" swap. The fit
 // is a no-op at width 0 (jsdom lays nothing out), so the only honest coverage is the mocked-
@@ -78,12 +78,14 @@ import {
   pickerChosen,
   pressKey,
   queryModalCard,
+  makeSaveable,
   resetAppState,
   switchState,
   tabInModal,
   tap,
   tapFooter,
   toggleSwitch,
+  typeYear,
   yearValue,
   documentTheme,
   MODAL_KEYS,
@@ -411,6 +413,47 @@ describe('⚙ Full Reset — reach, outcomes and the two-tap machine (net group 
     fireFullReset()
     expect(prefs(CAPTURABLE)).toEqual(DIVERGED_CAPTURABLE) // the SAVED four
     expect(prefs(NON_CAPTURABLE)).toEqual(factoryPrefs(NON_CAPTURABLE)) // the other thirteen
+  })
+
+  it('afterwards the bytes no offer in the panel can see — a dormant theme, a half-typed year — are back at their defaults too', () => {
+    // ★ THE GATE ON FULL RESET'S DELEGATED SETTINGS RESTORE. fullReset writes no settings of its
+    // own — it hands the whole store, both year-box text mirrors and the four capturable prefs to
+    // resetSettings and does nothing else about them. So anything that makes THAT call conditional
+    // narrows Full Reset silently, and until this case nothing in 1112 tests would have noticed:
+    // no other case asks Full Reset about a theme or a year box's TEXT, and "modified" is
+    // deliberately blind to both. (Round 14 shipped exactly that guard for one review cycle,
+    // inside resetSettings rather than on the button that needed it.) The two values below are
+    // therefore chosen as the pair "modified" cannot see — they are the whole exposure.
+    //
+    // THE STATE IS THE ONE tests/settings.dom ALREADY PINS AS LEGITIMATE: flipping Use System off
+    // seeds manualTheme from what is on screen so the look never jumps, and flipping it back on
+    // parks that seed as a dormant value. It diverges from the 'dusk' default and nothing in the
+    // panel says so — which is the point, and why Full Reset is the only way back.
+    //
+    // The second ingredient is a NON-SETTINGS reason for the app not to be fresh, because Full
+    // Reset asks a wider question than "has anything changed": one Lookup someone did earlier is
+    // enough to offer it in a state the other three offers read as pristine. Deliberately not a
+    // panel value — that would light the other three and the guard under test would never bite.
+    act(() => useProgress.getState().setLookupHistory([{ id: 'seed-1', y: 1900, m: 3, d: 4 }]))
+    mountApp()
+    openSettings()
+    toggleSwitch('Use System Settings')
+    toggleSwitch('Use System Settings')
+    expect(useSettings.getState().manualTheme).toBe('light') // parked, and ≠ the 'dusk' default
+    typeYear('min', '1800') // …and a year the user typed but never committed, so nothing sees it
+    expect(offers()).toMatchObject({
+      gear: false,
+      saveDefaults: false,
+      resetSettings: false,
+      fullReset: true,
+    })
+    expect(yearValue('min')).toBe('1800') // the text really is there, so the check below is not vacuous
+    fireFullReset()
+    expect(useSettings.getState().manualTheme).toBe(SETTINGS_DEFAULTS.manualTheme)
+    // The mirrors outlive the panel — they are App state, not the panel's — so reopening is the
+    // only way to read them, and it is also how the user would meet a year box left half-typed.
+    openSettings()
+    expect(yearValue('min')).toBe(String(SETTINGS_DEFAULTS.minY))
   })
 
   it('afterwards How to Play opens at the top with every section closed, even when the reset fired from a game screen', () => {
@@ -764,6 +807,7 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
     mountApp()
     openSettings()
     saveSnapshot() // so the Clear link exists and the manager opens on the saved view
+    makeSaveable() // …which also parks live == saved, dimming the now-inert Save Defaults (round 14, D7)
     for (const key of MODAL_KEYS) {
       if (!isSettingsOpen()) openSettings()
       openModal(key)
@@ -791,11 +835,9 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
   })
 
   it('Escape in a numeric field commits and normalises it; Escape on a slider dismisses the popup', () => {
+    makeSaveable() // round 14 (D7): a dimmed Save Defaults is inert now, so the popup needs a real offer
     mountApp()
     openSettings()
-    // Nothing has diverged, so Save Defaults is DIMMED — and the popup opens anyway, because that
-    // button has no handler guard and the dim is CSS-only (pre-existing defect D7, pinned as a
-    // claim by G6). Relied on here rather than asserted; it is the state the app ships.
     openModal('save')
     act(() => {
       saveCardAoxBox().focus()
@@ -818,6 +860,7 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
     mountApp()
     openSettings()
     saveSnapshot()
+    makeSaveable() // …which also parks live == saved, dimming the now-inert Save Defaults (round 14, D7)
     for (const key of MODAL_KEYS) {
       if (!isSettingsOpen()) openSettings()
       openModal(key)
