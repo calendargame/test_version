@@ -10,6 +10,7 @@ import { visualizer } from 'rollup-plugin-visualizer'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { availableParallelism } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 // The two names the app and the build must agree on, defined once in the module that reads them at
@@ -18,6 +19,17 @@ import { dirname, join } from 'node:path'
 // than a copy kept in step by hand.
 import { BUILD_ID_FILE, BUILD_ID_META, isBuildId } from './src/lib/updateCheck.ts'
 import { verifyDistPrecache, describePrecacheProblems } from './scripts/precacheIntegrity.mjs'
+
+// Ceiling on Vitest's worker pool — see the long note at `test.maxWorkers` below for why the
+// uncapped default is dangerous rather than merely slow. Clamped to at most 8 and never above what
+// the machine would have chosen anyway, so this can only lower the worker count on a big machine.
+// ⚠ THE FLOOR IS 2, NOT 1, AND THAT IS DELIBERATE. The hazard this cap exists for is too MANY
+// workers exhausting memory, which a small machine cannot suffer from — so squeezing a 2-core CI
+// runner down to a single worker would halve its throughput to solve a problem it never had.
+// `ubuntu-latest` is 4 vCPU for public repos today (→ 3 workers here), but runner specs change
+// without notice and the deploy gate runs on whatever GitHub provides, so the floor is what keeps
+// this from quietly becoming a CI slowdown the day that number moves.
+const MAX_TEST_WORKERS = Math.max(2, Math.min(8, availableParallelism() - 1))
 
 // GitHub Pages serves the org ROOT page `calendargame.github.io` (and its custom domain
 // calendargame.app) from '/', but every PROJECT repo's Pages site from '/<repo>/'. CI sets
@@ -461,5 +473,30 @@ export default defineConfig(({ command, mode }) => ({
     // passed on staging + locally. 20s gives ample headroom without masking a genuinely-hung test;
     // the heavy fuzz profiles (tests/engine/fuzz) set their own larger budget on top of this.
     testTimeout: 20000,
+    // ── Worker cap. Vitest's forks pool defaults to one worker per core, and every DOM file in
+    // this suite builds a full jsdom document, so on a 32-core / 16 GB laptop the default spawns
+    // ~32 jsdom workers against ~0.5 GB of headroom each. Under that pressure the run does not
+    // fail loudly — it fails in the WORST possible shape: workers time out or never start, the
+    // files they owned are silently never collected, and Vitest prints a summary line like
+    // "Test Files 47 passed (47) / Tests 575 passed (575)" beside a NON-ZERO exit code. A third
+    // of the suite vanishes and the printed line reads green. Three separate reviewers hit this
+    // on the same machine (EXIT 1 on consecutive runs; EXIT 0 the moment concurrency was capped),
+    // and the runs that failed failed on 20s load timeouts, never on an assertion.
+    //
+    // The cap is a CEILING, never a floor: it is derived from the machine's own parallelism and
+    // clamped to 8, so it can only ever LOWER the worker count. On a 2-core CI runner this
+    // resolves to 1 and nothing changes; on the 32-core laptop it resolves to 8. Measured cost of
+    // the cap on that laptop: none worth naming (the run is dominated by per-file jsdom setup,
+    // not by scheduling).
+    //
+    // ⚠ COROLLARY FOR ANY DEPLOY GATE, HUMAN OR SCRIPTED: trust the EXIT CODE and the collected
+    // file/test COUNT. Never read the "N passed" line as proof the suite ran.
+    //
+    // These are the VITEST 4 spellings. The pre-4 form was `poolOptions.forks.{minForks,maxForks}`,
+    // which v4 removed — and removed LOOSELY: it is accepted without error, does nothing at all,
+    // and says so only in a DEPRECATED line above the run summary. A cap written that way is a
+    // no-op that looks like a fix. (Found exactly that way, on the first run after writing it.)
+    minWorkers: 1,
+    maxWorkers: MAX_TEST_WORKERS,
   },
 }))

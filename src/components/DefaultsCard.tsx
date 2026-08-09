@@ -35,6 +35,33 @@
 //     whose strength is the --shade the hook writes, and it writes 0 when there is nothing to
 //     scroll — so on every screen tall enough to hold the card, which is every ordinary one, this
 //     whole treatment renders exactly the card that shipped before it.
+//
+// ── THE TWO CALLERS, AND THE ONE FLAG BETWEEN THEM ─────────────────────────────────────
+// This is the ONE shared defaults card (Q5 round-6): the Save Defaults popup and the
+// defaults manager both render THIS dialog card, so there are never two styles editing the
+// same four values. Parameterized by seed source alone — the Save card seeds `prefs`/`seed`
+// from the LIVE stores at open, the manager from the SAVED/effective defaults — plus the one
+// `manage` flag covering every deliberate difference between the two:
+//   • the AoX row: the Save card keeps its visible input box (the shared NUM_INPUT_CLASS
+//     idiom, Q18); the manager renders the row like the Blitz timer readouts instead — a
+//     plain tap-to-type SliderValueEditor value with its own widest-string strut "1000",
+//     no box (min/max/snap 2–1000/1 mirror the normalizeAoxN clamp; junk/empty reverts,
+//     the editor's contract, rather than the box's junk→10 fallback);
+//   • buttons: the Save card is an action card — Cancel + Save always; the manager rests
+//     read-only (one full-width Close in the Cancel recipe) and swaps to Cancel + Save only
+//     once something is dirty;
+//   • the footnote slot: the manager shows `note` while clean and the restricted-write
+//     warning ("Saving here updates only these values.") while dirty — the manager's Save
+//     writes ONLY these four values, so the swap appears exactly when it becomes relevant;
+//     the Save card writes the whole snapshot and needs neither.
+// A row is DIRTY when its pending value differs from the seed (aoxN normalized on both
+// sides, the store's defensive rule); dirty rows flag their value box/readout in the
+// btn-solid accent tier (the AoX box swaps its surface-tray surface whole for btn-solid +
+// border-transparent so the rendered height never changes; the readouts take
+// SliderValueEditor's accent pill).
+// Stateless by design — the popup lifecycle (portal, scrim, Escape, Back, focus) stays with
+// the callers, which are both in components/SettingsPanel; edits touch only the caller's pending
+// snapshot via setPrefs.
 import { useRef } from 'react'
 import type { PrefDefaults } from '../store/userDefaults.js'
 import { normalizeAoxN } from '../store/userDefaults.js'

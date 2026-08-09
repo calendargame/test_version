@@ -97,7 +97,8 @@ describe('App boot — the cold-open build-change flash', () => {
     document.body.appendChild(boot)
   }
   // The running build's stamp, captured exactly the way App writes it — a probe mount + read.
-  // (DEPLOY_TS itself is deliberately unexported: the stamp IS the observable contract.)
+  // (DEPLOY_TS is deliberately not reached for here, even though src/deployStamp.ts exports it —
+  //  the written stamp IS the observable contract, and reading the constant would assert nothing.)
   function captureCurrentStamp() {
     mountApp()
     const stamp = localStorage.getItem(BUILD_STAMP_KEY)

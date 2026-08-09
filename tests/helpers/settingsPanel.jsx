@@ -210,6 +210,16 @@ async function drainHistory() {
 // never see the click — the click-outside handler (document mousedown/touchstart) and the Full
 // Reset disarm listener (document mousedown/touchstart, capture) — and a test that fired only
 // `click` would report "tapping this control does not disarm Full Reset" as a pass.
+//
+// ⚠ KNOWN LIMIT, MUTATION-VERIFIED (round 14 review). Both halves fire inside ONE act(), so React
+// never re-renders between them and a click handler still sees the state the press half wrote. That
+// makes the Full Reset disarm listener testable in one direction only: severing it (never disarm)
+// goes red as it should, but INVERTING it — disarming on every press including the confirming one —
+// leaves the whole defaults suite green, because the click closure still reads fullResetArmed as
+// true and fires the reset. On a real device the press and the release are separate tasks, so that
+// inversion would re-arm instead of firing and Full Reset would become unfireable by any route.
+// Closing it needs a variant that puts an act() boundary BETWEEN the halves for the confirming tap;
+// do not simply split this one, which every existing case is written against.
 export const tap = (el) =>
   act(() => {
     fireEvent.mouseDown(el)

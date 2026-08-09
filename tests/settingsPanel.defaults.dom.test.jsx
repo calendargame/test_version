@@ -603,6 +603,29 @@ describe('⚙ Full Reset — reach, outcomes and the two-tap machine (net group 
     expect(fullResetState()).toMatchObject({ caption: 'Full Reset', armed: false })
     expect(useSettings.getState().minY).toBe(1583) // and nothing ever fired
   })
+
+  // ★ ADDED IN ROUND 14's REVIEW PASS, and the only case in this file that is not pre-move
+  // behaviour pinned before the fact — because it turned out nothing pinned this at all. The panel
+  // carries a safety net for "the app becomes fully reset while Full Reset is armed", inherited
+  // with a comment calling it unreachable. It is not unreachable: the site-wide disarm listener
+  // watches mousedown/touchstart only, so ACTIVATING Reset Settings by keyboard leaves the arm
+  // standing, and if the rest of the app was already fresh then settings landing on default is the
+  // last of isFullyReset's thirteen terms. The net had no case here, so when the safety net was
+  // rewritten (from a setState-in-effect to a during-render adjustment) 1113 green cases said
+  // nothing either way. This case is what says it: without the net it reads "Confirm?".
+  it('an arm does not outlive the app becoming fully reset, even with no press to disarm it', () => {
+    act(() => useSettings.getState().setLeapChance('75'))
+    mountApp()
+    openSettings()
+    tap(fullResetButton())
+    expect(fullResetState()).toMatchObject({ caption: 'Confirm?', armed: true })
+    // click with NO mousedown — how a keyboard Enter (or any programmatic press) arrives, and the
+    // one route the disarm listener cannot see.
+    act(() => fireEvent.click(footerButton('Reset Settings')))
+    expect(useSettings.getState().leapChance).toBe(SETTINGS_DEFAULTS.leapChance)
+    // Full Reset is now a no-op and says so: not armed, and no longer offered.
+    expect(fullResetState()).toMatchObject({ caption: 'Full Reset', armed: false, offered: false })
+  })
 })
 
 describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)', () => {

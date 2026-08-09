@@ -2,38 +2,31 @@ import './index.css' // Tailwind (v3, compiled in-build) + the app's custom CSS 
 import * as React from 'react'
 import ErrorBoundary, { ModeErrorBoundary } from './ErrorBoundary'
 import { initObservability, captureError } from './observability/sentry'
-// The original loaded the full ReactDOM UMD global, which exposes BOTH createRoot and
-// createPortal. The modern modular build splits them: createRoot is in 'react-dom/client',
-// createPortal is in 'react-dom'. Reconstruct a ReactDOM with both so the app's
-// ReactDOM.createRoot (mount) and ReactDOM.createPortal (dropdowns/popovers) both work.
+// createRoot only. This used to reconstruct a ReactDOM object carrying createPortal too, because
+// the modern modular build splits them ('react-dom/client' vs 'react-dom') and this file portalled
+// the four settings modals; those went to components/SettingsPanel, which imports createPortal
+// itself, so the shim had nothing left to reconstruct.
 import { createRoot } from 'react-dom/client'
-import { createPortal, flushSync } from 'react-dom'
-import { rangeHasLeapYear } from './lib/calendar.js'
-import { fmt, numericFormatOf } from './lib/format.js'
+import { fmt } from './lib/format.js'
 import { randomDate } from './lib/dateGen.js'
 import { makeDedPuzzle } from './lib/dedPuzzle.js'
-import { SectionLabel } from './components/primitives.jsx'
-import { PillTray } from './components/PillTray.jsx'
-import { PillGroup } from './components/PillGroup.jsx'
 import { UpdateDot } from './components/UpdateDot.jsx'
 import CustomSelect from './components/CustomSelect.jsx'
 import GuidePage from './components/GuidePage.jsx'
 import LookupCard from './components/LookupCard.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import { useBackButton } from './components/useBackButton.js'
-import { SCROLLER_CORE_CLASS, SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
-import { sharedFitScale } from './lib/statFit.js'
+import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
+import { SettingsPanel } from './components/SettingsPanel.jsx'
+import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
-import { checkForUpdate, readOwnBuildId, buildIdUrl, makeCheckNonce, UPDATE_CHECK_LABEL, UPDATE_RESULT_MS } from './lib/updateCheck.js'
-import type { UpdateCheckState } from './lib/updateCheck.js'
-import { useSettingsCloseEffect } from './components/useSettingsCloseEffect.js'
-import { CHANGELOG, GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot } from './changelog.js'
-import { useSettings, SETTINGS_DEFAULTS } from './store/settings.js'
-import type { InputStyle, SettingsValues } from './store/settings.js'
+import { useUpdateCheck } from './components/useUpdateCheck.js'
+import { DEPLOY_TS } from './deployStamp.js'
+import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot } from './changelog.js'
+import { useSettings } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
-import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, normalizeAoxN, prefsMatchDefaults } from './store/userDefaults.js'
-import type { PrefDefaults } from './store/userDefaults.js'
+import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, prefsMatchDefaults } from './store/userDefaults.js'
 import { useProgress, addLookupEntry } from './store/progress.js'
 import type { LookupEntry } from './store/progress.js'
 import { reportWebVitals } from './dev/webVitals.js'
@@ -41,15 +34,12 @@ import type { FormatId } from './lib/format.js'
 import type { CodeDate } from './components/MethodBreakdown.jsx'
 import RotateOverlay from './components/RotateOverlay.jsx'
 import BootOverlay from './components/BootOverlay.jsx'
-import DefaultsCard from './components/DefaultsCard.jsx'
-import { RESET_BTN_CLASS, FOOTER_RESET_BTN_CLASS, FOOTER_LINK_ROW_CLASS, NUM_INPUT_CLASS } from './components/controlClasses.js'
-import { rollFormat, isTouch, blockMinus, blockMinusBI } from './lib/modeFormat.js'
+import { rollFormat, isTouch } from './lib/modeFormat.js'
 import ClassicMode from './modes/ClassicMode.jsx'
 import FlashMode from './modes/FlashMode.jsx'
 import DeductionMode from './modes/DeductionMode.jsx'
 import AoxMode from './modes/AoxMode.jsx'
 import BlitzMode from './modes/BlitzMode.jsx'
-const ReactDOM = { createRoot, createPortal }
 
     // Shared mode types (GenDate/FmtDate/FlashState/GameEngine/ModeProps/DedOpts) -> src/modes/modeTypes.ts, imported at top.
 // AoxBest / BlitzBest / SuddenBest moved to store/progress.ts (the persisted store owns them); imported above.
@@ -69,7 +59,10 @@ const ReactDOM = { createRoot, createPortal }
     // Deduction puzzles additionally carry: _abx (abCrossOnly), _julx (julCrossOnly),
     // _m1582 (monthOnly1582) — informational snapshots of per-mode toggles at spawn.
     // ─────────────────────────────────────────────────────────────────────────
-    // Shared control className tokens + buttonStateClass -> src/components/controlClasses.ts, imported at top.
+    // Shared control className tokens + buttonStateClass -> src/components/controlClasses.ts. App
+    // no longer imports it: its last four tokens (RESET_BTN_CLASS, FOOTER_RESET_BTN_CLASS,
+    // FOOTER_LINK_ROW_CLASS, NUM_INPUT_CLASS) left with the ⚙ card. Consumed now by
+    // components/SettingsPanel + DefaultsCard + WeekdayAnswer and all five mode screens.
     // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts (shared with
     // HtP's DotDiagram, which derives its diagram from the same array), imported at top.
     // WeekdayAnswer -> src/components/WeekdayAnswer.tsx, imported at top.
@@ -77,33 +70,21 @@ const ReactDOM = { createRoot, createPortal }
     // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
     // that replaced the native <select>). Order here = order shown in the dropdown.
     const MODE_LABELS=[{value:'classic',label:'Classic'},{value:'aox',label:'AoX'},{value:'deduction',label:'Deduction'},{value:'flash',label:'Flash'},{value:'blitz',label:'Blitz'},{value:'lookup',label:'Lookup'},{value:'guide',label:'How to Play'}];
-    // ⚙ Settings PICKER option arrays — one array per PillTray tray (components/PillTray), and
-    // this is ALL of them, because round-9 made the tray the treatment for every picker in the
-    // panel (THE PICKER RULE, stated once at the Display section in the popover below). Order
-    // here = left→right segment order.
-    // Date Format — five ids across TWO trays but ONE setting and ONE radiogroup, so whichever
-    // half doesn't hold the active id simply shows no selected segment. Sharing a group is also
-    // why 'MDY' and 'DMY' each appear twice: every pill states its half in its accessible name
-    // while the visible label stays the bare initialism.
-    const WRITTEN_FORMATS: {value: FormatId; label: string; ariaLabel: string}[]=[{value:'written-mdy',label:'MDY',ariaLabel:'Written MDY'},{value:'written-dmy',label:'DMY',ariaLabel:'Written DMY'}];
-    const NUMERIC_FORMATS: {value: FormatId; label: string; ariaLabel: string}[]=[{value:'numeric-mdy',label:'MDY',ariaLabel:'Numeric MDY'},{value:'numeric-dmy',label:'DMY',ariaLabel:'Numeric DMY'},{value:'numeric-ymd',label:'YMD',ariaLabel:'Numeric YMD'}];
-    // Input — the day-of-week answer layout. Both names are unique in the panel, so no ariaLabel.
-    const INPUT_STYLES: {value: InputStyle; label: string}[]=[{value:'buttons',label:'Buttons'},{value:'dots',label:'Dots'}];
-    // Theme — two independent picks under Use System Settings, one pick ACROSS both rows when
-    // it's off (see the Theme block in the popover).
-    const DARK_THEMES=[{value:'dusk',label:'Dusk'},{value:'midnight',label:'Midnight'},{value:'nebula',label:'Nebula'}];
-    const LIGHT_THEMES=[{value:'light',label:'Light'},{value:'parchment',label:'Parchment'}];
-    // The Dates section's chance weights. Julian and Jan/Feb offer the same five; Leap Year drops
-    // 25% because ~1-in-4 IS its natural rate — a "25%" weight there would force nothing. Values
-    // are the store's own strings ('random' | the percentage), so no mapping is needed anywhere.
-    const chanceOptions=(...steps: string[])=>steps.map(v=>({value:v,label:v==='random'?'Random':v+'%'}));
-    const CHANCE_OPTIONS=chanceOptions('random','25','50','75','100'),LEAP_CHANCE_OPTIONS=chanceOptions('random','50','75','100');
+    // ⚙ Settings PICKER option arrays (WRITTEN_FORMATS / NUMERIC_FORMATS / INPUT_STYLES /
+    // DARK_THEMES / LIGHT_THEMES / CHANCE_OPTIONS / LEAP_CHANCE_OPTIONS) -> src/components/
+    // settingsOptions.ts, imported by the panel itself. MODE_LABELS above stayed here because it
+    // drives the BAR's mode CustomSelect, which is not part of the panel.
     // Method-code maps + the per-date code summary (METHOD_*, JULIAN_AB_MAP, normalizeMod7,
     // canonicalizeMod, calcDayCode, calcCdCode, yearParts, computeMethodSummary) → src/lib/method.js,
     // imported at top. (computeMethodSummary is the only one used here; the rest are its internals.)
     // Deduction option constants, yearGridLayout + the MONTH_BOXES tables -> src/lib/dedPuzzle.ts, imported at top.
-    // Day-of-week & calendar math (toAstro, isLeap, dim, jdn*, wday*, isJulian*, isGap*, rangeHasLeapYear) → src/lib/calendar.js, imported at top.
-    // Date formatting (fmtYear, fmt, fmtPartial, numericFormatOf) → src/lib/format.js, imported at top.
+    // Day-of-week & calendar math (toAstro, isLeap, dim, jdn*, wday*, isJulian*, isGap*,
+    // rangeHasLeapYear) → src/lib/calendar.js. NOT imported here any more: rangeHasLeapYear was
+    // App's last reader and it went with the Leap-Year picker into components/SettingsPanel.
+    // Reached now only by the modes, LookupCard, the engine and the progress store.
+    // Date formatting (fmtYear, fmt, fmtPartial, numericFormatOf) → src/lib/format.js. Of these App
+    // imports `fmt` ALONE; numericFormatOf left with the Last-Updated stamp and the changelog dates
+    // for components/SettingsPanel, and fmtYear/fmtPartial are read by the modes, not here.
     // rint + randomDate (the weekday-question generator) -> src/lib/dateGen.ts, imported at top.
     // Shared format/time helpers -> src/lib/modeFormat.ts, imported at top.
 
@@ -111,8 +92,9 @@ const ReactDOM = { createRoot, createPortal }
 
     // FLASH_MS + the shared mode-screen hooks -> src/modes/modeHooks.ts, consumed there by the five
     // screens; nothing here reaches into src/modes for them. The one that is NOT mode-specific,
-    // useSettingsCloseEffect, lives in src/components/useSettingsCloseEffect.ts (App uses it too,
-    // for the Q7 update-check reset) and is imported at top.
+    // useSettingsCloseEffect, lives in src/components/useSettingsCloseEffect.ts — App reaches it
+    // only INDIRECTLY now, through components/useUpdateCheck (the Q7 update-check reset moved in
+    // there with the rest of that interaction), so it is no longer imported here.
 
     // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js, imported at top.
 
@@ -121,7 +103,10 @@ const ReactDOM = { createRoot, createPortal }
 
 
 
-    const DEPLOY_TS=new Date('2026-08-09T01:30:00Z');
+    // DEPLOY_TS (the deploy stamp the "Last Updated" line renders and the build-change detection
+    // below compares against) -> src/deployStamp.ts, imported at top. ★ THE PER-DEPLOY BUMP LIVES
+    // THERE NOW, not on this line: it is read from BOTH sides of the settings-panel boundary, and
+    // main.tsx cannot be imported by the panel without a cycle.
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -277,32 +262,10 @@ const ReactDOM = { createRoot, createPortal }
     // DeductionMode -> src/modes/DeductionMode.tsx, imported at top.
 
     // ============================================================
-    // DefaultsCard — the ONE shared defaults card (Q5 round-6): the Save Defaults popup and the
-    // defaults manager both render THIS dialog card, so there are never two styles editing the
-    // same four values. Parameterized by seed source alone — the Save card seeds `prefs`/`seed`
-    // from the LIVE stores at open, the manager from the SAVED/effective defaults — plus the one
-    // `manage` flag covering every deliberate difference between the two:
-    //   • the AoX row: the Save card keeps its visible input box (the shared NUM_INPUT_CLASS
-    //     idiom, Q18); the manager renders the row like the Blitz timer readouts instead — a
-    //     plain tap-to-type SliderValueEditor value with its own widest-string strut "1000",
-    //     no box (min/max/snap 2–1000/1 mirror the normalizeAoxN clamp; junk/empty reverts,
-    //     the editor's contract, rather than the box's junk→10 fallback);
-    //   • buttons: the Save card is an action card — Cancel + Save always; the manager rests
-    //     read-only (one full-width Close in the Cancel recipe) and swaps to Cancel + Save only
-    //     once something is dirty;
-    //   • the footnote slot: the manager shows `note` while clean and the restricted-write
-    //     warning ("Saving here updates only these values.") while dirty — the manager's Save
-    //     writes ONLY these four values, so the swap appears exactly when it becomes relevant;
-    //     the Save card writes the whole snapshot and needs neither.
-    // A row is DIRTY when its pending value differs from the seed (aoxN normalized on both
-    // sides, the store's defensive rule); dirty rows flag their value box/readout in the
-    // btn-solid accent tier (the AoX box swaps its surface-tray surface whole for btn-solid +
-    // border-transparent so the rendered height never changes; the readouts take
-    // SliderValueEditor's accent pill).
-    // Stateless by design — the popup lifecycle (portal, scrim, Escape, Back, focus) stays with
-    // the callers in App; edits touch only the caller's pending snapshot via setPrefs.
-    // ============================================================
-    // DefaultsCard -> src/components/DefaultsCard.tsx, imported at top.
+    // DefaultsCard -> src/components/DefaultsCard.tsx. No longer used here at all: its two
+    // callers (the Save Defaults popup and the defaults manager) went to
+    // components/SettingsPanel, and the contract prose that used to sit here went into that
+    // card's own header, where it is next to the code it describes.
     // ============================================================
     // App — the top-level component for the remaining fused modes
     //
@@ -323,35 +286,37 @@ const ReactDOM = { createRoot, createPortal }
       useEffect(()=>{if(mode!=='guide')prevNonGuideModeRef.current=mode;},[mode]);
       const modeSelectRef=useRef<HTMLDivElement | null>(null);
       const [systemIsDark,setSystemIsDark]=useState(()=>typeof window!=="undefined"?window.matchMedia("(prefers-color-scheme: dark)").matches:true);
-      // ⚙ Settings store (Stage C, Step 5a). The 14 settings values + their setters
-      // + resetSettings now live in the Zustand store (src/store/settings.js), bound
-      // here to the SAME local names App used before so every read site, setter call
-      // (incl. functional updaters), and the settingsStoreAtDefaults/isFullyReset booleans
-      // keep working unchanged. minInputVal/maxInputVal stay as local useState below.
+      // ⚙ Settings store (Stage C, Step 5a). The 14 settings values live in the Zustand store
+      // (src/store/settings.js). App binds the VALUES — it needs every one of them for
+      // settingsStoreAtDefaults/isFullyReset, and several more for date generation and the mode
+      // props. It no longer binds the SETTERS: the only writer of a settings value is now the panel
+      // (components/SettingsPanel selects its own), and the only two App still needs are setMinY/
+      // setMaxY, which feed the year-range mirrors below. The Year Range boxes' two TEXT MIRRORS
+      // stay App state, in
+      // components/useYearRangeMirrors (called below) — they are not settings, they are what the
+      // user is currently typing, and they deliberately disagree with the store until it commits.
       // Each setter is selected individually so component re-renders only when the
       // specific value it reads changes (Zustand selector subscriptions).
-      const useSystem=useSettings(s=>s.useSystem),setUseSystem=useSettings(s=>s.setUseSystem);
-      const darkTheme=useSettings(s=>s.darkTheme),setDarkTheme=useSettings(s=>s.setDarkTheme);
-      const lightTheme=useSettings(s=>s.lightTheme),setLightTheme=useSettings(s=>s.setLightTheme);
-      const manualTheme=useSettings(s=>s.manualTheme),setManualTheme=useSettings(s=>s.setManualTheme);
+      const useSystem=useSettings(s=>s.useSystem);
+      const darkTheme=useSettings(s=>s.darkTheme);
+      const lightTheme=useSettings(s=>s.lightTheme);
+      const manualTheme=useSettings(s=>s.manualTheme);
       const minY=useSettings(s=>s.minY),setMinY=useSettings(s=>s.setMinY);
       const maxY=useSettings(s=>s.maxY),setMaxY=useSettings(s=>s.setMaxY);
-      const useJulian=useSettings(s=>s.useJulian),setUseJulian=useSettings(s=>s.setUseJulian);
-      const saveStats=useSettings(s=>s.saveStats),setSaveStats=useSettings(s=>s.setSaveStats);
-      const dateFormat=useSettings(s=>s.dateFormat),setDateFormat=useSettings(s=>s.setDateFormat);
-      const randomFormat=useSettings(s=>s.randomFormat),setRandomFormat=useSettings(s=>s.setRandomFormat);
-      const inputStyle=useSettings(s=>s.inputStyle),setInputStyle=useSettings(s=>s.setInputStyle);
-      const leapChance=useSettings(s=>s.leapChance),setLeapChance=useSettings(s=>s.setLeapChance);
-      const janFebChance=useSettings(s=>s.janFebChance),setJanFebChance=useSettings(s=>s.setJanFebChance);
-      const julianChance=useSettings(s=>s.julianChance),setJulianChance=useSettings(s=>s.setJulianChance);
+      const useJulian=useSettings(s=>s.useJulian);
+      const saveStats=useSettings(s=>s.saveStats);
+      const dateFormat=useSettings(s=>s.dateFormat);
+      const randomFormat=useSettings(s=>s.randomFormat);
+      const inputStyle=useSettings(s=>s.inputStyle);
+      const leapChance=useSettings(s=>s.leapChance);
+      const janFebChance=useSettings(s=>s.janFebChance);
+      const julianChance=useSettings(s=>s.julianChance);
       const applySettingsStore=useSettings(s=>s.applySettings);
       // Personal defaults (Q7 Save Defaults): `saved` is the user's snapshot (null = none). The
       // EFFECTIVE defaults derived from it feed Reset Settings, Full Reset, settingsStoreAtDefaults,
       // and the gear's "modified" indicator; the mode components read their own slices for their
       // freshness checks. Survives Full Reset by design (see store/userDefaults).
       const savedDefaults=useUserDefaults(s=>s.saved);
-      const saveUserDefaults=useUserDefaults(s=>s.saveDefaults);
-      const clearUserDefaults=useUserDefaults(s=>s.clearDefaults);
       const defSettings=useMemo(()=>effectiveSettingsDefaults(savedDefaults),[savedDefaults]);
       const defPrefs=useMemo(()=>effectivePrefDefaults(savedDefaults),[savedDefaults]);
       // prefsAtDefaults: do the four capturable mode-screen prefs match their effective defaults?
@@ -393,13 +358,13 @@ const ReactDOM = { createRoot, createPortal }
         mq.addEventListener("change",h);
         return()=>mq.removeEventListener("change",h);
       },[]);
-      // Save Stats toggle. Flips the global ⚙ setting; each always-mounted mode component
-      // reads the new saveStats prop itself (display dimming + Best-recording gate). Save Stats
-      // is not a date-generation setting, so it never regenerates a date.
-      const toggleSaveStats=()=>setSaveStats(v=>!v);
-      // minY/maxY now from the settings store (bound at top of App). minInputVal/maxInputVal stay local (transient text mirrors).
-      const [minInputVal,setMinInputVal]=useState("1");
-      const [maxInputVal,setMaxInputVal]=useState("10000");
+      // minY/maxY now from the settings store (bound at top of App). The two transient TEXT MIRRORS
+      // that back the Year Range boxes -> components/useYearRangeMirrors, called further down
+      // (beside where their commits used to sit, so the two sync effects keep their exact position
+      // in App's effect order). They stay App state, not panel state, so a half-typed year survives
+      // closing and reopening the panel — see that module's header. The two element refs stay
+      // App-side useRefs, exactly like settingsPopoverRef: the panel attaches them, the hook's two
+      // focus guards read them, and nothing else touches them.
       const minInputRef=useRef<HTMLInputElement | null>(null),maxInputRef=useRef<HTMLInputElement | null>(null);
       // Lookup history persists across reloads (Stage D1): sourced from the progress store
       // instead of local useState. The store setter accepts a direct value OR a functional
@@ -799,16 +764,18 @@ const ReactDOM = { createRoot, createPortal }
       // ══ Q7 (round 11): "Check for updates" ACTUALLY CHECKS ═══════════════════════════════════
       // It used to show the Updating screen and run forceReloadLatest unconditionally — claiming an
       // update on every press and destroying the offline copy even on the presses where nothing had
-      // changed. Now it asks first. The DETECTOR (why it is a build-identity file and not a fetch
-      // with cache:'reload', not DEPLOY_TS, not registration.update()) is documented at length in
-      // lib/updateCheck.ts; what lives here is the UI state and the APPLIER.
-      //
-      // STATE — one button whose LABEL IS ITS STATE, never a second line or a toast (owner's call).
-      // idle → checking → (current | offline) → idle after UPDATE_RESULT_MS, or → the Updating
-      // overlay when there is something to get. A press during a RESULT starts another check (the
-      // result is information, not a mode you have to dismiss); a press during 'checking' cannot
-      // happen — the button is disabled — and is refused anyway so a synthetic click cannot start a
-      // second in-flight check.
+      // changed. Now it asks first. The feature is three parts and App owns exactly one of them:
+      //   • THE DETECTOR (why it is a build-identity file and not a fetch with cache:'reload', not
+      //     DEPLOY_TS, not registration.update()) — documented at length in lib/updateCheck.ts.
+      //   • THE INTERACTION (the button's state machine, its 3s result window and the
+      //     abort-on-close) — components/useUpdateCheck.ts, called by App below. ★ It must keep
+      //     being called by APP: its abort-on-close is a useSettingsCloseEffect, which never fires
+      //     for a caller that unmounts when the panel closes — the rule is stated in full at the top
+      //     of that file, and the suite cannot enforce it.
+      //   • THE APPLIER — applyUpdate, right here, because it is App's machinery end to end:
+      //     setUpdating (the Updating overlay), updateReloadPendingRef (shared with the Q2
+      //     build-change flash below), makeUpdateReloadGate, markSkipBootHold and forceReloadLatest.
+      //     It is TERMINAL: every route out of it navigates.
       //
       // The applier reuses the auto-update path wholesale: SKIP_WAITING to the waiting worker, one
       // reload through makeUpdateReloadGate so the MIN_UPDATING_MS visible hold is honoured and the
@@ -829,9 +796,6 @@ const ReactDOM = { createRoot, createPortal }
       // does re-download). What no client-side button can cure is an edge serving wrong bytes for a
       // correct revision: the check's own fetch would be served the same stale bytes and say "up to
       // date". That is a server-side problem and belongs to the deploy, not to this button.
-      const [updateCheck,setUpdateCheck]=useState<UpdateCheckState>('idle');
-      const updateResultTimerRef=useRef<number|undefined>(undefined);
-      const updateCheckAbortRef=useRef<AbortController|null>(null);
       const applyUpdate=useCallback((reg: ServiceWorkerRegistration|null)=>{
         updateReloadPendingRef.current=true; // the overlay is owned through to a navigation now
         setUpdating(true);
@@ -865,47 +829,11 @@ const ReactDOM = { createRoot, createPortal }
         }).catch(err=>{if(!settled)captureError(err,{where:'update-apply'});});
         window.setTimeout(()=>{if(settled)return;settled=true;navigator.serviceWorker.removeEventListener('controllerchange',onControllerChange);gate.cancel();forceReloadLatest();},UPDATE_HANDOFF_MS);
       },[]);
-      const onCheckUpdates=useCallback(()=>{
-        if(updateCheck==='checking')return;
-        if(updateResultTimerRef.current!==undefined){window.clearTimeout(updateResultTimerRef.current);updateResultTimerRef.current=undefined;}
-        updateCheckAbortRef.current?.abort();
-        const controller=new AbortController();
-        updateCheckAbortRef.current=controller;
-        setUpdateCheck('checking');
-        void(async()=>{
-          let reg: ServiceWorkerRegistration|null=null;
-          try{if(typeof navigator!=='undefined'&&'serviceWorker' in navigator)reg=(await navigator.serviceWorker.getRegistration())??null;}catch{/* no registration readable — the identity fetch still answers the question */}
-          if(controller.signal.aborted)return;
-          const verdict=await checkForUpdate({
-            ownId:readOwnBuildId(document),
-            url:buildIdUrl(import.meta.env.BASE_URL,makeCheckNonce()),
-            hasWaitingWorker:Boolean(reg?.waiting),
-            // Wrapped, not passed by reference: a bare `fetch` detached from window throws Illegal
-            // Invocation in some engines, and an engine with no fetch at all must throw INSIDE
-            // checkForUpdate's try (where it reads as 'offline') rather than out here.
-            fetchImpl:(input,init)=>fetch(input,init),
-            signal:controller.signal,
-          });
-          if(controller.signal.aborted)return;
-          if(verdict==='update'){applyUpdate(reg);return;}
-          setUpdateCheck(verdict);
-          updateResultTimerRef.current=window.setTimeout(()=>{updateResultTimerRef.current=undefined;setUpdateCheck('idle');},UPDATE_RESULT_MS);
-        })();
-      },[updateCheck,applyUpdate]);
-      // Closing ⚙ Settings ends the whole interaction early: the pending revert timer is cleared,
-      // the label is back at rest for the next open, and an in-flight check is ABORTED rather than
-      // left to land behind a panel the user has just dismissed — a full-screen Updating overlay
-      // appearing after the menu closed would be the app acting on its own. Fires only when the
-      // state actually moved while the panel was open, which is exactly when there is anything to
-      // undo (useSettingsCloseEffect's contract).
-      useSettingsCloseEffect(settingsOpen,[updateCheck],()=>{
-        updateCheckAbortRef.current?.abort();
-        if(updateResultTimerRef.current!==undefined){window.clearTimeout(updateResultTimerRef.current);updateResultTimerRef.current=undefined;}
-        setUpdateCheck('idle');
-      });
-      // Unmount teardown: drop an in-flight check and any pending revert. The refs are this
-      // component's own timer/abort handles, so reading them at teardown is exactly the point.
-      useEffect(()=>()=>{updateCheckAbortRef.current?.abort();if(updateResultTimerRef.current!==undefined)window.clearTimeout(updateResultTimerRef.current);},[]);
+      // The button's state machine + its abort-on-close (components/useUpdateCheck). The two values
+      // it returns are the Check-for-updates control's whole surface: `updateCheck` IS the label and
+      // the disabled/underlined state, and `onCheckUpdates` is the press. Called HERE and nowhere
+      // else — see the caller rule in that file.
+      const {updateCheck,onCheckUpdates}=useUpdateCheck(settingsOpen,applyUpdate);
       useEffect(()=>{
         let disposed=false;
         let cssFallbackId: number | undefined;
@@ -1142,12 +1070,11 @@ const ReactDOM = { createRoot, createPortal }
       // Q4: install the global press-drag-release input controller (slide-off-to-cancel on every button
       // + answer-grid drag-to-select). One set of document pointer listeners; cleanup on unmount.
       useEffect(()=>installPointerGestures(),[]);
-      function applyMinValue(val: number){if(val!==minY)setMinY(val);}
-      function applyMaxValue(val: number){if(val!==maxY)setMaxY(val);}
-      const commitMin=()=>{const p=parseInt(minInputVal);if(isNaN(p)){setMinInputVal(String(minY));return;}const v=Math.max(1,Math.min(maxY,p));applyMinValue(v);setMinInputVal(String(v));};
-      const commitMax=()=>{const p=parseInt(maxInputVal);if(isNaN(p)){setMaxInputVal(String(maxY));return;}const v=Math.max(minY,Math.min(10000,p));applyMaxValue(v);setMaxInputVal(String(v));};
-      useEffect(()=>{if(document.activeElement===minInputRef.current)return;setMinInputVal(String(minY));},[minY]);
-      useEffect(()=>{if(document.activeElement===maxInputRef.current)return;setMaxInputVal(String(maxY));},[maxY]);
+      // The Year Range boxes' text state, their refs, their two commits and their two focus-guarded
+      // store→text sync effects — one unit, in components/useYearRangeMirrors. Called HERE rather
+      // than up beside the store bindings so those two effects keep the exact ordinal position in
+      // App's effect order that they had when they were written out on these lines.
+      const yearRange=useYearRangeMirrors(minY,maxY,setMinY,setMaxY,minInputRef,maxInputRef);
       // Newest to the front, capped — the rule and its number live in store/progress (addLookupEntry).
       const pushLookupHistory=(entry: LookupEntry)=>setLookupHistory(prev=>addLookupEntry(prev,entry));
       const moveHistoryEntryToTop=(id: string)=>setLookupHistory(prev=>{const idx=prev.findIndex(e=>e.id===id);if(idx<=0)return prev;const entry=prev[idx];return[entry,...prev.slice(0,idx),...prev.slice(idx+1)];});
@@ -1185,42 +1112,12 @@ const ReactDOM = { createRoot, createPortal }
       };
       const settingsRef=useRef<HTMLDivElement | null>(null);
       const settingsPopoverRef=useRef<HTMLDivElement | null>(null);
-      // Full Reset state: armed=true means the user tapped once and the next tap fires.
-      // Auto-disarms after a short timer, when settings closes, or when the user taps any
-      // other interactive control inside the popover. Implemented as a per-tap state machine
-      // rather than a dialog so the destructive nature is communicated by the in-place label
-      // and color change without a modal interruption.
-      const [fullResetArmed,setFullResetArmed]=useState(false);
-      const fullResetBtnRef=useRef<HTMLButtonElement | null>(null);
-      const fullResetTimerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
-      // Save Defaults (Q7) confirmation popup state. pendSettings snapshots the full 14-value
-      // panel at OPEN (the popup doesn't edit panel values); pendPrefs seeds the four editable
-      // mode-screen rows from the live modePrefs store at open, and pendSeed keeps that seed for
-      // the shared card's dirty-row comparison (Q5 round-6). Edits touch ONLY this pending
-      // snapshot — Cancel/scrim/Back/settings-close discard it; Save commits it (aoxN normalized).
-      const [saveDefaultsOpen,setSaveDefaultsOpen]=useState(false);
-      const saveDefaultsCardRef=useRef<HTMLDivElement | null>(null); // the dialog card — focused on open (the modal a11y contract below)
-      const pendSettingsRef=useRef<SettingsValues | null>(null);
-      const [pendPrefs,setPendPrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
-      const [pendSeed,setPendSeed]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
-      // Defaults manager (Q12 → editable, Q5 round-6) popup state — the footer link's window onto
-      // the saved (or, with nothing saved, factory) defaults, on the SAME shared card as the Save
-      // popup. managePrefs is its pending snapshot, seeded from the EFFECTIVE defaults (defPrefs)
-      // at open; the seed itself needs no copy — defPrefs cannot change while the modal is up
-      // (this modal owns the only editor). Cancel/scrim/Back/settings-close discard edits.
-      const [manageDefaultsOpen,setManageDefaultsOpen]=useState(false);
-      const manageDefaultsCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
-      const [managePrefs,setManagePrefs]=useState<PrefDefaults>(()=>effectivePrefDefaults(null));
-      // Clear-saved-defaults confirm popup (Q5 round-6): the footer's Clear link asks before it
-      // forgets the snapshot — a small modal in the established recipe (Cancel + a red-tier
-      // Clear), full scrim/focus/Escape/Back parity with the other settings modals.
-      const [clearConfirmOpen,setClearConfirmOpen]=useState(false);
-      const clearConfirmCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
-      // Changelog popup (Q6) — the plain-words what-changed list (src/changelog), opened from the
-      // footer's Changelog link. Its dot states (gearDot / changelogDot — the breadcrumb here)
-      // live up with the build-stamp detection that lights them.
-      const [changelogOpen,setChangelogOpen]=useState(false);
-      const changelogCardRef=useRef<HTMLDivElement | null>(null); // its dialog card — same focus-on-open contract
+      // The Full Reset two-tap machine and all four settings modals (their open flags, cards,
+      // pending snapshots, openers, commits, capture-phase Escape handlers, focus-on-open effects
+      // and Android-Back registrations) moved WHOLE into components/SettingsPanel. Their lifetime
+      // is the panel's open state, and the panel now unmounts on close — so unmounting IS the
+      // discard, and the four "close the popup when settings closes" effects that used to live
+      // here are gone with them rather than reimplemented. App keeps only what the GEAR needs.
       // aoxIsFresh — reported up from AoxMode via the onFreshChange prop. AoxMode's ~24
       // internal state fields are otherwise opaque to the App, so we mirror their combined
       // freshness state here to use in isFullyReset (the Full Reset dim/lock check below).
@@ -1251,78 +1148,11 @@ const ReactDOM = { createRoot, createPortal }
       // the always-mounted screens so that panel, and the reading position, survive a detour into
       // a game mode; Full Reset is the one thing that must still close it).
       const [guideResetKey,setGuideResetKey]=useState(0);
-      // Scroll-state tracking for the two inner scroll regions this component owns — the settings
-      // popover's scroll wrapper and the changelog popup's list — both on the shared
-      // useScrollEdgeState (components/scrollRegion; the Q5 round-7 extraction of what were
-      // per-region copies of one listener). The flags drive the shared edge indicators:
-      //   …ScrolledFromTop → top fade (no shadow at the top — no fixed UI there)
-      //   …AtBottom        → bottom fade (both signal "more below")
-      // While closed the hook holds the defaults (scrolledFromTop false, atBottom true) so
-      // reopening never flashes stale indicators; both fade flags combine into fade-scroll-both
-      // inside scrollFadeClass when both edges overflow.
-      // The popover ALSO hands the hook its sticky footer as the bottom boundary surface: that
-      // shadow is continuous now (--shade, round 10 item B), so it is no longer derived from
-      // popoverAtBottom at the JSX — the hook writes it. The changelog names no boundary surface;
-      // its Close row is plain, so both trailing arguments are omitted.
-      const popoverInnerScrollRef=useRef<HTMLDivElement | null>(null);
-      const popoverFooterRef=useRef<HTMLDivElement | null>(null);
-      const {scrolledFromTop:popoverScrolledFromTop,atBottom:popoverAtBottom}=useScrollEdgeState(popoverInnerScrollRef,settingsOpen,undefined,popoverFooterRef);
-      const changelogScrollRef=useRef<HTMLDivElement | null>(null);
-      const {scrolledFromTop:changelogScrolledFromTop,atBottom:changelogAtBottom}=useScrollEdgeState(changelogScrollRef,changelogOpen);
-      // Footer-button caption auto-fit (Round-2) — the StatPanel value-fit pattern applied to the
-      // Save Defaults / Reset Settings / Full Reset trio: on a narrow phone the three flex-1 buttons
-      // can get too tight for their captions, so ONE shared font-size (never per-button — unequal
-      // caption sizes across a matched row read as a glitch) shrinks all three together. Naturals
-      // come from hidden STATIC twins of the widest caption set ("Save Defaults" / "Reset Settings" /
-      // "Full Reset"), never the live captions — the Full Reset → "Confirm?" swap would otherwise
-      // shrink the measurement and jiggle the whole row's size while arming. The math is
-      // lib/statFit's sharedFitScale (min ratio, capped at 1) off the trio's resting text-xs —
-      // the popover's control tier (Round-3 font normalization), so the fit CEILINGS there and
-      // shrinks below 12px only when a narrow screen forces it; an 11px floor keeps the captions
-      // legible over cosmetic fit, and overflow-hidden on the buttons (below) contains the extreme
-      // remainder. In jsdom every width is 0 → scale 1 → no-op (the statFit convention).
-      const footerFitRef=useRef<HTMLDivElement | null>(null);
-      const fitFooterBtns=()=>{
-        const row=footerFitRef.current;if(!row)return;
-        const labels=Array.from(row.querySelectorAll<HTMLElement>('[data-fitlabel]'));
-        const twins=Array.from(row.querySelectorAll<HTMLElement>('[data-fittwin]'));
-        if(labels.length===0||twins.length===0)return;
-        const naturals=twins.map(t=>t.scrollWidth);
-        // ⚠ These two stay integer-valued measures on purpose — round 10's sub-pixel sweep
-        // (--bar-h, GuidePage's panel heights) deliberately skipped them. scrollWidth is the only
-        // platform read of a clamped span's NATURAL width; a rect would report the clamped width,
-        // a different number rather than a sharper one. clientWidth EXCLUDES border and scrollbar
-        // where rect.width includes both, so swapping it would change which box is being fitted —
-        // a semantic change, not a precision one. Both feed a font-size ratio, where a rounded
-        // pixel is imperceptible anyway.
-        const avails=labels.map(l=>{const btn=l.parentElement;if(!btn)return 0;const cs=getComputedStyle(btn);return btn.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);});
-        const scale=sharedFitScale(naturals,avails);
-        // Base font off a STATIC twin, never a live caption: the captions carry the inline
-        // fontSize the PREVIOUS pass set, so reading them would compound the shrink on every
-        // re-run of the dep-less effect (12·s, 12·s², … → pinned at the floor). Same feedback
-        // loop StatPanel guards against by resetting before measuring (StatPanel.tsx fitAll);
-        // here the twin — same text classes, never inline-sized — is the clean base.
-        const base=parseFloat(getComputedStyle(twins[0]).fontSize)||0;
-        const px=scale<1&&base>0?Math.max(11,base*scale)+"px":"";
-        // Apply the fitted size to the BUTTON, not the caption span: the caption inherits it, so
-        // the button's line-box strut shrinks WITH the text and the label stays vertically
-        // centered. (Sizing the inline span alone left it baseline-aligned inside the button's
-        // un-shrunk resting-size strut — measured ~0.6px low on-device, the owner's 2026-07-13 catch.)
-        labels.forEach(l=>{const b=l.parentElement;if(b)b.style.fontSize=px;});
-      };
-      // Dep-less like StatPanel's: cheap (3 spans), and the trio row only exists while settings is
-      // open (fitFooterBtns bails on the null ref otherwise). Re-observe on open/close; a web-font
-      // swap changes the natural widths, so document.fonts.ready refits too.
-      useLayoutEffect(()=>{fitFooterBtns();});
-      useEffect(()=>{
-        const row=footerFitRef.current;
-        if(!row||typeof ResizeObserver==='undefined')return;
-        const ro=new ResizeObserver(()=>fitFooterBtns());
-        ro.observe(row);
-        let cancelled=false;
-        if(typeof document!=='undefined'&&document.fonts?.ready)document.fonts.ready.then(()=>{if(!cancelled)fitFooterBtns();});
-        return()=>{cancelled=true;ro.disconnect();};
-      },[settingsOpen]);
+      // The two inner scroll regions the panel owns (its own list and the changelog popup's),
+      // their useScrollEdgeState hooks, and the footer-button caption auto-fit with its dep-less
+      // layout effect and its ResizeObserver -> components/SettingsPanel. Every one of them reads
+      // or writes an element that only exists while the panel is open, so all of them belong to
+      // the component that owns that DOM.
       // Settings popover click-outside handler. Closes settings when the user taps
       // anywhere outside three regions: the gear button itself (settingsRef), the
       // popover content (settingsPopoverRef), and the mode CustomSelect wrapper
@@ -1364,7 +1194,9 @@ const ReactDOM = { createRoot, createPortal }
       // ⚠ THE GUARD IS NOT WHAT PROTECTS THE YEAR BOXES, and relying on it is exactly how they broke:
       // it asks what has focus, and their handler blurs the box synchronously, so by the time this
       // ran the answer was "nothing" and the panel closed mid-edit. They stopPropagation instead, so
-      // this listener never sees their press at all — see the note beside them.
+      // this listener never sees their press at all — see the note beside them, which is now over in
+      // components/SettingsPanel with the inputs. ⚠ THIS HANDLER STAYS HERE, on DOCUMENT and in the
+      // BUBBLE phase, and both facts are what make that stopPropagation work.
       useEffect(()=>{if(!settingsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();setSettingsOpen(false);};document.addEventListener('keydown',h);return()=>document.removeEventListener('keydown',h);},[settingsOpen]);
       // Close-on-drag-activate (Q5 rework): the pointer controller dispatches a bubbling "drag-dismiss"
       // CustomEvent from a drag-clicked member of a data-drag-dismiss menu (lib/pointerGestures) — the
@@ -1372,38 +1204,15 @@ const ReactDOM = { createRoot, createPortal }
       // settings apply-on-close pass (useSettingsCloseEffect) fires naturally. Installed once; the ref
       // check scopes it to the popover, and it's a no-op while settings is already closed (no popover DOM).
       useEffect(()=>{const h=(e: Event)=>{const t=e.target as Element | null;if(t&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(t))setSettingsOpen(false);};document.addEventListener('drag-dismiss',h);return()=>document.removeEventListener('drag-dismiss',h);},[]);
-      // Save Defaults popup lifecycle (Q7): closing Settings by ANY path closes the popup too —
-      // it's a child flow of the panel (Cancel semantics; the pending snapshot is discarded).
-      useEffect(()=>{if(!settingsOpen)setSaveDefaultsOpen(false);},[settingsOpen]);
-      useEffect(()=>{if(!settingsOpen)setManageDefaultsOpen(false);},[settingsOpen]);   // the defaults manager (Q12/Q5) is a child flow of the panel too
-      useEffect(()=>{if(!settingsOpen)setClearConfirmOpen(false);},[settingsOpen]);   // and the Clear confirm (Q5) — its link lives in the panel's footer
-      useEffect(()=>{if(!settingsOpen)setChangelogOpen(false);},[settingsOpen]);   // and the Changelog popup (Q6) — its link lives in the panel's footer too
+      // NOTE: the four "close the popup when settings closes" effects that used to sit here are
+      // GONE, not moved. Every one of them existed to clear state whose owner now unmounts with the
+      // panel (components/SettingsPanel), so unmounting performs the same discard in one commit
+      // instead of four. Their only other consumers — the openers, commits and Back registrations —
+      // went into that component with them.
       // Opening Settings by ANY path retires the gear's update dot (Q6) — the breadcrumb's first
       // stage is done once the panel is up (the link's own dot inside keeps pointing onward). The
       // gearDot dep also covers a detection that somehow lands while the panel is already open.
       useEffect(()=>{if(settingsOpen&&gearDot){clearUpdateDot(GEAR_DOT_KEY);setGearDot(false);}},[settingsOpen,gearDot]);
-      // Escape cancels the POPUP first — registered in the CAPTURE phase with stopPropagation so
-      // the settings Escape handler above (bubble phase) never sees the same press and the panel
-      // stays open. TEXT-ENTRY inputs keep their own Escape handling (the N field normalize-commits),
-      // mirroring the settings handler's guard — and like it, the guard excludes type="range": the
-      // popup's three sliders keep focus after an adjust and must not swallow the dismiss.
-      useEffect(()=>{if(!saveDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setSaveDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[saveDefaultsOpen]);
-      // The defaults manager (Q5 round-6) gets the same capture-phase Escape INCLUDING the
-      // text-entry guard — it renders the shared editable card now, so a tap-to-type readout can
-      // be mid-edit (the editor's own Escape reverts the edit and stops propagation).
-      useEffect(()=>{if(!manageDefaultsOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;const ae=document.activeElement as HTMLInputElement | null;if(ae&&ae.tagName==="INPUT"&&ae.type!=="range")return;e.preventDefault();e.stopPropagation();setManageDefaultsOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[manageDefaultsOpen]);
-      useEffect(()=>{if(!clearConfirmOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setClearConfirmOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[clearConfirmOpen]);   // the Clear confirm (Q5): input-free (two buttons), so no text-entry guard
-      useEffect(()=>{if(!changelogOpen)return;const h=(e: KeyboardEvent)=>{if(e.key!=="Escape")return;e.preventDefault();e.stopPropagation();setChangelogOpen(false);};document.addEventListener('keydown',h,true);return()=>document.removeEventListener('keydown',h,true);},[changelogOpen]);   // the Changelog popup (Q6): input-free too, so no text-entry guard either
-      // The popup's modal a11y contract, part 1 of 2 (part 2 = the Tab trap on the scrim, below): on
-      // open, move focus INTO the dialog — the card is tabIndex={-1} with role="dialog" +
-      // aria-modal="true", so screen readers announce a modal and keyboard context starts inside it.
-      // Without this, focus stays on the Save Defaults button UNDER the scrim, and keyboard/AT input
-      // keeps operating the live settings panel while commitSaveDefaults would still save the snapshot
-      // captured at open — a silent divergence between what's on screen and what Save persists.
-      useEffect(()=>{if(saveDefaultsOpen)saveDefaultsCardRef.current?.focus();},[saveDefaultsOpen]);
-      useEffect(()=>{if(manageDefaultsOpen)manageDefaultsCardRef.current?.focus();},[manageDefaultsOpen]);   // same contract for the defaults manager (Q12/Q5)
-      useEffect(()=>{if(clearConfirmOpen)clearConfirmCardRef.current?.focus();},[clearConfirmOpen]);   // and the Clear confirm (Q5)
-      useEffect(()=>{if(changelogOpen)changelogCardRef.current?.focus();},[changelogOpen]);   // and the Changelog popup (Q6)
       // Restores the settings the ⚙ panel owns — the 14 menu values + the 2 year-range text mirrors —
       // AND the four capturable mode-screen prefs (Flash speed, both Blitz timers, the AoX run length)
       // to their EFFECTIVE defaults: the user's saved personal defaults when they exist (Q7,
@@ -1427,7 +1236,7 @@ const ReactDOM = { createRoot, createPortal }
         // text mirrors that live locally, then the 4 capturable mode-screen prefs (store/modePrefs
         // applyPrefs — the same call Full Reset makes; the other mode-prefs keep their live values).
         applySettingsStore(defSettings);
-        setMinInputVal(String(defSettings.minY));setMaxInputVal(String(defSettings.maxY));
+        yearRange.resetTo(defSettings.minY,defSettings.maxY);
         applyModePrefs(defPrefs);
       };
       // ★ THE FOOTER BUTTON'S HANDLER, and the round-14 dimmed-button guard lives HERE rather than
@@ -1443,56 +1252,14 @@ const ReactDOM = { createRoot, createPortal }
       // a dimmed button and press Enter and the handler runs. Without it a dimmed Reset Settings
       // still rewrote the year boxes' text and that dormant theme value.
       const pressResetSettings=()=>{if(!settingsModified)return;resetSettings();};
-      // Save Defaults (Q7): open the confirmation popup, seeding the pending snapshot from the
-      // LIVE stores (panel captured whole; the four mode-screen prefs become editable rows).
-      // The seed is kept alongside the pending copy for the shared card's dirty-row highlight.
-      const openSaveDefaults=()=>{
-        // The same short-circuit the other two footer buttons carry — all three are now equally inert
-        // while dimmed. Without it, a keyboard user could open this popup with nothing to save. It can
-        // sit INSIDE this function because the function IS the press and nothing else calls it; that
-        // is exactly what is not true of resetSettings, whose guard had to go on the button.
-        if(!settingsModified)return;
-        const s=useSettings.getState();
-        pendSettingsRef.current=Object.fromEntries(Object.keys(SETTINGS_DEFAULTS).map(k=>[k,s[k as keyof SettingsValues]])) as SettingsValues;
-        const p=useModePrefs.getState();
-        const seeded={flashMs:p.flashMs,blitzSec:p.blitzSec,blitzQSec:p.blitzQSec,aoxN:normalizeAoxN(p.aoxN)};
-        setPendPrefs(seeded);
-        setPendSeed(seeded);
-        setSaveDefaultsOpen(true);
-      };
-      const closeSaveDefaults=useCallback(()=>setSaveDefaultsOpen(false),[]);
-      // The defaults manager (Q5 round-6): seed the pending copy from the EFFECTIVE defaults —
-      // the saved snapshot when one exists, the factory values otherwise (aoxN normalized so the
-      // readout starts on its committed form). defPrefs itself doubles as the seed prop.
-      const openManageDefaults=()=>{setManagePrefs({...defPrefs,aoxN:normalizeAoxN(defPrefs.aoxN)});setManageDefaultsOpen(true);};
-      const closeManageDefaults=useCallback(()=>setManageDefaultsOpen(false),[]);
-      const closeClearConfirm=useCallback(()=>setClearConfirmOpen(false),[]);
-      const closeChangelog=useCallback(()=>setChangelogOpen(false),[]);
-      // Opening the changelog retires the link's dot — the breadcrumb's last stop. First tap only
-      // in effect: once the flag is cleared the guard never re-fires (nothing re-marks it until
-      // the next build change).
-      const openChangelog=()=>{setChangelogOpen(true);if(changelogDot){clearUpdateDot(CHANGELOG_DOT_KEY);setChangelogDot(false);}};
-      // Save commits the EDITED pending snapshot (never the live stores — they stay untouched);
-      // from here on Reset Settings / Full Reset / the gear indicator mean THESE values by "default".
-      const commitSaveDefaults=()=>{
-        if(pendSettingsRef.current)saveUserDefaults({settings:pendSettingsRef.current,prefs:{...pendPrefs,aoxN:normalizeAoxN(pendPrefs.aoxN)}});
-        setSaveDefaultsOpen(false);
-      };
-      // The manager's Save (Q5 round-6) writes ONLY the four shown values into the snapshot: the
-      // 14 ⚙-panel values pass through AS-SAVED, byte-identical (never re-captured from the live
-      // store — the owner's rule: this popup edits exactly what it shows). With nothing saved yet
-      // it CREATES the snapshot — the factory ⚙ values plus these edits, the natural flow from
-      // the factory view (the footer's Clear link appears with it).
-      const commitManageDefaults=()=>{
-        saveUserDefaults({settings:savedDefaults?savedDefaults.settings:SETTINGS_DEFAULTS,prefs:{...managePrefs,aoxN:normalizeAoxN(managePrefs.aoxN)}});
-        setManageDefaultsOpen(false);
-      };
-      // The Clear confirm's destructive half (Q5 round-6): forget the snapshot — live settings
-      // stay untouched, factory semantics take over everywhere (the effective* helpers).
-      const confirmClearDefaults=()=>{
-        clearUserDefaults();
-        setClearConfirmOpen(false);
-      };
+      // Retires the Changelog link's dot. The FLAG is App's — the build-stamp detection above
+      // sets it, and the gear's twin lives beside it — but the only reader and the only retirer
+      // are both in the panel, so the panel gets the boolean and this callback and never touches
+      // storage itself. useCallback so a panel re-render is never caused by this identity.
+      const retireChangelogDot=useCallback(()=>{clearUpdateDot(CHANGELOG_DOT_KEY);setChangelogDot(false);},[]);
+      // The four modals' openers, closers and commits (openSaveDefaults / openManageDefaults /
+      // openChangelog / commitSaveDefaults / commitManageDefaults / confirmClearDefaults and their
+      // close callbacks) -> components/SettingsPanel, with the state they drive.
       // Full Reset — back to the launch state, where "launch" honors the user's SAVED personal
       // defaults (Q7): the ⚙ panel and the four captured mode prefs restore to the
       // store/userDefaults snapshot when one exists, everything else to factory (and the snapshot
@@ -1558,65 +1325,16 @@ const ReactDOM = { createRoot, createPortal }
         if(appScrollRef.current)appScrollRef.current.scrollTop=0;
         guideScrollYRef.current=0;
       };
-      // Two-tap-to-confirm wrapper. Tap 1 arms (label flips to "Confirm?", button gets a ring).
-      // Tap 2 within the arm window fires the reset and disarms. Auto-disarm via timer (3s),
-      // settings-close watcher, and any-other-popover-mousedown listener.
-      const armFullReset=()=>{
-        // Defense in depth — the pointer-events-none className keeps taps from reaching here,
-        // but if some keyboard/programmatic path bypasses CSS, this short-circuit ensures
-        // we never arm/fire when the action would be a no-op.
-        if(isFullyReset)return;
-        if(fullResetArmed){
-          if(fullResetTimerRef.current){clearTimeout(fullResetTimerRef.current);fullResetTimerRef.current=null;}
-          setFullResetArmed(false);
-          fullReset();
-          return;
-        }
-        setFullResetArmed(true);
-        if(fullResetTimerRef.current)clearTimeout(fullResetTimerRef.current);
-        fullResetTimerRef.current=setTimeout(()=>{setFullResetArmed(false);fullResetTimerRef.current=null;},3000);
-      };
-      const disarmFullReset=()=>{
-        if(fullResetTimerRef.current){clearTimeout(fullResetTimerRef.current);fullResetTimerRef.current=null;}
-        setFullResetArmed(false);
-      };
-      // Disarm whenever settings closes by any path (gear tap, click-outside, Esc, full-reset firing).
-      useEffect(()=>{if(!settingsOpen)disarmFullReset();},[settingsOpen]);
       // Android hardware Back closes these App-level overlays instead of quitting the app (Q1).
       // Settings popover → close it; How-to-Play (the 'guide' mode) → return to the previous game mode
       // (mirrors the H-key toggle). The mode menu + Show Codes register their own back entries from
       // CustomSelect / the mode components. See components/useBackButton.
       useBackButton(settingsOpen, ()=>setSettingsOpen(false), 'settings');
-      useBackButton(saveDefaultsOpen, closeSaveDefaults, 'save-defaults');   // opens after 'settings' → Back closes the popup first (LIFO)
-      useBackButton(manageDefaultsOpen, closeManageDefaults, 'manage-defaults');   // ditto for the defaults manager (Q12/Q5)
-      useBackButton(clearConfirmOpen, closeClearConfirm, 'clear-defaults');   // and the Clear confirm (Q5)
-      useBackButton(changelogOpen, closeChangelog, 'changelog');   // and the Changelog popup (Q6)
+      // The four settings MODALS register their own Back entries from inside the panel
+      // (components/SettingsPanel). The stack is chronological and a modal cannot open before the
+      // panel that hosts its link, so 'settings' is still underneath all four and Back still
+      // closes the modal first.
       useBackButton(mode==='guide', ()=>switchMode(prevNonGuideModeRef.current||'classic'), 'guide');
-      // NOTE: the "disarm when state flips to fully-reset" safety-net effect was moved to just
-      // after the isFullyReset declaration below — its dependency array reads isFullyReset, which
-      // is declared later, so keeping it here would read isFullyReset before initialization (a TDZ
-      // crash once the block-scoping shim was removed). Effects run after render regardless of source
-      // order, so relocating it is behavior-identical.
-      // Site-wide disarm listener (capture phase) — disarms when the user mousedowns/touches
-      // any element outside the Full Reset button itself. Capture phase fires before the
-      // target's own onClick, so the user's intent (e.g., toggling Random Format, switching
-      // modes, tapping a date answer) still proceeds normally; we just consume the pending
-      // arm. Scope is the entire document (not just the settings popover) so taps anywhere
-      // outside the button reliably disarm.
-      useEffect(()=>{
-        if(!fullResetArmed)return;
-        const h=(e: MouseEvent | TouchEvent)=>{
-          if(fullResetBtnRef.current&&fullResetBtnRef.current.contains(e.target as Node | null))return;
-          disarmFullReset();
-        };
-        document.addEventListener('mousedown',h,true);
-        document.addEventListener('touchstart',h,true);
-        return()=>{document.removeEventListener('mousedown',h,true);document.removeEventListener('touchstart',h,true);};
-      },[fullResetArmed]);
-      // Cleanup the Full Reset arm timer on unmount.
-      useEffect(()=>()=>{
-        if(fullResetTimerRef.current)clearTimeout(fullResetTimerRef.current);
-      },[]);
       // True when every popover-controlled STORE value matches its EFFECTIVE default — the user's
       // saved personal defaults when they exist (Q7, store/userDefaults), the factory launch
       // values otherwise. STORE values only, and that is now the SINGLE definition of "changed"
@@ -1650,470 +1368,11 @@ const ReactDOM = { createRoot, createPortal }
       // It reads settingsStoreAtDefaults, NOT settingsModified: the four capturable mode prefs reach
       // it through the freshness flags instead, which also cover the thirteen non-capturable ones.
       const isFullyReset=mode==='classic'&&settingsStoreAtDefaults&&lookupHistory.length===0&&lookupInput===""&&lookupOutput===""&&lookupCalcDate===null&&lookupSelectedHistoryId===null&&lookupCalcOpen===false&&aoxIsFresh&&classicIsFresh&&flashIsFresh&&blitzIsFresh&&deductionIsFresh;
-      // Safety net (moved here from above so its dep array reads isFullyReset AFTER it's declared):
-      // if state somehow flips to fully-reset while the Full Reset button is armed (shouldn't be
-      // reachable in practice — fullReset disarms before firing — but defensive), disarm.
-      useEffect(()=>{if(isFullyReset&&fullResetArmed)disarmFullReset();},[isFullyReset,fullResetArmed]);
-      // Settings popover. Stays IN the bar (absolute, anchored to the bar's relative
-      // inner div via top-full) — only its CustomSelect dropdown PANELS portal out to
-      // #root, to escape this overflow scroll context for the frosted-glass blur. Do NOT
-      // frost" theory) and reverted — the scroll container, not the bar, was the cause.
-      // Elevation + bottom cushion (Calendar Game, refined 2026-06-09): this popover is a FLOATING
-      // OVERLAY (it pops over the dimmed page), so it uses the app's even, all-around overlay shadow —
-      // the SAME visual language as the dropdown menus (CustomSelect) — NOT the directional
-      // `elev-shadow-down` (that one is the scroll-BOUNDARY cue for fixed bars/headers/footers, the
-      // wrong language for a free-floating panel). It's OFFSET-FREE (`0 0 8px`, vs the dropdowns'
-      // downward-offset shadow) so the shadow extends EQUALLY on all four sides — the panel is inset
-      // against the screen edge on every side and must read as symmetric. It's SUBTLE (12% black, the
-      // app's overlay-shadow color) because the opaque fill + 1px card border + dimmed backdrop already
-      // separate it (the shadow only adds a gentle lift); and SMALL (8px blur) so it stays clearly
-      // contained inside the 1rem gap (vs the dropdowns' 28px blur, which would overflow the cushion and
-      // clip at the screen edge). Bottom cushion: the calc uses REM, not px, so it matches the rem-based
-      // side insets EXACTLY — left-4/right-4 = 1rem, and the app's root font is FLUID
-      // (html{font-size:clamp(...)}), so 1rem ≠ 16px; a hardcoded px cushion would NOT equal the sides
-      // and would drift per-device. max-height = 100dvh - REAL measured bar height (--bar-h) - 0.5rem
-      // (the mt-2 top gap, so it cancels) - 1rem cushion - bottom safe-area → the panel stops exactly
-      // 1rem above the viewable-area bottom = the SAME gap as its sides, on every device (Safari nav
-      // bar, installed-app home indicator, Android nav-bar/pill). env(safe-area-inset-bottom) is 0 on
-      // iOS (no viewport-fit=cover in index.html) — it only matters on edge-to-edge Android. (Tailwind
-      // arbitrary value: underscores become spaces, so calc() emits the whitespace CSS requires.)
-      // Press-drag contract (Q5 rework, lib/pointerGestures): the CARD is the ⚙ trigger's menu —
-      // id="settings-popover" pairs it via the gear's aria-controls (the id IS the pairing; the card
-      // deliberately carries no [data-select-group], so a drag that STARTS inside it still scrolls
-      // natively instead of drag-selecting); the whole card is
-      // in drag scope, footer rows included. data-drag-dismiss opts it into close-on-drag-pick (App's
-      // drag-dismiss listener → the apply-on-close pass); the data-drag-stay regions (BOTH footer rows —
-      // the theme block was the third until round-8 dropped it, so a drag-pick on a theme pill now
-      // dismisses like the date-format pills) opt back out: Full Reset needs
-      // its Confirm? tap, Reset Settings should show controls snapping to defaults, and Save Defaults
-      // opens its confirmation popup (which portals OUT of this card, so a drag-release on popup
-      // content can never drag-dismiss the panel). The Year Range
-      // inputs are data-drag-focus (release = focus for typing, panel stays open). The inner scroll
-      // wrapper is data-drag-scroll — the controller's auto-scroll target + edge-band geometry.
-      // Scroll recipe (Q5 round-7): the wrapper wears SCROLL_REGION_CLASS + scrollFadeClass
-      // (components/scrollRegion) — this popover IS the reference treatment (card py-4 only, the
-      // px-4 scrollbar lane inside the scroller, edge fades) every other scroll region now shares.
-      const settingsJsx=settingsOpen&&(<div ref={settingsPopoverRef} id="settings-popover" data-drag-dismiss style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]">
-        <div ref={popoverInnerScrollRef} data-drag-scroll className={`${SCROLL_REGION_CLASS} flex-1 min-h-0 space-y-4 ${scrollFadeClass(popoverScrolledFromTop,popoverAtBottom)}`}>
-        {/* SETTINGS regrouped into 3 categories (Q2): Display (how it's shown + how you answer + theme),
-            Dates (which dates get generated), Stats. Each category is a SectionLabel header; the former
-            per-setting headings are now muted sub-labels (the Leap-Year header+sub-label pattern). Every
-            control + its behaviour is unchanged — purely a regroup. */}
-        <div className="space-y-2">
-          <SectionLabel>Display</SectionLabel>
-          <div className="text-xs text-(--tx-200-80)">Date Format</div>
-          {/* ★ EVERY SWITCH NAMES ITS SETTING (aria-label), on all four of them — this one, Use
-              System Settings, the Julian Calendar toggle and Save Stats. Their visible content is
-              the STATE ("On"/"Off"), which is the same two words on all four, so without a name a
-              screen reader hears four identical buttons and nothing can address one of them
-              except by walking the DOM from its label span. The setting name is the row's label
-              text VERBATIM, so speaking what you see still activates the switch and there is no
-              second wording to keep in step. Not role="switch": that would change what these
-              announce (a checked state) and the panel's a11y pass deliberately keeps them plain
-              buttons whose text IS the state. */}
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Random Format</span><button type="button" aria-label="Random Format" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{randomFormat?"On":"Off"}</button></div>
-          {/* ★ THE PICKER RULE (round-9) — the panel has exactly TWO kinds of control, and each
-              gets exactly ONE treatment. State it here, obey it everywhere below:
-                • SWITCH — a setting that is simply on/off (Random Format, Use System Settings,
-                  Julian Calendar, Save Stats): label left, ONE On/Off button right.
-                • PICKER — a choice among named alternatives: ONE merged PillTray tray
-                  (components/PillTray, where the concentric-housing recipe lives). Where the
-                  alternatives fall into named families, each family gets its own centred caption
-                  and the trays STACK.
-              The housing is what says "these options are mutually exclusive", so it cannot be a
-              per-group decoration: a picker drawn as loose gap-separated buttons reads exactly
-              like the in-game rows that are genuinely INDEPENDENT toggles (Allow Mistakes,
-              One-by-One), which is the confusion the rule exists to remove. Round-8 had trays on
-              Date Format and Theme only; round-9 converted the two hold-outs (Input, and the
-              three chance rows) — so the panel is now trays and switches, nothing else.
-              Caption hierarchy (already correct, don't disturb it): the setting NAME is a
-              left-aligned sentence-case sub-label; FAMILY captions are centred uppercase
-              SectionLabels. Name → optional family captions → tray(s).
-              Date Format is the family case: five ids in two trays, both reading and writing the
-              SAME setting, so the half that doesn't hold the active id shows no selected segment.
-              The two trays share ONE ROW (round-10 revert of round-9's stack). Theme stacks out of
-              NECESSITY — five theme names measured at zero headroom on any phone narrower than the
-              owner's — and round-9 mistook that forced layout for a rule and applied it here too,
-              costing ~61px of scrolling for consistency with a case that had no choice. These
-              labels are m/d/y-sized, so both trays fit a row comfortably at every width we ship.
-              THE RULE IS ABOUT HOUSINGS, NOT AXIS: each named family gets its own captioned tray;
-              whether the trays sit side by side or stack is a FIT question, answered per group.
-              ONE PillGroup spans BOTH trays,
-              on the wrapper that already exists to hold them: a group is a CHOICE, not a row, and
-              two groups would each report "nothing selected" whenever the live format lived in
-              the other half — and would also split one keyboard choice into two tab stops that
-              refuse to arrow into each other. That wrapper is also the dim, so the lock provably
-              covers the captions. Written / Numeric stay plain captions — the halves ride in the
-              pills' accessible names (WRITTEN_FORMATS/NUMERIC_FORMATS), which keeps the two
-              'MDY's apart. Every picker below states its lock ONCE, as PillGroup's `disabled`:
-              the dim, aria-disabled, the onChange guard and the tab stops all follow from it. */}
-          <PillGroup label="Date Format" disabled={randomFormat} className="flex gap-2">
-            <div className="flex-1 space-y-1.5">
-              <SectionLabel className="text-center">Written</SectionLabel>
-              <PillTray value={dateFormat} onChange={setDateFormat} options={WRITTEN_FORMATS}/>
-            </div>
-            <div className="flex-1 space-y-1.5">
-              <SectionLabel className="text-center">Numeric</SectionLabel>
-              <PillTray value={dateFormat} onChange={setDateFormat} options={NUMERIC_FORMATS}/>
-            </div>
-          </PillGroup>
-          {/* Input — Buttons / Dots (the logo's 7-dot answer layout). A picker with no families,
-              so: one tray, no captions. Locks/dims in Deduction (answers aren't weekdays; the
-              value is preserved), like Julian/Leap-Year Chance when they don't apply — the lock
-              sits on the GROUP, so the housing greys as one piece. */}
-          <div className="text-xs text-(--tx-200-80) pt-1">Input</div>
-          <PillGroup label="Input" disabled={mode==='deduction'}>
-            <PillTray value={inputStyle} onChange={setInputStyle} options={INPUT_STYLES}/>
-          </PillGroup>
-          <div className="text-xs text-(--tx-200-80) pt-1">Theme</div>
-          {/* Flipping Use System Settings OFF seeds the manual theme from what is ALREADY on
-              screen (activeTheme), so the switch never jumps the user to a different look — the
-              pill that was lit stays lit, now as the single manual pick. An OFF→ON round trip
-              leaves manualTheme wherever the OFF pass parked it, but that value is DORMANT while
-              the OS decides, and settingsStoreAtDefaults compares only the theme values actually
-              in effect — so the round trip cannot leave the gear falsely reading "modified". */}
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Use System Settings</span><button type="button" aria-label="Use System Settings" onClick={()=>{if(useSystem)setManualTheme(activeTheme);setUseSystem(v=>!v);}} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useSystem?"On":"Off"}</button></div>
-          {/* The five themes as two PillTray rows (round-8), replacing the dropdowns they used to
-              hide behind. The SAME two rows render in both Use-System states — the panel no
-              longer changes height when the switch is flipped — and the centered Dark / Light
-              captions carry the whole state difference:
-                • Use System ON  — two INDEPENDENT picks (the OS decides which row is live), so
-                  each row reads and writes its own store value.
-                • Use System OFF — ONE pick across BOTH rows: both rows read manualTheme, so the
-                  row that doesn't hold it shows no selected segment.
-              Captions stay CENTERED in both states (left-aligned SectionLabels are reserved for
-              the DISPLAY / DATES / STATS headers and would out-rank the "Theme" sub-label above),
-              and neither row is marked "in use" — the OS owns that, and a marker would imply the
-              app does. No data-drag-stay (round-8, owner's call): a press-drag from the gear that
-              releases on a theme pill DISMISSES the panel, exactly like the date-format pills —
-              "if I want to change both, I'd just tap settings instead of doing the dragging
-              thing."
-              The RADIOGROUPS follow the selection semantics above rather than the two rows, for
-              the same reason the date-format trays share one group: a group is a CHOICE. Use
-              System ON = two independent picks = two groups. OFF = one pick across both rows = ONE
-              group spanning them, so the row that doesn't hold manualTheme isn't announced as an
-              empty choice of its own — and one pick answers to one tab stop and one arrow walk.
-              The shared wrapper is not an element added to carry a role — it is also what supplies
-              the 8px between the rows that the section's space-y-2 gave them as siblings. Which of
-              the three wrappers is the real group is exactly which of them is NAMED: an unnamed
-              PillGroup is just the div (a radiogroup must have a name to be one), so the switch
-              moves the role, the keyboard and nothing else. All five theme names are distinct, so
-              no pill needs an ariaLabel. */}
-          <PillGroup className="space-y-2" label={useSystem?undefined:"Theme"}>
-            <PillGroup className="space-y-1.5" label={useSystem?"Dark theme":undefined}>
-              <SectionLabel className="text-center">Dark</SectionLabel>
-              <PillTray value={useSystem?darkTheme:manualTheme} onChange={useSystem?setDarkTheme:setManualTheme} options={DARK_THEMES}/>
-            </PillGroup>
-            <PillGroup className="space-y-1.5" label={useSystem?"Light theme":undefined}>
-              <SectionLabel className="text-center">Light</SectionLabel>
-              <PillTray value={useSystem?lightTheme:manualTheme} onChange={useSystem?setLightTheme:setManualTheme} options={LIGHT_THEMES}/>
-            </PillGroup>
-          </PillGroup>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
-          <SectionLabel>Dates</SectionLabel>
-          <div className="text-xs text-(--tx-200-80)">Year Range</div>
-          <div className="flex items-center gap-2">
-            {/* ★ BOTH YEAR BOXES NAME THEMSELVES (aria-label), for the same reason the four switches
-                above do: their only context is the "Year Range" caption above the row and a "→" between
-                them, neither of which a screen reader attaches to either input — so without a name they
-                announce as two bare, indistinguishable edit boxes. "Earliest"/"Latest" rather than
-                "Minimum"/"Maximum" to match the guide's own framing of the range ("Defaults to 1-10000
-                AD", GuidePage "Dates — Year Range"). Purely additive: no visible label is added, so the
-                row's geometry is untouched. ⚠ These names are also the TEST HANDLE for the two boxes.
-                Do not remove them expecting the suite to catch it by other means: the boxes carry no
-                other stable identity, and the previous handle — data-drag-focus — is a GENERAL press-drag
-                opt-in (src/lib/pointerGestures.ts), so any third control in the panel adopting it would
-                have broken every year-range test at once. */}
-            {/* ★ WHAT ESCAPE DOES IN A YEAR BOX, and why it is written this awkwardly (round 14 —
-                it did neither of these things before, and the intent had always been to).
-                THROW THE EDIT AWAY: put the committed year back in the box. The revert used to be a
-                plain setMinInputVal followed by the blur() below, and the two landed in ONE React
-                batch — so onBlur's commitMin still closed over the PRE-revert text and committed the
-                very value Escape was discarding. (Only unparseable text appeared to revert, via
-                commitMin's own cannot-parse branch, which is presumably why it went unnoticed.)
-                flushSync lands the revert BEFORE the blur, so the commit that follows re-reads the
-                restored year and is a no-op. currentTarget is captured first because it is only
-                valid during dispatch.
-                AND KEEP THE PANEL OPEN: the panel's Escape handler (a document keydown, bubble
-                phase) decides "is this press mine?" by asking what has focus — and blur() has
-                already run by then, so it saw an empty answer and closed the panel out from under
-                the edit. stopPropagation says plainly that this input consumed the press. It works
-                because that listener is on DOCUMENT and BUBBLES: React 19 attaches its own listener
-                at the root container, so stopping the native event there means document never sees
-                it. The four MODAL Escape handlers are capture-phase and still fire first, which is
-                correct — they carve text inputs out themselves.
-                Escape still BLURS, deliberately. It keeps the pair the author wrote (Enter = keep
-                it and let go, Escape = discard it and let go), it drops the numeric keyboard on a
-                phone, and it leaves a second Escape free to close the panel — a dismissal ladder,
-                rather than an input that swallows Escape forever. */}
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Earliest Year" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){const el=e.currentTarget;e.stopPropagation();flushSync(()=>setMinInputVal(String(minY)));el.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
-            <span className="text-(--tx-300-60) text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Latest Year" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){const el=e.currentTarget;e.stopPropagation();flushSync(()=>setMaxInputVal(String(maxY)));el.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
-          </div>
-          {/* ★ THE ORDER OF THIS SECTION (round-12) — Year Range, then the two LEAP rows, then the
-              JULIAN pair last. Julian Chance is locked unless the switch is ON *and* the range
-              straddles 1582, so under any ordinary modern range it is a greyed-out dead control;
-              it used to sit third, ABOVE two live ones. Two pairings constrain any future reshuffle:
-              Jan/Feb Chance is a sub-case of Leap Year Chance and must sit directly under it, and
-              the Julian switch is the thing that explains why Julian Chance greys out, so it must
-              stay directly above it. Move the Julian pair, never one half of it.
-              The three chance rows (this one, Jan/Feb under it, and Julian Chance at the foot of
-              the section) are pickers, so they are trays (THE PICKER RULE, Display above)
-              — round-9 converted them from the flat gap-separated buttons they shipped as. The
-              conversion costs no height: these rows already captioned ABOVE their control, and
-              the tray's ~2px seams are tighter than the ~6px gaps they replace, so every label
-              gained room. Each row's LOCK now sits on the GROUP instead of on every button, so
-              the housing greys as one piece; the caption stays lit, as it always did. Each lock is
-              written straight into `disabled` because one boolean is now all a lock takes — the
-              IIFEs the two locked rows (Leap Year Chance, Julian Chance) used to need existed only
-              to hand the same derived boolean to a dim class as well.
-              Leap Year Chance: locked when the active range/calendar has no leap years; the selected
-              value is preserved + restored when a leap year becomes reachable again. */}
-          <div className="text-xs text-(--tx-200-80) pt-1">Leap Year Chance</div>
-          <PillGroup label="Leap Year Chance" disabled={!rangeHasLeapYear(minY,maxY,useJulian)}>
-            <PillTray value={leapChance} onChange={setLeapChance} options={LEAP_CHANCE_OPTIONS}/>
-          </PillGroup>
-          {/* Jan/Feb Chance: the listed % is the exact probability a leap-year date lands on Jan/Feb
-              (Random = natural ~17%). Stays unlocked even when leap years aren't currently reachable,
-              so it is the one chance row with no lock branch at all. */}
-          <div className="text-xs text-(--tx-200-80) pt-1">Jan/Feb Chance on Leap Years</div>
-          <PillGroup label="Jan/Feb Chance on Leap Years">
-            <PillTray value={janFebChance} onChange={setJanFebChance} options={CHANCE_OPTIONS}/>
-          </PillGroup>
-          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" aria-label="Julian Calendar (pre-Oct 15, 1582)" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
-          {/* Julian Chance: locked unless the switch directly above is ON *and* the active year range
-              straddles 1582 (= mixed Julian+Gregorian: minY<=1582<=maxY). Year 1582 itself spans both
-              calendars. When locked the selected value stays visually selected, so it's restored when
-              the range becomes mixed again. */}
-          <div className="text-xs text-(--tx-200-80) pt-1">Julian Chance</div>
-          <PillGroup label="Julian Chance" disabled={!(useJulian&&minY<=1582&&maxY>=1582)}>
-            <PillTray value={julianChance} onChange={setJulianChance} options={CHANCE_OPTIONS}/>
-          </PillGroup>
-        </div>
-        <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
-          <SectionLabel>Stats</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" aria-label="Save Stats" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
-        </div>
-        </div>
-        {/* The panel's bottom boundary. elev-shadow-up is UNCONDITIONAL: its strength is the
-            --shade the edge hook writes onto this element (0 when the list is scrolled to the
-            end, ramping to full over the last --fade-h of travel), so there is no class to
-            toggle and nothing left to animate. */}
-        <div ref={popoverFooterRef} data-drag-stay className="popover-sticky-footer elev-shadow-up pt-4 px-4 border-t border-(--bd-500-20)">
-          <div ref={footerFitRef} className="flex gap-2">
-            {/* The invisible STATIC caption twins the auto-fit measures (fitFooterBtns above) — the
-                full resting set, so the live Full Reset → "Confirm?" swap never changes the fit.
-                absolute keeps them out of the flex row; same text classes as the buttons. */}
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Save Defaults</span>
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Reset Settings</span>
-            <span data-fittwin aria-hidden="true" className="absolute invisible whitespace-nowrap text-xs font-medium">Full Reset</span>
-            {/* Save Defaults (Q7): constructive → btn-solid purple (the Begin-button language), keeping
-                rose exclusively for the two destructive neighbors. Dims when live state already equals
-                the saved defaults (factory when none saved) — nothing new to save. Each caption sits in
-                a data-fitlabel span (whitespace-nowrap so it MEASURES at full width instead of
-                wrapping; overflow-hidden on the button contains the pre-fit paint). */}
-            <button type="button" onClick={openSaveDefaults} className={`flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden ${!settingsModified?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Save Defaults</span></button>
-            <button type="button" onClick={pressResetSettings} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${!settingsModified?"opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">Reset Settings</span></button>
-            <button ref={fullResetBtnRef} type="button" onClick={armFullReset} className={`flex-1 ${FOOTER_RESET_BTN_CLASS} overflow-hidden ${fullResetArmed?" ring-2 ring-rose-200":""}${isFullyReset?" opacity-60 pointer-events-none":""}`}><span data-fitlabel className="whitespace-nowrap">{fullResetArmed?"Confirm?":"Full Reset"}</span></button>
-          </div>
-        </div>
-        <div data-drag-stay className="pt-3 px-4 border-t border-(--bd-500-20) text-[11px] text-(--tx-300-60) space-y-0.5">
-          {/* All four footer text links carry rounded-md px-1 -mx-1: the padding gives the press-drag
-              ring breathing room around the text and the radius rounds its corners (vs a square outline
-              hugging the glyphs); the negative margin cancels the padding so the text keeps its exact
-              flow position. */}
-          {/* Saved-defaults link row (Q7 + Q12 + Q5 round-6). View saved defaults is ALWAYS
-              visible — with nothing saved it opens the defaults manager on its clearly-labelled
-              FACTORY view (there is always something to see, and to edit, now that the popup is
-              the editable manager below). Clear saved defaults still appears only while a
-              snapshot exists — with nothing saved there is nothing to clear. View sits LEFT of
-              Clear, matching the button trio's left→right escalation; the row wears the shared
-              FOOTER_LINK_ROW_CLASS (defined up top, and worn by the Last Updated row below —
-              round-7 Q2): its gap-3 keeps ~4px between the two press-drag rings (each ring
-              extends px-1 past its text), its flex-wrap is the narrow-viewport fallback. Clear
-              is the ONLY way back to factory semantics (the Save Defaults popup's duplicate
-              link was removed in Round-4 — one action, one home), and it now opens a small
-              CONFIRM modal (Cancel + a red-tier Clear, below) instead of firing immediately.
-              This footer row (the same muted tier as Check for updates below) is always
-              reachable: the Save Defaults button dims + locks exactly when live == saved, but
-              the footer never hides behind it. FIRST link row, directly under the button trio
-              (Round-2): these are the only actionable settings in this block, and they belong
-              to the trio's story — below it the footer decays into contact info and metadata.
-              The row inherits the footer's data-drag-stay, so a drag-release on either link
-              acts with the panel staying open (each opens its modal over the panel). */}
-          <div className={FOOTER_LINK_ROW_CLASS}><button type="button" onClick={openManageDefaults} className="underline select-none rounded-md px-1 -mx-1">View saved defaults</button>{savedDefaults!==null&&<button type="button" onClick={()=>setClearConfirmOpen(true)} className="underline select-none rounded-md px-1 -mx-1">Clear saved defaults</button>}</div>
-          <div>Contact: <a href="mailto:dayoftheweekcalculation@gmail.com" className="underline break-all select-text rounded-md px-1 -mx-1">dayoftheweekcalculation@gmail.com</a></div>
-          <div className={FOOTER_LINK_ROW_CLASS}>
-            <span>Last Updated: {(()=>{const d=DEPLOY_TS;const yy=d.getFullYear();const mo=d.getMonth()+1;const da=d.getDate();const numFmt=numericFormatOf(dateFormat);const datePart=fmt(yy,mo,da,numFmt);const timePart=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});return`${datePart} ${timePart}`;})()}</span>
-            {/* Check for a newer deployed version and apply it if there is one (Q7, round 11 — it used
-                to reload unconditionally). Styled like the Contact email link above (inherits the
-                footer's text-(--tx-300-60)) so it matches the surrounding footer text on every theme,
-                with three deliberate departures:
-                  • THE HIDDEN STRUT. The button is a one-cell grid holding the resting label twice —
-                    an aria-hidden copy that only reserves width, and the live label stacked on it. So
-                    the button is always exactly as wide as "Check for updates" (the longest of the
-                    four by construction — lib/updateCheck pins it) and the Changelog link beside it
-                    can never shift when the label changes. justify-items-CENTER splits the slack
-                    evenly, so each shorter label sits centred in the gap between the Last Updated
-                    stamp and Changelog rather than hugging one edge (owner's call 2026-08-02,
-                    overriding an earlier justify-items-start that anchored them left). The resting
-                    label is the widest, so it fills the cell exactly and centring cannot move it —
-                    only the three status labels shift, which is the whole point. Note the CENTRE is
-                    the button's own fixed cell, NOT the row: it stays put however wide the date in
-                    the timestamp renders, so nothing here is position-dependent on that.
-                  • UNDERLINE ONLY AT REST. The other three labels are STATUS, not actions; wearing the
-                    interaction signal while not being the interaction is the round-3 block-hover
-                    mistake. The button still IS pressable during a result — a tap starts another
-                    check — but it is not offering the same thing, so it does not claim to.
-                  • DISABLED while checking, so the state the label reports is the state the control
-                    is in. No aria-live: a tap leaves focus on the button, where the accessible name
-                    changing is announced anyway, and a live region inside a control double-announces
-                    on some screen readers — an unverifiable trade for no gain. */}
-            <button type="button" onClick={onCheckUpdates} disabled={updateCheck==='checking'} className="select-none rounded-md px-1 -mx-1 grid justify-items-center"><span aria-hidden="true" className="col-start-1 row-start-1 invisible whitespace-nowrap">{UPDATE_CHECK_LABEL.idle}</span><span className={`col-start-1 row-start-1 whitespace-nowrap ${updateCheck==='idle'?" underline":""}`}>{UPDATE_CHECK_LABEL[updateCheck]}</span></button>
-            {/* Changelog (Q6), RIGHT of Check for updates — the two update-flavored links live
-                together, force-the-latest then read-what-changed. Same footer-link recipe, in a
-                row wearing the same shared FOOTER_LINK_ROW_CLASS as the View/Clear row above
-                (round-7 Q2 — this row's legacy gap-2 left its rings touching at 0px clearance
-                vs the ~4px above); wears the INLINE UpdateDot until its first tap after a build
-                change — the second stage of the breadcrumb the gear's dot starts.
-                Round-8 Q7 rebuilt that marker: a text link reserves no room for the gear's corner
-                badge, so the round-6 shared recipe put the dot on top of the word. The link is an
-                inline-flex row now — the text in its own span, the marker its sibling — and the
-                underline moved ONTO that span so the rule can never paint across the gap. The
-                marker's slot is reserved lit or not (index.css), so lighting up shifts nothing;
-                being aria-hidden, it needs the sr-only word beside it to reach a screen reader,
-                which is also the only update signal left once the gear's dot has been retired.
-                ⚠ That word carries its own COMMA rather than the gear's "(update)" parenthetical:
-                the name-from-content algorithm trims each child's text before joining them, so a
-                leading space is dropped and the two would run together ("Changelog(update)"). A
-                printing separator is the only one that survives the join. */}
-            <button type="button" onClick={openChangelog} className="inline-flex items-center select-none rounded-md px-1 -mx-1"><span className="underline">Changelog</span>{changelogDot&&<span className="sr-only">, update</span>}<UpdateDot placement="inline" lit={changelogDot}/></button>
-          </div>
-        </div>
-      </div>);
-      // Save Defaults confirmation popup (Q7). PORTALED to #root — deliberately OUTSIDE the
-      // popover card (the ⚙ trigger's aria-controls menu), so its DOM is invisible to the press-drag controller
-      // (a drag-release on popup content can never drag-dismiss the panel) and it escapes the
-      // card's overflow/max-height context (a true centered modal — scrim + the popover's own
-      // card/shadow language). data-settings-modal marks the whole tree (scrim included) "inside"
-      // for the settings click-outside handler above (the same marker as the manager, Clear
-      // confirm, and Changelog popups below — one guard covers all four modals); the scrim itself
-      // cancels the POPUP only (target===currentTarget, so card clicks never do), and Escape +
-      // Android Back + any settings close also cancel (the effects above). The card itself is the
-      // shared DefaultsCard (Q5 round-6 — the one place the four rows, their recipes, and the
-      // dirty-row accent live; see its header comment): row labels are Title Case (the ⚙ panel's
-      // label tier, Q6) with every paired aria-label mirroring its visible text exactly — no case
-      // drift to maintain, WCAG label-in-name safe. Edits touch ONLY the pending snapshot: the
-      // three sliders mirror the mode screens' (same ranges/steps/--rng-fill, and the same
-      // tap-to-type SliderValueEditor readouts — the popup seeds from the LIVE prefs, so its
-      // ranges must stay a superset of every committable value) and the N field shares the AoX
-      // input's validation trio (Q18 — one idiom, one clamp): digits only while typing (the
-      // pending snapshot never holds junk), and blur, Enter and Escape all normalize-commit with
-      // the shared normalizeAoxN clamp (2–1000, fallback 10) — the AoX field's Escape likewise
-      // commits; the popup's real discard is Cancel.
-      // Modal a11y contract, part 2 of 2 (part 1 = the focus-on-open effects above): the card is a real
-      // role="dialog" aria-modal, and the scrim's Tab handler is the focus trap — plain Tab / Shift+Tab
-      // cycle the popup's own controls and WRAP at the ends (native traversal in between), never
-      // escaping to the settings panel under the scrim. Shared by ALL FOUR settings modals (the Save
-      // Defaults card, the defaults manager Q12+Q5, the Clear confirm Q5, and the Changelog popup Q6
-      // — the Changelog's single Close button is first===last, so Tab wraps in place). stopPropagation
-      // keeps the press from the app-wide Tab shortcut (which would open the mode selector behind
-      // the modal); the shortcut's own handler also bails while a modal is mounted for presses
-      // that start outside the scrim's tree.
-      const trapModalTab=(e: React.KeyboardEvent<HTMLDivElement>)=>{
-        if(e.key!=='Tab')return;
-        e.stopPropagation();
-        const f=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button,input'));
-        if(f.length===0)return;
-        const first=f[0],last=f[f.length-1],ae=document.activeElement;
-        if(e.shiftKey){if(ae===first||!e.currentTarget.contains(ae)){e.preventDefault();last.focus();}}
-        else if(ae===last||!e.currentTarget.contains(ae)){e.preventDefault();first.focus();}
-      };
-      const saveDefaultsJsx=saveDefaultsOpen&&ReactDOM.createPortal(
-        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setSaveDefaultsOpen(false);}} onKeyDown={trapModalTab}>
-          <DefaultsCard cardRef={saveDefaultsCardRef} titleId="save-defaults-title" title="Save current settings as your defaults?" subline="Also saved from the mode screens:" prefs={pendPrefs} seed={pendSeed} setPrefs={setPendPrefs} onClose={closeSaveDefaults} onSave={commitSaveDefaults}/>
-        </div>),
-        document.getElementById('root')!
-      );
-      // The defaults manager popup (Q12, made editable in Q5 round-6): the footer link's window
-      // onto the defaults — the same portal / scrim recipes and the same modal contract as the
-      // Save popup (focus-on-open, capture Escape with the text-entry guard, close with settings,
-      // Android Back, the shared trapModalTab + data-settings-modal marker), rendering the SAME
-      // shared DefaultsCard in manage mode. It seeds from the EFFECTIVE defaults (defPrefs —
-      // forward-merged, so a legacy snapshot missing a field shows factory, never undefined) and
-      // rests read-only (one full-width Close); edit any row and it goes dirty — Cancel + Save,
-      // the restricted-write note, the accent-tier value highlights (see DefaultsCard). Title,
-      // subline, and footnote adapt to whether a snapshot exists: with none saved the card is the
-      // clearly-labelled FACTORY view, and Save from there CREATES the snapshot.
-      const manageDefaultsJsx=manageDefaultsOpen&&ReactDOM.createPortal(
-        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setManageDefaultsOpen(false);}} onKeyDown={trapModalTab}>
-          <DefaultsCard cardRef={manageDefaultsCardRef} titleId="manage-defaults-title" manage
-            title={savedDefaults?"Your saved defaults":"Default settings"}
-            subline={savedDefaults?undefined:"These are the factory defaults — you haven't saved your own."}
-            note={savedDefaults?"Every ⚙ menu setting is also part of the snapshot, captured as it was when you saved.":undefined}
-            prefs={managePrefs} seed={defPrefs} setPrefs={setManagePrefs} onClose={closeManageDefaults} onSave={commitManageDefaults}/>
-        </div>),
-        document.getElementById('root')!
-      );
-      // Clear-saved-defaults confirm popup (Q5 round-6): the same portal / scrim / card recipes
-      // and the same modal contract (focus-on-open, capture Escape, close with settings, Android
-      // Back, the shared trapModalTab + data-settings-modal marker). Two buttons — Cancel in the
-      // shared dismiss recipe, Clear in the danger tier (RESET_BTN_CLASS, the rose fill every
-      // destructive control wears) — a real confirm modal because a link that flips its own text
-      // to confirm reads strangely (the owner's call over a two-tap arm).
-      const clearConfirmJsx=clearConfirmOpen&&ReactDOM.createPortal(
-        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setClearConfirmOpen(false);}} onKeyDown={trapModalTab}>
-          <div ref={clearConfirmCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="clear-defaults-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="clear-defaults-title" className="text-sm font-semibold text-(--tx-50)">Clear your saved defaults?</div>
-            <div className="text-xs text-(--tx-200-80)">This only forgets the snapshot — your current settings stay as they are, and the launch defaults take over.</div>
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={closeClearConfirm} className="flex-1 px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Cancel</button>
-              <button type="button" onClick={confirmClearDefaults} className={`flex-1 ${RESET_BTN_CLASS}`}>Clear</button>
-            </div>
-          </div>
-        </div>),
-        document.getElementById('root')!
-      );
-      // Changelog popup (Q6): the plain-words what-changed list (src/changelog, newest day
-      // first), opened from the footer's Changelog link — the same portal / scrim / card recipes
-      // and the same modal contract as the popups above (focus-on-open, capture Escape, close
-      // with settings, Android Back, the shared trapModalTab + data-settings-modal marker; the one
-      // control is a full-width Close, input-free like the Clear confirm). CHANGELOG renders AS-IS:
-      // round-8 Q8 dropped the render-time slice and moved the ten-day cap to the data itself (see
-      // the charter in src/changelog), so what the module holds is exactly what a visitor downloads
-      // and exactly what draws here — no entry ships only to be refused. The list sits
-      // inside its own scroll region on the shared settings recipe (Q5 round-7,
-      // components/scrollRegion): the card owns py-4 only while the title, scroll region, and
-      // Close row each carry px-4, so the scroller's 1rem right padding is the text-free lane
-      // the iOS scrollbar paints in; SCROLL_REGION_CLASS + scrollFadeClass (fed by the
-      // changelogScrollRef edge listener up with the popover's) add the edge fades, and max-h
-      // keeps a long history scrolling within the card without growing it off-screen. Entry
-      // dates render through the footer's Last-Updated recipe (fmt + numericFormatOf) so they
-      // follow the user's Date Format setting; the bullet list is the guide's UL idiom
-      // (list-disc + the --mut-color marker). The card is title → list → Close and NOTHING else:
-      // round-8 Q8 added a one-line "Shows the last ten days with updates." notice between the
-      // scroller and Close, and the owner removed it (round-9) on the rule that this popup answers
-      // WHAT CHANGED, while how the app keeps its history is documentation — so the ten-day cap is
-      // explained in How to Play (the Updates section) and nowhere else. Don't re-add it here.
-      // The one-control card is also what keeps the single-button Tab trap above valid, with Close
-      // as first===last.
-      const changelogJsx=changelogOpen&&ReactDOM.createPortal(
-        (<div data-settings-modal role="presentation" className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-4" onClick={e=>{if(e.target===e.currentTarget)setChangelogOpen(false);}} onKeyDown={trapModalTab}>
-          <div ref={changelogCardRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="changelog-title" style={{boxShadow:'0 0 8px rgba(0,0,0,0.12)'}} className="card rounded-2xl py-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden">
-            <div id="changelog-title" className="px-4 text-sm font-semibold text-(--tx-50)">What's new</div>
-            <div ref={changelogScrollRef} className={`${SCROLL_REGION_CLASS} max-h-[55vh] space-y-3 ${scrollFadeClass(changelogScrolledFromTop,changelogAtBottom)}`}>
-              {CHANGELOG.map(en=>{const [yy,mo,da]=en.date.split('-').map(Number);return(
-                <div key={en.date} className="space-y-1">
-                  <div className="text-xs font-semibold text-(--tx-100-80)">{fmt(yy,mo,da,numericFormatOf(dateFormat))}</div>
-                  <ul className="list-disc pl-4 space-y-1 marker:text-(--mut-color) text-xs text-(--tx-200-80)">{en.items.map((it,i)=><li key={i}>{it}</li>)}</ul>
-                </div>);})}
-            </div>
-            <div className="px-4 pt-1"><button type="button" onClick={closeChangelog} className="w-full px-3 py-2 rounded-xl text-sm font-medium border surface-toggle text-(--tx-100-80)">Close</button></div>
-          </div>
-        </div>),
-        document.getElementById('root')!
-      );
+      // The "disarm if state flips to fully-reset while armed" safety net went into the panel with
+      // the rest of the two-tap machine. It used to have to sit exactly HERE, after the declaration
+      // above, because its dependency array read isFullyReset and an earlier position was a real
+      // TDZ crash; as a PROP on the other side of the boundary that hazard no longer exists, so
+      // nothing constrains where these two declarations sit any more.
       return(
         <>
           {/* Both overlays are fixed z-100 covers; the Updating screen renders LATER in the DOM
@@ -2194,11 +1453,36 @@ const ReactDOM = { createRoot, createPortal }
                 <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag className="panel rounded-xl px-2.5 py-2 pr-9 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
             </div>
-            {settingsJsx}
-            {saveDefaultsJsx}
-            {manageDefaultsJsx}
-            {clearConfirmJsx}
-            {changelogJsx}
+            {/* ⚙ THE SETTINGS PANEL, at the slot its markup used to occupy inline. Three things
+                about this line are load-bearing and none of them is style:
+                  • CONDITIONALLY RENDERED. A closed panel must have NO DOM — the suite's role
+                    queries are unscoped by design, so an always-mounted-and-hidden panel would
+                    double every radio in the document. It is also what makes unmount the discard
+                    for the four modals and the Full Reset arm.
+                  • THIS POSITION. It is a sibling of the title/gear row inside the bar's `relative`
+                    inner wrapper, and the card is `absolute top-full left-4 right-4` against that
+                    wrapper. Anywhere else, or inside a wrapper of its own, and the panel silently
+                    detaches from the bar.
+                  • NOT MEMOISED. No React.memo, no useMemo around this element, no memoised props
+                    object: PillGroup's tab-stop layout effect and the panel's footer fit both have
+                    NO dependency array on purpose and must re-read the DOM on every pass. */}
+            {settingsOpen&&<SettingsPanel
+              cardRef={settingsPopoverRef}
+              settingsModified={settingsModified}
+              isFullyReset={isFullyReset}
+              onResetSettings={pressResetSettings}
+              onFullReset={fullReset}
+              mode={mode}
+              activeTheme={activeTheme}
+              defPrefs={defPrefs}
+              yearRange={yearRange}
+              minYearRef={minInputRef}
+              maxYearRef={maxInputRef}
+              updateCheck={updateCheck}
+              onCheckUpdates={onCheckUpdates}
+              changelogDot={changelogDot}
+              onRetireChangelogDot={retireChangelogDot}
+            />}
           </div>
         </div>
         {/* THE app scroll container, and since round 13 there is no "except in guide mode" left in
@@ -2333,7 +1617,7 @@ const ReactDOM = { createRoot, createPortal }
     // app-module split falls out naturally during the Step-6 cleanup; this is the minimal
     // touch needed to make App testable for the safety net.)
     const rootEl = typeof document !== "undefined" ? document.getElementById("root") : null;
-    if (rootEl) ReactDOM.createRoot(rootEl).render(<ErrorBoundary><App/></ErrorBoundary>);
+    if (rootEl) createRoot(rootEl).render(<ErrorBoundary><App/></ErrorBoundary>);
 
     // Real-user error reporting (C1). DEPLOYED builds only. This flag is the BUILD-time half —
     // import.meta.env.PROD is false in `vite dev`, so dev never reports — but it is true for a
