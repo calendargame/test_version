@@ -78,7 +78,7 @@ export default function SliderValueEditor({
   format: (v: number) => string // display text, e.g. fmtFlashT → "2.0s"
   toText: (v: number) => string // edit seed, unit-less user text, e.g. 2000 → "2"
   fromText?: (n: number) => number // typed number → internal units (Flash: s ×1000 → ms)
-  widest: string // the widest possible readout string (the shared SLIDER_READOUT_WIDEST — see the first main.tsx site), mounted as the width strut so the row never shifts
+  widest: string // the widest possible readout string (the shared SLIDER_READOUT_WIDEST, declared in src/lib/modeFormat.ts), mounted as the width strut so the row never shifts
   onCommit: (v: number) => void
 }) {
   const [text, setText] = useState<string | null>(null) // null = display mode

@@ -41,8 +41,22 @@ import DeductionMode from './modes/DeductionMode.jsx'
 import AoxMode from './modes/AoxMode.jsx'
 import BlitzMode from './modes/BlitzMode.jsx'
 
-    // Shared mode types (GenDate/FmtDate/FlashState/GameEngine/ModeProps/DedOpts) -> src/modes/modeTypes.ts, imported at top.
-// AoxBest / BlitzBest / SuddenBest moved to store/progress.ts (the persisted store owns them); imported above.
+    // ★ HOW TO READ THE "WHERE DID X GO?" INDEX BELOW (audited in full, round 14). Every entry names
+    // a symbol this file once declared and says where it lives NOW. An entry says "imported at top"
+    // ONLY when the import block at the head of this file really names that symbol today — several
+    // entries claimed it after the symbol's last reader here had left, which is the exact lie an
+    // index is supposed to prevent. When main.tsx no longer touches a module at all the entry says
+    // so and lists the real consumers instead, so the pointer still earns its place. Re-audit against
+    // the import block, never against these lines, whenever you move something out.
+    //
+    // Shared mode types (GenDate/FmtDate/FlashState/GameEngine/ModeProps/DedOpts) -> src/modes/modeTypes.ts.
+    // NOT imported here: App names none of them. It passes props to the five mode screens and their
+    // types are inferred from those components, so the contract is enforced without this file
+    // importing it. Consumed by src/modes/* and the engine.
+    // AoxBest / BlitzBest / SuddenBest moved to store/progress.ts (the persisted store owns them).
+    // NOT imported here either — of that module App takes useProgress, addLookupEntry and the
+    // LookupEntry type ALONE. The three best types are read by AoxMode, BlitzMode,
+    // components/BlitzBestRow and src/engine/{aoxBest,blitzBest}.
 
     const {useEffect,useLayoutEffect,useRef,useState,useCallback,useMemo} = React;
     // ─────────────────────────────────────────────────────────────────────────
@@ -63,10 +77,15 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // no longer imports it: its last four tokens (RESET_BTN_CLASS, FOOTER_RESET_BTN_CLASS,
     // FOOTER_LINK_ROW_CLASS, NUM_INPUT_CLASS) left with the ⚙ card. Consumed now by
     // components/SettingsPanel + DefaultsCard + WeekdayAnswer and all five mode screens.
-    // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts (shared with
-    // HtP's DotDiagram, which derives its diagram from the same array), imported at top.
-    // WeekdayAnswer -> src/components/WeekdayAnswer.tsx, imported at top.
-    // MONTH / DAY name tables → src/lib/format.js, imported at top.
+    // DOT_CELL — the logo's 7-position layout for the Dots input → src/lib/dotLayout.ts. NOT imported
+    // here: App renders no answer input. Its two readers are components/WeekdayAnswer (the Dots grid
+    // itself) and components/GuidePage's DotDiagram, which derives its diagram from the same array.
+    // WeekdayAnswer -> src/components/WeekdayAnswer.tsx. NOT imported here: all five mode screens
+    // render their own, and App renders none.
+    // MONTH / DAY name tables → src/lib/format.js. NOT imported here — see the format entry below for
+    // what App does take from that module. Read by components/LookupCard (MONTH + DAY),
+    // components/WeekdayAnswer, components/GuidePage, lib/method and modes/DeductionMode (DAY);
+    // lib/format itself uses MONTH internally in fmt/fmtPartial.
     // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
     // that replaced the native <select>). Order here = order shown in the dropdown.
     const MODE_LABELS=[{value:'classic',label:'Classic'},{value:'aox',label:'AoX'},{value:'deduction',label:'Deduction'},{value:'flash',label:'Flash'},{value:'blitz',label:'Blitz'},{value:'lookup',label:'Lookup'},{value:'guide',label:'How to Play'}];
@@ -75,9 +94,13 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // settingsOptions.ts, imported by the panel itself. MODE_LABELS above stayed here because it
     // drives the BAR's mode CustomSelect, which is not part of the panel.
     // Method-code maps + the per-date code summary (METHOD_*, JULIAN_AB_MAP, normalizeMod7,
-    // canonicalizeMod, calcDayCode, calcCdCode, yearParts, computeMethodSummary) → src/lib/method.js,
-    // imported at top. (computeMethodSummary is the only one used here; the rest are its internals.)
-    // Deduction option constants, yearGridLayout + the MONTH_BOXES tables -> src/lib/dedPuzzle.ts, imported at top.
+    // canonicalizeMod, calcDayCode, calcCdCode, yearParts, computeMethodSummary) → src/lib/method.js.
+    // NOT imported here any more: computeMethodSummary was App's only reader and it left with the
+    // codes panels. Its sole consumer now is components/MethodBreakdown; the rest are its internals.
+    // Deduction option constants, yearGridLayout + the MONTH_BOXES tables -> src/lib/dedPuzzle.ts.
+    // Of that module App imports makeDedPuzzle ALONE (see the entry further down); the option
+    // constants and yearGridLayout are read by modes/DeductionMode, and MONTH_BOXES only inside
+    // dedPuzzle itself.
     // Day-of-week & calendar math (toAstro, isLeap, dim, jdn*, wday*, isJulian*, isGap*,
     // rangeHasLeapYear) → src/lib/calendar.js. NOT imported here any more: rangeHasLeapYear was
     // App's last reader and it went with the Leap-Year picker into components/SettingsPanel.
@@ -85,10 +108,13 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // Date formatting (fmtYear, fmt, fmtPartial, numericFormatOf) → src/lib/format.js. Of these App
     // imports `fmt` ALONE; numericFormatOf left with the Last-Updated stamp and the changelog dates
     // for components/SettingsPanel, and fmtYear/fmtPartial are read by the modes, not here.
-    // rint + randomDate (the weekday-question generator) -> src/lib/dateGen.ts, imported at top.
-    // Shared format/time helpers -> src/lib/modeFormat.ts, imported at top.
+    // rint + randomDate (the weekday-question generator) -> src/lib/dateGen.ts. Of these App imports
+    // `randomDate` ALONE; rint is dateGen's own internal, shared only with lib/dedPuzzle.
+    // Shared format/time helpers -> src/lib/modeFormat.ts. Of that module App imports rollFormat +
+    // isTouch ALONE; its time/accuracy formatters and input guards belong to the mode screens.
 
-    // entryWithGreen → src/engine/answerButtons.js, imported at top (shared with the reducer + AoxMode).
+    // entryWithGreen → src/engine/answerButtons.js. NOT imported here: App renders no answer buttons.
+    // Its only consumer is src/engine/gameReducer.
 
     // FLASH_MS + the shared mode-screen hooks -> src/modes/modeHooks.ts, consumed there by the five
     // screens; nothing here reaches into src/modes for them. The one that is NOT mode-specific,
@@ -96,10 +122,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // only INDIRECTLY now, through components/useUpdateCheck (the Q7 update-check reset moved in
     // there with the rest of that interaction), so it is no longer imported here.
 
-    // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js, imported at top.
+    // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js. NOT imported here
+    // either — same reason as entryWithGreen above. Their only reader is src/engine/gameReducer.
 
-    // Expander → src/components/Expander.jsx. No longer used directly here: every panel in main.tsx
-    // reaches it through MethodBreakdownSection (Q5, round 8 — AoX was the last hand-rolled site).
+    // Expander → src/components/Expander.jsx. Not used here, and since round 14 not reached from here
+    // at all: the last indirect route was through MethodBreakdownSection, and this file no longer
+    // renders a codes panel of any kind (see the MethodBreakdownSection entry near the bottom).
 
 
 
@@ -239,13 +267,17 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // artificial hold entirely: remaining=0, the splash stays only for the real boot work.
     const bootHoldRemaining=(shownAt:number|undefined,now:number,skipHold=false)=>skipHold?0:shownAt===undefined?500:Math.max(500-(now-shownAt),0);
 
-    // BootOverlay + BOOT_TRACE_ANIMATED -> src/components/BootOverlay.tsx, imported at top (still re-exported below for tests/bootFlowDriver.dom).
+    // BootOverlay -> src/components/BootOverlay.tsx, imported at top (and re-exported at the bottom of
+    // this file, which is how tests/bootFlowDriver.dom reaches it). BOOT_TRACE_ANIMATED — the flag that
+    // parks the animated trace, Backlog B2 — is a module-private const INSIDE that same file: not
+    // imported here, not exported, not re-exported. Flip it there.
 
     // RotateOverlay -> src/components/RotateOverlay.tsx, imported at top.
 
     // makeDedPuzzle -> src/lib/dedPuzzle.ts, imported at top.
 
-    // StatPanel → src/components/StatPanel.jsx, imported at top.
+    // StatPanel → src/components/StatPanel.jsx. NOT imported here: App shows no stats of its own.
+    // Rendered by all five mode screens.
 
     // CustomSelect → src/components/CustomSelect.jsx, imported at top.
 
@@ -255,7 +287,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
 
     // FlashMode -> src/modes/FlashMode.tsx, imported at top.
 
-    // BlitzBestRow -> src/components/BlitzBestRow.tsx, imported at top.
+    // BlitzBestRow -> src/components/BlitzBestRow.tsx. NOT imported here: modes/BlitzMode is its only
+    // consumer.
 
     // BlitzMode -> src/modes/BlitzMode.tsx, imported at top.
 
@@ -286,16 +319,22 @@ import BlitzMode from './modes/BlitzMode.jsx'
       useEffect(()=>{if(mode!=='guide')prevNonGuideModeRef.current=mode;},[mode]);
       const modeSelectRef=useRef<HTMLDivElement | null>(null);
       const [systemIsDark,setSystemIsDark]=useState(()=>typeof window!=="undefined"?window.matchMedia("(prefers-color-scheme: dark)").matches:true);
-      // ⚙ Settings store (Stage C, Step 5a). The 14 settings values live in the Zustand store
-      // (src/store/settings.js). App binds the VALUES — it needs every one of them for
-      // settingsStoreAtDefaults/isFullyReset, and several more for date generation and the mode
-      // props. It no longer binds the SETTERS: the only writer of a settings value is now the panel
-      // (components/SettingsPanel selects its own), and the only two App still needs are setMinY/
-      // setMaxY, which feed the year-range mirrors below. The Year Range boxes' two TEXT MIRRORS
-      // stay App state, in
+      // ⚙ Settings store (Stage C, Step 5a). ★ THE COUNT, AND WHICH SET IT COUNTS — three different
+      // numbers live in this area and conflating them is how the old comments went wrong:
+      //   14 = the settings the ⚙ store HOLDS AND PERSISTS (store/settings SETTINGS_DEFAULTS, and
+      //        therefore PERSISTED_KEYS). App binds all 14 as values below: it needs every one for
+      //        settingsStoreAtDefaults, and several again for date generation and the mode props.
+      //    3 = the store FUNCTIONS App binds — setMinY, setMaxY (they feed the year-range mirrors
+      //        below) and applySettings (Reset Settings / Full Reset write all 14 in one shot). The
+      //        other eleven per-value setters are NOT bound here: the only writer of a settings
+      //        value is the panel, and components/SettingsPanel selects its own.
+      //   18 = a different set entirely, and NOT what any of this judges — the Save Defaults
+      //        SNAPSHOT (those 14 + the 4 capturable mode prefs). It is counted at resetSettings
+      //        below, alongside how many of the 18 the gear actually compares.
+      // The Year Range boxes' two TEXT MIRRORS are in none of those counts: they stay App state, in
       // components/useYearRangeMirrors (called below) — they are not settings, they are what the
       // user is currently typing, and they deliberately disagree with the store until it commits.
-      // Each setter is selected individually so component re-renders only when the
+      // Each value is selected individually so a component re-renders only when the
       // specific value it reads changes (Zustand selector subscriptions).
       const useSystem=useSettings(s=>s.useSystem);
       const darkTheme=useSettings(s=>s.darkTheme);
@@ -1217,11 +1256,17 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // AND the four capturable mode-screen prefs (Flash speed, both Blitz timers, the AoX run length)
       // to their EFFECTIVE defaults: the user's saved personal defaults when they exist (Q7,
       // store/userDefaults), the factory launch values otherwise. This is the exact MIRROR of Save
-      // Defaults, which copies the same 18-value unit the other way — live → the snapshot, 14 settings
-      // + the 4 capturable prefs (this restore adds the 2 text mirrors, which are stored nowhere and so
-      // have nothing to copy back). The gear's "modified" bar judges 17 of those 18, or 16 with Use
-      // System Off: the theme trio is compared BY WHAT IS IN EFFECT, so the dormant value is excluded
-      // (settingsStoreAtDefaults below). A subset either way, so one tap always clears a lit gear
+      // Defaults, which copies the same 18-value unit the other way — live → the snapshot.
+      // ★ 18 IS THE SNAPSHOT'S SIZE, NOT THE GEAR'S. Keep the two apart:
+      //   18 RESTORED / SAVED = the 14 store settings + the 4 capturable prefs. (This restore also
+      //      rewrites the 2 year-range text mirrors, which are stored nowhere and so have nothing to
+      //      copy back — hence 20 written here, 18 in the snapshot.)
+      //   17 or 16 COMPARED by the gear's "modified" bar, which is a strict SUBSET of the 18: 11
+      //      plain settings + the 4 prefs + the theme trio judged BY WHAT IS IN EFFECT — 2 of the
+      //      three with Use System On (darkTheme/lightTheme), 1 with it Off (manualTheme). The
+      //      dormant value(s) — one with Use System On, TWO with it Off — are never compared;
+      //      settingsStoreAtDefaults below says why at length.
+      // A subset either way, so one tap always clears a lit gear
       // whatever diverged (round-6 extension: it used to touch the panel alone, stranding a gear lit
       // only by a mode-screen pref). Still leaves the NON-capturable
       // mode config (Blitz Per-Round/Question, Allow Mistakes, One-by-One, the Deduction sub-type, the
@@ -1335,9 +1380,14 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // panel that hosts its link, so 'settings' is still underneath all four and Back still
       // closes the modal first.
       useBackButton(mode==='guide', ()=>switchMode(prevNonGuideModeRef.current||'classic'), 'guide');
-      // True when every popover-controlled STORE value matches its EFFECTIVE default — the user's
-      // saved personal defaults when they exist (Q7, store/userDefaults), the factory launch
-      // values otherwise. STORE values only, and that is now the SINGLE definition of "changed"
+      // True when every popover-controlled STORE value THAT IS CURRENTLY IN EFFECT matches its
+      // EFFECTIVE default — the user's saved personal defaults when they exist (Q7,
+      // store/userDefaults), the factory launch values otherwise. ⚠ NOT "every store value": at
+      // least one of the theme trio is ALWAYS excluded (BOTH darkTheme and lightTheme while Use
+      // System is Off), which is the whole point of themeAtDefaults just below —
+      // 13 of the 14 settings are compared with Use System On, 12 with it Off. Say it that way; an
+      // "every value" phrasing here is the over-claim this comment used to make.
+      // STORE values only, and that is now the SINGLE definition of "changed"
       // behind all four offers (the ⚙ indicator, Save Defaults, Reset Settings, Full Reset):
       // half-typed year-range text changes nothing until it commits on blur/Enter. (Round 14, the
       // owner's call. Before it, Reset Settings and Full Reset additionally read the two year-range
@@ -1603,8 +1653,11 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // not "Julian/Julian/Gregorian". Cell ordering naturally produces Julian-first since
     // Julian months come first in the cell labels (e.g., Aug/Dec, Jan/Nov).
     // MethodBreakdownSection (the whole Show Codes panel: button, Expander, freeze contract) →
-    // src/components/MethodBreakdown.jsx, imported at top. All five of this file's codes panels
-    // go through it, AoX included since Q5 (round 8).
+    // src/components/MethodBreakdown.jsx. THE COMPONENT IS NOT IMPORTED HERE: this file renders no
+    // codes panel at all any more — all five went with the mode screens (AoX included since Q5,
+    // round 8) and Lookup's lives inside components/LookupCard. What App does import from that module
+    // is the `CodeDate` TYPE alone, and only to type the lookupCalcDate it threads to LookupCard.
+    // The ordering rules described just above are implemented there, not here.
 
     // LookupCard → src/components/LookupCard.jsx, imported at top.
 

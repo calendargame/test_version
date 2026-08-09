@@ -15,8 +15,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
-import { useSettings } from '../src/store/settings.js'
-import { useModePrefs } from '../src/store/modePrefs.js'
+import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
+import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
@@ -1134,5 +1134,120 @@ describe('Blitz — Q8 visual-only timing hide', () => {
     click(correctName(readDate())) // a Per Question solve
     expect(statValue('Score')).toBe('1/1')
     expect(statValue('Average')).toBe('—') // still hidden — the toggle is shared
+  })
+})
+
+// ── The behaviour net's two half-landed settings cases, finished here ─────────────────────────
+// _settings_net_spec.md's G7 case 3 and G10 case 5 each make a claim about a MODE SCREEN that the
+// net's own files could not make honestly. tests/settingsPanel.defaults pins the Classic screen
+// only, on the reasoning that Reset Settings bumps no remount key so one screen answers for six —
+// sound for the panel's own state, and not sound for a screen that RECONCILES itself against the
+// settings when the popover closes. Blitz and AoX are the two that do, and they are the two with
+// something in progress to lose, so both cases land in the files that already have the harness.
+//
+// ⚠ WHAT MAKES THE FIRST CASE A REAL QUESTION rather than a tautology, and it is the whole reason
+// it is written the way it is: the fixture above diverges three of the ten settings Blitz
+// reconciles against (randomFormat, dateFormat, minY). Measured against FACTORY defaults, Reset
+// Settings would restore all three, the deps would move, and the round would reset — correctly,
+// and for a reason that has nothing to do with the claim. Saving the fixture AS the user's
+// personal defaults leaves the reset exactly one thing to do (Input, a panel setting Blitz does
+// not read), which is the state in which "Reset Settings leaves the round alone" is falsifiable.
+describe('Blitz — the settings net: an in-progress round vs Reset Settings and Save Stats', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    useSettings.getState().resetSettings()
+    useModePrefs.getState().resetModePrefs()
+    useUserDefaults.getState().clearDefaults()
+    useProgress.getState().resetProgress()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings( \(|$)/ })))
+  // Freeze the CURRENT settings as the user's personal defaults, so "default" means this fixture.
+  // The four capturable prefs go in at their factory values, which is where this fixture leaves
+  // them — Reset Settings restores those too, and a snapshot that disagreed would move blitzSec.
+  const saveFixtureAsDefaults = () => {
+    const live = useSettings.getState()
+    const settings = {}
+    for (const k of Object.keys(SETTINGS_DEFAULTS)) settings[k] = live[k]
+    act(() =>
+      useUserDefaults.getState().saveDefaults({
+        settings,
+        prefs: {
+          flashMs: MODE_PREFS_DEFAULTS.flashMs,
+          blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
+          blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
+          aoxN: MODE_PREFS_DEFAULTS.aoxN,
+        },
+      }),
+    )
+  }
+  // The ⚙ panel's own Save Stats switch, pressed as a user presses it. Not a store write: G10 is
+  // about what the PANEL's controls do, and a setSaveStats() call would pass a rewrite that had
+  // stopped wiring the switch up at all.
+  const flipSaveStats = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Save Stats' })))
+
+  // G7 case 3, the Blitz half.
+  it('Reset Settings leaves a running round alone — on the tap, and again on the close', () => {
+    saveFixtureAsDefaults()
+    act(() => useSettings.getState().setInputStyle('dots')) // the one thing left to restore
+    mountApp()
+    switchToBlitz()
+    begin()
+    click(correctName(readDate()))
+    expect(statValue('Score')).toBe('1/1')
+    expect(ctrl('Reset')).toBeInTheDocument() // running
+    toggleSettings()
+    act(() => fireEvent.click(ctrl('Reset Settings')))
+    expect(useSettings.getState().inputStyle).toBe('buttons') // the reset really fired…
+    expect(ctrl('Reset')).toBeInTheDocument() // …and the round is untouched while the panel is up
+    expect(statValue('Score')).toBe('1/1')
+    toggleSettings() // close — the moment Blitz reconciles, and it has nothing to reconcile
+    expect(ctrl('Reset')).toBeInTheDocument()
+    expect(statValue('Score')).toBe('1/1')
+  })
+
+  // G10 case 5, the Blitz half — the Best-recording gate, which is the half that never landed.
+  // Asserted in BOTH directions in one test on purpose: "no Best was recorded" is a claim about an
+  // absence, and an absence is worthless without the same round proving a Best is recordable at
+  // all. The order is OFF first for that reason — a second round could not out-score the first on
+  // a frozen clock, so the ON leg has to be the one that starts from nothing.
+  it('Save Stats flipped in the panel gates the Best a finished round records, not just the readouts', () => {
+    mountApp()
+    switchToBlitz()
+    clickText('Allow Mistakes') // off → a wrong answer ends the round
+    toggleSettings()
+    flipSaveStats()
+    // Immediate, with the panel still open: the readouts stop showing what is no longer kept.
+    expect(statValue('Score')).toBe('—')
+    toggleSettings()
+    begin()
+    click(correctName(readDate()))
+    click(wrongName(readDate())) // the round ends on an internally-tracked score of 1
+    expect(screen.getByText(/Best Score: —/)).toBeInTheDocument()
+    expect(useProgress.getState().blitzBest).toEqual({}) // nothing was written
+    // …and the control: the same round, the same score, with the switch back on.
+    clickText('Reset')
+    toggleSettings()
+    flipSaveStats()
+    expect(statValue('Score')).toBe('0/0') // the readouts are back
+    toggleSettings()
+    begin()
+    click(correctName(readDate()))
+    click(wrongName(readDate()))
+    expect(screen.getByText(/Best Score: 1/)).toBeInTheDocument()
+    expect(Object.keys(useProgress.getState().blitzBest)).toHaveLength(1)
   })
 })

@@ -14,8 +14,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
-import { useSettings } from '../src/store/settings.js'
-import { useModePrefs } from '../src/store/modePrefs.js'
+import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
+import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
@@ -1322,5 +1322,121 @@ describe('app-wide — no items-center flex row mixes an <input> with a <button>
       fireEvent.click(screen.getByRole('button', { name: /settings/i }))
     })
     expect(offenders()).toEqual([])
+  })
+})
+
+// ── The behaviour net's two half-landed settings cases, finished here ─────────────────────────
+// _settings_net_spec.md's G7 case 3 and G10 case 5 each make a claim about a MODE SCREEN that the
+// net's own files could not make honestly. tests/settingsPanel.defaults pins the Classic screen
+// only, on the reasoning that Reset Settings bumps no remount key so one screen answers for six —
+// sound for the panel's own state, and not sound for a screen that RECONCILES itself against the
+// settings when the popover closes. AoX and Blitz are the two that do, and they are the two with
+// something in progress to lose, so both cases land in the files that already have the harness.
+// tests/blitz.dom carries the same pair; the two are deliberately parallel, because the whole
+// question is whether the claim holds for BOTH reconciling screens rather than one of them.
+//
+// ⚠ WHAT MAKES THE FIRST CASE A REAL QUESTION rather than a tautology: pin() diverges three of the
+// nine settings AoX reconciles against (randomFormat, dateFormat, minY). Measured against FACTORY
+// defaults, Reset Settings would restore all three, the deps would move, and the run would reset —
+// correctly, and for a reason that has nothing to do with the claim. Saving the fixture AS the
+// user's personal defaults leaves the reset exactly one thing to do (Input, a panel setting AoX
+// does not read), which is the state in which "Reset Settings leaves the run alone" is falsifiable.
+// ⚠ And aoxN stays at its factory '10' throughout that case for the same reason: it IS one of the
+// nine (round-6 Q7), and the describe above already pins what a Reset Settings that MOVES it does.
+describe('AoX — the settings net: an in-progress run vs Reset Settings and Save Stats', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pin()
+    useModePrefs.getState().resetModePrefs()
+    useUserDefaults.getState().clearDefaults()
+    useProgress.getState().resetProgress()
+  })
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  const toggleSettings = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings( \(|$)/ })))
+  // Freeze the CURRENT settings as the user's personal defaults, so "default" means this fixture.
+  // The four capturable prefs go in at their factory values, which is where this fixture leaves
+  // them — Reset Settings restores those too, and a snapshot that disagreed would move aoxN.
+  const saveFixtureAsDefaults = () => {
+    const live = useSettings.getState()
+    const settings = {}
+    for (const k of Object.keys(SETTINGS_DEFAULTS)) settings[k] = live[k]
+    act(() =>
+      useUserDefaults.getState().saveDefaults({
+        settings,
+        prefs: {
+          flashMs: MODE_PREFS_DEFAULTS.flashMs,
+          blitzSec: MODE_PREFS_DEFAULTS.blitzSec,
+          blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
+          aoxN: MODE_PREFS_DEFAULTS.aoxN,
+        },
+      }),
+    )
+  }
+  // The ⚙ panel's own Save Stats switch, pressed as a user presses it. Not a store write: G10 is
+  // about what the PANEL's controls do, and a setSaveStats() call would pass a rewrite that had
+  // stopped wiring the switch up at all.
+  const flipSaveStats = () =>
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Save Stats' })))
+
+  // G7 case 3, the AoX half.
+  it('Reset Settings leaves a running run alone — on the tap, and again on the close', () => {
+    saveFixtureAsDefaults()
+    act(() => useSettings.getState().setInputStyle('dots')) // the one thing left to restore
+    mountApp()
+    switchToAox()
+    click('Begin')
+    answerCorrect()
+    const inPlay = readDate() // the question the run is now on
+    const score = statValue('Score')
+    expect(ctrl('Reset')).toBeInTheDocument() // running
+    toggleSettings()
+    act(() => fireEvent.click(ctrl('Reset Settings')))
+    expect(useSettings.getState().inputStyle).toBe('buttons') // the reset really fired…
+    expect(ctrl('Reset')).toBeInTheDocument() // …and the run is untouched while the panel is up
+    expect(statValue('Score')).toBe(score)
+    toggleSettings() // close — the moment AoX reconciles, and it has nothing to reconcile
+    expect(ctrl('Reset')).toBeInTheDocument()
+    expect(statValue('Score')).toBe(score)
+    expect(readDate()).toEqual(inPlay) // the same question, not a regenerated one
+  })
+
+  // G10 case 5, the AoX half — the Best-recording gate, which is the half that never landed.
+  // Asserted in BOTH directions in one test on purpose: "no Best was recorded" is a claim about an
+  // absence, and an absence is worthless without the same run proving a Best is recordable at all.
+  // The order is OFF first for that reason — on a frozen clock a second run cannot beat the first,
+  // so the ON leg has to be the one that starts from nothing.
+  it('Save Stats flipped in the panel gates the Best a completed run records, not just the readouts', () => {
+    useModePrefs.getState().setAoxN('2') // an Ao2 completes in two answers
+    mountApp()
+    switchToAox()
+    toggleSettings()
+    flipSaveStats()
+    // Immediate, with the panel still open: the readouts stop showing what is no longer kept.
+    expect(statValue('Score')).toBe('—')
+    toggleSettings()
+    click('Begin')
+    answerCorrect()
+    answerCorrect() // the run COMPLETES — Save Stats off never stopped it running
+    expect(ctrl('Reset')).toBeInTheDocument()
+    expect(bestVal('Average')).toBe('—')
+    expect(useProgress.getState().aoxBest).toEqual({}) // nothing was written
+    // …and the control: the same run, with the switch back on.
+    click('Reset')
+    toggleSettings()
+    flipSaveStats()
+    expect(statValue('Score')).toBe('0/0') // the readouts are back
+    toggleSettings()
+    click('Begin')
+    answerCorrect()
+    answerCorrect()
+    expect(Object.keys(useProgress.getState().aoxBest)).toHaveLength(1)
+    expect(bestVal('Average')).not.toBe('—')
   })
 })

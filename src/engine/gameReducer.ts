@@ -679,7 +679,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     // Blitz per-question timeout: on a pristine question, count a played miss (this action sets
     // no `countedWrong`, so a pristine expiry opens no Override path) + show the answer. On a
     // burned question (per-Q + Allow Mistakes: answered wrong, then the clock died) `countedWrong`
-    // is ALREADY set, so that end stays Override-rescuable (main.tsx's resumableEnd) and the
+    // is ALREADY set, so that end stays Override-rescuable (modes/BlitzMode's resumableEnd — it
+    // moved out of main.tsx with the mode screen) and the
     // played increment is not repeated (the guard below). The round-over lock is the component's
     // (!active disables the grid). Distinct from LOCK_REVEAL (no stat) + REVEAL (countedWrong).
     case 'TIMEOUT_MISS': {

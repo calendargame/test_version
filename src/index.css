@@ -481,7 +481,8 @@ button:focus,select:focus{outline:none}
    border WIDTH (no background/border-colour, so the state class wins those). --ans-h must equal
    BASE_BTN's metrics so the two layouts match height: 4 rows × (text-base 1.5rem line + py-3 1.5rem +
    1px×2 border) + 3 × gap-3 0.75rem = 14.25rem + 8px (the rem part tracks the fluid root, so the dot
-   box scales with the buttons across devices). ⚠ That gap-3 term is main.tsx's ANSWER_GRID_GAP, and
+   box scales with the buttons across devices). ⚠ That gap-3 term is ANSWER_GRID_GAP, which lives in
+   src/components/controlClasses.ts (not main.tsx, which no longer imports that module at all), and
    this is the ONLY place the answer-grid gutter is spelled outside that constant (a Tailwind class
    can't be read from CSS) — if ANSWER_GRID_GAP changes, this arithmetic changes with it. The dot
    layout has no gutter of its OWN: the cluster is a square 3×3 place-items:center grid spaced by
@@ -492,13 +493,16 @@ button:focus,select:focus{outline:none}
 .dot-cluster{--dot-frac:72%;inline-size:min(var(--ans-h),100%);aspect-ratio:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);place-items:center}
 .dot-btn{inline-size:var(--dot-frac);aspect-ratio:1;border-radius:50%;border-width:1px;border-style:solid}
 .dot-btn.drag-target{outline:none;box-shadow:0 0 0 2px var(--drag-ring)}
-/* Q8 — the ⚙ gear "modified" indicator: a flush inside-bottom 2px violet bar shown while any menu
-   setting or any of the four capturable mode-screen prefs (Flash speed, both Blitz timers, AoX run
-   length) diverges from the user's saved defaults (the factory launch values when none are saved —
-   store/userDefaults). ONE EXCLUSION, and it is deliberate: the theme trio is compared by what is
-   IN EFFECT, so the dormant value — manualTheme while Use System is On, darkTheme/lightTheme while
-   it is Off — never counts (settingsStoreAtDefaults in main.tsx says why). Since round 14 the same
-   boolean also dims Save Defaults AND Reset Settings, so this paragraph describes all three.
+/* Q8 — the ⚙ gear "modified" indicator: a flush inside-bottom 2px violet bar shown while any
+   CURRENTLY-IN-EFFECT menu setting, or any of the four capturable mode-screen prefs (Flash speed,
+   both Blitz timers, AoX run length), diverges from the user's saved defaults (the factory launch
+   values when none are saved — store/userDefaults). ⚠ "in effect" is load-bearing, not filler: it
+   is NOT every menu setting. The theme trio is compared by what is IN EFFECT, so at least one of
+   the three is always excluded — manualTheme while Use System is On, BOTH darkTheme and lightTheme
+   while it is Off — and the dormant values never count (settingsStoreAtDefaults in main.tsx says
+   why). That makes the compared set 17 of the snapshot's 18 values with Use System On, 16 with it
+   Off. Since round 14 the same boolean also dims Save Defaults AND Reset Settings, so this
+   paragraph describes all three.
    Violet, not the rose reset red — "customized" is a benign state, not a
    warning. App applies the class only while the popover is CLOSED (the open gear is solid purple). */
 .gear-modified{position:relative}
@@ -543,9 +547,9 @@ button:focus,select:focus{outline:none}
    dismissBootSplash once it's been visible ≥0.5s and the real stylesheet has applied).
    Theme-aware bg (--bg1); logo lavender on dark themes, brand-purple on the light themes for contrast. The
    trace is currently STATIC — fully drawn, stroke dimmed 0.7 (the dash-sweep flow is parked behind
-   BOOT_TRACE_ANIMATED in main.tsx; Backlog B2 revisits it); "Updating" has a sequential
-   three-dot pulse. Mirrors the approved mockup + index.html's static boot (Loading) splash.
-   The Q11 rotate-back overlay (main.tsx RotateOverlay) reuses this whole frame —
+   BOOT_TRACE_ANIMATED in src/components/BootOverlay.tsx; Backlog B2 revisits it); "Updating" has a
+   sequential three-dot pulse. Mirrors the approved mockup + index.html's static boot (Loading) splash.
+   The Q11 rotate-back overlay (src/components/RotateOverlay.tsx) reuses this whole frame —
    .boot-overlay/.boot-mark/.boot-glow — with its own .rotate-caption line (same recipe as
    .boot-updating, shared below) so the portrait-lock screen speaks the same visual language. */
 .boot-overlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg1);color:#c4b5fd}
@@ -563,7 +567,7 @@ button:focus,select:focus{outline:none}
    249307), so the driver emits non-negative offsets over a two-value dasharray sized to the TRUE
    measured path length (~170.9; the old CSS assumed 174). Do not re-add an animation here — a
    running CSS animation would beat the driver's inline styles in the cascade.
-   Driver currently DISABLED (BOOT_TRACE_ANIMATED=false in main.tsx — the trace renders static); retained for restoration. */
+   Driver currently DISABLED (BOOT_TRACE_ANIMATED=false in src/components/BootOverlay.tsx — the trace renders static); retained for restoration. */
 .boot-flow{stroke-dasharray:174 174}
 /* Diagonal-split background for stack entries that have been retroactively
    overridden right→wrong (e.g., user got it correct, later flipped via Override on

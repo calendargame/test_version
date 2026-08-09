@@ -26,7 +26,8 @@ import { PillGroupLock } from './pillGroupLock.js'
 //     pointers and nothing else.
 //
 // WHY THE GROUP OWNS THIS AND NOT THE TRAY: a group is a CHOICE, not a row (THE PICKER RULE,
-// stated at the Display section of main.tsx). Date Format is five formats across TWO trays, and
+// stated at the Display section — which lives in components/SettingsPanel since round 14, not
+// main.tsx). Date Format is five formats across TWO trays, and
 // Theme is five themes across two trays whenever Use System is off — a tray-scoped
 // implementation would give those groups two tab stops and would refuse to arrow from the last
 // Written format into the first Numeric one. Scoping to the group makes the one-tray and

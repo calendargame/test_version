@@ -98,6 +98,45 @@ describe('userDefaults pure helpers', () => {
     expect(normalizeAoxN('abc')).toBe('10') // non-numeric → fallback
   })
 
+  // ★ THE FALSY-ZERO PATH — pre-existing defect D5 in _settings_net_spec.md, PINNED AS-IS AND NOT
+  // FIXED. This is a characterization test: every expectation below is what the app does TODAY,
+  // and none of it is a claim that today's answer is the right one.
+  //
+  // WHAT IT IS. The clamp is `Math.max(2, Math.min(1000, parseInt(s) || 10))`. `parseInt('0')` is
+  // 0, 0 is FALSY, so `|| 10` swallows it and '0' comes out as TEN — not as the 2 the low clamp
+  // would give it, and not as the 2 that '1' beside it gets. Every other under-2 number DOES land
+  // on 2, so the sequence −1 → 0 → 1 reads 2, 10, 2: the fallback punches a hole in the middle of
+  // the clamp. Nothing covered '0' or a negative before this, in this file or anywhere.
+  //
+  // WHY IT IS WORTH A TEST RATHER THAN A FIX. It is reachable — the AoX run-length box accepts
+  // digits and commits on blur/Enter/Escape (src/modes/AoxMode.tsx ~531), so typing 0 and tabbing
+  // away really does produce an Ao10 — and it is exactly the shape of thing a later tidy-up
+  // "corrects" in passing. `|| 10` → `?? 10`, or an explicit Number.isNaN check, moves '0' from
+  // '10' to '2' silently and changes what thirteen call sites answer: prefsMatchDefaults on both sides
+  // (store/userDefaults), AoxMode's run length, its freshness compare and its three commits, the
+  // Save-Defaults and manager seeds and commits (components/SettingsPanel), and the defaults
+  // card's dirty check, commit and slider value (components/DefaultsCard). Two of those coerce
+  // straight to a number (`+normalizeAoxN(...)`), so the change would silently shorten a run.
+  //
+  // So: if this test goes red, the behaviour changed. That is either a deliberate decision the
+  // owner made — in which case update the expectations here in the same commit — or an accident,
+  // which is the whole reason the case exists.
+  it('normalizeAoxN sends 0 to 10 rather than to 2, because 0 is falsy (defect D5, pinned not fixed)', () => {
+    // The hole itself, and its neighbours on either side, so the discontinuity is the assertion
+    // rather than a lone value that could be read as ordinary clamping.
+    expect(normalizeAoxN('-1')).toBe('2') // below the floor → the floor
+    expect(normalizeAoxN('0')).toBe('10') // …but zero is falsy, so it takes the FALLBACK
+    expect(normalizeAoxN('1')).toBe('2') // and one is back to the floor
+    // Every spelling of zero the box or a persisted snapshot can hold takes the same branch.
+    expect(normalizeAoxN('00')).toBe('10')
+    expect(normalizeAoxN('000')).toBe('10') // the leading-zero form '007' normalizes to 7
+    expect(normalizeAoxN('-0')).toBe('10')
+    expect(normalizeAoxN('0.9')).toBe('10') // parseInt stops at the dot → 0 → falsy
+    // Negatives are otherwise ordinary: they are clamped, never sent to the fallback.
+    expect(normalizeAoxN('-5')).toBe('2')
+    expect(normalizeAoxN('-9999')).toBe('2')
+  })
+
   it('prefsMatchDefaults compares the 4 prefs with aoxN normalized on BOTH sides', () => {
     expect(prefsMatchDefaults(FACTORY_PREFS, FACTORY_PREFS)).toBe(true)
     // A transient unclamped aoxN string must not read as a divergence its committed value lacks.

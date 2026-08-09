@@ -63,8 +63,10 @@ export const effectiveSettingsDefaults = (saved: SavedDefaults | null): Settings
 export const effectivePrefDefaults = (saved: SavedDefaults | null): PrefDefaults =>
   saved ? { ...FACTORY_PREF_DEFAULTS, ...saved.prefs } : FACTORY_PREF_DEFAULTS
 
-// The AoX run-length clamp — the rule's ONE home (Q18): the AoX input's blur/Enter/Escape commits
-// and the Save Defaults popup's N field (both main.tsx) all call it. 2–1000, non-numeric → 10.
+// The AoX run-length clamp — the rule's ONE home (Q18): the AoX run-length box's blur/Enter/Escape
+// commits (modes/AoxMode), the Save Defaults and manage-defaults N fields (components/SettingsPanel)
+// and the defaults card's own N field (components/DefaultsCard) all call it — plus prefsMatchDefaults
+// just below, which re-normalizes both sides. 2–1000, non-numeric → 10.
 export const normalizeAoxN = (s: string): string =>
   String(Math.max(2, Math.min(1000, parseInt(s) || 10)))
 

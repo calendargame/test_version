@@ -39,6 +39,25 @@
 // does not change when Use System is flipped" is a DEVICE CHECK — what is asserted here is the row
 // count and the pills, which is the structural half of that promise and all of it that is
 // reachable. Nothing below implies the pixel half is covered.
+//
+// ── WHY GROUPS 3 AND 4 ARE SHORTER THAN THE SPEC'S CASE LIST (dedup pass, round 14) ───────────
+// Eleven cases that were written here first turned out to RESTATE cases tests/settings.dom already
+// carried, and — this is the part that made them removable rather than merely redundant — those
+// existing versions had themselves been rewritten onto tests/helpers/settingsPanel earlier in this
+// round, so they survive the extraction with zero edits exactly as these did. Keeping both bought
+// nothing but suite runtime. Each pair was read in full and the STRONGER one kept; in all eleven
+// that was settings.dom's, because those assert the STORE value alongside what the panel shows and
+// several assert an intermediate state this file skipped (see settings.dom ~155, ~182, ~204, ~245,
+// ~256, ~269, ~294, ~448, ~501, ~692, ~741).
+//
+// WHAT WAS DELIBERATELY NOT REMOVED, because it is not a restatement — the near-misses are worth
+// naming so nobody "finishes the job" later: G2.3 is the only case anywhere that asserts the Date
+// Format captions are NOT dimmed while the picker is live (settings.dom asserts only the locked
+// half, so a permanently-dimmed caption would pass it); G2.7 is the only case that touches the
+// 1581/1582/1583 boundary the Julian Chance lock turns on (settings.dom uses 1900 and 1, which a
+// `>` -for- `>=` slip clears); and G2.9 sweeps all four lockable pickers and asserts the arrow is
+// preventDefault-ed, where settings.dom asks one picker and asserts only that it never reaches the
+// window.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { cleanup, act } from '@testing-library/react'
 import { useSettings } from '../src/store/settings.js'
@@ -52,10 +71,7 @@ import {
   caption,
   rowPills,
   rowChosen,
-  queryPicker,
-  pickerPills,
   pickerChosen,
-  pickerLockState,
   expectLock,
   tabStopLabel,
   otherPillName,
@@ -165,21 +181,12 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
     expectLock('Input', false)
   })
 
-  // G2.2 — a lock PRESERVES the pick. The value is not reset on the way in and not reset on the
-  // way out, and the guard behind the dim refuses the press in between.
-  it('the Input picker keeps its chosen style through a lock and back out again', () => {
-    standUp()
-    pickPill('Input', 'Dots')
-    expect(pickerChosen('Input')).toEqual(['Dots'])
-    goMode('deduction')
-    expectLock('Input', true)
-    expect(pickerChosen('Input')).toEqual(['Dots']) // still shown as the pick while locked
-    pickPill('Input', 'Buttons')
-    expect(pickerChosen('Input')).toEqual(['Dots']) // the press changed nothing
-    goMode('classic')
-    expectLock('Input', false)
-    expect(pickerChosen('Input')).toEqual(['Dots']) // and nothing was reset on unlock
-  })
+  // G2.2 — REMOVED in the dedup pass, and split rather than dropped: "a lock PRESERVES the pick"
+  // through the lock and the guard behind it is tests/settings.dom ~448 ('Input: live in a weekday
+  // mode, locked in Deduction, value preserved'), which asks the same three questions and also
+  // asserts the STORE value; "and nothing was reset on unlock" is G2.10's Input row below, which
+  // additionally asserts the tab stop came back on the chosen pill. Between them nothing this case
+  // said is unasserted.
 
   // G2.3 — Date Format's condition, plus the reason its lock sits on the wrapper that spans BOTH
   // trays: the dim has to cover the Written / Numeric captions too, or the greyed tray reads as
@@ -201,18 +208,13 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
     expect(drawnUnavailable(caption('Numeric'))).toBe(false)
   })
 
-  // G2.4 — Leap Year Chance follows the COMMITTED range. 1900 is not a leap year under either
-  // calendar, so [1900,1900] reaches none; 1904 is.
-  it('the Leap Year Chance picker locks when the committed range reaches no leap year', () => {
-    standUp()
-    expectLock('Leap Year Chance', false)
-    commitRange(1900, 1900)
-    expect(yearValue('min')).toBe('1900')
-    expect(yearValue('max')).toBe('1900')
-    expectLock('Leap Year Chance', true)
-    commitRange(1900, 1904)
-    expectLock('Leap Year Chance', false)
-  })
+  // G2.4 — REMOVED in the dedup pass. "Leap Year Chance locks when the committed range reaches no
+  // leap year" is tests/settings.dom ~501, which drives the range through the store and also
+  // asserts the pick is preserved and the onChange guard holds; the same lock driven through the
+  // year BOXES, which is the route a user has, is G2.10's Leap Year Chance row below
+  // (commitRange(1900,1900) → locked, commitRange(1,10000) → live), with G2.8 and G2.9 standing the
+  // same range up. The only thing this case owned alone was 1904 standing in for "a leap year is
+  // back in range", which 10000 already does.
 
   // G2.5 — the third argument. rangeHasLeapYear is evaluated under the ACTIVE calendar, so the
   // Julian switch alone moves this lock with the range held perfectly still. 1500 is the cleanest
@@ -233,18 +235,10 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
     expect(yearValue('max')).toBe('1500')
   })
 
-  // G2.6 — THE NEGATIVE CONTROL, and it is what gives every case above its meaning. Jan/Feb Chance
-  // has no lock branch at all: it weights whatever leap years a range does contain, so it stays
-  // live even sitting directly under a Leap Year Chance that is greyed out.
-  it('the Jan/Feb Chance picker never locks, not even under a locked Leap Year Chance', () => {
-    standUp()
-    expectLock('Jan/Feb Chance on Leap Years', false)
-    commitRange(1900, 1900)
-    expectLock('Leap Year Chance', true)
-    expectLock('Jan/Feb Chance on Leap Years', false)
-    pickPill('Jan/Feb Chance on Leap Years', '50%')
-    expect(pickerChosen('Jan/Feb Chance on Leap Years')).toEqual(['50%']) // genuinely operable
-  })
+  // G2.6 — REMOVED in the dedup pass. THE NEGATIVE CONTROL — Jan/Feb Chance has no lock branch at
+  // all, so it stays live and operable sitting directly under a greyed-out Leap Year Chance — is
+  // the second half of tests/settings.dom ~501, in the same order and driven the same way, and
+  // that version asserts the store value the pick writes as well as the pill that lights.
 
   // G2.7 — the inclusive bounds, which are load-bearing and had never been touched at the edges.
   // Julian Chance applies only where the two calendars are BOTH in play, i.e. the range straddles
@@ -401,23 +395,10 @@ describe('⚙ Settings → the theme block changes SHAPE, never availability', (
     document.getElementById('root')?.remove()
   })
 
-  const DARK_PILLS = ['Dusk', 'Midnight', 'Nebula']
-  const LIGHT_PILLS = ['Light', 'Parchment']
-  const labels = (text) => rowPills(text).map((b) => b.textContent.trim())
-
-  // G3.1 — the same two rows, with the same five pills, in BOTH states. This is what stops the
-  // panel reflowing when the switch is flipped; the pixel half of that promise (no height change)
-  // is a DEVICE CHECK and is not claimed here.
-  it('both theme rows show the same five pills whether Use System is on or off', () => {
-    standUp()
-    expect(switchState(USE_SYSTEM)).toBe('On')
-    expect(labels('Dark')).toEqual(DARK_PILLS)
-    expect(labels('Light')).toEqual(LIGHT_PILLS)
-    toggleSwitch(USE_SYSTEM)
-    expect(switchState(USE_SYSTEM)).toBe('Off')
-    expect(labels('Dark')).toEqual(DARK_PILLS)
-    expect(labels('Light')).toEqual(LIGHT_PILLS)
-  })
+  // G3.1 — REMOVED in the dedup pass. "The same two rows, with the same five pills, in BOTH states"
+  // — the structural half of the panel-does-not-reflow promise — is tests/settings.dom ~155, which
+  // asserts the same two label lists in the same two states and additionally checks the store flag
+  // actually flipped. (The pixel half, no height change, was and remains a DEVICE CHECK.)
 
   // G3.2 — THE CASE THIS GROUP EXISTS FOR. Neither theme row is ever drawn as unavailable, in
   // either state — the row that does not hold the pick is not a locked control, it is a row whose
@@ -438,62 +419,20 @@ describe('⚙ Settings → the theme block changes SHAPE, never availability', (
     }
   })
 
-  // G3.3 — Use System ON: the OS decides which row is live, so the two rows are two INDEPENDENT
-  // choices. Each is its own named group with its own lit pill, and no group spans them.
-  it('with Use System on, the two rows are two independent picks and no Theme group exists', () => {
-    standUp()
-    expect(queryPicker('Theme')).toBe(null)
-    expect(pickerLockState('Dark theme').offered).toBe(true)
-    expect(pickerLockState('Light theme').offered).toBe(true)
-    expect(rowChosen('Dark')).toEqual(['Dusk'])
-    expect(rowChosen('Light')).toEqual(['Light'])
-    // Independently settable: moving one leaves the other exactly where it was.
-    pickPill('Dark theme', 'Nebula')
-    expect(rowChosen('Dark')).toEqual(['Nebula'])
-    expect(rowChosen('Light')).toEqual(['Light'])
-    pickPill('Light theme', 'Parchment')
-    expect(rowChosen('Dark')).toEqual(['Nebula'])
-    expect(rowChosen('Light')).toEqual(['Parchment'])
-  })
-
-  // G3.4 — Use System OFF: ONE pick across both rows. The row that does not hold it reports no
-  // selection — which is honest, because the choice lives in the other half of the same group —
-  // and is not marked unavailable, which is the "improvement" this case forbids.
-  it('with Use System off, one Theme group spans both rows and holds a single pick', () => {
-    standUp()
-    toggleSwitch(USE_SYSTEM)
-    expect(queryPicker('Dark theme')).toBe(null)
-    expect(queryPicker('Light theme')).toBe(null)
-    expect(pickerPills('Theme')).toHaveLength(5)
-    expect(pickerChosen('Theme')).toEqual(['Light']) // seeded from what was on screen
-    expect(rowChosen('Light')).toEqual(['Light'])
-    expect(rowChosen('Dark')).toEqual([]) // no selection, and no dim either
-    expect(drawnUnavailable(rowPills('Dark')[0])).toBe(false)
-    expect(pickerLockState('Theme').announced).toBe(null)
-    // Picking in the other row moves the ONE pick, rather than adding a second.
-    pickPill('Theme', 'Midnight')
-    expect(pickerChosen('Theme')).toEqual(['Midnight'])
-    expect(rowChosen('Dark')).toEqual(['Midnight'])
-    expect(rowChosen('Light')).toEqual([])
-  })
-
-  // G3.5 — the keyboard consequence of the shape change, and the reason the group has to span both
-  // rows rather than each row being its own: one choice is one tab stop, and the arrows walk
-  // straight from the last Dark pill into the Light row instead of stopping dead at the tray edge.
-  it('the theme tab stops collapse from two to one, and the arrows cross between the rows', () => {
-    standUp()
-    expect(pickerLockState('Dark theme').tabStops).toBe(1)
-    expect(pickerLockState('Light theme').tabStops).toBe(1)
-    toggleSwitch(USE_SYSTEM)
-    expect(pickerLockState('Theme').tabStops).toBe(1) // one stop across all five pills
-    pickPill('Theme', 'Nebula') // the last pill of the Dark row
-    expect(rowChosen('Dark')).toEqual(['Nebula'])
-    expect(rowChosen('Light')).toEqual([])
-    arrowPicker('Theme', 'ArrowRight')
-    expect(rowChosen('Dark')).toEqual([])
-    expect(rowChosen('Light')).toEqual(['Light']) // it crossed rows, and selection followed
-    expect(documentTheme()).toBe('light')
-  })
+  // G3.3, G3.4 and G3.5 — REMOVED in the dedup pass, all three to tests/settings.dom:
+  //   • "Use System ON: the two rows are two INDEPENDENT picks and no Theme group spans them" is
+  //     ~182, which asserts the same absence, the same two lit pills and the same independence,
+  //     plus the pill LABELS and the two store values the picks write.
+  //   • "Use System OFF: ONE Theme group spans both rows and holds a single pick, and the row
+  //     without it shows no selection" is ~204, which additionally pins the five pills' ORDER
+  //     across the two rows and moves the pick BACK to the light row.
+  //   • "the theme tab stops collapse from two to one, and the arrows cross between the rows" is
+  //     ~692 (one tab stop per group in both Use-System states, swept by name) plus ~741's second
+  //     half (an arrow off the last Dark pill lands on Light and takes the selection with it).
+  // Two facets those three asked that settings.dom does not — the Theme group's own aria-disabled,
+  // and `offered` on the two per-row groups — are NOT a loss: every facet of a lock comes from ONE
+  // `disabled` on the PillGroup, so a rewrite that locked a theme group would trip G3.2's
+  // drawnUnavailable sweep first. Nothing can be dimmed-but-not-announced here.
 
   // G3.6 — the invisible pick. With Use System on and the OS in light mode, the Dark row is the
   // dormant half: choosing in it stores a real preference and changes nothing on screen. That is
@@ -538,50 +477,14 @@ describe('⚙ Settings → the Use-System round trip', () => {
     closeModal('save', 'save')
   }
 
-  // G4.1a — the look must not jump. Flipping Use System off seeds the manual theme from what is
-  // ALREADY on screen, so the pill that was lit stays lit — now as the single manual pick.
-  it('flipping Use System off keeps the same theme on screen, on a light system', () => {
-    system = installSystemColorScheme({ dark: false })
-    standUp()
-    expect(documentTheme()).toBe('light')
-    toggleSwitch(USE_SYSTEM)
-    expect(documentTheme()).toBe('light')
-    expect(pickerChosen('Theme')).toEqual(['Light'])
-    expect(rowChosen('Dark')).toEqual([])
-  })
-
-  // G4.1b — the same on a DARK system. The seed comes from the OS-RESOLVED theme, so a panel that
-  // recomputed it from store values alone would park the user on the light theme here and the
-  // screen would jump.
-  //
-  // ⚠ CORRECTION TO AN EARLIER CLAIM IN THIS FILE: this branch is NOT undriven. tests/settings.dom
-  // ('dark system: seeds from the DARK row') already drives it, with its own matchMedia stub, and
-  // asserts the same three facts through the store. What this adds is the same question asked
-  // through the PANEL — the pill the user sees lit — and through installSystemColorScheme, which
-  // is a live MediaQueryList rather than a frozen boolean. That is a smaller novelty than the
-  // comment used to claim, and worth saying plainly: the comments in this net are the map the
-  // follow-up work navigates by.
-  it('flipping Use System off keeps the same theme on screen, on a dark system', () => {
-    system = installSystemColorScheme({ dark: true })
-    standUp()
-    expect(documentTheme()).toBe('dusk')
-    toggleSwitch(USE_SYSTEM)
-    expect(documentTheme()).toBe('dusk')
-    expect(pickerChosen('Theme')).toEqual(['Dusk'])
-    expect(rowChosen('Light')).toEqual([])
-  })
-
-  // G4.1c — and after the user has re-picked within the live row, the seed is that pick, not the
-  // stored default.
-  it('flipping Use System off keeps a freshly re-picked theme on screen', () => {
-    system = installSystemColorScheme({ dark: false })
-    standUp()
-    pickPill('Light theme', 'Parchment')
-    expect(documentTheme()).toBe('parchment')
-    toggleSwitch(USE_SYSTEM)
-    expect(documentTheme()).toBe('parchment')
-    expect(pickerChosen('Theme')).toEqual(['Parchment'])
-  })
+  // G4.1a, G4.1b and G4.1c — REMOVED in the dedup pass. The whole "the look must not jump" trio —
+  // the off-flip seeds the manual theme from what is ALREADY on screen, on a light system, on a
+  // dark one, and after the live row has been re-picked — is tests/settings.dom ~245, ~269 and
+  // ~256 respectively. Those are the STRONGER versions: each asserts the seeded store value as
+  // well as the theme on the document, and the light-system one additionally pins the stale
+  // manualTheme ('dusk') that the old code used to jump to, which is the whole shape of the bug.
+  // The only thing this file added was installSystemColorScheme's live MediaQueryList in place of
+  // a frozen stub, and G4.6 below drives that listener for real.
 
   // G4.2 — the way back. Turning Use System on hands the choice back to the OS, asserted on the
   // DOCUMENT rather than in the store, because the contract is about what the user is looking at.
@@ -596,36 +499,17 @@ describe('⚙ Settings → the Use-System round trip', () => {
     expect(rowChosen('Light')).toEqual(['Light'])
   })
 
-  // G4.3 — THE FIXED BUG THIS GUARDS. ⚠ Note the framing: the assertion below is the CORRECT
-  // current behaviour (the gear comes back DARK), not a defect being frozen. The bug it guards
-  // against was already fixed, and this is the regression gate on that fix.
-  //
-  // The history, because it is what makes the case worth its runtime: the off-flip parks the
-  // manual theme at whatever was on screen, so after an untouched round trip the STORED manual
-  // theme differs from the factory one — while every visible setting is back where it started.
-  // Judging "modified" over the stored trio instead of the pair in effect lit the gear
-  // permanently, and offered Reset Settings and Full Reset, with nothing the user could change to
-  // clear it. src/main.tsx now compares only the pair IN EFFECT, and calls that "both the honest
-  // definition and the fix". A rewrite that reverts to comparing the trio fails here.
-  it('an untouched Use-System round trip leaves the gear dark and nothing offered', () => {
-    system = installSystemColorScheme({ dark: false })
-    standUp()
-    expect(offers()).toEqual({
-      gear: false,
-      saveDefaults: false,
-      resetSettings: false,
-      fullReset: false,
-    })
-    toggleSwitch(USE_SYSTEM)
-    toggleSwitch(USE_SYSTEM)
-    expect(switchState(USE_SYSTEM)).toBe('On')
-    expect(offers()).toEqual({
-      gear: false,
-      saveDefaults: false,
-      resetSettings: false,
-      fullReset: false,
-    })
-  })
+  // G4.3 — REMOVED in the dedup pass, and this one deserves its full note because it guards a bug
+  // that actually shipped. The off-flip parks the manual theme at whatever was on screen, so after
+  // an untouched round trip the STORED manual theme differs from the factory one while every
+  // visible setting is back where it started; judging "modified" over the stored trio instead of
+  // the pair IN EFFECT lit the gear permanently, with nothing the user could change to clear it.
+  // The regression gate on that fix is tests/settings.dom ~294 ('an OFF→ON round trip leaves the
+  // panel reading UNMODIFIED'), which is the stronger of the two: it asserts the INTERMEDIATE
+  // state as well — offered while Use System is off, because that divergence is real — and pins
+  // the parked 'light' the seed leaves behind. This file's version asserted all four offers rather
+  // than one, and the four move together for any theme divergence (they share themeAtDefaults), so
+  // that breadth bought nothing the ~294 case does not already discriminate.
 
   // G4.4a — with Use System ON, the live pair is what counts: the dark and light themes light the
   // gear, and the dormant manual theme does not.

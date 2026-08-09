@@ -67,6 +67,8 @@ export type SettingsState = SettingsValues & {
   setDarkTheme: (v: Updater<string>) => void
   setLightTheme: (v: Updater<string>) => void
   setManualTheme: (v: Updater<string>) => void
+  /** ⚠ FACTORY reset, NOT the ⚙ panel's Reset Settings button — see the warning at the
+   *  implementation below before calling this from anywhere outside the test suite. */
   resetSettings: () => void
   applySettings: (values: SettingsValues) => void
 }
@@ -95,7 +97,12 @@ export const SETTINGS_DEFAULTS: SettingsValues = {
 const resolve = <T>(next: Updater<T>, prev: T): T =>
   typeof next === 'function' ? (next as (prev: T) => T)(prev) : (next as T)
 
-// The set of keys we persist — exactly the data values (not the setters).
+// The set of keys we persist — exactly the data values (not the setters). DERIVED from
+// SETTINGS_DEFAULTS rather than listed, so the "14" every comment in this file quotes cannot drift
+// from the code: add a setting to SETTINGS_DEFAULTS and it is persisted by construction. ⚠ 14 here
+// counts the STORE's settings only. The Save Defaults snapshot is 18 (these 14 + 4 mode prefs) and
+// the gear's "modified" comparison is 17 or 16 of that 18 — both counted in main.tsx, at
+// resetSettings and settingsStoreAtDefaults respectively. Do not carry this number over to them.
 const PERSISTED_KEYS = Object.keys(SETTINGS_DEFAULTS) as (keyof SettingsValues)[]
 
 export const useSettings = create<SettingsState>()(
@@ -116,13 +123,33 @@ export const useSettings = create<SettingsState>()(
       setDarkTheme: (v) => set((s) => ({ darkTheme: resolve(v, s.darkTheme) })),
       setLightTheme: (v) => set((s) => ({ lightTheme: resolve(v, s.lightTheme) })),
       setManualTheme: (v) => set((s) => ({ manualTheme: resolve(v, s.manualTheme) })),
-      // Reset every setting to its launch default in one shot. (App's resetSettings
-      // also resets minInputVal/maxInputVal, which live outside this store.) Because
-      // the store is persisted, this also overwrites the saved copy back to defaults.
+      // ⚠⚠ THIS IS NOT THE ⚙ PANEL'S "RESET SETTINGS" BUTTON, DESPITE THE NAME. It restores the
+      // FACTORY values (SETTINGS_DEFAULTS) unconditionally. The panel's Reset Settings is App's own
+      // resetSettings in main.tsx, which restores the user's EFFECTIVE defaults — their SAVED
+      // personal defaults (Q7, store/userDefaults) when a snapshot exists, factory only when none
+      // does — and additionally restores the two year-range text mirrors and the four capturable
+      // mode prefs. The two names differ by one qualifier and by everything else.
+      //   → REACHING FOR THIS ONE FROM APP CODE SILENTLY REVERTS THE WHOLE SAVED-DEFAULTS FEATURE:
+      //     the user's saved snapshot survives in its own store, so nothing looks broken, but
+      //     "reset" quietly stops meaning what the feature promises. Use applySettings(values) with
+      //     effectiveSettingsDefaults instead — that is what App does.
+      //   ★ NO APP CODE CALLS THIS. Its only consumers are the test suite's per-case store cleanup
+      //     (52 call sites across 17 files under tests/, incl. tests/setup/dom.js and
+      //     tests/helpers/settingsPanel.jsx), where factory-reset is exactly the wanted semantic.
+      //     ⚠ Count `resetSettings()` with the parens: a bare grep also catches the UNRELATED
+      //     `offers().resetSettings` boolean in the panel helper, which is the Reset Settings
+      //     BUTTON's offered/dimmed state, not this action. That is what inflated an earlier
+      //     draft of this note to "~86 across 20 files".
+      //     Round 14 judged the honest rename (→ resetToFactory) correct but deferred it: it cannot
+      //     land in this lane without leaving those 17 files red. Tracked as a follow-up — rename
+      //     the action and every caller in ONE commit, and delete this paragraph's caveat with it.
+      // Because the store is persisted, this also overwrites the saved copy back to factory.
       resetSettings: () => set(() => ({ ...SETTINGS_DEFAULTS })),
-      // Apply a full 14-value snapshot in one shot — App's Reset Settings restoring the user's
-      // SAVED personal defaults (store/userDefaults; the factory SETTINGS_DEFAULTS when none are
-      // saved). Persisted like any set, so the applied values become the stored copy.
+      // Apply a full 14-value snapshot in one shot — the values half of what App's Reset Settings
+      // and Full Reset restore (the user's SAVED personal defaults via store/userDefaults; the
+      // factory SETTINGS_DEFAULTS only when none are saved). This, not resetSettings above, is the
+      // action app code should reach for. Persisted like any set, so the applied values become the
+      // stored copy.
       applySettings: (values) => set(() => ({ ...values })),
     }),
     {

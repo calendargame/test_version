@@ -60,9 +60,27 @@ export function useYearRangeMirrors(
   minInputRef: RefObject<HTMLInputElement | null>,
   maxInputRef: RefObject<HTMLInputElement | null>,
 ): YearRangeMirrors {
-  // Initialised to the FACTORY literals rather than to the persisted store, and pulled into line by
-  // the effects below. (Pre-existing and deliberately preserved: nothing observes the one-commit
-  // gap, because the panel starts closed and the boxes are not mounted for it.)
+  // ★ THE BOOT-COMMIT WINDOW (pre-existing defect D8), re-checked after the round-14 extraction and
+  // deliberately left as it is. These two initialise to the FACTORY literals rather than to the
+  // persisted store, so a user with a saved range of, say, 1900–2100 has mirrors reading "1"/"10000"
+  // for exactly one commit — until the store→text effects below run on mount.
+  //
+  // IT IS UNOBSERVABLE, and that is a structural fact, not a happy accident. Enumerated by hand
+  // (round 14) — the complete reader list of these two strings is:
+  //   1. the two <input value={yearRange.*.value}> in components/SettingsPanel;
+  //   2. commitMin / commitMax, reachable only via those inputs' onBlur / Enter;
+  //   3. resetTo, which only WRITES them.
+  // Every one of (1) and (2) requires the panel to be MOUNTED, and main.tsx mounts it behind
+  // `settingsOpen && <SettingsPanel …>` with `settingsOpen` initialised to false and no boot-time
+  // path that opens it — the gear tap, the G key and the Back-button restore are all user events,
+  // and React flushes pending passive effects before a discrete event, so the mirrors are already
+  // in sync by the time any of them can render a box. Round 14 narrowed it further from the other
+  // side: the mirrors were removed from every at-defaults boolean, so App itself no longer reads
+  // them at all.
+  // ⚠ THAT MAKES THE GUARANTEE A MOUNT GUARANTEE, NOT A VALUE GUARANTEE. It breaks the moment
+  // anything renders these strings outside the panel, or the panel is mounted while closed (e.g. an
+  // animated open). If you do either, seed these from minY/maxY here first — a lazy initialiser is
+  // all it takes — and delete this note.
   const [minInputVal, setMinInputVal] = useState('1')
   const [maxInputVal, setMaxInputVal] = useState('10000')
   function applyMinValue(val: number) {

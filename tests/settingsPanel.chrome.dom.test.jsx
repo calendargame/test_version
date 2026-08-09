@@ -424,25 +424,14 @@ describe('G12 — the panel scrolls its list, not itself', () => {
     expect(panelFades()).toEqual({ top: false, bottom: false })
   })
 
-  it('ramps the footer’s shadow with how much unread list remains, reaching zero at the end', () => {
-    mountApp()
-    openSettings()
-    const list = panelScroller()
-    setExtent(list, { scrollHeight: 1200, clientHeight: 400 })
-
-    scrollTo(list, 0)
-    expect(Number(footerShade())).toBe(1) // 800px below — far past the ramp, full strength
-    scrollTo(list, 1200 - 400 - 14) // 14px from the end: (14 − 4) / (24 − 4)
-    expect(Number(footerShade())).toBe(0.5)
-    scrollTo(list, 1200 - 400)
-    expect(Number(footerShade())).toBe(0) // arrived: the boundary has nothing to say
-    // The hair case again, from the shadow's side: one boundary must not give two answers, so a
-    // list that reads "no feather below" must also read "no shadow".
-    setExtent(list, { scrollHeight: 403, clientHeight: 400 })
-    scrollTo(list, 0)
-    expect(Number(footerShade())).toBe(0)
-    expect(panelFades().bottom).toBe(false)
-  })
+  // G12.3 — REMOVED in the round-14 dedup pass. The footer shadow's ramp (full strength with 800px
+  // below, 0.5 at 14px from the end, 0 on arrival) and the hair case that must read zero from BOTH
+  // the shadow's side and the mask's are already pinned by the two cases in tests/settings.dom's
+  // 'the sticky footer’s progressive boundary shadow' describe (~1081 and ~1100), against the same
+  // numbers. Those are the STRONGER pair: the ramp case additionally captures the footer's class
+  // list and re-asserts it unchanged at the end, which is the claim that the shadow became a
+  // continuous --shade instead of a class toggled on and off. What survives here is the case below,
+  // which is about the panel's SECOND open and has no counterpart there.
 
   it('never shows stale fade or shadow state from the previous open', () => {
     mountApp()

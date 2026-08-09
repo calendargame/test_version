@@ -31,7 +31,8 @@
 //     scroll-to-reach. They are also the two boundary surfaces the edge hook shades: a fixed
 //     header above content that scrolls takes elev-shadow-down and a fixed footer below it
 //     elev-shadow-up (the directional scroll-boundary language, never the card's own even
-//     `0 0 8px` lift — see the note at the ⚙ popover in main.tsx). Both are UNCONDITIONAL classes
+//     `0 0 8px` lift — see the note at the ⚙ popover card in components/SettingsPanel, which is
+//     where that popover moved in round 14). Both are UNCONDITIONAL classes
 //     whose strength is the --shade the hook writes, and it writes 0 when there is nothing to
 //     scroll — so on every screen tall enough to hold the card, which is every ordinary one, this
 //     whole treatment renders exactly the card that shipped before it.

@@ -1,4 +1,5 @@
-// bootFlow — the pure phase math for the Updating screen's trace loop (BootOverlay in main.tsx).
+// bootFlow — the pure phase math for the Updating screen's trace loop (its one consumer is
+// BootOverlay, which lives in src/components/BootOverlay.tsx, not main.tsx).
 //
 // WHY THIS EXISTS (iOS render fix, 2026-07-13): the trace was originally a CSS keyframes
 // animation driving stroke-dashoffset 0 → −174 → −348 over a SINGLE-value stroke-dasharray:174.

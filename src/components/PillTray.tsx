@@ -7,7 +7,8 @@ import { usePillGroupLock } from './pillGroupLock.js'
 // lives in ONE place instead of being re-typed per group. Round-9 made it the treatment for
 // EVERY picker in the panel — Input and the three chance rows joined — so the housing now
 // MEANS something: it is what says "pick exactly one of these". THE PICKER RULE that decides
-// which controls get a tray is stated once, at the Display section in main.tsx.
+// which controls get a tray is stated once, at the Display section — which lives in
+// components/SettingsPanel since round 14, not main.tsx.
 //
 // THE CONCENTRIC HOUSING IDIOM (why these exact classes):
 // The container draws the whole frame (border + surface-tray, NO padding, NO overflow-hidden)

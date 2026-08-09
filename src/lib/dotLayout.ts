@@ -2,7 +2,7 @@
 // dotLayout.ts — the 7-dot answer layout's grid geometry (single source of truth)
 //
 // The logo's 7-position layout used by the Dots answer input (Settings →
-// Display → Input, main.tsx WeekdayAnswer) AND by How-to-Play's labelled
+// Display → Input; components/WeekdayAnswer) AND by How-to-Play's labelled
 // DotDiagram (components/GuidePage) — both derive from THIS array, so the
 // diagram can never drift from the real input. The array index is the weekday
 // (0=Sun..6=Sat), so the dot buttons stay in DOM order Sun..Sat (the keyboard
