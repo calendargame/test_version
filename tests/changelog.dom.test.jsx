@@ -21,12 +21,16 @@
 // Visual truth — where the dot lands, coexistence with the violet bar, themes — is on-device
 // territory per the standing lesson; these tests pin the logic and the DOM-level rendering.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
-import { useSettings } from '../src/store/settings.js'
+import { screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { useModePrefs } from '../src/store/modePrefs.js'
-import { useUserDefaults } from '../src/store/userDefaults.js'
-import { useProgress } from '../src/store/progress.js'
+import {
+  mountApp,
+  openSettings,
+  closeSettings,
+  gear,
+  modalCard,
+  resetAppState,
+} from './helpers/settingsPanel.jsx'
 import { BUILD_STAMP_KEY, writeBuildStamp } from '../src/lib/buildStamp.js'
 import {
   CHANGELOG,
@@ -39,16 +43,7 @@ import {
 
 const OLD_STAMP = '2020-01-01T00:00:00.000Z' // any build that is not the running one
 
-// ── Harness (the buildStamp.dom + viewDefaults.dom helpers) ──
-function mountApp() {
-  // CustomSelect panels AND the settings modals portal into #root; provide one.
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  return render(<App />)
-}
-const gear = () => screen.getByRole('button', { name: /^Settings/ })
-const openSettings = () => act(() => fireEvent.click(gear()))
+// ── Harness (tests/helpers/settingsPanel, plus this file's own dot accessors) ──
 // Prefix match, exactly like the gear's: the link's accessible name GROWS to 'Changelog, update'
 // while its dot is lit (an sr-only word — the marker element itself is aria-hidden). The exact
 // names are asserted in both states below; this helper just has to find the button in either.
@@ -59,7 +54,7 @@ const openChangelog = () => act(() => fireEvent.click(changelogLink()))
 const gearMark = () => gear().querySelector('[data-update-dot]')
 const linkMark = () => changelogLink().querySelector('[data-update-dot]')
 const changelogTitle = () => screen.queryByText("What's new")
-const changelogDialog = () => screen.getByRole('dialog', { name: "What's new" })
+const changelogDialog = () => modalCard("What's new")
 
 describe('changelog data (src/changelog)', () => {
   it('every entry is an ISO-dated, non-empty plain-words list, newest first, one per day', () => {
@@ -124,12 +119,10 @@ describe('update-dot flags (plain localStorage)', () => {
 describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    localStorage.clear()
+    resetAppState()
+    // NOT part of the shared reset: sessionStorage is where the post-update splash-skip flag
+    // lives, and this file mounts across a simulated build change on purpose.
     sessionStorage.clear()
-    useSettings.getState().resetSettings()
-    useModePrefs.getState().resetModePrefs()
-    useUserDefaults.getState().clearDefaults()
-    useProgress.getState().resetProgress()
   })
   afterEach(() => {
     vi.runOnlyPendingTimers()
@@ -227,7 +220,7 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     expect(localStorage.getItem(GEAR_DOT_KEY)).toBeNull()
     expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
     expect(linkMark()).toHaveAttribute('data-lit', 'true')
-    openSettings() // close again — the gear renders its closed-state classes, now dotless
+    closeSettings() // the gear renders its closed-state classes, now dotless
     expect(gearMark()).toHaveAttribute('data-lit', 'false')
     expect(gear()).toHaveAttribute('aria-label', 'Settings')
   })
@@ -235,7 +228,7 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
   it('the link dot survives settings open/close cycles until the link is first tapped', () => {
     bootAfterUpdate()
     openSettings()
-    openSettings() // close (gear dot now retired, link dot untouched)
+    closeSettings() // gear dot now retired, link dot untouched
     openSettings() // reopen
     expect(linkMark()).toHaveAttribute('data-lit', 'true')
     // With the gear's dot already retired, the link's sr-only word is the ONLY update signal a
@@ -267,11 +260,7 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
 
 describe('the Changelog popup (modal parity + content)', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
-    useModePrefs.getState().resetModePrefs()
-    useUserDefaults.getState().clearDefaults()
-    useProgress.getState().resetProgress()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()

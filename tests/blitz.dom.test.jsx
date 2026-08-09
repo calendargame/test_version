@@ -21,6 +21,7 @@ import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
+import { isOffered } from './helpers/offered.js'
 
 function mountApp() {
   const root = document.createElement('div')
@@ -59,7 +60,9 @@ const tick = (ms) =>
   })
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
-const isDisabled = (btn) => btn.className.includes('pointer-events-none')
+// Not offered = the app is withholding the control. How that is SPELLED lives in one place
+// (tests/helpers/offered) so this file never names a class string.
+const isDisabled = (btn) => !isOffered(btn)
 // A text match on the VISIBLE screen, and the reason a plain screen.getByText won't do: every
 // screen but Lookup is always-mounted — the five game modes, and How to Play since Q6 (round 9) —
 // so their markup sits in the DOM under display:none while another mode is up. The guide's Blitz
@@ -1039,15 +1042,15 @@ describe('Blitz — C3a freshness (suddenAmBest blocks fully-reset until wiped)'
     mountApp()
     act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
     const fullResetBtn = () => screen.getByRole('button', { name: /Full Reset/ })
-    expect(isDisabled(fullResetBtn())).toBe(true) // pristine app → fully reset → dimmed
+    expect(isOffered(fullResetBtn())).toBe(false) // pristine app → fully reset → dimmed
     act(() =>
       useProgress
         .getState()
         .setSuddenAmBest({ k: { score: 2, streak: 2, scoreRoundId: 1, streakRoundId: 1 } }),
     )
-    expect(isDisabled(fullResetBtn())).toBe(false) // the new map counts against Blitz freshness
+    expect(isOffered(fullResetBtn())).toBe(true) // the new map counts against Blitz freshness
     act(() => useProgress.getState().resetProgress()) // the wipe Full Reset performs
-    expect(isDisabled(fullResetBtn())).toBe(true)
+    expect(isOffered(fullResetBtn())).toBe(false)
   })
 })
 

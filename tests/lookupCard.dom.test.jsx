@@ -38,6 +38,7 @@ import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { addLookupEntry, LOOKUP_HISTORY_CAP } from '../src/store/progress.js'
 import { fmt } from '../src/lib/format.js'
+import { isOffered } from './helpers/offered.js'
 
 const HINT = 'Enter a date to see its weekday.'
 const GAP = 'October 5–14, 1582 never existed — 10 days skipped in the Gregorian switch.'
@@ -410,7 +411,6 @@ const mountApp = () => {
   document.body.appendChild(root)
   return render(<App />)
 }
-const isDisabled = (btn) => btn.className.includes('pointer-events-none')
 
 describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', () => {
   beforeEach(() => {
@@ -434,7 +434,7 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
     expect(screen.getByText(HINT)).toBeTruthy() // the hint IS on screen…
     act(() => fireEvent.keyDown(window, { key: 'K' })) // …back to Classic
     toggleSettings()
-    expect(isDisabled(fullReset())).toBe(true) // …and it was only ever text
+    expect(isOffered(fullReset())).toBe(false) // …and it was only ever text
   })
 
   it('a real lookup lights Full Reset; Clear + Clear History dim it again', () => {
@@ -447,7 +447,7 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
     expect(lines(document)).toEqual(['July 4, 1776', 'Thursday'])
     act(() => fireEvent.keyDown(window, { key: 'K' }))
     toggleSettings()
-    expect(isDisabled(fullReset())).toBe(false) // the lookup registered, without lookupOutput
+    expect(isOffered(fullReset())).toBe(true) // the lookup registered, without lookupOutput
     toggleSettings() // close the panel
     act(() => fireEvent.keyDown(window, { key: 'L' }))
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' })))
@@ -455,7 +455,7 @@ describe('Lookup — Full Reset freshness (isFullyReset reads lookupOutput)', ()
     expect(screen.getByText(HINT)).toBeTruthy()
     act(() => fireEvent.keyDown(window, { key: 'K' }))
     toggleSettings()
-    expect(isDisabled(fullReset())).toBe(true)
+    expect(isOffered(fullReset())).toBe(false)
   })
 })
 

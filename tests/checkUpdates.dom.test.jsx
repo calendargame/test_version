@@ -17,9 +17,8 @@
 // the row steady on screen, and the real SKIP_WAITING → controllerchange handoff. Those are staging
 // device checks, as all SW behaviour in this app is.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
-import { useSettings } from '../src/store/settings.js'
+import { screen, cleanup, fireEvent, act } from '@testing-library/react'
+import { mountApp, openSettings, closeSettings, resetAppState } from './helpers/settingsPanel.jsx'
 import { BUILD_ID_META, UPDATE_CHECK_LABEL, CHECK_PARAM } from '../src/lib/updateCheck.js'
 
 // The applier reports a failed update() to Sentry, so what it does NOT report is testable too — see
@@ -77,23 +76,6 @@ describe('Check for updates (Q7 — check, then apply)', () => {
     for (const fn of swListeners.controllerchange ?? []) fn()
   }
 
-  const mountApp = () => {
-    const root = document.createElement('div')
-    root.id = 'root'
-    document.body.appendChild(root)
-    return render(<App />)
-  }
-  const openSettings = () => {
-    // /^Settings/ — the gear's accessible name gains "(modified)"/"(update)" suffixes.
-    act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /^Settings/ }))
-    })
-  }
-  const closeSettings = () => {
-    act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /^Settings/ }))
-    })
-  }
   // The button, whatever label it is currently wearing. Found by ACCESSIBLE NAME, which is the live
   // label alone — the strut beside it is aria-hidden, so it contributes width and nothing else.
   // (textContent would read both spans at once, which is the point of the strut.)
@@ -124,9 +106,8 @@ describe('Check for updates (Q7 — check, then apply)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     sentry.captureError.mockClear()
-    localStorage.clear()
+    resetAppState()
     sessionStorage.clear() // the skip-boot-hold assertions must see THIS test's stamp
-    useSettings.getState().resetSettings()
     setOwnBuildId(OWN_ID)
     unregister = vi.fn().mockResolvedValue(true)
     cacheDelete = vi.fn().mockResolvedValue(true)

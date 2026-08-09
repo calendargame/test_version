@@ -22,6 +22,7 @@ import { DAY } from '../src/lib/format.js'
 import { isGapDate, isJulianDate, dim } from '../src/lib/calendar.js'
 import { activeWday } from '../src/engine/gameReducer.js'
 import { installSeededRandom } from './helpers/rng.js'
+import { isOffered } from './helpers/offered.js'
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 function mountApp() {
@@ -38,7 +39,9 @@ function isHidden(el) {
   return false
 }
 const ctrl = (name) => screen.getByRole('button', { name })
-const isDisabled = (btn) => btn.className.includes('pointer-events-none')
+// Not offered = the app is withholding the control. How that is SPELLED lives in one place
+// (tests/helpers/offered) so this file never names a class string.
+const isDisabled = (btn) => !isOffered(btn)
 
 function switchToDeduction() {
   act(() => {

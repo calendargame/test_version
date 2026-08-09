@@ -9,18 +9,11 @@
 // labelled buttons. Plus: the Settings → Input toggle flips the setting in weekday modes and is
 // locked (value preserved) in Deduction.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
+import { screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { useSettings } from '../src/store/settings.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
-
-function mountApp() {
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  return render(<App />)
-}
+import { mountApp, openSettings, pickerLockState, resetAppState } from './helpers/settingsPanel.jsx'
 // The live Classic date is the only leaf <div> whose text is a numeric-ymd date (the always-mounted
 // hidden modes show "—"). Pinned numeric-ymd + Gregorian range make it trivially parseable.
 function readDate() {
@@ -60,8 +53,7 @@ function pressNewAndRead() {
 
 describe('7-dot input (Dots layout)', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
     useSettings.getState().setRandomFormat(false)
     useSettings.getState().setDateFormat('numeric-ymd')
     useSettings.getState().setMinY(1583)
@@ -111,8 +103,7 @@ describe('7-dot input (Dots layout)', () => {
 
 describe('Settings → Input toggle', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -122,20 +113,18 @@ describe('Settings → Input toggle', () => {
   // The picker is a radiogroup of two radios (round-8 a11y pass), and the LOCK lives on that
   // GROUP element — not on the pills. Round-9 moved the pills into a PillTray housing (⚙ pickers
   // are all trays now), so a pill's parentElement is the tray, and reading the dim off it would
-  // silently stop testing anything. Ask for the group by name instead.
-  const inputGroup = () => screen.getByRole('radiogroup', { name: 'Input' })
+  // silently stop testing anything. Ask the panel helper for the lock instead — it answers the
+  // group's question, in the terms the user meets it in.
 
   it('flips inputStyle between Buttons and Dots in a weekday mode, and is not locked', () => {
     mountApp() // opens in Classic (a weekday mode)
-    act(() => {
-      fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
-    })
+    openSettings('key') // open the ⚙ popover
     expect(useSettings.getState().inputStyle).toBe('buttons')
     fireEvent.click(screen.getByRole('radio', { name: 'Dots' }))
     expect(useSettings.getState().inputStyle).toBe('dots')
     fireEvent.click(screen.getByRole('radio', { name: 'Buttons' }))
     expect(useSettings.getState().inputStyle).toBe('buttons')
-    expect(inputGroup().className).not.toContain('pointer-events-none')
+    expect(pickerLockState('Input').offered).toBe(true)
     expect(screen.getByRole('radio', { name: 'Buttons' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('radio', { name: 'Dots' }).getAttribute('aria-checked')).toBe('false')
   })
@@ -146,10 +135,8 @@ describe('Settings → Input toggle', () => {
     act(() => {
       fireEvent.keyDown(window, { key: 'D' }) // switch to Deduction
     })
-    act(() => {
-      fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
-    })
-    expect(inputGroup().className).toContain('pointer-events-none')
+    openSettings('key') // open the ⚙ popover
+    expect(pickerLockState('Input').offered).toBe(false)
     // The PillTray onChange guard keeps the value even if a click is dispatched at a segment.
     fireEvent.click(screen.getByRole('radio', { name: 'Dots' }))
     expect(useSettings.getState().inputStyle).toBe('buttons')

@@ -18,6 +18,7 @@ import { useUserDefaults } from '../src/store/userDefaults.js'
 import { useProgress } from '../src/store/progress.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
+import { isOffered } from './helpers/offered.js'
 
 function mountApp() {
   const root = document.createElement('div')
@@ -74,7 +75,9 @@ const correctName = ({ y, m, d }) => DAY[wday(y, m, d)]
 const wrongName = ({ y, m, d }) => DAY[(wday(y, m, d) + 1) % 7]
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
-const isDisabled = (btn) => btn.className.includes('pointer-events-none')
+// Not offered = the app is withholding the control. How that is SPELLED lives in one place
+// (tests/helpers/offered) so this file never names a class string.
+const isDisabled = (btn) => !isOffered(btn)
 
 function statCell(label) {
   const btn = screen

@@ -11,42 +11,34 @@
 // tests/viewDefaults.dom.test.jsx; visual polish (the violet bar, footer wrap) is on-device
 // per the standing lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
+import { screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { useSettings } from '../src/store/settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
-import { useProgress } from '../src/store/progress.js'
+import {
+  mountApp,
+  openSettings,
+  closeSettings,
+  footerButton,
+  gearIndicator,
+  modalCard,
+  yearInput,
+  isOffered,
+  resetAppState,
+} from './helpers/settingsPanel.jsx'
 
-// ── Harness helpers ─────────────────────────────────────────────────────────
-function mountApp() {
-  // CustomSelect panels AND the Save Defaults popup portal into #root; provide one. App's own
-  // tree mounts into RTL's container (not #root), so there's no duplicate auto-mount.
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  return render(<App />)
-}
-
-// /^Settings/ — the gear's accessible name flips to "Settings (modified)" when live state
-// diverges from the effective defaults (the Q8 indicator); match both states.
-const gear = () => screen.getByRole('button', { name: /^Settings/ })
-const openSettings = () => act(() => fireEvent.click(gear()))
+// ── Harness helpers (tests/helpers/settingsPanel, plus this file's own) ──────
+// The three footer offers are asked of the panel helper — "is the app OFFERING this?" — never of
+// a class string, so what "dimmed" is spelled as stops being this file's business.
 const btn = (name) => screen.getByRole('button', { name })
-const isDimmed = (b) => b.className.includes('pointer-events-none')
-const openPopup = () => act(() => fireEvent.click(btn('Save Defaults')))
+const openPopup = () => act(() => fireEvent.click(footerButton('Save Defaults')))
 const popupTitle = () => screen.queryByText('Save current settings as your defaults?')
 const nField = () => screen.getByRole('textbox', { name: 'AoX Run Length' })
 const flashSlider = () => screen.getByRole('slider', { name: 'Flash Speed' })
 
 describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
   beforeEach(() => {
-    // All three persisted singletons back to a clean baseline.
-    localStorage.clear()
-    useSettings.getState().resetSettings()
-    useModePrefs.getState().resetModePrefs()
-    useUserDefaults.getState().clearDefaults()
-    useProgress.getState().resetProgress()
+    resetAppState() // all four persisted singletons + localStorage, back to a clean baseline
   })
   afterEach(() => {
     cleanup()
@@ -68,7 +60,13 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     act(() => fireEvent.click(btn('Reset Settings')))
     expect(useSettings.getState().leapChance).toBe('75')
     expect(useSettings.getState().minY).toBe(1600)
-    expect(screen.getByDisplayValue('1600')).toBeInTheDocument() // the min-year text mirror
+    expect(yearInput('min').value).toBe('1600') // the min-year text mirror
+    // …and it is the ONLY box in the document showing 1600. This line looks redundant and is not:
+    // it is the second half of the retired `getByDisplayValue('1600')`, which was a throwing,
+    // ambiguity-rejecting query and so asserted uniqueness as well as presence. yearInput() names
+    // its subject, which is the stronger half and the one G5 needs — but naming a subject is a
+    // TRADE for uniqueness, not a superset of it, and G0 may not drop an assertion on the way past.
+    expect(screen.getAllByDisplayValue('1600')).toHaveLength(1)
   })
 
   // ── Q7 round-6: Reset Settings now also restores the 4 mode-screen prefs (Flash speed, both Blitz
@@ -82,7 +80,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     p.setBlitzPerQ(true) // non-capturable — Reset Settings must leave it (only Full Reset restores it)
     mountApp()
     openSettings()
-    expect(isDimmed(btn('Reset Settings'))).toBe(false) // a mode-screen pref diverges → the button is offered
+    expect(isOffered(footerButton('Reset Settings'))).toBe(true) // a mode-screen pref diverges → the button is offered
     act(() => fireEvent.click(btn('Reset Settings')))
     const r = useModePrefs.getState()
     expect(r.flashMs).toBe(2000)
@@ -90,7 +88,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(r.blitzQSec).toBe(10)
     expect(r.aoxN).toBe('10')
     expect(r.blitzPerQ).toBe(true) // non-capturable — untouched by Reset Settings
-    expect(isDimmed(btn('Reset Settings'))).toBe(true) // …and now nothing is left to reset
+    expect(isOffered(footerButton('Reset Settings'))).toBe(false) // …and now nothing is left to reset
   })
 
   it('Reset Settings restores the 4 mode-screen prefs to the SAVED personal defaults when a snapshot exists', () => {
@@ -128,12 +126,12 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     // Return the pref to factory: the PANEL now matches the saved defaults but the pref does not —
     // exactly the case that used to strand the gear (before Q7 Reset Settings watched the panel alone).
     act(() => useModePrefs.getState().setFlashMs(2000))
-    expect(gear()).toHaveAttribute('aria-label', 'Settings (modified)')
-    expect(isDimmed(btn('Reset Settings'))).toBe(false) // OFFERED even though the panel sits at defaults
+    expect(gearIndicator().name).toBe('Settings (modified)')
+    expect(isOffered(footerButton('Reset Settings'))).toBe(true) // OFFERED even though the panel sits at defaults
     act(() => fireEvent.click(btn('Reset Settings')))
     expect(useModePrefs.getState().flashMs).toBe(800) // restored to the SAVED default, not factory
-    expect(gear()).toHaveAttribute('aria-label', 'Settings') // the violet bar goes out
-    expect(isDimmed(btn('Reset Settings'))).toBe(true) // nothing is left to reset
+    expect(gearIndicator().name).toBe('Settings') // the violet bar goes out
+    expect(isOffered(footerButton('Reset Settings'))).toBe(false) // nothing is left to reset
   })
 
   it('Save → Full Reset pushes the 4 captured prefs; the rest of modePrefs stays factory; the snapshot survives', () => {
@@ -175,7 +173,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     // A divergent visual timing pref must NOT light the gear "modified" bar (it isn't in the
     // at-defaults comparison — prefsMatchDefaults covers only the four capturable prefs).
-    expect(gear().className).not.toContain('gear-modified')
+    expect(gearIndicator().bar).toBe(false)
     openSettings()
     openPopup()
     act(() => fireEvent.click(btn('Save')))
@@ -205,17 +203,17 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     // live == saved defaults → the app ALREADY reads fully reset: the mode freshness checks
     // compare against the EFFECTIVE defaults (flashMs 800) — with the old factory literals
     // (flashMs===500) Full Reset would never dim while a personal Flash speed is active.
-    expect(isDimmed(btn('Full Reset'))).toBe(true)
-    expect(isDimmed(btn('Save Defaults'))).toBe(true) // nothing to save either
+    expect(isOffered(footerButton('Full Reset'))).toBe(false)
+    expect(isOffered(footerButton('Save Defaults'))).toBe(false) // nothing to save either
     // Diverge → it comes live; Full Reset (two-tap) restores the PERSONAL default and re-dims.
     act(() => useModePrefs.getState().setFlashMs(1500))
-    expect(isDimmed(btn('Full Reset'))).toBe(false)
+    expect(isOffered(footerButton('Full Reset'))).toBe(true)
     act(() => fireEvent.click(btn('Full Reset')))
     act(() => fireEvent.click(btn('Confirm?'))) // fires; the panel closes
     expect(useModePrefs.getState().flashMs).toBe(800)
     openSettings()
-    expect(isDimmed(btn('Full Reset'))).toBe(true)
-    expect(isDimmed(btn('Save Defaults'))).toBe(true)
+    expect(isOffered(footerButton('Full Reset'))).toBe(false)
+    expect(isOffered(footerButton('Save Defaults'))).toBe(false)
   })
 
   it('popup Cancel discards edits; Save persists the EDITED values; live stores stay untouched', () => {
@@ -289,30 +287,30 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
 
   it('gear indicator + Save-Defaults dim derive from ONE at-defaults comparison across both stores', () => {
     mountApp()
-    expect(gear().className).not.toContain('gear-modified')
-    expect(gear()).toHaveAttribute('aria-label', 'Settings')
+    expect(gearIndicator().bar).toBe(false)
+    expect(gearIndicator().name).toBe('Settings')
     // Divergence in the SETTINGS store lights the gear…
     act(() => useSettings.getState().setLeapChance('75'))
-    expect(gear().className).toContain('gear-modified')
-    expect(gear()).toHaveAttribute('aria-label', 'Settings (modified)')
+    expect(gearIndicator().bar).toBe(true)
+    expect(gearIndicator().name).toBe('Settings (modified)')
     act(() => useSettings.getState().setLeapChance('random'))
-    expect(gear().className).not.toContain('gear-modified')
+    expect(gearIndicator().bar).toBe(false)
     // …and so does divergence in the MODE-PREFS store (one of the 4 capturable values).
     act(() => useModePrefs.getState().setFlashMs(900))
-    expect(gear().className).toContain('gear-modified')
+    expect(gearIndicator().bar).toBe(true)
     openSettings()
-    expect(gear().className).not.toContain('gear-modified') // hidden while open (solid gear)
-    expect(gear()).toHaveAttribute('aria-label', 'Settings (modified)') // the label still tells
-    expect(isDimmed(btn('Save Defaults'))).toBe(false) // something to save
+    expect(gearIndicator().bar).toBe(false) // hidden while open (solid gear)
+    expect(gearIndicator().name).toBe('Settings (modified)') // the label still tells
+    expect(isOffered(footerButton('Save Defaults'))).toBe(true) // something to save
     openPopup()
     act(() => fireEvent.click(btn('Save'))) // live == saved now
-    expect(isDimmed(btn('Save Defaults'))).toBe(true)
+    expect(isOffered(footerButton('Save Defaults'))).toBe(false)
     // The subtle case: live returns to FACTORY but saved says 900 — that IS a divergence from
     // the effective defaults, so the button stays live (re-saving factory is meaningful).
     act(() => useModePrefs.getState().setFlashMs(2000))
-    expect(isDimmed(btn('Save Defaults'))).toBe(false)
-    act(() => fireEvent.click(gear())) // close the panel → the indicator bar shows again
-    expect(gear().className).toContain('gear-modified')
+    expect(isOffered(footerButton('Save Defaults'))).toBe(true)
+    closeSettings() // the indicator bar shows again
+    expect(gearIndicator().bar).toBe(true)
   })
 
   it('the popup carries NO clear link (footer-only, Round-4); the footer link clears — via its confirm — while the popup is open', () => {
@@ -324,7 +322,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     openPopup()
     // The Save Defaults popup's duplicate "(back to factory)" link was removed in Round-4 —
     // the ⚙ footer's "Clear saved defaults" is the ONLY clear affordance.
-    const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
+    const dialog = modalCard('Save current settings as your defaults?')
     expect(within(dialog).queryByRole('button', { name: /Clear saved defaults/ })).toBeNull()
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear saved defaults' })))
     // The link asks first now (Q5 round-6): nothing is cleared until the confirm's red-tier Clear.
@@ -341,7 +339,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     expect(screen.queryByRole('button', { name: 'Clear saved defaults' })).toBeNull() // nothing saved
     openPopup()
     act(() => fireEvent.click(btn('Save'))) // live == saved → the Save Defaults button dims…
-    expect(isDimmed(btn('Save Defaults'))).toBe(true) // …making the POPUP's clear link unreachable
+    expect(isOffered(footerButton('Save Defaults'))).toBe(false) // …making the POPUP's clear link unreachable
     const footerLink = screen.getByRole('button', { name: 'Clear saved defaults' }) // the footer link is the escape hatch
     act(() => fireEvent.click(footerLink))
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' }))) // through the confirm popup (Q5 round-6)
@@ -353,7 +351,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     openSettings()
     openPopup()
-    const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
+    const dialog = modalCard('Save current settings as your defaults?')
     // An action card even while clean — never the manager's resting Close.
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
@@ -381,8 +379,14 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     useSettings.getState().setMaxY(1900)
     mountApp()
     openSettings()
-    for (const year of ['1600', '1900']) {
-      const input = screen.getByDisplayValue(year) // the min/max text mirrors
+    for (const [end, year] of [
+      ['min', '1600'],
+      ['max', '1900'],
+    ]) {
+      const input = yearInput(end) // the min/max text mirrors
+      expect(input.value).toBe(year)
+      // The uniqueness half of the retired getByDisplayValue(year) — see the same pairing above.
+      expect(screen.getAllByDisplayValue(year)).toHaveLength(1)
       expect(input.className).toContain('border surface-tray')
       expect(input.className).not.toContain('panel')
     }
@@ -392,7 +396,7 @@ describe('Save Defaults (Q7) + gear indicator (Q8)', () => {
     mountApp()
     openSettings()
     openPopup()
-    const dialog = screen.getByRole('dialog', { name: 'Save current settings as your defaults?' })
+    const dialog = modalCard('Save current settings as your defaults?')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
     // Tab from the LAST control wraps to the first (the N field) instead of escaping to the panel

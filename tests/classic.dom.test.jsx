@@ -19,6 +19,7 @@ import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
+import { isOffered } from './helpers/offered.js'
 
 // ── Harness helpers ─────────────────────────────────────────────────────────
 function mountApp() {
@@ -50,7 +51,9 @@ const wrongName = ({ y, m, d }) => DAY[(wday(y, m, d) + 1) % 7]
 
 const dayBtn = (name) => screen.getByRole('button', { name })
 const ctrl = (name) => screen.getByRole('button', { name })
-const isDisabled = (btn) => btn.className.includes('pointer-events-none')
+// Not offered = the app is withholding the control. How that is SPELLED lives in one place
+// (tests/helpers/offered) so this file never names a class string.
+const isDisabled = (btn) => !isOffered(btn)
 
 // Stat cells are buttons containing a label <span> and a value <span>. Find by the label
 // span's exact text (robust to accessible-name spacing). getAllByRole('button') excludes the

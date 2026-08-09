@@ -11,35 +11,33 @@
 // shrink every re-render (the StatPanel feedback loop). The shimmed base is 12px — the trio's
 // resting text-xs control tier (Round-3 font normalization). Two cases: scale 0.5 floors at the
 // 11px legibility minimum on all three captions identically; scale 0.95 lands above the floor and
-// must STAY there across App re-renders (a compounding fit would step 11.4 → 10.83 → the floor).
+// must STAY there across re-renders driven through the panel's OWN controls (a compounding fit
+// would step 11.4 → 10.83 → the floor).
 // The pure math is locked in tests/statPanel.test.js; real geometry is on-device per the standing
 // lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
-import { useSettings } from '../src/store/settings.js'
-import { useUserDefaults } from '../src/store/userDefaults.js'
-import { useProgress } from '../src/store/progress.js'
+import { within, cleanup, fireEvent, act } from '@testing-library/react'
+import {
+  mountApp,
+  openSettings,
+  picker,
+  pickerLockState,
+  resetAppState,
+} from './helpers/settingsPanel.jsx'
 
 const swDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth')
 const cwDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')
 const origGetComputedStyle = window.getComputedStyle
 
-function mountApp() {
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  return render(<App />)
-}
-
 let btnWidth = 50 // trio-button content width the mocks report; tests vary it to steer the scale
+
+// A pill inside one of the panel's own pickers — the re-render driver the stability case below
+// needs. See the comment there for why a store poke will not do.
+const pill = (group, label) => within(picker(group)).getByRole('radio', { name: label })
 
 describe('footer-button auto-fit wiring (Round-2)', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
-    useUserDefaults.getState().clearDefaults()
-    useProgress.getState().resetProgress()
+    resetAppState()
     btnWidth = 50
     // Twins report a 100px natural caption; the trio buttons report btnWidth of content width.
     // Every other element keeps jsdom's 0 (→ scale 1 no-ops elsewhere, e.g. StatPanel's fit).
@@ -72,7 +70,7 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
 
   it('the measurement twins and the live buttons share the SAME text-size token (text-xs) — the shimmed base is truthful', () => {
     mountApp()
-    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+    openSettings()
     const twins = Array.from(document.querySelectorAll('[data-fittwin]'))
     const btns = Array.from(document.querySelectorAll('[data-fitlabel]')).map(
       (l) => l.parentElement,
@@ -87,7 +85,7 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
 
   it('applies ONE shared floored font-size to all three captions when the measurements demand a shrink', () => {
     mountApp()
-    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+    openSettings()
     const labels = Array.from(document.querySelectorAll('[data-fitlabel]'))
     expect(labels).toHaveLength(3)
     // scale = min(50/100) = 0.5 → 12px × 0.5 = 6px → floored to the 11px legibility minimum.
@@ -108,7 +106,7 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
   it('the fit is STABLE across re-renders — the shrink never compounds toward the floor', () => {
     btnWidth = 95 // scale = 95/100 = 0.95 → 12px × 0.95 = 11.4px, above the 11px floor
     mountApp()
-    act(() => fireEvent.click(screen.getByRole('button', { name: /^Settings/ })))
+    openSettings()
     const expected = Math.max(11, 12 * 0.95) + 'px'
     const labels = Array.from(document.querySelectorAll('[data-fitlabel]'))
     expect(labels.map((l) => l.parentElement.style.fontSize)).toEqual([
@@ -116,11 +114,32 @@ describe('footer-button auto-fit wiring (Round-2)', () => {
       expected,
       expected,
     ])
-    // Any settings interaction re-renders App and re-runs the dep-less fit effect. The base must
-    // come off the static twin, not the already-shrunk caption — a feedback loop would step
-    // 11.4 → 10.83 → 11 (the floor) here instead of holding.
-    act(() => useSettings.getState().setJanFebChance('25'))
-    act(() => useSettings.getState().setJanFebChance('random'))
+    // Any settings interaction re-runs the dep-less fit effect. The base must come off the static
+    // twin, not the already-shrunk caption — a feedback loop would step 11.4 → 10.83 → 11 (the
+    // floor) here instead of holding.
+    //
+    // ⚠ THE RE-RENDER IS DRIVEN THROUGH THE PANEL'S OWN CONTROLS, and that is the whole point of
+    // the case. This used to poke the store directly (setJanFebChance) and call the App re-render
+    // that followed proof enough. It is not: the effect under test lives with the footer, so what
+    // has to re-render is the FOOTER'S OWN component, and "a store write re-rendered App" stops
+    // implying that the moment the panel is a component of its own — a memoised one would not
+    // re-render at all and this case would pass while proving nothing. A tap on a pill inside the
+    // panel is a re-render the panel cannot fail to observe, by construction, wherever it lives.
+    // (It also moves the same setting to the same two values the store poke did, so what the app
+    // ends up in is unchanged.)
+    //
+    // …and each tap is CHECKED to have landed, because the assertion below is a stability claim
+    // and a stability claim passes trivially when nothing happened. Reading the pick back is what
+    // keeps this case falsifiable.
+    const chosen = () => pickerLockState('Jan/Feb Chance on Leap Years').chosen
+    act(() => {
+      fireEvent.click(pill('Jan/Feb Chance on Leap Years', '25%'))
+    })
+    expect(chosen()).toEqual(['25%'])
+    act(() => {
+      fireEvent.click(pill('Jan/Feb Chance on Leap Years', 'Random'))
+    })
+    expect(chosen()).toEqual(['Random'])
     expect(labels.map((l) => l.parentElement.style.fontSize)).toEqual([
       expected,
       expected,

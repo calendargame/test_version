@@ -16,25 +16,20 @@
 // Tab trap, the [data-settings-modal] marker) is locked here too. Visual polish (one-line fit,
 // themes, drag-release) is on-device per the standing lesson.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
+import { screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
-import { useProgress } from '../src/store/progress.js'
+import {
+  mountApp,
+  openSettings,
+  gear,
+  modalCard,
+  queryModalCard,
+  resetAppState,
+} from './helpers/settingsPanel.jsx'
 
-// ── Harness helpers (the saveDefaults.dom harness, plus the manager's own) ──
-function mountApp() {
-  // CustomSelect panels AND the settings modals portal into #root; provide one. App's own
-  // tree mounts into RTL's container (not #root), so there's no duplicate auto-mount.
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  return render(<App />)
-}
-
-const gear = () => screen.getByRole('button', { name: /^Settings/ })
-const openSettings = () => act(() => fireEvent.click(gear()))
+// ── Harness helpers (tests/helpers/settingsPanel, plus the manager's own) ──
 const btn = (name) => screen.getByRole('button', { name })
 const openManager = () => act(() => fireEvent.click(btn('View saved defaults')))
 // "The manager is open on the SAVED view" — asked of the dialog itself, by its accessible name,
@@ -42,8 +37,8 @@ const openManager = () => act(() => fireEvent.click(btn('View saved defaults')))
 // always-mounted since Q6 (round 9), so its display:none copy of the guide is in the DOM on every
 // screen, and the guide names "Your saved defaults" in prose. Role queries skip display:none
 // subtrees, and the dialog is what every one of these assertions actually means.
-const savedManager = () => screen.queryByRole('dialog', { name: 'Your saved defaults' })
-const managerDialog = (name = 'Your saved defaults') => screen.getByRole('dialog', { name })
+const savedManager = () => queryModalCard('Your saved defaults')
+const managerDialog = (name = 'Your saved defaults') => modalCard(name)
 // Save a snapshot through the UI (settings must be open): Save Defaults → Save.
 const saveSnapshot = () => {
   act(() => fireEvent.click(btn('Save Defaults')))
@@ -63,12 +58,7 @@ const expectRowsInOrder = (dialog) => {
 
 describe('The defaults manager (Q12 + Q5 round-6)', () => {
   beforeEach(() => {
-    // All persisted singletons back to a clean baseline.
-    localStorage.clear()
-    useSettings.getState().resetSettings()
-    useModePrefs.getState().resetModePrefs()
-    useUserDefaults.getState().clearDefaults()
-    useProgress.getState().resetProgress()
+    resetAppState() // all four persisted singletons + localStorage, back to a clean baseline
   })
   afterEach(() => {
     cleanup()

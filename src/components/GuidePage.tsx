@@ -595,7 +595,7 @@ export default function GuidePage({
             below). Starting a scroll by touching the page outside the menu is one of those presses
             outside, so that closes it — but a touch that lands on the menu itself is not, and
             neither is the page moving on its own: it stays put under its button in the bar while
-            the page coasts to a stop behind it.
+            the page coasts to a stop behind it, and you can open it mid-glide.
           </li>
           <li>
             So does the Settings gear (⚙): press it and drag straight into the panel — it

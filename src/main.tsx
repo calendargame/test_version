@@ -121,7 +121,7 @@ const ReactDOM = { createRoot, createPortal }
 
 
 
-    const DEPLOY_TS=new Date('2026-08-08T22:30:00Z');
+    const DEPLOY_TS=new Date('2026-08-09T01:30:00Z');
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -1673,7 +1673,16 @@ const ReactDOM = { createRoot, createPortal }
         <div className="space-y-2">
           <SectionLabel>Display</SectionLabel>
           <div className="text-xs text-(--tx-200-80)">Date Format</div>
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Random Format</span><button type="button" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{randomFormat?"On":"Off"}</button></div>
+          {/* ★ EVERY SWITCH NAMES ITS SETTING (aria-label), on all four of them — this one, Use
+              System Settings, the Julian Calendar toggle and Save Stats. Their visible content is
+              the STATE ("On"/"Off"), which is the same two words on all four, so without a name a
+              screen reader hears four identical buttons and nothing can address one of them
+              except by walking the DOM from its label span. The setting name is the row's label
+              text VERBATIM, so speaking what you see still activates the switch and there is no
+              second wording to keep in step. Not role="switch": that would change what these
+              announce (a checked state) and the panel's a11y pass deliberately keeps them plain
+              buttons whose text IS the state. */}
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Random Format</span><button type="button" aria-label="Random Format" onClick={()=>setRandomFormat(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${randomFormat?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{randomFormat?"On":"Off"}</button></div>
           {/* ★ THE PICKER RULE (round-9) — the panel has exactly TWO kinds of control, and each
               gets exactly ONE treatment. State it here, obey it everywhere below:
                 • SWITCH — a setting that is simply on/off (Random Format, Use System Settings,
@@ -1734,7 +1743,7 @@ const ReactDOM = { createRoot, createPortal }
               leaves manualTheme wherever the OFF pass parked it, but that value is DORMANT while
               the OS decides, and settingsStoreAtDefaults compares only the theme values actually
               in effect — so the round trip cannot leave the gear falsely reading "modified". */}
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Use System Settings</span><button type="button" onClick={()=>{if(useSystem)setManualTheme(activeTheme);setUseSystem(v=>!v);}} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useSystem?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Use System Settings</span><button type="button" aria-label="Use System Settings" onClick={()=>{if(useSystem)setManualTheme(activeTheme);setUseSystem(v=>!v);}} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useSystem?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useSystem?"On":"Off"}</button></div>
           {/* The five themes as two PillTray rows (round-8), replacing the dropdowns they used to
               hide behind. The SAME two rows render in both Use-System states — the panel no
               longer changes height when the switch is flipped — and the centered Dark / Light
@@ -1776,9 +1785,20 @@ const ReactDOM = { createRoot, createPortal }
           <SectionLabel>Dates</SectionLabel>
           <div className="text-xs text-(--tx-200-80)">Year Range</div>
           <div className="flex items-center gap-2">
-            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
+            {/* ★ BOTH YEAR BOXES NAME THEMSELVES (aria-label), for the same reason the four switches
+                above do: their only context is the "Year Range" caption above the row and a "→" between
+                them, neither of which a screen reader attaches to either input — so without a name they
+                announce as two bare, indistinguishable edit boxes. "Earliest"/"Latest" rather than
+                "Minimum"/"Maximum" to match the guide's own framing of the range ("Defaults to 1-10000
+                AD", GuidePage "Dates — Year Range"). Purely additive: no visible label is added, so the
+                row's geometry is untouched. ⚠ These names are also the TEST HANDLE for the two boxes.
+                Do not remove them expecting the suite to catch it by other means: the boxes carry no
+                other stable identity, and the previous handle — data-drag-focus — is a GENERAL press-drag
+                opt-in (src/lib/pointerGestures.ts), so any third control in the panel adopting it would
+                have broken every year-range test at once. */}
+            <input ref={minInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Earliest Year" data-drag-focus value={minInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMinInputVal(e.target.value);}} onBlur={commitMin} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMin();e.currentTarget.blur();}if(e.key==="Escape"){setMinInputVal(String(minY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
             <span className="text-(--tx-300-60) text-sm shrink-0">→</span>
-            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
+            <input ref={maxInputRef} type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Latest Year" data-drag-focus value={maxInputVal} onChange={e=>{if(e.target.value===''||/^\d*$/.test(e.target.value))setMaxInputVal(e.target.value);}} onBlur={commitMax} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitMax();e.currentTarget.blur();}if(e.key==="Escape"){setMaxInputVal(String(maxY));e.currentTarget.blur();}blockMinus(e);}} onBeforeInput={blockMinusBI} className={`${NUM_INPUT_CLASS} py-1.5 w-16`}/>
           </div>
           {/* ★ THE ORDER OF THIS SECTION (round-12) — Year Range, then the two LEAP rows, then the
               JULIAN pair last. Julian Chance is locked unless the switch is ON *and* the range
@@ -1810,7 +1830,7 @@ const ReactDOM = { createRoot, createPortal }
           <PillGroup label="Jan/Feb Chance on Leap Years">
             <PillTray value={janFebChance} onChange={setJanFebChance} options={CHANCE_OPTIONS}/>
           </PillGroup>
-          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between pt-1"><span className="text-xs text-(--tx-200-80)">Julian Calendar (pre-Oct 15, 1582)</span><button type="button" aria-label="Julian Calendar (pre-Oct 15, 1582)" onClick={()=>setUseJulian(v=>!v)} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${useJulian?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{useJulian?"On":"Off"}</button></div>
           {/* Julian Chance: locked unless the switch directly above is ON *and* the active year range
               straddles 1582 (= mixed Julian+Gregorian: minY<=1582<=maxY). Year 1582 itself spans both
               calendars. When locked the selected value stays visually selected, so it's restored when
@@ -1822,7 +1842,7 @@ const ReactDOM = { createRoot, createPortal }
         </div>
         <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
           <SectionLabel>Stats</SectionLabel>
-          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs text-(--tx-200-80)">Save Stats</span><button type="button" aria-label="Save Stats" onClick={toggleSaveStats} className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${saveStats?"btn-solid border-transparent":"surface-toggle text-(--tx-100-80)"}`}>{saveStats?"On":"Off"}</button></div>
         </div>
         </div>
         {/* The panel's bottom boundary. elev-shadow-up is UNCONDITIONAL: its strength is the

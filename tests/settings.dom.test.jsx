@@ -45,47 +45,64 @@
 //
 // What it CANNOT prove: the concentric-housing geometry, the dim, and the press-drag dismissal
 // are pixels and pointers — on-device only.
+//
+// ── HOW THIS FILE IS ORGANISED, since the settings-panel extraction ──────────────────────────
+// Everything above the PIXEL GATES divider is BEHAVIOUR, and every one of those tests reaches the
+// panel through tests/helpers/settingsPanel — mounting, opening, finding a switch by its setting's
+// name, asking whether a picker is locked, asking whether a footer button is being offered. None
+// of them names a DOM position, an element id, or a Tailwind token, so none of them has to change
+// when the panel stops being part of App. That is the point: the extraction's gate is that this
+// net passes with ZERO edits, and a test you have to fix afterwards cannot be part of that gate.
+//
+// Below the divider are the PIXEL GATES, which are the deliberate opposite — implementation-
+// coupled, exact-equality, and the owner's zero-visual-change guarantee. Their own comment block
+// says what a red one there means and what the extraction owes them.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
-import { App } from '../src/main.jsx'
 import { PillGroup } from '../src/components/PillGroup.jsx'
 import { PillTray } from '../src/components/PillTray.jsx'
 import { useSettings } from '../src/store/settings.js'
+import {
+  mountApp,
+  openSettings,
+  panel,
+  panelEl,
+  picker,
+  pickerPills,
+  pickerLockState,
+  row,
+  settingSwitch,
+  switchRow,
+  footerButton,
+  isOffered,
+  resetAppState,
+} from './helpers/settingsPanel.jsx'
 
-function mountApp() {
-  const root = document.createElement('div')
-  root.id = 'root'
-  document.body.appendChild(root)
-  const utils = render(<App />)
-  act(() => {
-    fireEvent.keyDown(window, { key: 'G' }) // open the ⚙ popover
-  })
+// ⚠ WHERE THE PANEL LIVES IS NOT THIS FILE'S BUSINESS ANY MORE. Everything that used to be a DOM
+// walk from a label, an id literal, or a Tailwind token now goes through
+// tests/helpers/settingsPanel — see that file's header for why (short version: the panel is about
+// to move out of App, and a safety net you have to edit on the far side of a move is not a safety
+// net). Two describes at the foot of this file are the deliberate exception, and they say so.
+//
+// The fixture every test here starts from: the app, with the ⚙ panel OPEN. The G key is how this
+// file has always opened it — kept deliberately, because the routes are not yet proved equivalent
+// and swapping one for another silently would be a behaviour change smuggled in as a tidy-up.
+const mountPanel = () => {
+  const utils = mountApp()
+  openSettings('key')
   return utils
 }
-// Every TEXT query in this file is scoped to the ⚙ popover, never to the whole document, and that
-// is load-bearing: How to Play is always-mounted like the game modes (Q6, round 9), so its copy of
-// the guide is in the DOM under display:none on every screen — and the guide names half of this
-// panel's controls in prose ("Use System Settings", "Random Format", the theme rows). A global
-// getByText matches those sentences as readily as the control. ROLE queries need no such scoping:
-// they skip display:none subtrees by default, which is why the radiogroup accessors below don't.
-const panel = () => within(document.getElementById('settings-popover'))
 // Every group under test is a labelled radiogroup, so one scoped accessor serves them all.
-const group = (name) => within(screen.getByRole('radiogroup', { name }))
-const pills = (name) => group(name).getAllByRole('radio')
+const group = (name) => within(picker(name))
+const pills = (name) => pickerPills(name)
 const checked = (name) =>
   pills(name)
     .filter((b) => b.getAttribute('aria-checked') === 'true')
     .map((b) => b.textContent.trim())
 const labels = (name) => pills(name).map((b) => b.textContent.trim())
 // A visual ROW, found by its caption instead of by a role — which is the point: which radiogroup
-// owns a theme row depends on Use System, but the row itself is there either way. The caption is
-// the SectionLabel DIV, so this never catches the same-named 'Light' pill (a BUTTON). rowEl gives
-// the raw element (the shape assertions need to compare identities); rowOf wraps it for queries.
-const rowEl = (caption) =>
-  panel()
-    .getAllByText(caption)
-    .find((el) => el.tagName === 'DIV').parentElement
-const rowOf = (caption) => within(rowEl(caption))
+// owns a theme row depends on Use System, but the row itself is there either way.
+const rowOf = (caption) => within(row(caption))
 const rowPills = (caption) => rowOf(caption).getAllByRole('radio')
 const rowLabels = (caption) => rowPills(caption).map((b) => b.textContent.trim())
 const rowChecked = (caption) =>
@@ -115,18 +132,17 @@ const PICKERS = [
   'Leap Year Chance',
   'Jan/Feb Chance on Leap Years',
 ]
-// The On/Off switches sit in a label+button row and all read "On"/"Off", so they are found by
-// their LABEL's row rather than by an accessible name that would match every one of them.
-const toggle = (label) => panel().getByText(label).parentElement.querySelector('button')
+// The On/Off switches, by the setting each one controls. This used to walk from the LABEL's text
+// to its parent to its first button, because all four read "On"/"Off" and so had no name to ask
+// for; they name their setting now, and the helper is the only place that knows it.
 const clickToggle = (label) =>
   act(() => {
-    fireEvent.click(toggle(label))
+    fireEvent.click(settingSwitch(label))
   })
 
 describe('Settings → Display — theme pill rows', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -136,7 +152,7 @@ describe('Settings → Display — theme pill rows', () => {
   // The panel must not change height when the switch is flipped, which starts with both rows
   // existing in both states — the defect the two/three dropdowns had by construction.
   it('renders the SAME two rows, with the same pills, in both Use-System states', () => {
-    mountApp()
+    mountPanel()
     expect(rowLabels('Dark')).toEqual(['Dusk', 'Midnight', 'Nebula'])
     expect(rowLabels('Light')).toEqual(['Light', 'Parchment'])
     clickToggle('Use System Settings')
@@ -148,7 +164,7 @@ describe('Settings → Display — theme pill rows', () => {
   // Centered in BOTH states: a left-aligned SectionLabel is reserved for the DISPLAY/DATES/STATS
   // headers and would out-rank the "Theme" sub-label these sit under.
   it('captions read Dark / Light and stay centered in both Use-System states', () => {
-    mountApp()
+    mountPanel()
     const caption = (text) =>
       panel()
         .getAllByText(text)
@@ -163,7 +179,7 @@ describe('Settings → Display — theme pill rows', () => {
   // The OS owns which row is live, so the two picks are genuinely independent — two choices, and
   // therefore two radiogroups.
   it('Use System ON: two INDEPENDENT picks, modelled as two radiogroups', () => {
-    mountApp()
+    mountPanel()
     expect(labels('Dark theme')).toEqual(['Dusk', 'Midnight', 'Nebula'])
     expect(labels('Light theme')).toEqual(['Light', 'Parchment'])
     expect(screen.queryByRole('radiogroup', { name: 'Theme' })).toBeNull()
@@ -185,7 +201,7 @@ describe('Settings → Display — theme pill rows', () => {
   // as an independent choice, and the row without manualTheme would read "nothing selected" while
   // the user has in fact selected a theme.
   it('Use System OFF: ONE pick across BOTH rows, modelled as ONE radiogroup', () => {
-    mountApp()
+    mountPanel()
     clickToggle('Use System Settings')
     // The per-row groups are gone; one group owns all five pills, in row order.
     expect(screen.queryByRole('radiogroup', { name: 'Dark theme' })).toBeNull()
@@ -215,8 +231,7 @@ describe('Settings → Display — theme pill rows', () => {
 // overrides it — the light row is the live one by default.
 describe('Settings → Display — flipping Use System Settings OFF never changes the theme', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -227,7 +242,7 @@ describe('Settings → Display — flipping Use System Settings OFF never change
   const flipOff = () => clickToggle('Use System Settings')
 
   it('light system: seeds the manual theme from the LIGHT row, not from stale manualTheme', () => {
-    mountApp()
+    mountPanel()
     expect(st().manualTheme).toBe('dusk') // the stale value the old code would have jumped to
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
     flipOff()
@@ -238,7 +253,7 @@ describe('Settings → Display — flipping Use System Settings OFF never change
   })
 
   it('seeds from the live row even after that row is re-picked', () => {
-    mountApp()
+    mountPanel()
     act(() => {
       fireEvent.click(rowOf('Light').getByRole('radio', { name: 'Parchment' }))
     })
@@ -261,7 +276,7 @@ describe('Settings → Display — flipping Use System Settings OFF never change
       removeListener: () => {},
     }))
     useSettings.getState().setDarkTheme('nebula')
-    mountApp()
+    mountPanel()
     expect(document.documentElement.getAttribute('data-theme')).toBe('nebula')
     flipOff()
     expect(st().manualTheme).toBe('nebula')
@@ -276,26 +291,25 @@ describe('Settings → Display — flipping Use System Settings OFF never change
   // Comparing stored rather than in-effect values lit the bar — and un-dimmed Reset Settings and
   // Full Reset — on an app the user had only toggled a switch on and back off.
   it('an OFF→ON round trip leaves the panel reading UNMODIFIED', () => {
-    mountApp()
-    // The Reset Settings button dims itself exactly when the panel sits at its effective
-    // defaults, so it is the readable proxy for "nothing is modified".
-    const resetSettings = () => screen.getByRole('button', { name: 'Reset Settings' })
-    expect(resetSettings().className).toContain('pointer-events-none') // factory-fresh
+    mountPanel()
+    // Reset Settings stops being OFFERED exactly when the panel sits at its effective defaults,
+    // so it is the readable proxy for "nothing is modified".
+    const offered = () => isOffered(footerButton('Reset Settings'))
+    expect(offered()).toBe(false) // factory-fresh
     flipOff()
     expect(st().manualTheme).toBe('light') // the seed diverges from the 'dusk' default…
-    expect(resetSettings().className).not.toContain('pointer-events-none') // useSystem is off: real
+    expect(offered()).toBe(true) // useSystem is off: real
     flipOff() // …and back on, so manualTheme is dormant again
     expect(st().useSystem).toBe(true)
     expect(st().manualTheme).toBe('light') // still parked — deliberately, so OFF never jumps
-    expect(resetSettings().className).toContain('pointer-events-none') // yet nothing reads modified
+    expect(offered()).toBe(false) // yet nothing reads modified
   })
 })
 
 // ── Part A: the date-format trays + PillTray's disabled contract ─────────────────────────────
 describe('Settings → Display — date-format trays', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -306,7 +320,7 @@ describe('Settings → Display — date-format trays', () => {
   // ids, one pick, wearing two housings. The pills' accessible names carry the half — which is
   // what keeps the two 'MDY's and the two 'DMY's apart now that they share a group.
   it('is ONE radiogroup of five formats, named by half', () => {
-    mountApp()
+    mountPanel()
     expect(screen.queryByRole('radiogroup', { name: 'Written date format' })).toBeNull()
     expect(screen.queryByRole('radiogroup', { name: 'Numeric date format' })).toBeNull()
     expect(pills('Date Format').map((b) => b.getAttribute('aria-label'))).toEqual([
@@ -325,7 +339,7 @@ describe('Settings → Display — date-format trays', () => {
   })
 
   it('exactly one of the five is selected, wherever it lives', () => {
-    mountApp()
+    mountPanel()
     const checkedName = () =>
       pills('Date Format')
         .filter((b) => b.getAttribute('aria-checked') === 'true')
@@ -342,14 +356,15 @@ describe('Settings → Display — date-format trays', () => {
   // these are the two halves it does NOT cover — the lock is published to assistive tech, and
   // onChange is guarded so a click dispatched past pointer-events-none cannot change the value.
   it('Random Format ON locks the group: aria-disabled, dimmed wrapper, and onChange guarded', () => {
-    mountApp()
+    mountPanel()
     clickToggle('Random Format')
     expect(st().randomFormat).toBe(true)
-    pills('Date Format').forEach((b) => expect(b.getAttribute('aria-disabled')).toBe('true'))
+    const locked = pickerLockState('Date Format')
+    locked.segments.forEach((v) => expect(v).toBe('true'))
+    expect(locked.dimmed).toBe(true)
+    expect(locked.offered).toBe(false)
     // The radiogroup IS the dim wrapper, so the dim provably covers the captions inside it too.
-    const wrapper = screen.getByRole('radiogroup', { name: 'Date Format' })
-    expect(wrapper.className).toContain('opacity-60')
-    expect(wrapper.className).toContain('pointer-events-none')
+    const wrapper = picker('Date Format')
     expect(within(wrapper).getByText('Written')).toBeInTheDocument()
     expect(within(wrapper).getByText('Numeric')).toBeInTheDocument()
     act(() => {
@@ -359,49 +374,19 @@ describe('Settings → Display — date-format trays', () => {
   })
 
   it('Random Format OFF leaves the group live and unmarked', () => {
-    mountApp()
+    mountPanel()
     pills('Date Format').forEach((b) => expect(b.getAttribute('aria-disabled')).toBe(null))
     act(() => {
       fireEvent.click(group('Date Format').getByRole('radio', { name: 'Written DMY' }))
     })
     expect(st().dateFormat).toBe('written-dmy')
   })
-
-  // Round-10 (owner call, reverting round-9's stack): the two trays share ONE ROW again.
-  // Theme stacks out of NECESSITY — five theme names measure at zero headroom on any phone
-  // narrower than the owner's — and round-9 mistook that forced layout for a rule, applying it
-  // here too and costing ~61px of scrolling for consistency with a case that had no choice.
-  // These labels are m/d/y-sized and fit a shared row at every width we ship.
-  // THE RULE IS ABOUT HOUSINGS, NOT AXIS: each named family gets its own captioned tray; whether
-  // the trays sit side by side or stack is a FIT question answered per group. So this asserts the
-  // per-row SHAPE is identical to Theme's (that is the rule) while the axis differs (that is fit).
-  it('is TWO captioned trays SHARING ONE ROW, each shaped like a Theme row', () => {
-    mountApp()
-    const dateGroup = screen.getByRole('radiogroup', { name: 'Date Format' })
-    expect(dateGroup.className).toContain('flex') // side by side, not stacked
-    expect(dateGroup.className).not.toContain('space-y-') // no vertical rhythm between them
-    expect(dateGroup.children).toHaveLength(2)
-    // Both halves share the row evenly — without flex-1 the wider half would starve the other.
-    for (const half of dateGroup.children) expect(half.className).toContain('flex-1')
-    expect(dateGroup.children[0]).toBe(rowEl('Written'))
-    expect(dateGroup.children[1]).toBe(rowEl('Numeric'))
-    // The theme rows' shared wrapper spaces its rows with the same token.
-    expect(rowEl('Dark').parentElement.className).toContain('space-y-2')
-    // …and all four rows are caption-then-tray, nothing else.
-    for (const row of [rowEl('Written'), rowEl('Numeric'), rowEl('Dark'), rowEl('Light')]) {
-      expect(row.className).toContain('space-y-1.5')
-      expect(row.children).toHaveLength(2)
-      expect(row.children[0].className).toContain('text-center') // the centred family caption
-      expect(row.children[1].className).toContain('surface-tray') // the tray housing
-    }
-  })
 })
 
 // ── Part G: THE PICKER RULE — one treatment per control kind, and the locks survive it ───────
 describe('Settings — THE PICKER RULE', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -417,7 +402,7 @@ describe('Settings — THE PICKER RULE', () => {
   ]
 
   it('every PICKER is one merged tray', () => {
-    mountApp()
+    mountPanel()
     for (const name of PICKERS) {
       expect(pills(name).length).toBeGreaterThan(1)
       pills(name).forEach((b) => expect(isTraySegment(b)).toBe(true))
@@ -428,16 +413,16 @@ describe('Settings — THE PICKER RULE', () => {
   // carry role="radio", so it fails here even though nobody thought to list it above. Counting the
   // radios against the listed pickers is what makes the sweep exhaustive rather than a spot check.
   it('no radio is drawn anywhere outside a tray', () => {
-    mountApp()
+    mountPanel()
     const radios = screen.getAllByRole('radio')
     expect(radios).toHaveLength(PICKERS.flatMap((name) => pills(name)).length)
     radios.forEach((b) => expect(isTraySegment(b)).toBe(true))
   })
 
   it('every SWITCH stays one On/Off button — not a tray, not a radio', () => {
-    mountApp()
+    mountPanel()
     for (const label of SWITCHES) {
-      const btns = [...panel().getByText(label).parentElement.querySelectorAll('button')]
+      const btns = [...switchRow(label).querySelectorAll('button')]
       expect(btns).toHaveLength(1) // a switch is not a choice among alternatives
       expect(btns[0].textContent.trim()).toMatch(/^(On|Off)$/)
       expect(btns[0].getAttribute('role')).toBeNull()
@@ -452,15 +437,15 @@ describe('Settings — THE PICKER RULE', () => {
   // else. All four now come from ONE `disabled` on the PillGroup, so they cannot drift apart;
   // asserting them together is what proves that.
   const expectLock = (name, locked) => {
-    const g = screen.getByRole('radiogroup', { name })
-    expect(g.className.includes('opacity-60')).toBe(locked)
-    expect(g.className.includes('pointer-events-none')).toBe(locked)
-    pills(name).forEach((b) => expect(b.getAttribute('aria-disabled')).toBe(locked ? 'true' : null))
-    expect(pills(name).filter((b) => b.tabIndex === 0)).toHaveLength(locked ? 0 : 1)
+    const s = pickerLockState(name)
+    expect(s.dimmed).toBe(locked)
+    expect(s.offered).toBe(!locked)
+    s.segments.forEach((v) => expect(v).toBe(locked ? 'true' : null))
+    expect(s.tabStops).toBe(locked ? 0 : 1)
   }
 
   it('Input: live in a weekday mode, locked in Deduction, value preserved', () => {
-    mountApp()
+    mountPanel()
     expectLock('Input', false)
     act(() => {
       fireEvent.click(group('Input').getByRole('radio', { name: 'Dots' }))
@@ -490,7 +475,7 @@ describe('Settings — THE PICKER RULE', () => {
   // Julian Chance needs a range that STRADDLES 1582 — the factory 1–10000 does, 1900–10000 does
   // not — and needs the Julian Calendar switch on.
   it('Julian Chance: locked unless the range straddles 1582, and by the Julian switch', () => {
-    mountApp()
+    mountPanel()
     expectLock('Julian Chance', false)
     act(() => {
       fireEvent.click(group('Julian Chance').getByRole('radio', { name: '75%' }))
@@ -513,7 +498,7 @@ describe('Settings — THE PICKER RULE', () => {
 
   // 1900 is not a leap year under either rule, so a range of exactly [1900,1900] reaches none.
   it('Leap Year Chance: locked when no leap year is reachable; Jan/Feb Chance never locks', () => {
-    mountApp()
+    mountPanel()
     expectLock('Leap Year Chance', false)
     act(() => {
       fireEvent.click(group('Leap Year Chance').getByRole('radio', { name: '100%' }))
@@ -545,8 +530,7 @@ describe('Settings — THE PICKER RULE', () => {
 // ── The two Dates adjacencies the How-to-Play guide states as fact ───────────────────────────
 describe('Settings → Dates — the pairings the guide depends on', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -582,7 +566,7 @@ describe('Settings → Dates — the pairings the guide depends on', () => {
     // cannot fail a build. (What this still cannot see: the guide's Settings Overview enumerates
     // all five rows in prose. That list has to be re-read by hand on any reshuffle — pinning it
     // here would be pinning the whole order through the back door.)
-    mountApp()
+    mountPanel()
     const order = datesRowOrder()
     expect(order).toHaveLength(DATE_CAPTIONS.length) // else the index math below proves nothing
     expect(order.indexOf('Jan/Feb Chance on Leap Years')).toBe(
@@ -597,8 +581,7 @@ describe('Settings → Dates — the pairings the guide depends on', () => {
 // ── Parts E + F: identical semantics everywhere, and the dropdowns are gone ──────────────────
 describe('Settings → Display — radio semantics and the retired theme dropdowns', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -612,7 +595,7 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
   // drawn around CHOICES: Date Format spans its two trays, and the theme rows are two groups here
   // solely because Use System is on, making them two genuine choices.
   it('every mutually-exclusive choice in the panel is a radiogroup with exactly one checked', () => {
-    mountApp()
+    mountPanel()
     const expected = {
       'Date Format': 5,
       'Dark theme': 3,
@@ -642,7 +625,7 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
   // group may ever report an empty selection, which is the whole reason the grouping follows the
   // semantics instead of the layout.
   it('holds with Use System off, where the theme rows become one choice', () => {
-    mountApp()
+    mountPanel()
     clickToggle('Use System Settings')
     for (const [name, count] of Object.entries({
       'Date Format': 5,
@@ -666,7 +649,7 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
 
   // The theme CustomSelects are gone; the bar's mode selector is the app's last dropdown.
   it('the panel holds no dropdown — the mode selector is the only listbox trigger left', () => {
-    mountApp()
+    mountPanel()
     const triggers = screen
       .getAllByRole('button', { hidden: true })
       .filter((b) => b.getAttribute('aria-haspopup') === 'listbox')
@@ -681,8 +664,7 @@ describe('Settings → Display — radio semantics and the retired theme dropdow
 // the owner's phone has no keyboard. These tests are the whole verification.
 describe('Settings — the radiogroup keyboard contract', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
   })
   afterEach(() => {
     cleanup()
@@ -707,7 +689,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // Before this, every pill in the panel was its own tab stop — 26 of them — while the markup
   // told assistive tech there were seven groups.
   it('every group is ONE tab stop, on the selected pill, in both Use-System states', () => {
-    mountApp()
+    mountPanel()
     PICKERS.forEach(expectOneTabStop)
     // The five pills the group spans include a whole tray with nothing selected in it: the tab
     // stop is a property of the CHOICE, so the empty tray contributes none.
@@ -727,7 +709,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // it. Both axes move — the vertical pair is not decoration here, since Date Format and Theme
   // stack two trays — and both wrap.
   it('Right/Down and Left/Up move the choice and wrap', () => {
-    mountApp()
+    mountPanel()
     const start = pills('Date Format')[0]
     start.focus()
     press(start, 'ArrowRight')
@@ -756,7 +738,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // THE reason the contract lives on the group: a tray-scoped implementation would stop dead at
   // the end of the tray it was asked about, and hand these two groups two tab stops each.
   it('the arrows cross from one tray into the next — the group is the unit, not the tray', () => {
-    mountApp()
+    mountPanel()
     const lastWritten = pills('Date Format')[1]
     lastWritten.focus()
     expect(rowPills('Written')).toContain(lastWritten) // it really is the end of the first tray
@@ -777,7 +759,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   })
 
   it('Home and End jump to the ends of the group', () => {
-    mountApp()
+    mountPanel()
     const start = pills('Date Format')[2]
     start.focus()
     press(start, 'End')
@@ -791,7 +773,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // The dim's pointer-events-none stops POINTERS. Nothing stopped a keyboard, so a locked picker
   // was still operable by anyone using one — which is exactly the gap the group's inertness fills.
   it('a locked group has no tab stop, ignores the arrows, and SWALLOWS them', () => {
-    mountApp()
+    mountPanel()
     const spy = vi.fn()
     window.addEventListener('keydown', spy)
     try {
@@ -820,7 +802,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // an arrow the group has consumed has to stop at the group — otherwise walking between pills
   // would also step the puzzle behind the panel.
   it('an arrow the group consumed never reaches the window', () => {
-    mountApp()
+    mountPanel()
     const spy = vi.fn()
     window.addEventListener('keydown', spy)
     try {
@@ -844,7 +826,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // promise "click an option, then arrow along the setting"; this is what makes that true
   // everywhere. No manual .focus() anywhere in this test — that is the whole point of it.
   it('clicking a pill puts the keyboard inside its group — the arrows work straight after', () => {
-    mountApp()
+    mountPanel()
     const mdy = group('Date Format').getAllByRole('radio')[0]
     act(() => {
       fireEvent.click(mdy)
@@ -867,13 +849,13 @@ describe('Settings — the radiogroup keyboard contract', () => {
   // The lock, said once at group scope too. A screen reader entering a locked picker used to be
   // told it was live and only found out one element in, at the first segment's aria-disabled.
   it('a locked group announces its own lock, not just its pills', () => {
-    mountApp()
-    const g = (name) => screen.getByRole('radiogroup', { name })
-    expect(g('Date Format').getAttribute('aria-disabled')).toBeNull()
+    mountPanel()
+    const announced = () => pickerLockState('Date Format').announced
+    expect(announced()).toBeNull()
     clickToggle('Random Format')
-    expect(g('Date Format').getAttribute('aria-disabled')).toBe('true')
+    expect(announced()).toBe('true')
     clickToggle('Random Format')
-    expect(g('Date Format').getAttribute('aria-disabled')).toBeNull()
+    expect(announced()).toBeNull()
   })
 
   // The degenerate case no tray can see from inside itself: a value matching no option anywhere
@@ -906,49 +888,6 @@ describe('Settings — the radiogroup keyboard contract', () => {
     expect(screen.getAllByRole('radio').map((b) => b.tabIndex)).toEqual([-1, 0])
   })
 
-  // ★ THE OWNER'S GATE ON THIS ROUND: zero visual change. tabindex and key handlers carry no
-  // pixels, so every class string in the panel's pickers must be byte-for-byte what round-8 and
-  // the tray conversion shipped. Written out in full rather than read back from the component,
-  // which would agree with itself no matter what it emitted.
-  const SEGMENT = 'flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium'
-  const SELECTED = SEGMENT + ' btn-solid'
-  const UNSELECTED = SEGMENT + ' text-(--tx-100-80) hover:bg-(--stgl-hov)'
-  const TRAY = 'flex gap-0.5 border surface-tray rounded-xl'
-  const expectUnmovedPixels = () =>
-    screen.getAllByRole('radio').forEach((b) => {
-      expect(b.className).toBe(b.getAttribute('aria-checked') === 'true' ? SELECTED : UNSELECTED)
-      expect(b.parentElement.className).toBe(TRAY)
-    })
-
-  it('moved no class on any pill, in any state', () => {
-    mountApp()
-    expectUnmovedPixels()
-    clickToggle('Use System Settings')
-    expectUnmovedPixels()
-    clickToggle('Random Format') // a locked group is dimmed by its housing, never by its pills
-    expectUnmovedPixels()
-  })
-
-  // The housings themselves, including the lock's dim — which moved from four hand-written call
-  // sites into PillGroup during this pass and therefore has to be pinned as an exact string.
-  it('moved no class on any housing, locked or not', () => {
-    mountApp()
-    const cls = (name) => screen.getByRole('radiogroup', { name }).className
-    // ⚠ Round-10 retarget, NOT a loosening: Q2's gate was "the keyboard pass moves no pixel", and
-    // it still holds — this string changed because the OWNER separately reverted Date Format to
-    // one row (round-10), which is a deliberate visual change with its own test above. The pin
-    // stays exact so a future keyboard/lock change still cannot move it by accident.
-    expect(cls('Date Format')).toBe('flex gap-2')
-    expect(cls('Input')).toBe('')
-    expect(cls('Jan/Feb Chance on Leap Years')).toBe('')
-    expect(rowEl('Dark').parentElement.className).toBe('space-y-2')
-    expect(cls('Dark theme')).toBe('space-y-1.5')
-    clickToggle('Random Format')
-    expect(cls('Date Format')).toBe('flex gap-2 opacity-60 pointer-events-none')
-    act(() => st().setMinY(1900)) // all-Gregorian: the Julian row locks, and it has no own class
-    expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
-  })
-
   // …and it is drawn ONCE. opacity multiplies down the tree, so a nested wrapper that re-applied
   // the dim would render the group at 0.36 instead of 0.6. Rendered bare because the Theme block
   // is the app's only nesting and it carries no lock — this is the trap one `disabled=` prop away
@@ -968,6 +907,117 @@ describe('Settings — the radiogroup keyboard contract', () => {
   })
 })
 
+// ══ PIXEL GATES — NOT BEHAVIOUR TESTS ════════════════════════════════════════════════════════
+//
+// ★ THESE ARE THE OWNER'S ZERO-PIXEL-MOVEMENT GATE, and they are INTENTIONALLY COUPLED TO THE
+// IMPLEMENTATION. Everything else in this file goes through tests/helpers/settingsPanel so it can
+// survive the panel moving out of App; these do the opposite ON PURPOSE. They assert child counts,
+// element IDENTITY per index, and exact-equality class strings, because the thing they protect IS
+// the markup: the owner's standing rule is that a refactor may not move a single pixel, and the
+// only way to hold that line in jsdom — which lays nothing out — is to freeze what the app emits.
+//
+// So: do NOT route these through the abstraction, and do NOT soften them into `toContain`. An
+// abstraction that made them survive a change would be an abstraction that made them pointless.
+//
+// ⚠ WHAT THIS MEANS FOR THE EXTRACTION. When the panel becomes its own component, the six
+// className PROP STRINGS these pin (src/main.tsx — the Date Format group, Input, Jan/Feb Chance,
+// the theme wrapper and its two rows) must be carried across VERBATIM, character for character.
+// If one of them changes, that is a deliberate re-blessing of the app's look: change the app, look
+// at it on a device, and update the string here in the same commit. It is never a silent edit, and
+// a red test here is never "the helper needs fixing".
+//
+// ⚠ AND THEY DEPEND ON A RAW DOM WALK, deliberately kept local. `rowEl` below is the accessor the
+// rest of the file retired, because it encodes that a captioned row is exactly the caption's
+// parent — which is the very fact the identity assertions are checking.
+describe('Settings — PIXEL GATES (implementation-coupled on purpose)', () => {
+  beforeEach(() => {
+    resetAppState()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // The raw walk, kept here and nowhere else: caption DIV → its parent. The tagName filter is what
+  // keeps it off the same-named 'Light' PILL (a BUTTON).
+  const rowEl = (caption) =>
+    panel()
+      .getAllByText(caption)
+      .find((el) => el.tagName === 'DIV').parentElement
+
+  // Round-10 (owner call, reverting round-9's stack): the two trays share ONE ROW again.
+  // Theme stacks out of NECESSITY — five theme names measure at zero headroom on any phone
+  // narrower than the owner's — and round-9 mistook that forced layout for a rule, applying it
+  // here too and costing ~61px of scrolling for consistency with a case that had no choice.
+  // These labels are m/d/y-sized and fit a shared row at every width we ship.
+  // THE RULE IS ABOUT HOUSINGS, NOT AXIS: each named family gets its own captioned tray; whether
+  // the trays sit side by side or stack is a FIT question answered per group. So this asserts the
+  // per-row SHAPE is identical to Theme's (that is the rule) while the axis differs (that is fit).
+  it('Date Format is TWO captioned trays SHARING ONE ROW, each shaped like a Theme row', () => {
+    mountPanel()
+    const dateGroup = screen.getByRole('radiogroup', { name: 'Date Format' })
+    expect(dateGroup.className).toContain('flex') // side by side, not stacked
+    expect(dateGroup.className).not.toContain('space-y-') // no vertical rhythm between them
+    expect(dateGroup.children).toHaveLength(2)
+    // Both halves share the row evenly — without flex-1 the wider half would starve the other.
+    for (const half of dateGroup.children) expect(half.className).toContain('flex-1')
+    expect(dateGroup.children[0]).toBe(rowEl('Written'))
+    expect(dateGroup.children[1]).toBe(rowEl('Numeric'))
+    // The theme rows' shared wrapper spaces its rows with the same token.
+    expect(rowEl('Dark').parentElement.className).toContain('space-y-2')
+    // …and all four rows are caption-then-tray, nothing else.
+    for (const el of [rowEl('Written'), rowEl('Numeric'), rowEl('Dark'), rowEl('Light')]) {
+      expect(el.className).toContain('space-y-1.5')
+      expect(el.children).toHaveLength(2)
+      expect(el.children[0].className).toContain('text-center') // the centred family caption
+      expect(el.children[1].className).toContain('surface-tray') // the tray housing
+    }
+  })
+
+  // ★ THE OWNER'S GATE ON THE ROUND-9 KEYBOARD PASS: zero visual change. tabindex and key handlers
+  // carry no pixels, so every class string in the panel's pickers must be byte-for-byte what
+  // round-8 and the tray conversion shipped. Written out in full rather than read back from the
+  // component, which would agree with itself no matter what it emitted.
+  const SEGMENT = 'flex-1 px-1.5 py-1.5 rounded-[calc(var(--radius-xl)-1px)] text-xs font-medium'
+  const SELECTED = SEGMENT + ' btn-solid'
+  const UNSELECTED = SEGMENT + ' text-(--tx-100-80) hover:bg-(--stgl-hov)'
+  const TRAY = 'flex gap-0.5 border surface-tray rounded-xl'
+  const expectUnmovedPixels = () =>
+    screen.getAllByRole('radio').forEach((b) => {
+      expect(b.className).toBe(b.getAttribute('aria-checked') === 'true' ? SELECTED : UNSELECTED)
+      expect(b.parentElement.className).toBe(TRAY)
+    })
+
+  it('moved no class on any pill, in any state', () => {
+    mountPanel()
+    expectUnmovedPixels()
+    clickToggle('Use System Settings')
+    expectUnmovedPixels()
+    clickToggle('Random Format') // a locked group is dimmed by its housing, never by its pills
+    expectUnmovedPixels()
+  })
+
+  // The housings themselves, including the lock's dim — which moved from four hand-written call
+  // sites into PillGroup during the round-9 pass and therefore has to be pinned as an exact string.
+  it('moved no class on any housing, locked or not', () => {
+    mountPanel()
+    const cls = (name) => screen.getByRole('radiogroup', { name }).className
+    // ⚠ Round-10 retarget, NOT a loosening: Q2's gate was "the keyboard pass moves no pixel", and
+    // it still holds — this string changed because the OWNER separately reverted Date Format to
+    // one row (round-10), which is a deliberate visual change with its own test above. The pin
+    // stays exact so a future keyboard/lock change still cannot move it by accident.
+    expect(cls('Date Format')).toBe('flex gap-2')
+    expect(cls('Input')).toBe('')
+    expect(cls('Jan/Feb Chance on Leap Years')).toBe('')
+    expect(rowEl('Dark').parentElement.className).toBe('space-y-2')
+    expect(cls('Dark theme')).toBe('space-y-1.5')
+    clickToggle('Random Format')
+    expect(cls('Date Format')).toBe('flex gap-2 opacity-60 pointer-events-none')
+    act(() => st().setMinY(1900)) // all-Gregorian: the Julian row locks, and it has no own class
+    expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
+  })
+})
+
 // Round 10 item B — the popover's sticky footer is one of the app's four boundary surfaces, and
 // its shadow is now progressive: a continuous --shade written by the shared edge hook instead of
 // a class toggled off popoverAtBottom and cross-faded by a CSS transition. This is also the site
@@ -975,8 +1025,7 @@ describe('Settings — the radiogroup keyboard contract', () => {
 // here explicitly: the shadow and the bottom fade mask have to give the same answer.
 describe('Settings — the sticky footer’s progressive boundary shadow (round 10 item B)', () => {
   beforeEach(() => {
-    localStorage.clear()
-    useSettings.getState().resetSettings()
+    resetAppState()
     // index.css is not loaded in jsdom, so the ramp distance the writer reads is stood up by hand
     // at its real value — and BEFORE the mount, since the hook reads it once when it attaches.
     document.documentElement.style.setProperty('--fade-h', '24px')
@@ -988,7 +1037,7 @@ describe('Settings — the sticky footer’s progressive boundary shadow (round 
   })
 
   const footer = () => document.querySelector('.popover-sticky-footer')
-  const scroller = () => document.querySelector('#settings-popover [data-drag-scroll]')
+  const scroller = () => panelEl().querySelector('[data-drag-scroll]')
   const shade = (el) => Number(el.style.getPropertyValue('--shade'))
   const scrollTo = (el, top) => {
     el.scrollTop = top
@@ -998,7 +1047,7 @@ describe('Settings — the sticky footer’s progressive boundary shadow (round 
   }
 
   it('ramps the footer shadow with the panel’s remaining scroll, toggling no class', () => {
-    mountApp()
+    mountPanel()
     const el = scroller()
     // elev-shadow-up is unconditional now; the class list is captured and re-checked at the end.
     expect(footer().className).toContain('elev-shadow-up')
@@ -1021,7 +1070,7 @@ describe('Settings — the sticky footer’s progressive boundary shadow (round 
     // bottom dead band, so the fade mask is off. If the shade were computed from the raw gap the
     // footer would wear a permanent ~12% shadow beside a mask that says there is nothing below —
     // one boundary, two answers. Both readings come off the same measurement, so it cannot happen.
-    mountApp()
+    mountPanel()
     const el = scroller()
     Object.defineProperties(el, {
       scrollHeight: { configurable: true, get: () => 403 },
