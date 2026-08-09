@@ -70,6 +70,7 @@ import {
   picker,
   pickerPills,
   pickerLockState,
+  expectLock,
   row,
   settingSwitch,
   switchRow,
@@ -430,19 +431,19 @@ describe('Settings — THE PICKER RULE', () => {
     }
   })
 
-  // The lock is published four ways and this reads all four: the dim on the GROUP (so the housing
-  // greys as one piece rather than five separately-dimmed buttons, which is what changed in
-  // round-9), aria-disabled on every segment, PillTray's onChange guard behind them, and — the
-  // Q2 addition — no tab stop at all, since pointer-events-none locks out pointers and nothing
-  // else. All four now come from ONE `disabled` on the PillGroup, so they cannot drift apart;
-  // asserting them together is what proves that.
-  const expectLock = (name, locked) => {
-    const s = pickerLockState(name)
-    expect(s.dimmed).toBe(locked)
-    expect(s.offered).toBe(!locked)
-    s.segments.forEach((v) => expect(v).toBe(locked ? 'true' : null))
-    expect(s.tabStops).toBe(locked ? 0 : 1)
-  }
+  // The lock is published five ways and expectLock (imported from the panel helper) reads all
+  // five: the dim on the GROUP (so the housing greys as one piece rather than five separately-
+  // dimmed buttons, which is what changed in round-9), the GROUP's own aria-disabled, then
+  // aria-disabled on every segment, PillTray's onChange guard behind them, and — the Q2 addition —
+  // no tab stop at all, since pointer-events-none locks out pointers and nothing else. All five
+  // come from ONE `disabled` on the PillGroup, so they cannot drift apart; asserting them together
+  // is what proves that.
+  //
+  // ⚠ IT USED TO BE A PRIVATE FOUR-FACET COPY HERE, written before the group carried its own
+  // aria-disabled, and the behaviour net then grew a five-facet second copy of the same idea. One
+  // definition now, in the helper, and the stronger form won: the facet the local copy was missing
+  // is the one a screen reader meets FIRST — a group announcing itself live while every segment
+  // inside it says otherwise.
 
   it('Input: live in a weekday mode, locked in Deduction, value preserved', () => {
     mountPanel()
@@ -1015,6 +1016,37 @@ describe('Settings — PIXEL GATES (implementation-coupled on purpose)', () => {
     expect(cls('Date Format')).toBe('flex gap-2 opacity-60 pointer-events-none')
     act(() => st().setMinY(1900)) // all-Gregorian: the Julian row locks, and it has no own class
     expect(cls('Julian Chance')).toBe('opacity-60 pointer-events-none')
+  })
+
+  // ★ THE PANEL'S OWN LAYOUT CONTRACT, and it lives here for the reason the block header gives.
+  // These four tokens are what MAKE the panel scroll its list instead of growing off the bottom of
+  // a phone, and every one of them is invisible to any behavioural test — jsdom lays nothing out,
+  // so removing any of them leaves a fully green suite and a broken panel on a device.
+  //
+  // ⚠ THEY ARE DELIBERATELY NOT IN THE BEHAVIOUR NET. tests/settingsPanel.chrome carries G12 and
+  // used to assert these too; that made it the one case in the net naming raw Tailwind tokens on a
+  // live app element, and it would have failed on a harmless re-authoring — a card rendered as its
+  // own component, or the cap moved into index.css where --bar-h already lives — while catching
+  // none of the seam risks it was aimed at. A pin that forces an edit on the far side of the move
+  // cannot be part of a zero-edit gate. Here, "you changed the app's look, bless it deliberately"
+  // is exactly what a red test is supposed to mean.
+  it('keeps the panel a viewport-capped, non-scrolling column around a shrinkable list', () => {
+    mountPanel()
+    const card = document.getElementById('settings-popover')
+    const list = card.querySelector('[data-drag-scroll]')
+    // A COLUMN capped to what is left of the viewport below the bar. Without the cap the panel
+    // grows past the bottom of the screen and the footer goes with it.
+    expect(card.className).toContain('flex')
+    expect(card.className).toContain('flex-col')
+    expect(card.className).toContain('max-h-[calc(100dvh')
+    expect(card.className).toContain('var(--bar-h)')
+    // The CARD itself never scrolls — if it did, the footer would scroll away with the list.
+    expect(card.className).not.toMatch(/overflow-y/)
+    // ★ min-h-0 IS THE WHOLE THING. A flex child's default min-height is auto, so without it the
+    // list refuses to shrink below its content: it never scrolls, it pushes the card past its own
+    // cap, and the footer leaves the screen.
+    expect(list.className).toContain('flex-1')
+    expect(list.className).toContain('min-h-0')
   })
 })
 

@@ -13,6 +13,13 @@
 // "does this className contain a token", and the day the app withholds a control some other way
 // (a real `disabled`, `inert`, aria-disabled) this file changes and nothing else does.
 //
+// ⚠ TWO QUESTIONS, NOT ONE, and keeping them apart is the point of the second export below.
+// `pointer-events-none` stops a press; `opacity-60` DRAWS the control as unavailable. The app
+// always writes them together, and that is exactly why a test must be able to ask them
+// separately: greyed-but-still-pressable and live-looking-but-inert are both real bugs, and a
+// single boolean cannot tell them apart. So `isOffered` answers "would a press reach this" and
+// `isDimmed` answers "is this drawn as unavailable" — one file owns both spellings.
+//
 // ⚠ FOUR PLACES DELIBERATELY STILL NAME THE CLASS, and they are not oversights. This list is the
 // whole of it: `grep -rn "pointer-events-none" tests/` returns exactly these six assertion sites
 // and nothing else (the remaining hits are prose).
@@ -31,3 +38,10 @@
 
 // `el` is any rendered control. Returns whether a real press would reach it.
 export const isOffered = (el) => !el.className.includes('pointer-events-none')
+
+// `el` is any rendered element. Returns whether the app is DRAWING it as unavailable. Read on the
+// element that carries the treatment — for a picker that is the PillGroup housing, which is what
+// makes the whole tray, captions included, grey as one piece. Callers that need "does the dim
+// REACH this element" (an inherited opacity covers every descendant) ask
+// settingsPanel.drawnUnavailable, which walks the containment chain through this predicate.
+export const isDimmed = (el) => el.className.includes('opacity-60')
