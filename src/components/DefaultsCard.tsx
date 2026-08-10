@@ -151,9 +151,9 @@ function DefaultsCard({
                 and lets go, Escape throws it away and lets go, and the container is left for a
                 second Escape (here, the popup's own capture-phase handler once the field is empty
                 of focus). Cancel is still the way to discard the WHOLE popup; this is the field.
-                ⚠ NOT app-wide: the Lookup date box (components/LookupCard) handles Enter only, so
-                Escape does nothing there. It is the one text field outside the contract — an open
-                gap, not a decision, and the guide's Keyboard Input bullet says so out loud.
+                ★ AND SINCE ROUND 17 IT IS APP-WIDE: the Lookup date box (components/LookupCard)
+                was the one text field outside the contract, and it is on it now — so neither this
+                note nor the guide's Keyboard Input bullet names an exception any more.
                 ⚠ THE DISCARD TARGET IS CAPTURED ON FOCUS, because `prefs.aoxN` is the pending
                 snapshot itself — onChange rewrites it on every keystroke, so the value being
                 discarded back to is gone by the time Escape arrives. Same shape, same reason, as

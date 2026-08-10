@@ -210,6 +210,28 @@ export default function LookupCard({
       ? (next: boolean) => onCalcOpenChange?.(!!next)
       : () => {}
   const lookupInputRef = React.useRef<HTMLInputElement>(null)
+  // ★ WHAT ESCAPE IN THE DATE BOX DISCARDS BACK TO (round 17), and why it needs remembering.
+  // This box is not a MIRROR of a stored value the way the ⚙ Year Range boxes are: those revert to
+  // minY/maxY, a committed year sitting right beside the text. Here `inputValue` IS the text and
+  // onChange overwrites it on every keystroke, so by the time Escape arrives the thing being
+  // discarded back to exists nowhere — the same shape, and the same reason, as the AoX run-length
+  // box's aoxNAtFocusRef (modes/AoxMode). Reverting to something convenient instead (empty, or the
+  // last committed lookup) would be a different promise from the one every other field makes.
+  // TWO THINGS SET THE BASELINE, and both of them are "the edit starts here":
+  //   • the keyboard ENTERING the box — onFocus, below;
+  //   • the CARD ITSELF writing the box — writeInput, below.
+  // The second is load-bearing rather than tidy. Lookup and Clear both preventDefault their
+  // mousedown, so a press on either leaves the keyboard exactly where it was: without it, pressing
+  // Clear and then Escape would resurrect the very text Clear had just thrown away. The other two
+  // card-writes (a Date Format change, picking a history row) reach it for the same reason.
+  const lookupAtFocusRef = React.useRef('')
+  // Every write to the box the CARD makes rather than the user. User typing goes straight to sli
+  // (onChange) — it is the edit, not a new baseline for it — and everything else comes through
+  // here, so the discard target can never drift from what is actually in the box.
+  const writeInput = (v: string) => {
+    sli(v)
+    lookupAtFocusRef.current = v
+  }
   // LookupCard uses module-level isLeap/dim/wday/numericFormatOf — no local duplicates.
   // Map any selected dateFormat to its corresponding Numeric format for input parsing.
   const numericFmtForInput = numericFormatOf(dateFormat)
@@ -241,10 +263,10 @@ export default function LookupCard({
     prevFormatRef.current = dateFormat
     const selected = entries.find((e) => e.id === sid)
     if (selected) {
-      sli(fmt(selected.y, selected.m, selected.d, numericFmtForInput))
+      writeInput(fmt(selected.y, selected.m, selected.d, numericFmtForInput))
       return
     }
-    sli('')
+    writeInput('')
     slo('')
     // Fire on dateFormat change only (the prevFormatRef guard also skips the initial mount). The
     // setters are re-created each render; excluding them keeps this from running every render,
@@ -343,7 +365,7 @@ export default function LookupCard({
     lookupInputRef.current?.blur()
   }
   function clearLookup() {
-    sli('')
+    writeInput('')
     slo('')
     scd(null)
     ssid(null)
@@ -379,7 +401,7 @@ export default function LookupCard({
     } else {
       scd({ y: entry.y, m: entry.m, d: entry.d })
     }
-    sli(fmt(entry.y, entry.m, entry.d, numericFmtForInput))
+    writeInput(fmt(entry.y, entry.m, entry.d, numericFmtForInput))
     if (document.activeElement) (document.activeElement as HTMLElement).blur()
   }
   const clearHist = () => {
@@ -459,27 +481,55 @@ export default function LookupCard({
               appearance-none (Q4 round-8) is the same kind of statement for behaviour: the box
               declares its own border, background and radius, so appearance:auto would be a false
               declaration that also leaves iOS's native inner shadow and focus treatment live. */}
-          {/* ⚠ THE ONE TEXT FIELD IN THE APP WITH NO ESCAPE CONTRACT, recorded here because round 15
-              (B6) put every other one on the same rule and this is where a reader will look for the
-              exception. Enter runs the lookup and the box KEEPS focus (deliberate — you are meant
-              to type the next date straight after); Escape does nothing whatever, because there is
-              no branch for it here and App's document-level Escape listener is registered only
-              while the ⚙ panel is open AND bails while any text input holds focus.
-              ⚠ IT IS A GAP, NOT A DECISION. Every OTHER typing surface — both ⚙ Year Range boxes,
-              the Save Defaults popup's N field, the AoX screen's run length, the tap-to-type slider
-              readouts — means "throw this edit away" by Escape. Giving this box the same contract
-              is a real behaviour change with a real question behind it (what does "the edit" revert
-              TO when the box also carries a committed lookup?), so it is the owner's call and not a
-              tidy-up. Until he takes it, nothing in src/ or in How to Play may say the rule is
-              app-wide: the guide's Keyboard Input bullet names the fields it covers and stops. */}
+          {/* ★ THE ESCAPE CONTRACT, AND THE GAP IT CLOSED (round 17 — the owner's call). This box
+              is now on the same rule as every other typing surface in the app: Enter keeps the edit
+              and lets go, Escape throws it away and lets go. Nothing in src/ or in How to Play
+              names an exception any more, because there is no longer one.
+              ⚠ THIS COMMENT USED TO SAY ENTER KEEPS FOCUS. IT NEVER DID — read runLookup: every
+              exit path calls lookupInputRef.current?.blur() on success and .focus() on a refusal,
+              so Enter has always meant "commit and let go" here, exactly as it does everywhere
+              else, and the box only holds on when it has an error to show you. The claim was
+              written while documenting this field as the app's Escape exception, and it was wrong
+              on the day it was written; the owner caught it. Enter's behaviour is UNCHANGED by
+              round 17 — only the description of it is.
+              ⚠ ESCAPE REVERTS TO THE BASELINE, NOT TO EMPTY — see lookupAtFocusRef above for what
+              sets that baseline and why it has to be captured rather than derived.
+              ⚠ NO flushSync, AND THAT IS THE ONE PLACE THE ⚙ YEAR-BOX PRECEDENT DOES NOT CARRY.
+              The year boxes need it because they commit ON BLUR: their revert and their blur landed
+              in one React batch, so the commit still read the pre-revert text and re-committed the
+              value Escape was discarding. This input has NO onBlur at all — blurring it commits
+              nothing — so there is no commit to lose the race to, and forcing a synchronous render
+              here would be cargo cult.
+              ⚠ IT STOPS PROPAGATION, and that half of the precedent DOES carry, for the reason
+              round 14 wrote down at the year boxes and round 15 repeated at the AoX run length.
+              App's Escape listener (main.tsx) is a document keydown in the BUBBLE phase that asks
+              "does a text input have focus?" to decide the press is not its own; blur() below has
+              already run by then, so without the stop it would find nothing focused and close the ⚙
+              panel on a press meant for this box. The reachable order is the one aox.dom pins: the
+              keyboard is ALREADY here when the panel opens, because tapping the gear does not move
+              focus on iOS or Safari. Nothing else is lost by stopping it — VERIFIED rather than
+              assumed: App's other keydown listener (the letter/mode map, on window) returns early
+              for any INPUT and has no Escape branch at all; this card's own document listener bails
+              the same way; CustomSelect's Escape is a React handler on its own trigger, which Tab
+              moves focus to, so it can never be waiting on a press from in here; and the four
+              settings-modal handlers are CAPTURE phase, so they have already run and cannot be
+              stopped by anything here anyway (the two that can coexist with a focused text field
+              carve one out themselves). */}
           <input
             ref={lookupInputRef}
             value={li}
             onChange={(e) => sli(e.target.value)}
+            onFocus={() => {
+              lookupAtFocusRef.current = li
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
                 runLookup()
+              } else if (e.key === 'Escape') {
+                e.stopPropagation()
+                writeInput(lookupAtFocusRef.current)
+                e.currentTarget.blur()
               }
             }}
             placeholder={`e.g., ${inputMeta.example}`}

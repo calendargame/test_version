@@ -526,3 +526,195 @@ describe('Lookup history: the window, and the count beside the heading (round 13
     expect(badge.className).toBe('text-(--tx-300-60)') // the footnote tier — dimmer than the label
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// THE DATE BOX'S ESCAPE CONTRACT (round 17).
+//
+// Rounds 15 and 16 put every OTHER typing field in the app on one rule — Enter keeps the edit and
+// lets go, Escape throws it away and lets go — and this box was the single hold-out, handling
+// Enter only. It is on the rule now, and these cases are that rule, executable.
+//
+// Two things about it are worth stating up front, because both were written down WRONG before:
+//   • ENTER IS UNCHANGED. The comment beside the input used to claim Enter "keeps focus" here.
+//     It never did — runLookup blurs on every success path and re-focuses only to show you an
+//     error — so Enter has always meant "commit and let go". The `commits and blurs` case below
+//     pins the behaviour so the description can never drift from it again.
+//   • ESCAPE NEEDS A REMEMBERED TARGET. This box is not a mirror of a stored value the way the ⚙
+//     year boxes are (those revert to minY/maxY, sitting right beside the text): `inputValue` IS
+//     the text and every keystroke overwrites it, so the value being discarded back to has to be
+//     captured. It is captured when the keyboard enters the box, and re-captured whenever the CARD
+//     writes the box — the last two cases are that second half, and they are not decoration:
+//     Clear keeps focus in the box on purpose, so without the re-capture, Clear-then-Escape would
+//     hand back the text Clear had just thrown away.
+//
+// ⚠ REAL .focus(), NOT fireEvent.focus, throughout — the same trap aox.dom documents. fireEvent
+// dispatches the event without moving the browser's focus, so a later .focus() would be a no-op
+// that never fires onFocus and the discard target would silently be whatever the box held first.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+const box = (container) => container.querySelector('input')
+const esc = (el) => act(() => fireEvent.keyDown(el, { key: 'Escape' }))
+
+describe('Lookup date box — Escape discards the edit and lets go (round 17)', () => {
+  afterEach(cleanup)
+
+  it('puts back the text the box held when it was focused, and blurs', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: '7/4/1776' } })
+      box(container).blur()
+    })
+    act(() => {
+      box(container).focus() // the edit starts here: the baseline is '7/4/1776'
+      fireEvent.change(box(container), { target: { value: '7/4/17' } })
+    })
+    esc(box(container))
+    expect(box(container).value).toBe('7/4/1776')
+    expect(document.activeElement).not.toBe(box(container)) // …and it let go
+  })
+
+  it('from an empty box, Escape puts the empty box back rather than anything convenient', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: '3/14/1592' } })
+    })
+    esc(box(container))
+    expect(box(container).value).toBe('')
+    expect(slot(container).textContent).toBe(HINT) // nothing was looked up on the way past
+  })
+
+  it('Enter still commits and lets go — and keeps the box only to show you an error', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: '7/4/1776' } })
+    })
+    act(() => fireEvent.keyDown(box(container), { key: 'Enter' }))
+    expect(lines(container)).toEqual(['7/4/1776', 'Thursday'])
+    expect(document.activeElement).not.toBe(box(container)) // commit AND let go, as everywhere
+
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: 'nonsense' } })
+    })
+    act(() => fireEvent.keyDown(box(container), { key: 'Enter' }))
+    expect(slot(container).textContent).toBe('Enter date as m/d/y, e.g. 3/14/1592')
+    expect(document.activeElement).toBe(box(container)) // a refusal holds on, so you can fix it
+  })
+
+  it('an Escape on a LATER edit leaves the committed lookup alone', () => {
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    lookup(container, '7/4/1776')
+    expect(lines(container)).toEqual(['7/4/1776', 'Thursday'])
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: '1/1/2000' } })
+    })
+    esc(box(container))
+    expect(box(container).value).toBe('7/4/1776') // the edit went, not the lookup
+    expect(lines(container)).toEqual(['7/4/1776', 'Thursday']) // the answer stands
+    expect(rows(container)).toEqual([['7/4/1776', 'Thursday']]) // and so does the history
+  })
+
+  it('the box consumes the press — nothing downstream of it ever sees the Escape', () => {
+    // The stopPropagation, at component level. App's settings Escape listener is a DOCUMENT
+    // keydown in the bubble phase, and React 19 attaches its own listener at the root container,
+    // so stopping the press there means document never sees it at all. (The consequence that
+    // matters — the ⚙ panel surviving the press — is the App-level case below.)
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    const seen = []
+    const spy = (e) => seen.push(e.key)
+    document.addEventListener('keydown', spy)
+    try {
+      act(() => box(container).focus())
+      esc(box(container))
+      expect(seen).toEqual([])
+      act(() => fireEvent.keyDown(box(container), { key: 'Enter' })) // …and only Escape is stopped
+      expect(seen).toEqual(['Enter'])
+    } finally {
+      document.removeEventListener('keydown', spy)
+    }
+  })
+
+  it('Clear moves the baseline: Escape after it cannot resurrect what Clear threw away', () => {
+    // Clear preventDefaults its own mousedown, so pressing it leaves the keyboard in the box —
+    // which is exactly the route that would misbehave if the baseline were only ever set on focus.
+    // ⚠ THE BOX MUST ALREADY HOLD TEXT WHEN IT IS FOCUSED, or this case tests nothing: focusing an
+    // EMPTY box makes the focus baseline "" too, and then both the right answer and the wrong one
+    // land on an empty box. Type, let go, then come back — that is the only shape where the focus
+    // baseline and the post-Clear baseline differ, so it is the only shape that can catch this.
+    const { container } = render(<Host dateFormat="numeric-mdy" />)
+    act(() => {
+      box(container).focus()
+      fireEvent.change(box(container), { target: { value: '7/4/1776' } })
+      box(container).blur()
+    })
+    act(() => box(container).focus()) // the focus baseline is '7/4/1776'
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Clear' })))
+    expect(box(container).value).toBe('')
+    expect(document.activeElement).toBe(box(container)) // still holding the keyboard
+    esc(box(container))
+    expect(box(container).value).toBe('') // Clear stands: Escape may not hand the date back
+  })
+
+  it('a Date Format change moves it too — Escape reverts to the REWRITTEN box, not the old one', () => {
+    // With an entry selected, a format change rewrites the box into the new numeric format rather
+    // than clearing it. The baseline has to follow, or Escape would put back a string in the
+    // format that just stopped existing — text the box could no longer parse.
+    const stored = { id: 'e1', y: 1776, m: 7, d: 4 }
+    const { container, rerender } = render(
+      <Host dateFormat="numeric-mdy" initialHistory={[stored]} />,
+    )
+    act(() => fireEvent.click(container.querySelector('ul button')))
+    expect(box(container).value).toBe('7/4/1776')
+    act(() => box(container).focus())
+    act(() => {
+      rerender(<Host dateFormat="numeric-dmy" initialHistory={[stored]} />)
+    })
+    expect(box(container).value).toBe('4.7.1776')
+    esc(box(container))
+    expect(box(container).value).toBe('4.7.1776') // not '7/4/1776'
+  })
+})
+
+describe('Lookup date box — Escape does not take the ⚙ panel down with it (round 17)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useSettings.getState().resetToFactory()
+  })
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  // The twin of the AoX run-length case (tests/aox.dom), and it exists for the same reason: this
+  // is what the stopPropagation is FOR. Without it, Escape's own blur() runs first, App's
+  // document-level settings listener then finds nothing focused so its text-input guard no longer
+  // applies, and the whole panel closes on a press the user meant for the box.
+  //
+  // ⚠ fireEvent.click ON THE GEAR IS THE POINT. A click that does not move focus is what a real
+  // tap does on iOS and Safari, so this reproduces the reachable order — the keyboard is ALREADY
+  // in the box when the panel opens — rather than the desktop path where the box blurs anyway.
+  it('the panel stands, and the edit is the only thing discarded', () => {
+    mountApp()
+    act(() => fireEvent.keyDown(window, { key: 'L' })) // to Lookup
+    const field = () => document.querySelector('input[placeholder^="e.g.,"]')
+    const gear = () => screen.getByRole('button', { name: /^Settings/ })
+    act(() => {
+      field().focus()
+      fireEvent.change(field(), { target: { value: '7/4/1776' } })
+      field().blur()
+    })
+    act(() => {
+      field().focus()
+      fireEvent.change(field(), { target: { value: '7/4/17' } })
+    })
+    act(() => fireEvent.click(gear())) // …and the panel opens with the keyboard still in the box
+    expect(gear().getAttribute('aria-controls')).toBe('settings-popover') // it really is open
+    expect(document.activeElement).toBe(field()) // …and the box really still has the keyboard
+    act(() => fireEvent.keyDown(field(), { key: 'Escape' }))
+    expect(field().value).toBe('7/4/1776') // the box's own Escape ran
+    expect(gear().getAttribute('aria-controls')).toBe('settings-popover') // and the panel stands
+  })
+})

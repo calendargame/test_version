@@ -18,12 +18,11 @@ import { commitSliderText } from '../lib/sliderValue.js'
 //     revert — without the stop the same native event would bubble on and slam the panel shut on
 //     what the user meant as a typing dismiss. This was the app's FIRST discard-on-Escape field
 //     (round 2); round 15 (B6) brought the last two NUMERIC ones — the AoX popup field and the AoX
-//     screen's own run-length box — onto the same contract. Escape therefore means "throw this edit
-//     away" in every box you can type a NUMBER into: these readouts, both ⚙ Year Range boxes, the
-//     Save Defaults popup's N field and the AoX screen's run length.
-//     ⚠ NOT app-wide, and the exception is named rather than glossed: the Lookup date box
-//     (components/LookupCard) handles Enter only, so Escape there does nothing at all. It is the
-//     app's one remaining text field with no Escape contract — an open gap, not a decision.
+//     screen's own run-length box — onto the same contract, and round 17 brought the Lookup date
+//     box (components/LookupCard), the one field that was never numeric and the last one outside
+//     it. Escape therefore means "throw this edit away" in every box you can type into, with no
+//     exception left to name: these readouts, both ⚙ Year Range boxes, the Save Defaults popup's N
+//     field, the AoX screen's run length, and the Lookup date box.
 //
 // Width + zero shift (Q4 round-8): the cell is a `relative inline-block` whose ONLY in-flow child
 // is an always-mounted invisible block strut holding `widest`, so the cell locks to the widest

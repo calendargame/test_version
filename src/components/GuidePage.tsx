@@ -1038,18 +1038,19 @@ export default function GuidePage({
             etc.) passes through to the browser.
           </li>
           <li>
-            In the boxes you type a <i>number</i> into — the Year Range boxes, the AoX run length,
-            and every time readout you tap to type into — those two keys do opposite things:{' '}
-            <Kbd>Enter</Kbd> keeps what you typed and leaves the box, <Kbd>Esc</Kbd> throws the
-            typing away and leaves the box. Whatever the box sits inside stays open — a second{' '}
-            <Kbd>Esc</Kbd> closes that. What <Kbd>Esc</Kbd> puts back is the value the setting is
-            really on: for a Year Range box that&apos;s the stored year, for the others the value
-            the box held when you started typing.
+            In every box you can type into — the Year Range boxes, the AoX run length, every time
+            readout you tap to type into, and the date box on the Lookup screen — those two keys do
+            opposite things: <Kbd>Enter</Kbd> keeps what you typed and leaves the box,{' '}
+            <Kbd>Esc</Kbd> throws the typing away and leaves the box. Whatever the box sits inside
+            stays open — a second <Kbd>Esc</Kbd> closes that. What <Kbd>Esc</Kbd> puts back is the
+            value the setting is really on: for a Year Range box that&apos;s the stored year, for
+            the others the value the box held when you started typing.
           </li>
           <li>
-            The date box on the Lookup screen is the exception, and the only one: there{' '}
-            <Kbd>Enter</Kbd> runs the lookup and stays in the box, and <Kbd>Esc</Kbd> does nothing
-            at all.
+            On the Lookup screen, &quot;keeps what you typed&quot; means it runs the lookup:{' '}
+            <Kbd>Enter</Kbd> answers the date and lets go of the box, unless it can&apos;t read what
+            you typed — then it says so and keeps the box, so you can fix it without reaching for it
+            again.
           </li>
           <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
           <li>
@@ -2105,7 +2106,9 @@ export default function GuidePage({
           <li>
             Lookup input is always numeric and follows your selected Date Format (m/d/y, d.m.y, or
             y-m-d). It ignores Random Format and always uses the selected format directly. Changing
-            the Date Format clears the input box.
+            the Date Format rewrites the box into the new one: a date you have selected comes back
+            written the new way, and if nothing is selected the box is emptied instead, since
+            half-typed text in the old format would no longer read.
           </li>
           <li>Supports years 1–10000.</li>
           <li>

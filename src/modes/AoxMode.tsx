@@ -523,9 +523,11 @@ function AoxMode({
                 since round 2: Enter keeps the edit and lets go, Escape throws it away and lets go,
                 and the container is left for a second Escape. This field was the last NUMERIC one
                 still committing the value it was asked to discard.
-                ⚠ EVERY NUMERIC BOX, NOT EVERYWHERE YOU CAN TYPE — the Lookup date field
-                (components/LookupCard) handles Enter only and has no Escape behaviour at all. It is
-                the one text field outside this contract; an open gap, not a decision.
+                ★ AND SINCE ROUND 17 IT REALLY IS EVERYWHERE YOU CAN TYPE. This note used to carve
+                out the Lookup date field (components/LookupCard) as the one text box outside the
+                contract — an open gap rather than a decision. The owner took the decision: that
+                box captures its text on focus and discards back to it, so there is no exception
+                left, here or in the How-to-Play guide.
                 ⚠ THE DISCARD TARGET HAS TO BE REMEMBERED, because this box is not a mirror. The ⚙
                 year boxes revert to minY/maxY — a committed value sitting right beside the text —
                 but `aoxN` IS the stored pref: onChange writes it on every keystroke, so by the time
