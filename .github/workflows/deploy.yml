@@ -30,8 +30,22 @@ permissions:
   id-token: write
 
 # Never run two deploys at once; let the newest push win.
+#
+# ⚠ THE GROUP NAME IS SCOPED TO THIS WORKFLOW (2026-08-10). It was the bare literal `pages`, copied
+# from GitHub's Pages starter template. A concurrency group is a per-REPOSITORY namespace, so any
+# future workflow declaring that same generic literal would silently share this lock — and with
+# `cancel-in-progress: true` that means an unrelated job could CANCEL a deploy. A cancelled run is
+# not a failed one: nothing goes red, and it is easy to miss entirely.
+# ★ THE VERSION LEDGER IS WHAT MADE THAT NEWLY EXPENSIVE, and it is the reason this was worth
+# changing at all rather than left as a tidiness note. A run cancelled AFTER its tagging step has
+# SPENT A VERSION NUMBER without publishing anything, so an accidental cross-workflow cancellation
+# now costs a number as well as a deploy.
+# ⚠ THE TRADE, WRITTEN DOWN SO IT IS NOT REDISCOVERED AS A BUG: the bare literal also acted as a
+# repo-wide "only one Pages deployment at a time" lock, and scoping the name gives that up. GitHub
+# Pages really does allow only one deployment at a time — so IF a second Pages-deploying workflow is
+# ever added to either repo, it must join THIS group by name rather than inventing its own.
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-pages
   cancel-in-progress: true
 
 jobs:
