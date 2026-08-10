@@ -116,7 +116,16 @@
     [data-theme="parchment"] #boot .bg,[data-theme="light"] #boot .bg{background:radial-gradient(circle,rgba(124,58,237,.16) 0%,rgba(124,58,237,0) 66%)}
   </style>
 </head>
-<body class="text-(--tx-50)">
+<!-- NO class HERE, AND THAT IS DELIBERATE. <body> used to wear `text-(--tx-50)`, which was pure
+     duplication: index.css already says body{color:var(--body-color)}, and on the two light themes
+     --tx-50 IS var(--body-color). On the three dark themes the two differ slightly (245,243,255 vs
+     250,245,255), and the unlayered stylesheet rule was winning, so the utility had never painted
+     anything in any theme. Moving the custom block into @layer components would have handed the
+     utility that fight — flipping the inherited colour of ~400 elements across the whole app as a
+     side effect of an unrelated fix. Deleting the class instead keeps every one of them on exactly
+     the colour it has today, and leaves the layer change touching one element. If body text ever
+     needs a different colour, change --body-color in the theme rows; do not re-add a utility here. -->
+<body>
   <div id="root" class="min-h-screen"></div>
   <div id="boot"><div class="bw"><div class="bg"></div>
     <svg width="174" height="188" viewBox="178 173 146 158" fill="none" aria-hidden="true" style="position:relative">

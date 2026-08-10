@@ -19,7 +19,17 @@ import { dirname, join, relative } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const css = readFileSync(join(root, 'src/index.css'), 'utf8')
-const html = readFileSync(join(root, 'index.html'), 'utf8')
+// index.html IS READ WITH ITS HTML COMMENTS STRIPPED, and that is correctness, not tidiness.
+// Everything below scans it with tag patterns — /<body[^>]*>/ and friends — while index.html's
+// prose comments talk ABOUT those tags: the note that now stands above <body> spells `<body>` out
+// in full, EARLIER in the file than the element. A raw scan matches the comment first and then
+// reads a class attribute off a sentence, so every class assertion here would be answering a
+// question about prose, including the assertion added to prove it wasn't. Stripping once, at the
+// door, is the one place that fixes it for all of them — the CSS half of this file has always
+// done exactly this with /* */, for exactly this reason.
+const stripHtmlComments = (text) => text.replace(/<!--[\s\S]*?-->/g, '')
+const htmlRaw = readFileSync(join(root, 'index.html'), 'utf8')
+const html = stripHtmlComments(htmlRaw)
 
 // The six properties (transform and its three individual-transform siblings count as one trigger),
 // each with an OPTIONAL vendor prefix. The prefix half started as a single hand-listed
@@ -62,8 +72,10 @@ const inlineStyleBlocks = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(
 // attribute of <html>, <body> and #root only.
 const BANNED_CLASSES =
   /(?:^|\s)-?(?:transform|filter|transform-gpu|(?:translate|rotate|scale|skew|blur|perspective|contain|will-change|backdrop)-[^\s"]+)/i
-const classAttr = (openTagPattern) => {
-  const tag = html.match(openTagPattern)?.[0] ?? ''
+// `text` is a parameter only so the self-check below can feed it a synthetic document; every real
+// call takes the comment-stripped index.html.
+const classAttr = (openTagPattern, text = html) => {
+  const tag = text.match(openTagPattern)?.[0] ?? ''
   return tag.match(/class="([^"]*)"/)?.[1] ?? ''
 }
 const rootChainClasses = [
@@ -114,7 +126,24 @@ describe('containing-block guard (Q8) — nothing may make html/body/#root the f
     // …and the class attributes really were read, not silently missed by the tag patterns.
     const cls = (el) => rootChainClasses.find(([name]) => name === el)[1]
     expect(cls('#root')).toContain('min-h-screen')
-    expect(cls('<body>')).toContain('text-(--tx-50)')
+    // <body> is the OTHER half of that proof and it no longer has a class to prove it with: its
+    // `text-(--tx-50)` was deleted in round 17 (it duplicated index.css's body{color} and was the
+    // sole reason the cascade-layer fix would otherwise have reflowed ~400 inherited colours — see
+    // the note on the <body> tag in index.html). An empty string is what classAttr returns both
+    // when it read an unclassed tag AND when it failed to find the tag at all, so asserting '' here
+    // would be exactly the vacuous green this line exists to prevent. Pin the facts separately:
+    // the tag pattern really matches <body>, the class really is absent, and — the part that this
+    // guard got wrong once — the pattern is matching the ELEMENT and not the prose above it.
+    expect(html).toMatch(/<body[^>]*>/)
+    expect(cls('<body>')).toBe('')
+    expect(/<body[^>]*class=/.test(html)).toBe(false)
+    expect(html.length).toBeLessThan(htmlRaw.length) // comments were really stripped
+    // The shape that blinded it: a comment naming `<body>`, ahead of the real element. Read
+    // stripped, the answer is the element's class; read raw, it is the sentence's. Both halves are
+    // asserted so the second line states the failure mode instead of leaving it to be rediscovered.
+    const decoy = '<!-- <body class="transform"> is what this used to say -->\n<body class="real">'
+    expect(classAttr(/<body[^>]*>/, stripHtmlComments(decoy))).toBe('real')
+    expect(classAttr(/<body[^>]*>/, decoy)).toBe('transform')
   })
 
   it('src/index.css declares none of the six on html, body or #root', () => {

@@ -3,7 +3,8 @@
    index.html → moved in-build on Tailwind v3 → upgraded to v4 via @tailwindcss/upgrade.)
    `@import 'tailwindcss'` pulls in Tailwind's base reset + utilities; the custom CSS
    below (themes, layout architecture, custom .panel/.btn-solid/etc., flash keyframes,
-   range slider) follows it so its resets layer on top and the [data-theme] overrides win.
+   range slider) sits in `@layer components`, BELOW Tailwind's utilities and above its
+   base reset — see the ★ block at that wrapper for why that one line is load-bearing.
    We accepted v4's modern oklch color palette (a few imperceptible RGB points different
    from v3's purples — verified visually identical; the better, wider-gamut color system). */
 /* source(none) + the two @source lines scope Tailwind's class scanning to the REAL app
@@ -36,6 +37,65 @@
   }
 }
 
+/* ★★ @layer components — READ THIS BEFORE ADDING ANYTHING BELOW, AND NEVER CLOSE IT EARLY.
+   The whole custom block lives inside ONE cascade layer, and that wrapper is a bug fix, not
+   tidiness.
+
+   WHAT WENT WRONG. Under Tailwind v3, `@layer` was a BUILD-TIME directive: PostCSS hoisted the
+   rules and emitted flat CSS, so "layer" only ever meant "source order". The v4 upgrade turned it
+   into the REAL CSS cascade-layers feature, and v4 puts every utility in `@layer utilities`. The
+   custom block down here was unlayered — and in real CSS an unlayered normal declaration beats
+   EVERY layer, at any specificity. So from the v4 upgrade onward, each of these ~40 hand-written
+   classes silently outranked any Tailwind utility touching the same property, no matter what the
+   className said.
+   THE SHIPPED CASUALTY was Lookup's history list: `.panel`'s `background` + `border` shorthands
+   killed all four of the selected/hover utilities on the row (bg-(--hist-sel), border-l-2,
+   border-l-(--acc), hover:bg-(--hist-hov)), so selecting a history entry changed NOTHING on
+   screen and hovering one did nothing either. Measured in a real browser: selected and unselected
+   rows returned byte-identical computed styles in all five themes. No test could see it — there
+   is no layout engine in jsdom — so tests/cascadeLayerGuard.test.js now guards the invariant
+   itself instead.
+
+   WHY components AND NOT utilities. `@layer utilities` would compile and would change nothing:
+   same layer, equal specificity, this block later in source, so `.panel` would still win. The
+   block MUST sit in a layer BELOW utilities. `components` is that slot and it already exists in
+   the built output — Tailwind emits a bare `@layer components;` ordering statement immediately
+   before `@layer utilities{`, so the order is base → components → utilities with no other edit
+   needed. Everything here still beats Tailwind's base reset, which is the half that was ever
+   actually wanted.
+
+   WHAT THIS COSTS, stated plainly rather than left to be discovered: a custom class here can now
+   be overridden from a className. That is the correct direction — it is what every utility in the
+   app already assumed — but any rule that was quietly relying on being unbeatable has lost that,
+   and .svalue-input's note further down is edited to say so.
+   ⚠ The closing brace is the LAST LINE OF THE FILE. Adding a STYLE RULE after it puts that rule
+   back outside the cascade entirely and re-opens exactly this bug; the guard test fails the suite
+   if anything ever lands there. The two @property registrations directly below are the ONE
+   deliberate exception, and they sit ABOVE the layer rather than after it — read on. */
+
+/* ★★ THE TWO @property REGISTRATIONS LIVE OUT HERE, ABOVE THE LAYER, AND THAT IS LOAD-BEARING —
+   DO NOT TIDY THEM BACK INSIDE.
+   They are REGISTRATIONS, not style rules: @property has no selector, wins no cascade fight and
+   takes no part in layer ordering, so nothing about the fix above wants them layered. What it does
+   want is for them to keep working, and inside `@layer components{}` they measurably stop.
+   WHAT BREAKS. Tailwind v4 emits a `@layer properties` block holding an @supports fallback — a
+   plain-token declaration of every registered custom property, for engines with no @property at
+   all (Safari ≤16.3, Firefox <128, both inside this build's target set). It builds that block by
+   collecting the @property rules it finds at the stylesheet's TOP LEVEL. Wrapped in a layer they
+   are not found, and the fallback declarations simply vanish from the built CSS — verified by
+   diffing the compiled output, not inferred: with them inside the layer, `--seat-top: 0px` and
+   `--shade: 1` are both absent from that @supports block; hoisted back out, both return.
+   WHY THAT IS NOT COSMETIC. Unregistered and unfallen-back, --seat-top computes to its literal
+   substituted token stream, `calc(var(--bar-h) + var(--guide-panel-gap))`. GuidePage reads it with
+   parseFloat, which answers NaN, and a `|| 0` turns that into a seat depth of ZERO — the settings
+   and guide panels seating BEHIND the fixed bar, which is a bug this project has already shipped
+   once and paid for. --shade loses its `1` and every boundary shadow with it.
+   tests/cascadeLayerGuard.test.js pins both halves: these two registrations are outside every
+   layer, and the compiled @supports fallback really does carry both tokens. */
+@property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
+@property --shade{syntax:"<number>";inherits:false;initial-value:1}
+
+@layer components{
 /* ----- custom app CSS (moved verbatim from index.html \3c style>) ----- */
 /* Q16 — the text/rule color ramp (replaces the retired enumerated light-theme override
    block that force-remapped raw Tailwind classes with !important). Every raw Tailwind
@@ -56,17 +116,61 @@
    purple-500 35% selected fill + its 15% hover) had NO light design before (the old
    block missed them — the 4th-incident candidate); their light values are new — owner
    tunes on-device.
+   ★ AND UNTIL THE @layer components FIX ABOVE, ALL TEN OF THOSE VALUES (5 themes × 2) HAD NEVER
+   RENDERED — `.panel` beat both utilities outright, so no human had ever seen one. Auditing them
+   for the first time found ONE real collision: parchment's --hist-hov was rgba(120,53,175,.07),
+   BYTE-IDENTICAL to its own --panel-bg, so hovering a history row would have produced literally
+   no change (composite delta 0,0,0). It is now .12, and here is the whole derivation, measured
+   rather than asserted.
+   HOW THE NUMBERS ARE TAKEN. A row is a `.panel` inside a `.panel` on `body{background:var(--bg1)}`,
+   so the fill you actually see is alpha-composited twice; every figure below is that final sRGB
+   colour, as MAX-CHANNEL delta / EUCLIDEAN delta. What the app ships today:
+       theme      resting→hover   resting→selected   hover sits this far along
+       nebula      8.2 / 12.4       47.8 / 62.4              20%
+       midnight   15.1 / 24.4       59.5 / 80.5              30%
+       dusk       21.0 / 28.7       62.6 / 81.2              35%
+       light      10.7 / 14.6       27.3 / 35.4              41%
+   Two facts fall out. The faintest hover step the app ships is nebula's 8.2 max-channel, and
+   every theme keeps hover in the FIRST HALF of the trip from resting to selected — nowhere near
+   the selected tint, which the eye is meant to read as a state.
+   PARCHMENT CANNOT SATISFY BOTH, because its resting→selected span is the app's narrowest by far:
+   .07 → .16 of the same purple is only 15.0 / 18.3. So a hover step sized like everyone else's
+   necessarily eats most of that span. .12 is the smallest alpha that still reaches the shipped
+   floor — 8.3 / 10.2 from resting, a hair past nebula's 8.2 — and it leaves 6.7 / 8.1 of daylight
+   to the selected fill. It sits at 56% of the trip: above the 20-41% band, which is a real
+   compromise and is named as one, not a match.
+   ⚠ .14 WAS TRIED FIRST AND IS WRONG, for the record, because the argument for it reads well and
+   will be reinvented. It was justified as "parchment's own answer to what a .07 purple surface
+   becomes on hover — exactly --stgl-hov". True as arithmetic, false as an analogy: --stgl-hov is
+   the hover of a PillTray segment whose SELECTED sibling is `btn-solid`, an opaque brand fill, so
+   that pair never had to leave room for a subtle selected tint. Measured on the history row, .14
+   lands 11.7 / 14.2 from resting but only 3.3 / 4.1 from the selected fill — 78% of the trip,
+   i.e. a hovered unselected row would read as nearly the same colour as a selected one, which is
+   the exact signal this round exists to restore. (Two other claims made for .14 were simply not
+   true of the numbers above and are gone: that the other themes' hover deltas were "15-35" and
+   their select deltas "29-46", and that dusk/midnight/nebula put hover NEARER the selected fill
+   than the resting one. They put it 2.4-4.8x nearer the RESTING one.)
+   The 2px --acc left border remains the primary "this row is selected" signal on every theme —
+   that part of the old note was right — which is why 6.7 / 8.1 of separation is enough here and
+   why parchment's narrow tint span is liveable rather than a defect to go re-tune.
+   --bg2 LOOKS DEAD AND IS NOT — every theme sets it equal to its own --bg1 and nothing reads it
+   yet. It is reserved, deliberately, for the background-gradient backlog item, which needs a
+   two-stop pair per theme; the rows carry both stops already so that item becomes a change to one
+   rule instead of to five theme rows. Do not "clean it up". (--chip-bg/--chip-bd sat beside it
+   looking the same way and WERE dead — zero consumers in src/ or this file — and are gone.
+   --tc looks dead from CSS alone and is NOT: src/main.tsx reads it off the documentElement on
+   every theme switch to drive the theme-color meta tag and <html>'s background stamp.)
    --nbtn-bg (Q4 round-8) is the NEUTRAL solid button fill: the app's one non-brand solid, worn by
    Lookup's Clear button beside the btn-solid Lookup. It was a raw zinc utility in the className —
    the last raw colour utility outside the ramp — so no theme could ever reach it. Only the dark
    row below defines it (zinc-700's exact value), so every theme renders EXACTLY as it does today;
    light/parchment now have a one-line hook if that dark grey should ever lighten. */
-:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:rgba(26,15,43,.98);--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--chip-bg:rgba(120,53,175,.25);--chip-bd:rgba(120,53,175,.45);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev-c:0 0 0;--shadow-elev-a:.5;--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent);--nbtn-bg:oklch(37% .013 285.805)}
-[data-theme="dusk"]{--bg1:#0d1117;--bg2:#0d1117;--tc:#0d1117;--card-bg:rgba(13,17,23,.97);--card-bd:rgba(99,102,241,.4);--panel-bg:rgba(28,38,68,.35);--panel-bd:rgba(99,102,241,.4);--thin-bd:rgba(99,102,241,.3);--sbtn-bg:rgba(38,48,88,.38);--sbtn-bd:rgba(99,102,241,.5);--sbtn-hov:rgba(38,48,88,.55);--stgl-bg:rgba(28,38,68,.28);--stgl-hov:rgba(28,38,68,.45);--chip-bg:rgba(99,102,241,.2);--chip-bd:rgba(99,102,241,.4);--bar-bg:rgba(99,102,241,.2);--bar-bd:rgba(99,102,241,.4);--drag-ring:rgba(129,140,248,.55)}
-[data-theme="midnight"]{--bg1:#000;--bg2:#000;--tc:#000;--card-bg:rgba(4,0,12,.93);--card-bd:rgba(139,92,246,.5);--panel-bg:rgba(45,0,90,.28);--panel-bd:rgba(139,92,246,.5);--thin-bd:rgba(139,92,246,.38);--sbtn-bg:rgba(55,0,110,.35);--sbtn-bd:rgba(139,92,246,.55);--sbtn-hov:rgba(55,0,110,.5);--stgl-bg:rgba(45,0,90,.25);--stgl-hov:rgba(45,0,90,.42);--chip-bg:rgba(139,92,246,.2);--chip-bd:rgba(139,92,246,.45);--bar-bg:rgba(139,92,246,.2);--bar-bd:rgba(139,92,246,.45);--shadow-elev-c:139 92 246;--shadow-elev-a:.18;--drag-ring:rgba(167,139,250,.55)}
+:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:rgba(26,15,43,.98);--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev-c:0 0 0;--shadow-elev-a:.5;--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent);--nbtn-bg:oklch(37% .013 285.805)}
+[data-theme="dusk"]{--bg1:#0d1117;--bg2:#0d1117;--tc:#0d1117;--card-bg:rgba(13,17,23,.97);--card-bd:rgba(99,102,241,.4);--panel-bg:rgba(28,38,68,.35);--panel-bd:rgba(99,102,241,.4);--thin-bd:rgba(99,102,241,.3);--sbtn-bg:rgba(38,48,88,.38);--sbtn-bd:rgba(99,102,241,.5);--sbtn-hov:rgba(38,48,88,.55);--stgl-bg:rgba(28,38,68,.28);--stgl-hov:rgba(28,38,68,.45);--bar-bg:rgba(99,102,241,.2);--bar-bd:rgba(99,102,241,.4);--drag-ring:rgba(129,140,248,.55)}
+[data-theme="midnight"]{--bg1:#000;--bg2:#000;--tc:#000;--card-bg:rgba(4,0,12,.93);--card-bd:rgba(139,92,246,.5);--panel-bg:rgba(45,0,90,.28);--panel-bd:rgba(139,92,246,.5);--thin-bd:rgba(139,92,246,.38);--sbtn-bg:rgba(55,0,110,.35);--sbtn-bd:rgba(139,92,246,.55);--sbtn-hov:rgba(55,0,110,.5);--stgl-bg:rgba(45,0,90,.25);--stgl-hov:rgba(45,0,90,.42);--bar-bg:rgba(139,92,246,.2);--bar-bd:rgba(139,92,246,.45);--shadow-elev-c:139 92 246;--shadow-elev-a:.18;--drag-ring:rgba(167,139,250,.55)}
 [data-theme="nebula"]{--bg1:#0b0714;--bg2:#0b0714;--tc:#0b0714}
-[data-theme="parchment"]{--bg1:#f0e8d5;--bg2:#f0e8d5;--tc:#f0e8d5;--card-bg:rgba(255,252,244,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(120,53,175,.07);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(120,53,175,.1);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(120,53,175,.18);--stgl-bg:rgba(120,53,175,.07);--stgl-hov:rgba(120,53,175,.14);--chip-bg:rgba(120,53,175,.09);--chip-bd:rgba(120,53,175,.22);--bar-bg:rgba(120,53,175,.09);--bar-bd:rgba(120,53,175,.22);--body-color:#2e1065;--sec-color:rgba(46,16,101,.78);--mut-color:rgba(46,16,101,.62);--fnt-color:rgba(46,16,101,.5);--shadow-elev-c:46 16 101;--shadow-elev-a:.18;--drag-ring:rgba(120,53,175,.5);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.07)}
-[data-theme="light"]{--bg1:#f2f2f7;--bg2:#f2f2f7;--tc:#f2f2f7;--card-bg:rgba(255,255,255,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(237,233,254,.48);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(237,233,254,.65);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(237,233,254,.88);--stgl-bg:rgba(237,233,254,.42);--stgl-hov:rgba(237,233,254,.65);--chip-bg:rgba(237,233,254,.75);--chip-bd:rgba(120,53,175,.22);--bar-bg:rgba(237,233,254,.75);--bar-bd:rgba(120,53,175,.22);--body-color:#1e1b4b;--sec-color:rgba(30,27,75,.78);--mut-color:rgba(30,27,75,.62);--fnt-color:rgba(30,27,75,.5);--shadow-elev-c:30 27 75;--shadow-elev-a:.15;--drag-ring:rgba(120,53,175,.45);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.07)}
+[data-theme="parchment"]{--bg1:#f0e8d5;--bg2:#f0e8d5;--tc:#f0e8d5;--card-bg:rgba(255,252,244,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(120,53,175,.07);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(120,53,175,.1);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(120,53,175,.18);--stgl-bg:rgba(120,53,175,.07);--stgl-hov:rgba(120,53,175,.14);--bar-bg:rgba(120,53,175,.09);--bar-bd:rgba(120,53,175,.22);--body-color:#2e1065;--sec-color:rgba(46,16,101,.78);--mut-color:rgba(46,16,101,.62);--fnt-color:rgba(46,16,101,.5);--shadow-elev-c:46 16 101;--shadow-elev-a:.18;--drag-ring:rgba(120,53,175,.5);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.12)}
+[data-theme="light"]{--bg1:#f2f2f7;--bg2:#f2f2f7;--tc:#f2f2f7;--card-bg:rgba(255,255,255,.95);--card-bd:rgba(120,53,175,.22);--panel-bg:rgba(237,233,254,.48);--panel-bd:rgba(120,53,175,.22);--thin-bd:rgba(120,53,175,.18);--sbtn-bg:rgba(237,233,254,.65);--sbtn-bd:rgba(120,53,175,.28);--sbtn-hov:rgba(237,233,254,.88);--stgl-bg:rgba(237,233,254,.42);--stgl-hov:rgba(237,233,254,.65);--bar-bg:rgba(237,233,254,.75);--bar-bd:rgba(120,53,175,.22);--body-color:#1e1b4b;--sec-color:rgba(30,27,75,.78);--mut-color:rgba(30,27,75,.62);--fnt-color:rgba(30,27,75,.5);--shadow-elev-c:30 27 75;--shadow-elev-a:.15;--drag-ring:rgba(120,53,175,.45);--tx-50:var(--body-color);--tx-100:var(--sec-color);--tx-100-90:var(--sec-color);--tx-100-80:var(--sec-color);--tx-200-80:var(--mut-color);--tx-200-70:var(--mut-color);--tx-300-70:var(--fnt-color);--tx-300-60:var(--fnt-color);--tx-w90:var(--mut-color);--acc:#7c3aed;--bg-500-20:rgba(120,53,175,.2);--bd-500-40:rgba(120,53,175,.3);--bd-500-20:rgba(120,53,175,.15);--hist-sel:rgba(120,53,175,.16);--hist-hov:rgba(120,53,175,.07)}
 /* Layout architecture: the document never scrolls (html+body have overflow:hidden and
    overscroll-behavior:none — no rubber-band on a locked body) in EVERY mode, with no
    exception and no release. Three structural pieces inside #root:
@@ -295,7 +399,9 @@ input,textarea{user-select:text;-webkit-user-select:text}
    #appScroll's subtree computes — the fixed bar, the portaled menus and modals, <html> itself —
    in every mode, guide included; nothing out there reads the token, and the one JS reader is
    handed the scroll container precisely so it never asks an element that would answer 0. */
-@property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
+/* ↑ the `@property --seat-top` registration this paragraph describes is NOT here: it sits above
+   the `@layer components{` opening brace, with the ★★ block that explains why a registration
+   inside a layer loses its @supports fallback. Its syntax/inherits/initial-value are unchanged. */
 #appScroll{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
 /* --shade — how strongly a boundary asserts itself, 0…1 (round 10 item B). It is the scroller's
    distance from that edge, measured in px and divided by --fade-h (the same feather depth the
@@ -356,7 +462,9 @@ input,textarea{user-select:text;-webkit-user-select:text}
    it would zero the shadow outright. Worth noting the other direction too: the transition this
    replaced WAS decorative motion, and it never multiplied by --motion-scale, so Reduce Motion
    never switched it off. Deleting it is a small win for that setting quite apart from the lag. */
-@property --shade{syntax:"<number>";inherits:false;initial-value:1}
+/* ↑ the `@property --shade` registration this paragraph describes is NOT here either: it sits
+   above the `@layer components{` opening brace beside --seat-top's, for the reason set out in the
+   ★★ block there. Its syntax/inherits/initial-value are unchanged. */
 .elev-shadow-down{box-shadow:0 4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .elev-shadow-up{box-shadow:0 -4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .card{background:var(--card-bg);border:1px solid var(--card-bd)}
@@ -405,9 +513,17 @@ input,textarea{user-select:text;-webkit-user-select:text}
    (iOS's inner shadow + focus look) — the box declares its own border, background and radius, so
    appearance:auto is a false declaration. Unprefixed only, exactly like Tailwind's own
    appearance-none utility that the app's other three text inputs wear: the build's targets need
-   no -webkit- twin, and Lightning CSS strips one if written. The rule is UNLAYERED, so it beats
-   Tailwind's utilities layer outright: inset, radius, padding and margins here are NOT
-   overridable from the className. */
+   no -webkit- twin, and Lightning CSS strips one if written.
+   ⚠ THIS RULE USED TO SAY IT WAS UNLAYERED AND THEREFORE UNBEATABLE — "inset, radius, padding and
+   margins here are NOT overridable from the className". That is no longer true and was never a
+   design: it was the v3→v4 cascade regression the ★★ block at the top of this layer describes,
+   read as a feature. The rule is now in `components`, so a utility CAN override any of these. It
+   costs nothing today, checked rather than assumed: the element's className is
+   `svalue-input surface-tray text-right tabular-nums text-xs focus:outline-hidden focus-ring`, and
+   not one of those utilities declares position, inset, border-width/style, border-radius,
+   padding-inline, margin-inline/block or appearance. The geometry still stands unopposed — it now
+   stands there because nothing contests it, which is a fact anyone can check, rather than because
+   the cascade was broken in its favour. */
 .svalue-input{--svalue-pad:var(--spacing);--svalue-bd:1px;position:absolute;inset:0;border-style:solid;border-width:var(--svalue-bd);border-radius:var(--radius-md);padding-inline:var(--svalue-pad);margin-inline:calc((var(--svalue-pad) + var(--svalue-bd)) * -1);margin-block:calc(var(--svalue-bd) * -1);appearance:none}
 /* The third of the three .2s background fades (see the note at .surface-button above for why all
    three are decorative and all three now multiply by --motion-scale). This one's transitionable
@@ -651,7 +767,6 @@ button:focus,select:focus{outline:none}
    to say where it is. Whether those pills should show a ring is a real open
    question, not an oversight: Q2's brief was ZERO visual change, and a ring
    is a visual change. */
-.hist-unsel{border-left-color:var(--panel-bd)}
 .bar{height:6px;border-radius:6px;overflow:hidden;background:var(--bar-bg);border:1px solid var(--bar-bd)}
 /* The fill is full-width (width:100% set inline) and animated with transform:scaleX(1->0),
    NOT width, so the countdown is GPU-composited (no per-frame layout) and stays smooth on
@@ -726,3 +841,5 @@ input[type="range"]::-moz-range-thumb{width:22px;height:14px;border-radius:7px;b
 input[type="range"]::-webkit-slider-runnable-track{height:5px;border-radius:3px;}
 input[type="range"]::-moz-range-track{height:5px;border-radius:3px;background:transparent;}
 input[type="range"]:disabled{opacity:.4;cursor:not-allowed;}
+} /* ← closes @layer components. NOTHING MAY FOLLOW THIS LINE — see the ★★ block at the opening
+     brace; a rule out here is unlayered and beats every Tailwind utility in the app. */

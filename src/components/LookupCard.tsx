@@ -657,7 +657,14 @@ export default function LookupCard({
                 <button
                   type="button"
                   onClick={() => selEntry(e)}
-                  className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-(--acc) bg-(--hist-sel)' : 'hist-unsel hover:bg-(--hist-hov)'}`}
+                  // The unselected arm used to also carry `hist-unsel`, a custom class that reset
+                  // border-left-color to --panel-bd. It was a pure no-op in both directions:
+                  // .panel's `border` shorthand already sets that exact colour, and the
+                  // border-l-(--acc) it existed to undo is only ever on the OTHER arm. It was
+                  // written while the whole selected treatment was invisible (the cascade-layer
+                  // regression — see the ★★ block in src/index.css), which is how a rule that
+                  // undoes nothing came to look necessary. Both the class and its CSS are gone.
+                  className={`w-full text-left px-3 py-2 rounded-xl panel flex items-center justify-between gap-3 text-xs transition ${sid === e.id ? 'border-l-2 border-l-(--acc) bg-(--hist-sel)' : 'hover:bg-(--hist-hov)'}`}
                 >
                   {/* Every row is exactly one line tall, by construction rather than by fitting:
                       the readings never wrap and never shrink (a two-reading line is the whole

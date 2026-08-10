@@ -2143,7 +2143,8 @@ export default function GuidePage({
           <li>
             History rows say the same thing in short, so each stays on one line: "J: Sat · G: Wed"
             for a date with two readings, and just the weekday on its own for every other date. Tap
-            a row to see it spelled out in full above.
+            a row to see it spelled out in full above; the row you tapped is tinted and marked with
+            a coloured edge down its left side, so you can always tell which one you are reading.
           </li>
           <li>
             Nothing in Lookup is frozen at the moment you look it up: the answer and every history
