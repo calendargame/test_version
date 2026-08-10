@@ -9,9 +9,13 @@
 // piling up here. That retired the render-time slice, and with it the separate changelogLimit.dom
 // file which mocked a larger data set behind that slice — the popup can no longer discard
 // anything, so the cap can no longer be a rendering question. The two light-blue dots are the persisted
-// breadcrumb to the popup: the Q2 build-stamp detection marks both flags on every build change
-// (including one the real Updating flow just bridged — only the SCREEN is suppressed then),
-// opening ⚙ Settings retires the gear's dot, and the first tap on the footer's Changelog link
+// breadcrumb to the popup. ⚠ THE TWO NO LONGER FIRE TOGETHER (2026-08-10): the Q2 build-stamp
+// detection marks the GEAR flag on every build change (including one the real Updating flow just
+// bridged — only the SCREEN is suppressed then), but marks the CHANGELOG flag only when the newest
+// entry has actually changed since this device last looked. The cases that discriminate are below,
+// and they matter because the pre-existing "lights BOTH" case passes either way: it stores no
+// signature, which is the migration branch, where the old behaviour is deliberately preserved.
+// Opening ⚙ Settings retires the gear's dot, and the first tap on the footer's Changelog link
 // (right of Check for updates) retires the link's. The popup follows the established settings-
 // modal contract (focus-on-open, capture Escape, close-with-settings, Android Back, the shared
 // Tab trap, the [data-settings-modal] marker). Round-8 Q7 split the one dot into the two forms
@@ -37,6 +41,9 @@ import {
   CHANGELOG,
   GEAR_DOT_KEY,
   CHANGELOG_DOT_KEY,
+  CHANGELOG_SEEN_KEY,
+  changelogSignature,
+  changelogChanged,
   readUpdateDot,
   markUpdateDot,
   clearUpdateDot,
@@ -109,6 +116,65 @@ describe('changelog data (src/changelog)', () => {
           `FALLBACK, never an addition — delete it and let the real lines stand alone.`,
       ).toEqual([CANONICAL])
     }
+  })
+})
+
+describe('changelogSignature / changelogChanged — "is there something new to READ?"', () => {
+  const entry = (date, ...items) => ({ date, items })
+
+  it('is the NEWEST entry only — its date and its lines', () => {
+    const sig = changelogSignature([entry('2026-08-10', 'a', 'b'), entry('2026-08-09', 'c')])
+    expect(sig).toContain('2026-08-10')
+    expect(sig).toContain('a')
+    expect(sig).toContain('b')
+    expect(sig).not.toContain('c')
+  })
+
+  it('★ does NOT change when an OLD entry rolls off into the archive', () => {
+    // The false positive that killed hashing the whole visible list: rule 14 moves the eleventh day
+    // to CHANGELOG-ARCHIVE.md, so the rendered list changes while nothing NEW has been added. A
+    // player would get a dot leading to something they read a fortnight ago.
+    const withOld = [entry('2026-08-10', 'a'), entry('2026-07-01', 'ancient')]
+    const rolled = [entry('2026-08-10', 'a')]
+    expect(changelogSignature(rolled)).toBe(changelogSignature(withOld))
+  })
+
+  it('★ DOES change when a second same-day deploy adds a line to the existing entry', () => {
+    // The opposite miss, which killed comparing dates alone: this is exactly what v2.21.0 did.
+    const before = [entry('2026-08-10', 'a')]
+    const after = [entry('2026-08-10', 'a', 'b')]
+    expect(changelogSignature(after)).not.toBe(changelogSignature(before))
+  })
+
+  it('changes when a line is reworded or deleted by the same-day net-effect restatement', () => {
+    const a = [entry('2026-08-10', 'one', 'two')]
+    expect(changelogSignature([entry('2026-08-10', 'one', 'TWO')])).not.toBe(changelogSignature(a))
+    expect(changelogSignature([entry('2026-08-10', 'one')])).not.toBe(changelogSignature(a))
+  })
+
+  it('cannot collide however the lines are punctuated', () => {
+    // Two entries whose lines differ only in where one ends and the next begins.
+    expect(changelogSignature([entry('2026-08-10', 'ab', 'c')])).not.toBe(
+      changelogSignature([entry('2026-08-10', 'a', 'bc')]),
+    )
+  })
+
+  it('survives an empty list rather than throwing', () => {
+    expect(changelogSignature([])).toBe('')
+  })
+
+  it('⚠ treats a MISSING stored signature as changed — the opposite of buildChanged, on purpose', () => {
+    // buildChanged says a missing stamp is a first visit with nothing to announce. This is only
+    // ever consulted AFTER buildChanged returned true, so a missing value here means an existing
+    // installation on the one boot after this shipped — and the tie breaks toward showing the dot,
+    // because a spurious dot costs a glance while a suppressed one costs the player the news.
+    expect(changelogChanged(null, 'anything')).toBe(true)
+  })
+
+  it('is false only when the stored signature matches exactly', () => {
+    expect(changelogChanged('same', 'same')).toBe(false)
+    expect(changelogChanged('old', 'new')).toBe(true)
+    expect(changelogChanged('', 'new')).toBe(true)
   })
 })
 
@@ -185,6 +251,58 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     // load-bearing — name-from-content trims each child before joining, so a separator written as
     // leading whitespace disappears and the two words run together.
     expect(screen.getByRole('button', { name: 'Changelog, update' })).toBe(changelogLink())
+  })
+
+  // ── The two dots stopped firing together on 2026-08-10 ─────────────────────────────────────
+  // ⚠ THE CASE ABOVE CANNOT SEE THIS CHANGE, WHICH IS WHY THESE EXIST. It clears storage and sets
+  // only the build stamp, so no changelog signature is stored — the migration branch — and both
+  // dots light exactly as they always did. It passes identically before and after. Only a stored
+  // signature discriminates, so each case below states what was previously seen.
+  it('★ a build change whose changelog gained NOTHING lights the GEAR dot only', () => {
+    // The owner's observation, in a test: v2.21.1 shipped on a day whose entry already stated the
+    // day's net effect, so the charter correctly added no line — and everyone holding v2.21.0 got a
+    // breadcrumb to something they had already read.
+    localStorage.setItem(CHANGELOG_SEEN_KEY, changelogSignature(CHANGELOG))
+    bootAfterUpdate()
+    expect(localStorage.getItem(GEAR_DOT_KEY)).toBe('1')
+    expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBeNull()
+    // The gear still says an update landed — that is true, and the Updating screen already said so.
+    expect(gear()).toHaveAttribute('aria-label', 'Settings (update)')
+    openSettings()
+    expect(linkMark()).toHaveAttribute('data-lit', 'false')
+    expect(screen.getByRole('button', { name: 'Changelog' })).toBe(changelogLink())
+  })
+
+  it('a build change whose changelog DID gain something lights both', () => {
+    localStorage.setItem(CHANGELOG_SEEN_KEY, JSON.stringify(['1999-01-01', 'an older entry']))
+    bootAfterUpdate()
+    expect(localStorage.getItem(GEAR_DOT_KEY)).toBe('1')
+    expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
+    openSettings()
+    expect(linkMark()).toHaveAttribute('data-lit', 'true')
+  })
+
+  it('the MIGRATION boot (no signature stored yet) lights both — nobody loses a pending dot', () => {
+    // The one boot after this ships. A missing signature is NOT treated as "nothing new", because
+    // by then buildChanged has already proved this is an existing installation rather than a first
+    // visit — so the safe answer is the old behaviour, and the tie breaks toward showing the dot.
+    expect(localStorage.getItem(CHANGELOG_SEEN_KEY)).toBeNull()
+    bootAfterUpdate()
+    expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
+  })
+
+  it('restamps what was seen on EVERY boot, so the next build compares against this one', () => {
+    bootAfterUpdate()
+    expect(localStorage.getItem(CHANGELOG_SEEN_KEY)).toBe(changelogSignature(CHANGELOG))
+  })
+
+  it('an unread link dot SURVIVES a later build that adds nothing to the changelog', () => {
+    // Marking is what got gated, not clearing. Someone who never opened the changelog must keep
+    // their dot through an internal deploy — the gate must not become a way to lose news.
+    localStorage.setItem(CHANGELOG_DOT_KEY, '1')
+    localStorage.setItem(CHANGELOG_SEEN_KEY, changelogSignature(CHANGELOG))
+    bootAfterUpdate()
+    expect(localStorage.getItem(CHANGELOG_DOT_KEY)).toBe('1')
   })
 
   it('first-ever visit: no stamp, no dots', () => {

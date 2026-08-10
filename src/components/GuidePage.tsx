@@ -554,8 +554,10 @@ export default function GuidePage({
           that is no longer listed. After an update, a small <b>light-blue dot</b> points the way
           there: it appears in the top-right corner of the gear button (⚙) until you open the menu,
           and just after the Changelog link's own text until the first time you open the changelog.
-          The gear's dot is separate from the small violet bar that marks modified settings (see the
-          Save Defaults section), and the two can show at once.
+          The one beside Changelog appears only when this list has actually gained something since
+          you last saw it, so it never sends you to something you have already read; the gear's dot
+          marks every update either way. The gear's dot is separate from the small violet bar that
+          marks modified settings (see the Save Defaults section), and the two can show at once.
         </p>
         <Subhead>The book and contact</Subhead>
         <p>

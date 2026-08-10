@@ -36,12 +36,19 @@
 //     very, very clear. It is ONE line, and it is this line, VERBATIM, every single time:
 //         "Nothing you can see changed this time — just work underneath to keep things running
 //          smoothly."
-//     WHY IT EXISTS. The update dot fires on ANY build change: the build-stamp detection compares
-//     one stamp against another and cannot tell a rewrite from a typo fix. So a purely internal
-//     deploy still shows the Updating screen, still lights the gear dot, and still nudges the
-//     player to come and read this list. If the newest entry is three days old, the notification
-//     pointed at nothing and the app looks broken or dishonest. The player-noticeable rule exists
-//     to stop JARGON, not to make the app go silent in the one moment it has just announced itself.
+//     WHY IT EXISTS. The GEAR dot fires on ANY build change: the build-stamp detection compares one
+//     stamp against another and cannot tell a rewrite from a typo fix. So a purely internal deploy
+//     still shows the Updating screen, still lights the gear dot, and still nudges the player to
+//     come and read this list. If the newest entry is three days old, the notification pointed at
+//     nothing and the app looks broken or dishonest. The player-noticeable rule exists to stop
+//     JARGON, not to make the app go silent in the one moment it has just announced itself.
+//     ★ AND SINCE 2026-08-10 THIS LINE HAS A SECOND, MECHANICAL JOB — writing it down because it
+//     makes the rule harder to talk anyone out of. The CHANGELOG dot is now gated on this array
+//     actually gaining something (CHANGELOG_SEEN_KEY below). So on an internal deploy this fallback
+//     line IS what makes the breadcrumb honest: with it, the newest entry really is new and the dot
+//     truthfully leads somewhere. Skip it and the player gets an Updating screen, a gear dot, and
+//     then nothing at all to explain either. The line is no longer just good manners; it is the
+//     thing that keeps the trail from breaking.
 //     IT IS A FALLBACK, NEVER AN ADDITION. The moment a deploy has one genuinely visible change,
 //     this line is DELETED and the real line stands alone. Never both — a real change plus "nothing
 //     you can see changed" is a contradiction on the same date, and under the same-day rule above
@@ -61,12 +68,15 @@
 // Nothing earlier than the round-5 deploy was ever written down and nothing will be retro-written:
 // the history is this array plus whatever has already aged out into the archive.
 //
-// Alongside the data live the two update-signal dot flags — the breadcrumb that leads a player
-// here after an update: the build-stamp detection (the Q2 effect in main.tsx) marks BOTH on
-// every build change, opening ⚙ Settings clears the gear button's dot, and the first tap on the
-// Changelog link clears the link's own. Plain localStorage like the build stamp (lib/buildStamp)
-// — the flags describe the code that ran, not user data — and try/catch for the same reason:
-// blocked storage (privacy modes) must never break boot, it just means no dots.
+// Alongside the data live the two update-signal dot flags — the breadcrumb that leads a player here
+// after an update. ⚠ THEY NO LONGER FIRE TOGETHER (2026-08-10): the build-change detection (the Q2
+// effect in main.tsx) marks the GEAR dot on every build change, but marks the CHANGELOG dot only
+// when the newest entry here has actually changed since this device last looked — see
+// CHANGELOG_SEEN_KEY at the bottom of this file for why, and for the migration case. Opening ⚙
+// Settings clears the gear button's dot; the first tap on the Changelog link clears the link's own.
+// Plain localStorage like the build stamp (lib/buildStamp) — the flags describe the code that ran,
+// not user data — and try/catch for the same reason: blocked storage (privacy modes) must never
+// break boot, it just means no dots.
 
 export type ChangelogEntry = {
   date: string // the day's Pacific date, ISO YYYY-MM-DD (unique — same-day deploys merge)
@@ -80,6 +90,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-08-10',
     items: [
       'This list now shows a version number in its top right corner, next to "What\'s new" — useful if you are ever asked which copy of the app you have.',
+      'The dot beside Changelog now appears only when this list has actually gained something, so it never sends you to news you have already read. The dot on the gear still marks every update.',
       'How to Play now explains that a brand-new version can take up to about ten minutes to reach everywhere, so Check for updates can still answer "Up to date" just after one is released — asking again a little later finds it.',
     ],
   },
@@ -271,3 +282,71 @@ export const clearUpdateDot = (key: string): void => {
   }
   notifyUpdateDots()
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// WHAT THIS DEVICE LAST SAW IN THE CHANGELOG (2026-08-10, the owner's observation on v2.21.1).
+//
+// THE DEFECT THIS CLOSES. Both dots used to be lit by one line in main.tsx on `buildChanged` alone —
+// "this device last booted a different build" — which knows nothing about whether the changelog
+// gained anything. So an internal deploy pointed the player at an entry they had already read. It
+// is not hypothetical: 2026-08-10 shipped v2.21.0 (two new lines) and then v2.21.1 (an internal
+// hardening). Under the charter the day's entry already stated the day's net effect, so v2.21.1
+// correctly added nothing — and everyone holding v2.21.0 got a breadcrumb leading nowhere.
+//
+// ★ THE TWO DOTS MEAN DIFFERENT THINGS, AND ONLY ONE OF THEM WAS LYING. The GEAR dot means "the app
+// updated", which is true on every build change and STAYS that way (the owner re-opened that
+// question himself and confirmed it): the Updating screen has already fired by then — it cannot be
+// suppressed, because the same detection cannot tell a typo fix from a redesign — so removing the
+// gear dot would leave the app announcing an update and then behaving as though nothing happened.
+// The CHANGELOG dot means "there is something new to READ", and that is what needs gating.
+//
+// ⚠ THE NEWEST ENTRY ONLY, AND THAT IS DELIBERATE. Hashing the whole visible list would fire when
+// the ELEVENTH day rolls off into CHANGELOG-ARCHIVE.md (rule 14) — the list would differ while
+// nothing new had been added, a false positive. Comparing only the newest entry's DATE would miss
+// the opposite case: a second deploy on the same Pacific day ADDING a line to the existing entry,
+// which is exactly what v2.21.0 did. So the stamp is the newest entry's date AND its lines.
+//
+// Stored whole rather than hashed: a few hundred bytes of localStorage costs nothing, and it means
+// there is no hash function to be subtly wrong and no collision to reason about. JSON.stringify
+// of the array, so the separator question never arises: two entries cannot collide however their
+// lines are punctuated, and the stored value stays plain ASCII and legible in devtools.
+export const CHANGELOG_SEEN_KEY = 'cg-changelog-seen'
+
+/** The newest entry as one comparable string. Pure — the whole point is that it is testable. */
+export const changelogSignature = (entries: readonly ChangelogEntry[]): string => {
+  const newest = entries[0]
+  return newest ? JSON.stringify([newest.date, ...newest.items]) : ''
+}
+
+export const readChangelogSeen = (): string | null => {
+  try {
+    return localStorage.getItem(CHANGELOG_SEEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export const writeChangelogSeen = (stamp: string): void => {
+  try {
+    localStorage.setItem(CHANGELOG_SEEN_KEY, stamp)
+  } catch {
+    /* best-effort — the same rule as the dots: blocked storage must never break boot */
+  }
+}
+
+/**
+ * Is there something in the changelog this device has not seen?
+ *
+ * ⚠⚠ A MISSING STAMP COUNTS AS CHANGED — THE EXACT OPPOSITE OF `buildChanged`, ON PURPOSE, AND THIS
+ * IS THE MIGRATION CASE. `buildChanged` treats a missing stamp as "first visit, nothing to announce"
+ * because it is the FIRST thing consulted. This is not: it is only ever reached once `buildChanged`
+ * has already returned true, which means an installation that has run a DIFFERENT build before —
+ * never a first visit. A missing stamp there means only "we have never recorded what this device
+ * saw", which is true of every existing installation on the one boot after this ships.
+ * ★ So the tie is broken toward SHOWING the dot, because the two errors are not equal: a spurious
+ * dot costs a glance, while a suppressed one costs the player the news entirely. The first boot
+ * after this change therefore behaves exactly as today does, and every boot after it is honest.
+ */
+export const changelogChanged = (stored: string | null, current: string): boolean =>
+  stored !== current
+// ════════════════════════════════════════════════════════════════════════════════════════════════

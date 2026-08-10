@@ -32,7 +32,7 @@ import { installPointerGestures } from './lib/pointerGestures.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
 import { useUpdateCheck } from './components/useUpdateCheck.js'
 import { DEPLOY_TS } from './deployStamp.js'
-import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot, subscribeUpdateDot } from './changelog.js'
+import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot, subscribeUpdateDot, CHANGELOG, changelogSignature, changelogChanged, readChangelogSeen, writeChangelogSeen } from './changelog.js'
 import { useSettings } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
 import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, prefsMatchDefaults } from './store/userDefaults.js'
@@ -1139,13 +1139,33 @@ import BlitzMode from './modes/BlitzMode.jsx'
         const current=DEPLOY_TS.toISOString();
         const changed=buildChanged(readBuildStamp(),current);
         writeBuildStamp(current); // restamp on EVERY boot — the stamp always names the build that last ran
-        // The changelog breadcrumb (Q6) lights on EVERY build change — including one the real
-        // Updating flow just bridged (the skip-hold boot below suppresses only the SCREEN; the
-        // changelog still has news either way). Marking the PERSISTED flags is all that is needed:
-        // both dots read those flags through useSyncExternalStore (see their declarations above), so
-        // markUpdateDot notifies and re-renders them. There is no React state left to mirror into —
-        // which is exactly why this effect no longer trips react-hooks/set-state-in-effect.
-        if(changed){markUpdateDot(GEAR_DOT_KEY);markUpdateDot(CHANGELOG_DOT_KEY);}
+        // ══ THE TWO DOTS NO LONGER FIRE TOGETHER (2026-08-10, the owner's observation) ═══════════
+        // They mean different things, and only one of them is true on every build change:
+        //   • THE GEAR DOT = "the app updated". True whenever the build changed, so it is marked
+        //     unconditionally here — including on a build the real Updating flow just bridged (the
+        //     skip-hold boot below suppresses only the SCREEN). ★ It STAYS that way deliberately:
+        //     the Updating screen has already fired by this point and cannot be suppressed, since
+        //     this same detection cannot tell a typo fix from a redesign. Dropping the gear dot
+        //     would leave the app announcing an update and then acting as though nothing happened.
+        //   • THE CHANGELOG DOT = "there is something new to READ", which is NOT implied by a build
+        //     change. It used to be marked on the same line, and the comment that stood here claimed
+        //     "the changelog still has news either way" — which was false, and v2.21.1 proved it:
+        //     an internal deploy on a day whose entry already stated the day's net effect adds no
+        //     line at all (rule 13's fallback sentence is a fallback, never an addition), so every
+        //     player holding v2.21.0 got a breadcrumb leading to something they had already read.
+        // The comparison itself, the migration case and why the newest entry ALONE is the right
+        // thing to compare all live in changelog.ts beside CHANGELOG_SEEN_KEY.
+        //
+        // Restamped on EVERY boot, exactly like the build stamp above, so the stored value always
+        // names what this device last saw. Computed BEFORE the write, or it would always match.
+        const seenNow=changelogSignature(CHANGELOG);
+        const unread=changelogChanged(readChangelogSeen(),seenNow);
+        writeChangelogSeen(seenNow);
+        // Marking the PERSISTED flags is all that is needed: both dots read them through
+        // useSyncExternalStore (see their declarations above), so markUpdateDot notifies and
+        // re-renders them. There is no React state left to mirror into — which is exactly why this
+        // effect no longer trips react-hooks/set-state-in-effect.
+        if(changed){markUpdateDot(GEAR_DOT_KEY);if(unread)markUpdateDot(CHANGELOG_DOT_KEY);}
         if(!changed||skipHoldConsumedRef.current)return;
         updateEngagedRef.current=true; // claim the #boot handoff NOW — the splash hands off to the overlay, never to the app
         let cancelled=false;
