@@ -17,6 +17,24 @@
 //    below, pinned by a test). The URL is built from import.meta.env.BASE_URL because staging is a
 //    SUBPATH (/test_version/) — a root-absolute URL would read the apex build and compare two
 //    different sites.
+//  • ⚠ THE NONCE DOES NOT REACH GITHUB. A LAYER THIS LIST ORIGINALLY MISSED, added 2026-08-10 after
+//    it was measured. Everything above is true of the two caches ON THE DEVICE — the service
+//    worker's precache and the browser's HTTP cache — and the nonce defeats both. It does NOT
+//    defeat the CDN in front of GitHub Pages, because that CDN STRIPS THE QUERY STRING FROM ITS
+//    CACHE KEY: three `build-id.txt?cg=<nonce>` URLs that had never been requested by anyone all
+//    came back `X-Cache: HIT`, and a request-side `Cache-Control: no-cache` was ignored. The file
+//    ships with `max-age=600`, so THE CEILING ON THIS CHECK'S FRESHNESS IS ABOUT TEN MINUTES, and
+//    there is no way to lower it: GitHub Pages does not let a site set its own headers.
+//    ★ WHY THAT IS A CEILING AND NOT A LIE. The same edge serves this visitor everything else too,
+//    so during that window there is genuinely no new build available TO them — "You're up to date"
+//    describes what they could actually download, which is the honest answer to the question the
+//    button asks. Pressing it again a few minutes later gets the update. What would be wrong is
+//    believing the nonce makes the answer instant; it does not, and the code must not grow anything
+//    that assumes it does.
+//    ⚠ This cost a real decision once: it is exactly why the version bump guard reads git tags
+//    rather than asking the live site what it is serving — a stale read there would have produced
+//    a false PASS, waving through the duplicate deploy that guard exists to stop. The measurement
+//    is repeated at the top of scripts/versionLedger.mjs, where it killed a candidate design.
 //  • DEPLOY_TS is NOT the thing to compare, and round 16 did not change that. It is not in
 //    index.html — it lives inside the ~476 KB bundle, so reading the deployed one would mean
 //    downloading the whole build to ask a question about it. (Q1 did remove the OTHER objection
@@ -107,7 +125,9 @@ export function readOwnBuildId(doc: Document): string | null {
 }
 
 // A fresh cache-buster per check. Two presses inside the same millisecond must not reuse a URL, so
-// the clock alone is not enough.
+// the clock alone is not enough. ⚠ It busts the two caches ON THIS DEVICE — Workbox's precache route
+// and the browser's HTTP cache — and NOT the Pages CDN, which ignores the query string entirely; see
+// the ⚠ bullet in the header for the measurement and the ~10-minute freshness ceiling it implies.
 export function makeCheckNonce(now: number = Date.now(), rand: number = Math.random()): string {
   return `${now.toString(36)}${Math.floor(rand * 1e6).toString(36)}`
 }

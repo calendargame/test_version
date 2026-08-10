@@ -4,12 +4,28 @@ name: Deploy to GitHub Pages
 # When should the robot run?
 on:
   push:
-    branches: [main]      # automatically, every time code is pushed to main
-  workflow_dispatch:      # and on-demand, via a button in the Actions tab
+    branches: [main]      # automatically, every time code is pushed to main — and ONLY that.
+# ⚠ `workflow_dispatch` (the Actions tab's "Run workflow" button) was REMOVED 2026-08-10, and it is
+# worth knowing why rather than re-adding it. It had never been used, and TWO independent guards now
+# refuse it: the changelog-date check fails any run on a later Pacific day than the newest entry, and
+# the version-ledger check below fails any run whose version has already shipped — which a re-publish
+# of an unchanged commit always has. Keeping a button that cannot succeed is keeping a locked door
+# with a handle on it. A deploy is a push; that is now the only thing it can be.
+# ⚠ RE-RUNNING FROM THE ACTIONS TAB: WHICH BUTTON MATTERS, because the two are not interchangeable.
+# "Re-run failed jobs" re-runs only what failed — so if the BUILD passed (its version tag written)
+# and only PUBLISHING failed, that button finishes the job and the version is not spent. "Re-run all
+# jobs" re-runs the version check too, which will refuse the number the first attempt already
+# claimed. Bumping in that situation is the wrong move and costs a pointless version plus a
+# changelog edit; scripts/versionLedger.mjs's failure message spells out both cases.
 
-# What the robot is allowed to do (needed to publish Pages).
+# What the robot is allowed to do.
+# ⚠ `contents` is WRITE, not read, since 2026-08-10: the build job's last step writes a `v<version>`
+# tag recording that this version has shipped here (see the version-ledger steps below). It is
+# GitHub's own built-in job token and it can only reach the repository running the workflow — there
+# is no secret to create, rotate or leak. The deploy job overrides this back down to read, because
+# publishing needs no write access at all.
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -31,30 +47,57 @@ jobs:
       # (buildNumber.mjs also refuses a shallow checkout outright, so if this line is ever removed
       # the build FAILS with instructions instead of silently flattening the number. Belt and braces,
       # deliberately: the guard is what makes the workflow safe to edit.)
+      #
+      # ⚠ SINCE 2026-08-10 IT CARRIES A SECOND, UNRELATED LOAD: TAGS. `fetch-depth: 0` is also the
+      # only reason the version ledger below can see what has already shipped here. Verified in the
+      # action's own source rather than taken from its README: fetch-depth <= 0 selects
+      # `getRefSpecForAllHistory`, whose refspec includes `+refs/tags/*:refs/tags/*`, and
+      # git-command-manager only adds `--no-tags` when that refspec is ABSENT. So tags arrive because
+      # of this line and for no other reason — and versionLedger.mjs fails closed on an empty tag
+      # list, so if that ever changes the deploy stops rather than approving every version forever.
       - name: Check out the code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history — the build number is the commit count
+          fetch-depth: 0   # full history AND all tags — the build number and the version ledger
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'   # matches the Node version on the laptop
           cache: npm
+      # ── THE VERSION BUMP GUARD, HALF 1 OF 2 ──────────────────────────────────────────────────
+      # Refuses the deploy unless package.json's version is HIGHER than every version this site has
+      # already published. The record it reads is the `v*` tags in this repository, written by half 2
+      # at the bottom of this job. All the reasoning lives in scripts/versionLedger.mjs; the short
+      # version is that a deploy does not need a new commit (a re-publish of the same commit is a
+      # genuinely different artifact), so nothing derived from the COMMIT can enforce this rule.
+      #
+      # FIRST, and deliberately even before `npm ci`: it needs nothing but node and git, so a version
+      # that cannot ship costs about two seconds instead of a dependency install and a three-minute
+      # test run. ⚠ Do not move it below `npm ci` for tidiness, and do not give the script a
+      # dependency — being free to run this early is the point.
+      #
+      # ⚠ IT DEPENDS ON `fetch-depth: 0` ABOVE FOR TAGS, not just for history. If tags ever stop
+      # arriving, the check FAILS rather than passing on an empty list — that fail-closed choice is
+      # the difference between this guard and one that silently approves everything forever.
+      - name: Check this version has never shipped here
+        id: version
+        run: node scripts/checkVersionLedger.mjs
       - name: Install dependencies
         run: npm ci
-      # FIRST, because it is the cheapest check in the whole gate (a second) and the only one that
-      # can fail for a reason that has nothing to do with the code. Every deploy ships exactly one
+      # EARLY — second only to the version ledger above, which needs no dependencies and so runs even
+      # cheaper. This one is among the cheapest in the gate (a second) and is one of the two that can
+      # fail for a reason that has nothing to do with the code. Every deploy ships exactly one
       # changelog entry dated its own PACIFIC calendar day; the build enforces that too (the
       # changelog-stamp plugin in vite.config.js is the real authority, since it also gates a local
       # `npm run build`), but the build step is five minutes down this file, so without this step a
       # mis-dated changelog costs the entire gate before anyone hears about it.
       #
       # ⚠ THIS IS WHY A RE-DEPLOY OF AN UNCHANGED COMMIT CAN FAIL. The rule is EQUALITY against the
-      # build day, so pressing "Run workflow" or "Re-run all jobs" on a LATER Pacific day than the
-      # newest changelog entry fails here — as does pushing the same commit to the staging repo one
-      # evening and the live repo the next morning. That is the guard working, not a fault: the fix
-      # is a commit that re-dates the newest entry (and, if that day already shipped, a new entry for
-      # the new day). There is deliberately no bypass; the failure message spells out both cases.
+      # build day, so "Re-run all jobs" on a LATER Pacific day than the newest changelog entry fails
+      # here — as does pushing the same commit to the staging repo one evening and the live repo the
+      # next morning. That is the guard working, not a fault: the fix is a commit that re-dates the
+      # newest entry (and, if that day already shipped, a new entry for the new day). There is
+      # deliberately no bypass; the failure message spells out both cases.
       - name: Check the changelog date
         run: node scripts/checkChangelogDate.mjs
       # Quality gate — a failing test, lint error, TYPE error, or FORMATTING drift blocks the deploy,
@@ -87,11 +130,60 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist          # the finished files Vite produces
+      # ── THE VERSION BUMP GUARD, HALF 2 OF 2 ──────────────────────────────────────────────────
+      # Writes this version into the ledger half 1 reads: a lightweight tag on the commit that was
+      # just built, in THIS repository only. Tags are per-repository on purpose — production and
+      # staging each keep their own record, which is right, because they genuinely have not published
+      # the same list of versions.
+      #
+      # ⚠ THE POSITION OF THIS STEP IS LOAD-BEARING: LAST IN `build`, WHICH IS BEFORE THE SITE GOES
+      # LIVE. The `deploy` job below is what publishes, and it `needs: build`. So:
+      #   • tag first, publish second  -> the ledger is only ever AHEAD of the site. "Ahead" costs a
+      #     skipped version number, which costs nothing at all.
+      #   • publish first, tag second  -> a failed or cancelled tag would leave the site UPDATED with
+      #     no record of it, the ledger falls quietly behind reality, and the next duplicate sails
+      #     straight through. That is unrecoverable by inspection, which is why it is not done.
+      # And if this step itself fails, the build job fails, so `deploy` never runs and nothing ships.
+      #
+      # ⚠ THE WHOLE REF COMES FROM THE GUARD'S STEP OUTPUT — `v2.21.0`, not `2.21.0` with a `v` glued
+      # on here. Gluing was the original shape and it was wrong: while the guard still accepted a
+      # `v`-prefixed version, this produced `vv2.21.0` — a tag that `--list v*` matches but the
+      # parser refuses, so that version went unrecorded and could ship a SECOND time. The version
+      # regex is strict now, and taking the ref whole removes the last place one is assembled outside
+      # the validated path. A lightweight tag (no `-a`) needs no git identity configured, and
+      # `origin` already carries the checkout's credentials.
+      - name: Record this version in the deploy ledger
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          # Fail closed if that output is ever missing — a renamed `id:`, a deleted step. Without
+          # this, the line below would run `git tag "v"`, and `v` IS a legal tag name, so the deploy
+          # would stay GREEN, publish, and write a ledger entry nothing can read. That was the one
+          # fail-OPEN path in the whole feature.
+          if [ -z "$TAG" ]; then
+            echo "::error::app-version: the version guard produced no tag name, so this build cannot be recorded in the deploy ledger. Nothing has been published. Check the 'Check this version has never shipped here' step and its 'id: version'."
+            exit 1
+          fi
+          git tag "$TAG"
+          # The remote rejecting an existing tag is the LAST line of defence: the guard read the
+          # ledger ~5 minutes ago, so a second push inside that window can pass the check and still
+          # be a duplicate. Correct already — but git's own message says nothing about versions, so
+          # this gives that path the one human-readable sentence it was missing.
+          git push origin "$TAG" || {
+            echo "::error::app-version: $TAG already exists on this repository — another run claimed this number between this build's checkout and now. Nothing has been published. Raise \"version\" in package.json and push again (see scripts/versionLedger.mjs)."
+            exit 1
+          }
 
   # Step 2: publish the assembled website to GitHub Pages.
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Narrower than the workflow-level grant above: publishing reads nothing and writes no code, so
+    # the `contents: write` the BUILD job needs for its version tag is handed straight back here.
+    # Only the job that actually writes a tag ever holds the permission to write one.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

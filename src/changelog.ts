@@ -80,6 +80,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-08-10',
     items: [
       'This list now shows a version number in its top right corner, next to "What\'s new" — useful if you are ever asked which copy of the app you have.',
+      'How to Play now explains that a brand-new version can take up to about ten minutes to reach everywhere, so Check for updates can still answer "Up to date" just after one is released — asking again a little later finds it.',
     ],
   },
   // ⚠ THIS ENTRY WAS REWRITTEN BY THE SECOND DEPLOY OF 2026-08-09, under the charter's same-day

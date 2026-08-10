@@ -535,23 +535,27 @@ export default function GuidePage({
           triggers it; the update waits for a fresh open. To ask right now instead, the Settings (⚙)
           panel has a <b>Check for updates</b> link. It really does check: the link reads{' '}
           <b>Checking…</b> while it looks, then answers in the same spot — <b>Up to date</b> if you
-          already have the newest version, or <b>No connection</b> if it could not reach the
-          internet. The answer stays for a few seconds and the link goes back to normal. Only when
-          there genuinely is something new does it install it there and then, behind the same
-          updating screen (your saved progress is kept either way).
+          already have the newest version the site is handing out, or <b>No connection</b> if it
+          could not reach the internet. The answer stays for a few seconds and the link goes back to
+          normal. Only when there genuinely is something new does it install it there and then,
+          behind the same updating screen (your saved progress is kept either way). A brand-new
+          version can take up to about ten minutes to reach everywhere, so a check in that window
+          can still answer <b>Up to date</b> — asking again a little later finds it.
         </p>
         <p>
           To see what an update actually changed, the <b>Changelog</b> link right next to Check for
           updates opens a plain-words list of what recent updates changed, each entry dated and
           listed newest first — the dates use the numeric form of your selected format, and the list
-          scrolls within the popup once it grows long. Each dated entry covers a whole day: if a day
-          brought more than one update, that day's changes are gathered under the one date. The list
-          shows the ten most recent days that had an update — anything older than that is no longer
-          listed. After an update, a small <b>light-blue dot</b> points the way there: it appears in
-          the top-right corner of the gear button (⚙) until you open the menu, and just after the
-          Changelog link's own text until the first time you open the changelog. The gear's dot is
-          separate from the small violet bar that marks modified settings (see the Save Defaults
-          section), and the two can show at once.
+          scrolls within the popup once it grows long. Its heading also carries the app&apos;s{' '}
+          <b>version number</b>, dimmed in the top-right corner — that is the one to quote if you
+          ever need to say exactly which copy of the app you have. Each dated entry covers a whole
+          day: if a day brought more than one update, that day's changes are gathered under the one
+          date. The list shows the ten most recent days that had an update — anything older than
+          that is no longer listed. After an update, a small <b>light-blue dot</b> points the way
+          there: it appears in the top-right corner of the gear button (⚙) until you open the menu,
+          and just after the Changelog link's own text until the first time you open the changelog.
+          The gear's dot is separate from the small violet bar that marks modified settings (see the
+          Save Defaults section), and the two can show at once.
         </p>
         <Subhead>The book and contact</Subhead>
         <p>

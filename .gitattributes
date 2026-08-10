@@ -1,0 +1,23 @@
+# .gitattributes — LINE ENDINGS, PINNED. Added 2026-08-10 after the trap below was reproduced.
+#
+# THE BUG THIS FIXES, measured rather than assumed. The laptop this repo is developed on has git's
+# `core.autocrlf=true` set globally, which rewrites LF to CRLF *on checkout* for every file git
+# considers text. The repo's stored blobs are all LF, and today's working copy is LF too — but only
+# by accident, because those files were written by tooling and have never been re-checked-out. Proof
+# that the trap is armed: `git clone` this repo into a scratch directory and run `git ls-files --eol`
+# — package.json, all of scripts/*.mjs, src/appVersion.ts, vite.config.js and the deploy workflow all
+# come out `i/lf w/crlf`. Prettier is configured for LF, so `npm run format:check` then fails on
+# every one of them, for a reason that has nothing whatever to do with the code.
+#
+# ⚠ AND IT FAILS ONLY LOCALLY, WHICH IS THE MOST CONFUSING SHAPE AVAILABLE. CI runs on Linux, where
+# autocrlf is off, so the same commit is green there and red here — which reads like a broken laptop
+# rather than a checkout setting. This is the "Windows CRLF makes files show as local prettier drift"
+# entry in PROJECT.md's Key learnings, which until now was a warning to remember instead of a fix.
+#
+# `text=auto` lets git keep detecting text vs binary (verified: all 28 image files stay `i/-text`,
+# and their blob hashes match the bytes on disk before and after this file existed — nothing is
+# rewritten),
+# and `eol=lf` overrides autocrlf for everything it does classify as text — in the WORKING TREE, not
+# just the index, which is the half core.autocrlf was getting wrong. Repo-wide and unconditional on
+# purpose: a per-extension list is a list somebody has to remember to extend.
+* text=auto eol=lf
