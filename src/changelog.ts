@@ -74,6 +74,14 @@ export type ChangelogEntry = {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  // The tenth entry, so the array is now AT the cap: the next new day must move 2026-07-17 to
+  // CHANGELOG-ARCHIVE.md in the same change (see the ten-entry rule in the charter above).
+  {
+    date: '2026-08-10',
+    items: [
+      'This list now shows a version number in its top right corner, next to "What\'s new" — useful if you are ever asked which copy of the app you have.',
+    ],
+  },
   // ⚠ THIS ENTRY WAS REWRITTEN BY THE SECOND DEPLOY OF 2026-08-09, under the charter's same-day
   // rule: one entry per Pacific day, restating that day's NET effect versus yesterday's build. The
   // first deploy shipped "Reset Settings and Full Reset now wait until you leave the year box"; the

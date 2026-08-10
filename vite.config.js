@@ -10,6 +10,7 @@ import { visualizer } from 'rollup-plugin-visualizer'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { availableParallelism } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -25,6 +26,7 @@ import { verifyDistPrecache, describePrecacheProblems } from './scripts/precache
 // pulling it into the config graph is inert.
 import { CHANGELOG } from './src/changelog.ts'
 import { checkChangelogStamp, describeChangelogStampMismatch } from './scripts/changelogStamp.mjs'
+import { readBuildNumber } from './scripts/buildNumber.mjs'
 
 // Ceiling on Vitest's worker pool — see the long note at `test.maxWorkers` below for why the
 // uncapped default is dangerous rather than merely slow. Clamped to at most 8 and never above what
@@ -112,8 +114,11 @@ const bootCssPreload = () => ({
 // (The og:image / og:url META is rewritten to the staging URL separately — see testOgMeta below.)
 // Build-only; non-live only (staging + local). Live is entirely untouched (normal purple precache).
 // (Owner: distinguish test from live, 2026-06-13.)
-const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public')
-const TEST_ICON_DIR = join(dirname(fileURLToPath(import.meta.url)), 'design', 'icons', 'test-build')
+// The repo root — this config's own directory. Was written out inline at each of the three uses
+// below until the version read (a fourth) made a name worth having.
+const ROOT = dirname(fileURLToPath(import.meta.url))
+const PUBLIC_DIR = join(ROOT, 'public')
+const TEST_ICON_DIR = join(ROOT, 'design', 'icons', 'test-build')
 const TEST_VARIANT_FILES = [
   'favicon.svg',
   'favicon-32x32.png',
@@ -336,6 +341,37 @@ const BUILD_TIME = new Date()
 // load (a ReferenceError on __BUILD_TS__) rather than silently show a wrong date.
 const DEV_BUILD_TS = '1970-01-01T00:00:00.000Z'
 
+// ── THE SEMANTIC VERSION (2026-08-10) ─────────────────────────────────────────────────────────
+// Read from package.json's `version` field — the standard home, and the ONLY copy: injected below
+// as __APP_VERSION__ and read by src/appVersion.ts, which carries the scheme (what a MAJOR/MINOR/
+// PATCH means here, and who assigns it). readFileSync rather than an import assertion so the value
+// is plain data at config time in every Node this repo will meet, with no JSON-module flag involved.
+// Unlike the deploy stamp there is no dev sentinel: this is committed data, not a clock, so dev,
+// Vitest and a real build all see the one true value — which is also what lets a test compare what
+// the app renders against package.json itself rather than against a literal.
+const APP_VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+// Three dotted numbers or nothing ships. `define` substitutes raw expression text, so a missing or
+// misspelled field would inject the token `undefined` and the changelog panel would render
+// "vundefined" — plausible enough to reach a screen, which is precisely the class of failure the
+// build-identity and deploy-stamp guards exist to prevent. Module scope, so it fails on any command.
+if (!/^\d+\.\d+\.\d+$/.test(APP_VERSION ?? ''))
+  throw new Error(
+    `app-version: package.json's "version" is ${JSON.stringify(APP_VERSION)}, which is not a ` +
+      `MAJOR.MINOR.PATCH version. Every deploy bumps exactly one of the three — see src/appVersion.ts.`,
+  )
+
+// ── THE SILENT BUILD NUMBER (2026-08-10) ──────────────────────────────────────────────────────
+// Derived ONLY for a real `vite build`, from git, by scripts/buildNumber.mjs (which refuses a
+// shallow checkout and throws rather than ever returning 0). Dev and Vitest get this frozen
+// sentinel instead — the DEV_BUILD_TS reasoning exactly: a number that changed with every commit
+// would make any test that touched it either brittle or vacuous, and neither a dev server nor a
+// test run is a build. 0 therefore means "not a build" and can mean nothing else, since the real
+// path fails loudly instead of producing it. Nothing renders it today; see src/appVersion.ts for
+// what it is for and how a future round would surface it.
+const DEV_BUILD_NUMBER = 0
+const buildNumber = () =>
+  readBuildNumber((args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }))
+
 // changelogStamp (Q1 half 2) — the other half of taking the stamp out of human hands. Automating
 // only the stamp would replace a step somebody remembers with a divergence nobody watches, so the
 // build now FAILS unless the newest entry in src/changelog.ts is dated the same PACIFIC calendar day
@@ -430,6 +466,14 @@ export default defineConfig(({ command, mode }) => ({
     // Base-independent by construction: this is a timestamp, not a URL, so the live '/' build and
     // the staging '/<repo>/' build stamp identically (each with its own build's clock).
     __BUILD_TS__: JSON.stringify(command === 'build' ? BUILD_TIME.toISOString() : DEV_BUILD_TS),
+    // The semantic version + the silent build number (see both blocks above). Same mechanism as the
+    // stamp, one line each, so there is no second way to get a build-time constant into the app.
+    // JSON.stringify for the version because it is a string and `define` substitutes RAW EXPRESSION
+    // TEXT; String() for the number because a number's raw text is the number.
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    // buildNumber() shells out to git, so it is called ONLY on the build branch — a dev server start
+    // and every Vitest config load stay process-free.
+    __BUILD_NUMBER__: String(command === 'build' ? buildNumber() : DEV_BUILD_NUMBER),
   },
   // React Compiler — automatic memoization (Stage D2). @vitejs/plugin-react v6 is Rolldown/oxc-based
   // and dropped its old `babel` option, so the compiler runs through @rolldown/plugin-babel fed the

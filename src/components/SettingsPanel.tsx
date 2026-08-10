@@ -48,6 +48,7 @@ import {
   NUM_INPUT_CLASS,
 } from './controlClasses.js'
 import { DEPLOY_TS } from '../deployStamp.js'
+import { APP_VERSION } from '../appVersion.js'
 import { CHANGELOG } from '../changelog.js'
 import { useSettings, SETTINGS_DEFAULTS } from '../store/settings.js'
 import type { SettingsValues } from '../store/settings.js'
@@ -783,7 +784,9 @@ export function SettingsPanel({
   // keeps a long history scrolling within the card without growing it off-screen. Entry dates
   // render through the footer's Last-Updated recipe (fmt + numericFormatOf) so they follow the
   // user's Date Format setting; the bullet list is the guide's UL idiom (list-disc + the
-  // --mut-color marker). The card is title → list → Close and NOTHING else: round-8 Q8 added a
+  // --mut-color marker). The card is heading row → list → Close and NOTHING else — the heading row
+  // gained the app's version on its right on 2026-08-10 (the note at the row explains the markup and
+  // why the id moved onto a span), and it is still one row: round-8 Q8 added a
   // one-line "Shows the last ten days with updates." notice between the scroller and Close, and the
   // owner removed it (round-9) on the rule that this popup answers WHAT CHANGED, while how the app
   // keeps its history is documentation — so the ten-day cap is explained in How to Play (the
@@ -810,8 +813,42 @@ export function SettingsPanel({
           style={{ boxShadow: '0 0 8px rgba(0,0,0,0.12)' }}
           className="card rounded-2xl py-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden"
         >
-          <div id="changelog-title" className="px-4 text-sm font-semibold text-(--tx-50)">
-            What's new
+          {/* THE HEADING ROW: "What's new" left, the app's version right (2026-08-10). This popup is
+              the version's ONLY home — not the ⚙ panel's "Last Updated" row, which has no space for
+              it and which the owner will not give a second line to. Here it costs nothing: it sits
+              in the panel someone opens to ask what changed, which is the same question.
+              ★ WHY THE ID IS ON A SPAN AND NOT ON THIS ROW — the one thing not to "tidy". The card
+              above is aria-labelledby="changelog-title", so whatever carries that id IS the dialog's
+              accessible name. Put the id on the row and every screen reader announces the dialog as
+              "What's new v2.19.0" on every open, and the name changes on every deploy — a moving
+              landmark, and a version number read aloud to someone who did not ask for one. The id
+              wraps ONLY the words, so the name stays exactly "What's new" (pinned by
+              changelog.dom.test, and the whole suite reaches this dialog through
+              getByRole('dialog', { name: "What's new" }), so a regression fails ~30 cases at once).
+              The version is still IN the dialog and still read in its content, just not in its name.
+              STYLING, decided rather than defaulted: text-xs, normal weight, tabular-nums (so the
+              digits do not jitter between versions), and --tx-200-80 — the SAME token the changelog
+              entry bullets use, so the version reads as part of this card's text rather than as a
+              fourth kind of grey. NOT the muted marker token (--mut-color): that is calibrated for
+              decorative punctuation, and this is already demoted three ways (smaller, lighter, and
+              sitting beside a bright semibold heading).
+              ⚠ THE MEASURED REASON IS NOT THE ONE THAT WAS PREDICTED, so it is written down as
+              measured. The muted token was expected to fail on the LIGHT and PARCHMENT themes, which
+              have the least contrast headroom. It does not: on those two, --mut-color and
+              --tx-200-80 resolve to the same colour and both land at 4.62 / 4.59 against this card.
+              The penalty is on the DARK themes, where the muted token is far dimmer than the text
+              one — measured against the built app in a real browser, contrast vs the card:
+                  --tx-200-80   dusk 9.12  midnight 9.67  slate 8.91  sepia 8.91  light 4.62  parch 4.59
+                  --mut-color   dusk 5.69  midnight 5.95  slate 5.61  sepia 5.61  light 4.62  parch 4.59
+              So the choice is right and is never worse — it is simply four themes that would have
+              paid for it, not two. Every value above clears WCAG AA for normal text (4.5).
+              items-baseline, not items-center: the version's baseline sits on the heading's, which is
+              what makes two different type sizes read as one line. */}
+          <div className="px-4 flex items-baseline justify-between gap-2">
+            <span id="changelog-title" className="text-sm font-semibold text-(--tx-50)">
+              What's new
+            </span>
+            <span className="text-xs tabular-nums text-(--tx-200-80)">v{APP_VERSION}</span>
           </div>
           <div
             ref={changelogScrollRef}

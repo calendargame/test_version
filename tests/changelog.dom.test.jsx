@@ -32,6 +32,7 @@ import {
   resetAppState,
 } from './helpers/settingsPanel.jsx'
 import { BUILD_STAMP_KEY, writeBuildStamp } from '../src/lib/buildStamp.js'
+import { APP_VERSION } from '../src/appVersion.js'
 import {
   CHANGELOG,
   GEAR_DOT_KEY,
@@ -347,9 +348,58 @@ describe('the Changelog popup (modal parity + content)', () => {
     expect(dialog.className.split(/\s+/)).not.toContain('p-4')
     expect(scrollRegion.className).toContain('px-4')
     expect(scrollRegion.className).toContain('overscroll-contain')
-    expect(dialog.querySelector('#changelog-title').className).toContain('px-4')
+    // The title's px-4 moved onto its ROW on 2026-08-10, when the version joined it — the lane is a
+    // property of the row, and the title element itself is now a span inside it carrying only type.
+    // (Why a span and not the row: the row would drag the version into the dialog's accessible name.
+    // The version cases below and tests/appVersion.dom pin that.)
+    const titleRow = dialog.querySelector('#changelog-title').parentElement
+    expect(titleRow.className).toContain('px-4')
+    expect(dialog.querySelector('#changelog-title').className.split(/\s+/)).not.toContain('px-4')
     const closeRow = within(dialog).getByRole('button', { name: 'Close' }).parentElement
     expect(closeRow.className).toContain('px-4')
+  })
+
+  it('shows the app version on the heading row, right of the title (2026-08-10)', () => {
+    mountApp()
+    openPopup()
+    const dialog = changelogDialog()
+    // The REAL value, so this file follows every future bump on its own. (That it comes from the
+    // module rather than a literal is proved in tests/appVersion.dom, which mocks the module — no
+    // in-process assertion here could tell the two apart.)
+    const version = within(dialog).getByText(`v${APP_VERSION}`)
+    const titleRow = dialog.querySelector('#changelog-title').parentElement
+    expect(version.parentElement).toBe(titleRow)
+    // Right-aligned by the row's justify-between, and on the heading's baseline rather than centred
+    // on it — what makes two type sizes read as one line.
+    expect(titleRow.className).toContain('justify-between')
+    expect(titleRow.className).toContain('items-baseline')
+    // ⚠ ORDER IS DOM ORDER, NOT PIXELS. jsdom has no layout, so "right of the title" is unverifiable
+    // here; what is verifiable is that the version follows the title in the row, which is what
+    // justify-between then places right (and what a screen reader reads in that order).
+    expect(titleRow.children[0]).toBe(dialog.querySelector('#changelog-title'))
+    expect(titleRow.children[1]).toBe(version)
+    // The decided styling: demoted three ways and no further. text-xs and normal weight beside the
+    // semibold heading, tabular-nums so the digits do not jitter between versions, and the SAME text
+    // token the entry bullets use — deliberately NOT the muted marker token, which is calibrated for
+    // decorative punctuation and measures roughly 40% dimmer on the four DARK themes (the render
+    // site carries the measured figures; jsdom computes no colours, so this pins the token only).
+    const cls = version.className.split(/\s+/)
+    expect(cls).toContain('text-xs')
+    expect(cls).toContain('tabular-nums')
+    expect(cls).toContain('text-(--tx-200-80)')
+    expect(cls.join(' ')).not.toContain('font-semibold')
+    expect(cls.join(' ')).not.toContain('--mut-color')
+  })
+
+  it('★ the version did NOT join the dialog’s accessible name', () => {
+    mountApp()
+    openPopup()
+    // The card is aria-labelledby="changelog-title", so whatever carries that id IS the name a
+    // screen reader announces on every open. The id wraps ONLY the words; the version is a sibling.
+    // getByRole matches a string EXACTLY against the computed name, so this is the whole assertion.
+    expect(screen.getByRole('dialog', { name: "What's new" })).toBeInTheDocument()
+    expect(document.getElementById('changelog-title').textContent).toBe("What's new")
+    expect(screen.queryByRole('dialog', { name: `What's new v${APP_VERSION}` })).toBeNull()
   })
 
   it('edge fades track scroll position inside the popup (the shared scroll-state listener, round-7 Q5)', () => {

@@ -23,8 +23,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # ⚠ fetch-depth: 0 IS LOAD-BEARING — DO NOT DROP IT BACK TO THE DEFAULT. The default is
+      # fetch-depth: 1, a clone containing exactly one commit, and the build number is
+      # `git rev-list --count HEAD` (scripts/buildNumber.mjs). A shallow clone does not make that
+      # command fail — it makes it return 1, on every deploy, forever, with nothing looking broken.
+      # The full history is ~200 commits of a small repo, so the cost is a second at most.
+      # (buildNumber.mjs also refuses a shallow checkout outright, so if this line is ever removed
+      # the build FAILS with instructions instead of silently flattening the number. Belt and braces,
+      # deliberately: the guard is what makes the workflow safe to edit.)
       - name: Check out the code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history — the build number is the commit count
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
