@@ -1072,7 +1072,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // waiting), hold-end defers to its reload (updateReloadPendingRef) instead of revealing the
       // app for a moment before the navigation.
       // The two update-signal dots (Q6) ARE the PERSISTED flags (src/changelog), read live rather
-      // than mirrored: the detection below marks both on every build change, opening Settings
+      // than mirrored: the detection below marks the GEAR flag on every build change and the CHANGELOG
+      // flag only when the newest entry actually changed (2026-08-10), opening Settings
       // retires the gear's (toggleSettings, immediately below), and the first tap on the footer's
       // Changelog link retires the link's — the two-stage breadcrumb to the changelog popup.
       // Declared HERE, above the effect that sets them.

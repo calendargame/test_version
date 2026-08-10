@@ -288,7 +288,8 @@ describe('G11 — Check for updates: one state, four surfaces', () => {
 
   // ── The gear's update dot ───────────────────────────────────────────────────────────────────
   // Mount on a stale build stamp — a detected build change — with the post-update splash skip set,
-  // which lights both persisted dots while suppressing the Updating screen that would otherwise
+  // which lights both persisted dots (no changelog signature is stored here, so the changelog dot
+  // takes its migration branch) while suppressing the Updating screen that would otherwise
   // sit over the app for a second. The dots are the subject; the screen is not.
   const bootAfterUpdate = () => {
     writeBuildStamp('2020-01-01T00:00:00.000Z')

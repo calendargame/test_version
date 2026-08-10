@@ -132,8 +132,9 @@ export type SettingsPanelProps = {
   /** The update-check state machine's label-state and its trigger. THE LABEL IS THE STATE. */
   updateCheck: UpdateCheckState
   onCheckUpdates: () => void
-  /** The Changelog link's dot. App owns the flag because the build-change detection sets it; the
-   *  panel is its only reader and its only retirer. */
+  /** The Changelog link's dot. App owns the flag because it is set by the build-change detection
+   *  AND the newest-entry comparison together (src/changelog, CHANGELOG_SEEN_KEY); the panel is its
+   *  only reader and its only retirer. */
   changelogDot: boolean
   onRetireChangelogDot: () => void
 }
@@ -1506,7 +1507,9 @@ export function SettingsPanel({
                 wearing the same shared FOOTER_LINK_ROW_CLASS as the View/Clear row above (round-7
                 Q2 — this row's legacy gap-2 left its rings touching at 0px clearance vs the ~4px
                 above); wears the INLINE UpdateDot until its first tap after a build change — the
-                second stage of the breadcrumb the gear's dot starts.
+                second stage of the breadcrumb the gear's dot starts. ⚠ Since 2026-08-10 that dot
+                appears only when the changelog actually GAINED something, so an internal deploy
+                lights the gear and leaves this one dark.
                 Round-8 Q7 rebuilt that marker: a text link reserves no room for the gear's corner
                 badge, so the round-6 shared recipe put the dot on top of the word. The link is an
                 inline-flex row now — the text in its own span, the marker its sibling — and the

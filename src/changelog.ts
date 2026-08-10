@@ -305,6 +305,19 @@ export const clearUpdateDot = (key: string): void => {
 // nothing new had been added, a false positive. Comparing only the newest entry's DATE would miss
 // the opposite case: a second deploy on the same Pacific day ADDING a line to the existing entry,
 // which is exactly what v2.21.0 did. So the stamp is the newest entry's date AND its lines.
+// ⚠⚠ AND IT IS SOUND ONLY BECAUSE SETTLED HISTORY IS NEVER EDITED — the charter rule above, which
+// nothing enforces. A deploy that reworded or added a line to an OLDER entry while leaving the
+// newest one byte-identical would be INVISIBLE here: no dot, and the news lost. The build guard
+// cannot catch it either (scripts/changelogStamp.mjs inspects only the newest entry's date, and
+// structurally cannot see the previous commit's array). So if you are ever tempted to edit a
+// shipped entry, this is the consequence: readers who already have that build will never be told.
+//
+// ⚠ WHAT THE DOT ACTUALLY MEANS, stated because it is not quite "unread". It means "the newest
+// entry's text differs from what this device last BOOTED" — the stamp is written at boot, not when
+// the changelog is opened. Two knock-on cases, both ACCEPTED: a same-day REWORD that says the same
+// thing re-fires, and a same-day DELETION with nothing added re-fires. Both err toward showing a
+// dot, which is the same tie-break the migration rule takes below, and a walk of 47 real changelog
+// transitions in this repo found the pure-delete-with-nothing-added case has happened zero times.
 //
 // Stored whole rather than hashed: a few hundred bytes of localStorage costs nothing, and it means
 // there is no hash function to be subtly wrong and no collision to reason about. JSON.stringify
@@ -346,6 +359,15 @@ export const writeChangelogSeen = (stamp: string): void => {
  * ★ So the tie is broken toward SHOWING the dot, because the two errors are not equal: a spurious
  * dot costs a glance, while a suppressed one costs the player the news entirely. The first boot
  * after this change therefore behaves exactly as today does, and every boot after it is honest.
+ *
+ * ⚠⚠ THAT MAKES THIS FUNCTION'S NULL RULE CORRECT ONLY FOR A CALLER THAT HAS ALREADY ESTABLISHED
+ * THE BUILD CHANGED. `buildChanged` encodes the OPPOSITE null rule in code (lib/buildStamp), so the
+ * two comparators genuinely disagree about what a missing value means, and the disagreement is only
+ * safe because of the order they run in. Any NEW caller must therefore gate on buildChanged first,
+ * exactly as main.tsx does. (Taking that flag as a third parameter was considered, which would turn
+ * this paragraph into a unit test; it was not taken because at the sole call site the argument would
+ * always be the same variable, and the extra parameter buys nothing a reader of that one line does
+ * not already see. Revisit the moment a second caller appears — that is when it starts paying.)
  */
 export const changelogChanged = (stored: string | null, current: string): boolean =>
   stored !== current

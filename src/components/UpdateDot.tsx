@@ -1,6 +1,7 @@
 // UpdateDot — the light-blue "there is news" marker, the two-stage breadcrumb from the ⚙ gear and
 // the ⚙ panel's Changelog link to the changelog popup after a new build lands. The build-stamp check
-// lights both persisted flags, opening Settings retires the gear's, the first tap on the link
+// lights the GEAR flag; the CHANGELOG flag is lit only when the newest changelog entry actually
+// changed since this device last looked (2026-08-10). Opening Settings retires the gear's, the first tap on the link
 // retires the link's (main.tsx owns those flags; src/changelog.ts owns their storage keys).
 //
 // WHY A COMPONENT AND NOT ONE CSS CLASS. Round 6 shipped a single recipe — an absolutely positioned

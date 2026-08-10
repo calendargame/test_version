@@ -7,7 +7,8 @@
 // and the next open is already the new version with nothing left for the auto-update flow to
 // bridge (an evicted Safari tab's fresh download reads the same way). App's build-change flash
 // effect (main.tsx) owns the one detection per boot and turns it into the brief Updating screen;
-// the changelog's update-signal dots (Q6 — src/changelog) light off the same detection there,
+// the changelog's GEAR dot (Q6 — src/changelog) lights off the same detection there, while the
+// CHANGELOG dot needs that detection AND a changed newest entry (see CHANGELOG_SEEN_KEY),
 // before the restamp. try/catch throughout: localStorage can throw (privacy
 // modes) and a broken stamp must never break boot — a blocked read acts like a first visit
 // (nothing to announce).

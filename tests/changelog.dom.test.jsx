@@ -238,7 +238,11 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     })
   }
 
-  it('a build change lights BOTH persisted dots: the closed gear and the Changelog link', () => {
+  // ⚠ THE TITLE NAMES THE MIGRATION BRANCH ON PURPOSE. This case stores no changelog signature, so
+  // it takes the "nothing recorded yet" path and lights both — which is what it has always done and
+  // must keep doing. It therefore passes identically before and after the 2026-08-10 gating, and
+  // cannot be read as evidence that a build change alone lights the link's dot. It no longer does.
+  it('a build change with NO signature recorded yet lights both dots (the migration branch)', () => {
     bootAfterUpdate()
     expect(gearMark()).toHaveAttribute('data-lit', 'true')
     expect(gear()).toHaveAttribute('aria-label', 'Settings (update)')
@@ -343,7 +347,7 @@ describe('the two-stage breadcrumb (stamp → dots → cleared)', () => {
     expect(text.className).toContain('underline')
   })
 
-  it('the post-update suppression boot (cg-skip-boot-hold) still lights the dots — only the screen is suppressed', () => {
+  it('the post-update suppression boot (cg-skip-boot-hold) still lights the dots (no signature stored) — only the screen is suppressed', () => {
     writeBuildStamp(OLD_STAMP)
     sessionStorage.setItem('cg-skip-boot-hold', '1')
     mountApp()

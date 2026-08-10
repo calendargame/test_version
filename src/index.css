@@ -659,7 +659,8 @@ button:focus,select:focus{outline:none}
 .gear-modified::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:9999px;background:rgba(167,139,250,.85)}
 [data-theme="light"] .gear-modified::after,[data-theme="parchment"] .gear-modified::after{background:rgba(124,58,237,.75)}
 /* Q6, re-cut in round-8 Q7 — the update-signal dot: the two-stage breadcrumb to the changelog after
-   a new build lands (the Q2 build-stamp detection lights both flags). Worn by the closed ⚙ gear
+   a new build lands. The Q2 build-stamp detection lights the GEAR flag on any build change; the
+   CHANGELOG flag is gated on the newest entry having actually changed (2026-08-10). Worn by the closed ⚙ gear
    (cleared on opening Settings) and by the ⚙ footer's Changelog link (cleared on its first tap).
    Light blue — deliberately outside the violet "customized" and rose "destructive" families: it
    means "news", not state or danger. Deeper blue on the light themes (the .gear-modified pattern).

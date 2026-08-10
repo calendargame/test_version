@@ -129,8 +129,10 @@ export function describeChangelogStampMismatch({ found, expected, stamp }) {
     `re-run after the next midnight will move the target date again.\n` +
     `\n` +
     `IF THIS DEPLOY CHANGES NOTHING A PLAYER CAN SEE — a re-run, or internal work only — you still ` +
-    `owe an entry, because the update dot fires on ANY build change and would otherwise send them ` +
-    `to a stale one. Use the charter's fixed line, verbatim (never reworded, never alongside a real ` +
+    `owe an entry. The Updating screen and the GEAR dot fire on ANY build change, while the CHANGELOG ` +
+    `dot fires only if this list gains something (src/changelog, CHANGELOG_SEEN_KEY) — so this line ` +
+    `is what makes that breadcrumb lead somewhere instead of nowhere. Use the charter's fixed line, ` +
+    `verbatim (never reworded, never alongside a real ` +
     `line):\n` +
     `\n` +
     `  {\n` +
