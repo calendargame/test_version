@@ -61,13 +61,16 @@ function clickEl(el) {
 
 // Stat value by label span, scoped to the visible App stats strip (hidden mode panels also
 // contain "Score"/"Streak" spans). The value is the cell's last <span>.
+// ⚠ Reads the value through its OWN marker, [data-statval] — the auto-fit target StatPanel puts on
+// the value span — and NOT "the cell's last span". A cell can carry a trailing screen-reader-only
+// span (the "Off" that names a blanked group, C1 round 16), and last-span would read that instead of
+// the value. The marker names the one element that IS the readout, so it cannot drift again.
 function statValue(label) {
   const labelSpan = Array.from(document.querySelectorAll('span')).find(
     (s) => s.textContent.trim() === label && !isHidden(s),
   )
   if (!labelSpan) throw new Error(`stat "${label}" not found`)
-  const spans = labelSpan.parentElement.querySelectorAll('span')
-  return spans[spans.length - 1].textContent.trim()
+  return labelSpan.parentElement.querySelector('[data-statval]').textContent.trim()
 }
 
 // The visible Deduction option buttons, in grid order (hidden modes' grids are display:none →

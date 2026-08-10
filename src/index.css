@@ -362,8 +362,23 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .card{background:var(--card-bg);border:1px solid var(--card-bd)}
 .panel{background:var(--panel-bg);border:1px solid var(--panel-bd)}
 .thin{border:1px solid var(--thin-bd)}
-.surface-button{background:var(--sbtn-bg);border-color:var(--sbtn-bd);transition:background-color .2s}
-.surface-toggle{background:var(--stgl-bg);border-color:var(--sbtn-bd);transition:background-color .2s}
+/* ★ THE .2s BACKGROUND FADE — the app's three interactive surfaces (these two + .btn-solid below)
+   all carry it, and all three multiply by --motion-scale (round 16) so Reduce Motion makes the
+   fade instant. It is DECORATIVE, checked rather than assumed, and the check is worth keeping:
+   the ONLY background changes these two rules can ever transition are the hover lifts declared in
+   the @media (hover: hover) block below (--sbtn-hov / --stgl-hov) and a theme switch. They cannot
+   fade a MEANINGFUL colour change, because every meaningful one leaves the class behind:
+   buttonStateClass (src/components/controlClasses.ts) returns btn-correct-persist /
+   btn-wrong-persist / btn-wrong-dim / btn-override-wrong / flash-* INSTEAD of the idle
+   surface-button, so a right/wrong answer swaps this rule off the element in the same commit that
+   changes its colour — and a transition never runs on a property whose transition declaration
+   left with it. The flash keyframes are an animation, which beats a transition outright and ends
+   on surface-button's own resting values (see the flashGood/flashBad note below), so the return to
+   idle has nothing to fade either.
+   And scaling a COLOUR fade to 0 removes no information in any case: the endpoint is identical,
+   it just arrives at once — unlike zeroing the .bar countdown, which would delete the countdown. */
+.surface-button{background:var(--sbtn-bg);border-color:var(--sbtn-bd);transition:background-color calc(.2s * var(--motion-scale))}
+.surface-toggle{background:var(--stgl-bg);border-color:var(--sbtn-bd);transition:background-color calc(.2s * var(--motion-scale))}
 /* The toggle surface WITHOUT the hover lift — for non-button housings, i.e. every PillTray tray
    (round-9: that is now every picker in the ⚙ panel, not just the date-format pair): a container
    must not brighten as one block on hover; its unselected segments carry their own per-target
@@ -394,7 +409,12 @@ input,textarea{user-select:text;-webkit-user-select:text}
    Tailwind's utilities layer outright: inset, radius, padding and margins here are NOT
    overridable from the className. */
 .svalue-input{--svalue-pad:var(--spacing);--svalue-bd:1px;position:absolute;inset:0;border-style:solid;border-width:var(--svalue-bd);border-radius:var(--radius-md);padding-inline:var(--svalue-pad);margin-inline:calc((var(--svalue-pad) + var(--svalue-bd)) * -1);margin-block:calc(var(--svalue-bd) * -1);appearance:none}
-.btn-solid{background:#7c3aed;color:#fff;transition:background-color .2s}
+/* The third of the three .2s background fades (see the note at .surface-button above for why all
+   three are decorative and all three now multiply by --motion-scale). This one's transitionable
+   background changes are the guarded :hover darkening below and the moment a ⚙ picker's selection
+   moves — the incoming pill gains .btn-solid and fades up to brand purple. The SELECTION is the
+   message there, not the fade; at --motion-scale 0 the pill simply lights at once. */
+.btn-solid{background:#7c3aed;color:#fff;transition:background-color calc(.2s * var(--motion-scale))}
 /* Hover styles guarded by hover-capable media query so touch devices (iOS, Android)
    don't get sticky-hover residual highlights after a tap. Tailwind's own hover:
    utilities already do this guard automatically; these custom rules now match. */
@@ -572,8 +592,22 @@ button:focus,select:focus{outline:none}
 .boot-glow{position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(196,181,253,.2) 0%,rgba(196,181,253,0) 66%)}
 [data-theme="parchment"] .boot-glow,[data-theme="light"] .boot-glow{background:radial-gradient(circle,rgba(124,58,237,.16) 0%,rgba(124,58,237,0) 66%)}
 .boot-updating,.rotate-caption{font-size:0.9375rem;color:var(--sec-color)}
-.boot-d{animation:bootPulse 1.4s infinite}
-.boot-d2{animation-delay:.18s}.boot-d3{animation-delay:.36s}
+/* The three-dot pulse. DURATION *AND* BOTH STAGGER DELAYS multiply by --motion-scale (round 16),
+   so Reduce Motion collapses the whole animation — not just its duration — to zero time. The dots
+   are DECORATIVE: they are an animated ellipsis after the word "Updating", which already says what
+   is happening; the FUNCTIONAL progress indicator on this screen is the logo trace, whose rAF
+   driver deliberately ignores the setting (see src/components/BootOverlay.tsx). ⚠ The trace is
+   parked static behind BOOT_TRACE_ANIMATED today, so under Reduce Motion this screen is now
+   entirely still. That is the setting doing exactly what it was asked to do on a screen that lasts
+   a second or two, and B2 restores the functional motion when it re-enables the trace.
+   AT --motion-scale:0 the animation's active duration is 0 and animation-fill-mode is the default
+   `none`, so NO keyframe style is applied and each dot rests at its own opacity — 1, fully lit,
+   since nothing here declares a resting opacity. That is the right still frame: three solid dots.
+   It is NOT the 0% keyframe's .3, and it is not left to inference — verified in a real browser at
+   --motion-scale 0 and 1 (see the round-16 verification note). If a future edit gives bootPulse a
+   fill-mode, re-check this: `forwards` would freeze the dots at 100%'s .3 instead. */
+.boot-d{animation:bootPulse calc(1.4s * var(--motion-scale)) infinite}
+.boot-d2{animation-delay:calc(.18s * var(--motion-scale))}.boot-d3{animation-delay:calc(.36s * var(--motion-scale))}
 @keyframes bootPulse{0%,70%,100%{opacity:.3}35%{opacity:1}}
 /* The trace's resting state only (fully drawn at offset 0). The erase/redraw sweep is DRIVEN
    PER-FRAME by BootOverlay's rAF effect (math in src/lib/bootFlow.ts) — NOT by CSS keyframes:
@@ -645,7 +679,21 @@ html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}
    drops to 0 under the OS "Reduce Motion" setting, making them instant. Functional motion — the
    .bar countdown (transform:scaleX, set inline in JS) and the color flashes (.flash-*, which are
    state feedback, not movement) — is deliberately NOT scaled, so it's unchanged. Future decorative
-   animations should multiply their duration by var(--motion-scale) to respect the setting for free. */
+   animations should multiply their duration by var(--motion-scale) to respect the setting for free.
+   ★ THE CONSUMER LIST IS NOW COMPLETE (round 16), and it was not before: C2 shipped the token with
+   only TWO readers, so four decorative animations quietly ignored the setting for four rounds. All
+   six are now here, and this is the whole list — the guide's Accessibility section states it in
+   plain words, so a new consumer (or a lost one) means editing that prose in the same change:
+     • .expander        — the accordion slide, below
+     • GuidePage        — its inline transitionDuration + the scroll-glide writer (JS, reads the
+                          token off documentElement)
+     • .surface-button  ⎫
+     • .surface-toggle  ⎬ the three .2s background fades, ~line 365 and ~line 410
+     • .btn-solid       ⎭
+     • .boot-d          — the Updating screen's three-dot pulse, ~line 590 (duration + both delays)
+   ⚠ THE BOOT SPLASH IN index.html IS NOT ON THIS LIST AND DOES NOT NEED TO BE: that separate
+   body-level #boot markup is inline-styled and fully STATIC (no animation at all), and it paints
+   before this stylesheet exists, so the token could not reach it anyway. */
 :root{--motion-scale:1}
 @media (prefers-reduced-motion: reduce){:root{--motion-scale:0}}
 /* Accordion slide (Q4): the grid-template-rows 0fr→1fr idiom. The wrapper (components/Expander) is
@@ -672,21 +720,6 @@ html{font-size:clamp(0.75rem, min(0.95rem + 0.4vw, 1.95vh), 1.1875rem)}
 .expander{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:0fr;transition:grid-template-rows calc(var(--expander-ms,.24s) * var(--motion-scale)) cubic-bezier(.2,0,0,1)}
 .expander-open{grid-template-rows:1fr}
 .expander>div{min-height:0;overflow:hidden}
-/* Strikethrough for disabled/off stat labels (StatPanel). The native CSS
-   line-through is drawn at the FONT's strikeout metric — for system UI fonts
-   (Segoe UI on Windows, San Francisco on iOS) that sits noticeably HIGH on the
-   lowercase letters, and at a different height per platform. We draw the strike
-   as a thin background gradient instead, so we control both its weight and
-   position and it looks identical on every device/font. currentColor ties it to
-   the label's own color across all 5 themes. A 1px-thin band (matching the
-   native line's weight) centered at ~58% of the text box, so it crosses through
-   the middle of the lowercase letters rather than riding high across their tops.
-   Used app-wide (every stat box, every mode, when Save Stats is off or a stat is
-   toggled off). */
-.strike-center{
-  background-image:linear-gradient(to bottom,transparent calc(58% - 0.5px),currentColor calc(58% - 0.5px),currentColor calc(58% + 0.5px),transparent calc(58% + 0.5px));
-  background-repeat:no-repeat;
-}
 input[type="range"]{-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;border:none;outline:none;background:linear-gradient(to right,#a855f7 0%,#7c3aed var(--rng-fill,50%),var(--panel-bd) var(--rng-fill,50%));}
 input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:14px;border-radius:7px;background:#fff;cursor:pointer;border:none;box-shadow:0 0.5px 4px rgba(0,0,0,.3);margin-top:-4.5px;}
 input[type="range"]::-moz-range-thumb{width:22px;height:14px;border-radius:7px;background:#fff;cursor:pointer;border:none;box-shadow:0 0.5px 4px rgba(0,0,0,.3);}

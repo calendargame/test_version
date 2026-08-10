@@ -820,27 +820,59 @@ export default function GuidePage({
           </li>
           <li>When you set a new best, a small ★ appears next to the value to flag it.</li>
         </UL>
+        <Subhead>Reading a stat box</Subhead>
+        <p>
+          Every stat box uses the same three signals site-wide, in every mode, and each one means
+          exactly one thing:
+        </p>
+        <UL>
+          <li>
+            <b>A dash ("—")</b> — nothing has been recorded yet, but it will be. Accuracy before
+            your first attempt, or a timing stat before your first correct answer.
+          </li>
+          <li>
+            <b>A blank box</b> — that group is hidden. The label stays so you know what it is.
+            Hiding is usually just hiding: Score, Accuracy and Streak keep recording in every mode,
+            and so do the timing stats in Blitz and AoX, so tapping brings the up-to-date numbers
+            back. The timing stats in Classic, Deduction and Flash are the exception — hiding those
+            genuinely stops the clock. &quot;Hiding stats&quot; below covers both cases, including
+            what turning timing back on costs.
+          </li>
+          <li>
+            <b>The whole strip dimmed</b> — nothing is being recorded at all. That only happens with
+            Save Stats off, and it always dims the entire strip, never a single box.
+          </li>
+        </UL>
+        <p>
+          So a blank box and a dashed box are never the same thing: one is a group that is hidden,
+          the other is a number that hasn&apos;t happened yet. The two can appear together: with
+          Save Stats off, a group you had already hidden stays blank while the rest of the dimmed
+          strip shows dashes — your choice is still visible, and still there when Save Stats comes
+          back on. (While the strip is dimmed the boxes don&apos;t respond to taps at all.)
+        </p>
         <Subhead>Hiding stats (Classic, Deduction, Flash)</Subhead>
         <p>
           These casual modes let you tap any stat to hide it. Tapping Score, Accuracy, or Streak
-          hides all three; tapping any timing stat hides all three. Score, Accuracy, and Streak keep
+          hides all three; tapping any timing stat hides all three. A hidden group's boxes go blank
+          — the labels stay, and nothing else on the strip moves. Score, Accuracy, and Streak keep
           tracking in the background while hidden — re-enabling brings the same numbers back.
         </p>
         <p>
           Timing stats behave differently: timing pauses entirely while hidden — no times are
-          recorded. When you turn timing back on, the current date is regenerated if still
-          unanswered; if you've already answered wrong, revealed, or shown codes, the date stays
-          until you advance. If any questions were answered while timing was hidden, a desync would
-          arise on re-enable, so the three timing boxes merge into a single "Enable and Reset
-          Stats?" confirmation — tap again within 3 seconds to confirm (turn on and full reset), or
-          tap anywhere else to cancel.
+          recorded. Classic and Deduction start out this way, with their timing stats already hidden
+          and paused until you tap one; Flash starts with them shown. When you turn timing back on,
+          the current date is regenerated if still unanswered; if you've already answered wrong,
+          revealed, or shown codes, the date stays until you advance. If any questions were answered
+          while timing was hidden, a desync would arise on re-enable, so the three timing boxes
+          merge into a single "Enable and Reset Stats?" confirmation — tap again within 3 seconds to
+          confirm (turn on and full reset), or tap anywhere else to cancel.
         </p>
         <p>
-          When Save Stats is off, all stat boxes site-wide (every mode, including AoX) show "—" with
-          strikethrough labels, dim, and become non-interactive — toggling timing or scoring is
-          disabled until Save Stats is turned back on, which prevents accidental stat desyncs.
-          Turning Save Stats on while timing is also on regenerates an unanswered date for a clean
-          start.
+          When Save Stats is off, the whole stats strip dims site-wide (every mode, including AoX)
+          and every box that isn't already blank shows "—", because nothing is being recorded. The
+          boxes also become non-interactive — toggling timing or scoring is disabled until Save
+          Stats is turned back on, which prevents accidental stat desyncs. Turning Save Stats on
+          while timing is also on regenerates an unanswered date for a clean start.
         </p>
         <p>
           When timing stats are off, leaving and returning to one of these modes preserves the
@@ -851,7 +883,7 @@ export default function GuidePage({
         <p>
           Blitz and AoX hide timing <i>visually only</i>. Because a round's score and a run's
           average depend on timing, the clock never stops in these modes: tap Last, Avg, or Med to
-          dim all three, and the times keep being recorded in the background — tap again and the
+          blank all three, and the times keep being recorded in the background — tap again and the
           same numbers reappear. There is no pause and no "Enable and Reset Stats?" step, since
           hiding can never cause a desync. Score and Accuracy always stay visible, along with Streak
           wherever the mode shows it — the score is the whole point of these modes. In AoX, hiding
@@ -1049,19 +1081,31 @@ export default function GuidePage({
           pickers pass a `label`; the Theme block's name follows Use System Settings, which is why
           the wording is "the setting you're changing" and not a fixed list); the four switches +
           both year boxes = their aria-labels in components/SettingsPanel; the gear = its computed
-          aria-label in main.tsx; the dots = WeekdayAnswer's per-dot aria-label; the popups =
+          aria-label in main.tsx; the dots = WeekdayAnswer's per-dot aria-label; the stats strip's
+          two words = the sr-only spans StatPanel renders — "Off" beside an `off` cell's value, and
+          "Stats are not being saved" at the top of the strip when `dimmed` (C1, round 16; both
+          pinned in tests/statBoxSignals.dom). ⚠ THAT BULLET NAMES BOTH ON PURPOSE: the round-16
+          review found the dim was the one signal of the three with no non-visual form, while the
+          blank had one, and the section may not claim coverage it only gives to two of three. If
+          either span goes, the bullet goes with it; the guide's Known-gaps list below is where a
+          purely-visual signal belongs instead; the popups =
           SettingsPanel's four focus-on-open effects and the shared trapModalTab; the panel NOT
           taking focus = the absence of any such effect for settingsOpen; the accordions =
           aria-expanded/aria-controls here and in MethodBreakdown; the mode list = CustomSelect's
-          open-state key handler; the motion paragraph = a full grep of --motion-scale, which has
-          exactly TWO consumers — index.css's .expander rule and this file's own inline
-          transitionDuration + scroll glide — so those are the only things the paragraph may claim,
-          and index.css's own words for the rest are "Functional motion — the .bar countdown and the
-          color flashes — is deliberately NOT scaled". The two decorative things that are NOT scaled
-          and are named out loud instead: .boot-d's bootPulse and the three
-          `transition:background-color .2s` rules. An earlier draft said "sliding panels, fades, and
-          this guide's own scrolling" — there is no scaled fade anywhere in the app, and the one
-          real fade (the boot dots) ignores the setting, so the word was inventing support.
+          open-state key handler; the motion paragraph = a full grep of --motion-scale, which now
+          has SIX consumers — index.css's .expander rule, this file's own inline transitionDuration
+          + scroll glide, the three `transition:background-color` surface fades, and .boot-d's
+          bootPulse — so those are the only things the paragraph may claim, and index.css's own
+          words for the rest are "Functional motion — the .bar countdown and the color flashes — is
+          deliberately NOT scaled". ⚠ THE PARAGRAPH IS NOW A COMPLETE ACCOUNT, WHICH IT WAS NOT
+          BEFORE, and that is exactly what makes it fragile: round 15 had to add a sentence naming
+          two decorative things that ignored the setting (the boot dots and the button fade),
+          because the token then had only two consumers. Round 16 scaled all four stragglers and
+          DELETED that sentence — a claim that had gone false the moment the CSS changed. Anything
+          decorative added without var(--motion-scale) makes "nothing decorative moves" false again;
+          index.css's --motion-scale block carries the same list and the same warning. (An earlier
+          round-15 draft said "sliding panels, fades, and this guide's own scrolling" when no fade
+          was scaled at all; the word is honest now, which is why it is back.)
           ★ THE KNOWN-GAPS BLOCK IS LOAD-BEARING, not throat-clearing. Each line is a thing the
           code does NOT do, checked one at a time: button:focus{outline:none} is global
           (index.css) and .focus-ring has been a no-op since the Tab binding landed; index.html
@@ -1116,6 +1160,14 @@ export default function GuidePage({
             In the seven-dot answer layout every dot carries its weekday name, so the dots offer the
             same seven named choices the labelled buttons do.
           </li>
+          <li>
+            Both of the stats strip&apos;s quiet signals say themselves out loud. A hidden stat box
+            reads as &quot;Off&quot; rather than as a nameless gap — the box goes blank on screen
+            and keeps its label, and the word carries that same fact to anyone who can&apos;t see
+            the blank. And a strip dimmed because Save Stats is off opens with &quot;Stats are not
+            being saved&quot;, so the dashes in it aren&apos;t mistaken for a strip that simply has
+            no numbers yet.
+          </li>
         </UL>
         <Subhead>Panels and popups</Subhead>
         <UL>
@@ -1145,12 +1197,12 @@ export default function GuidePage({
         </UL>
         <Subhead>Motion</Subhead>
         <p>
-          If your device is set to reduce motion, the panels that slide open — the sections of this
-          guide, and Show Codes — open instantly instead, and this guide stops gliding when it
-          scrolls itself. Countdown bars and the right/wrong colour flashes are unchanged, because
-          those are telling you something rather than decorating. Two things do keep moving: the
-          three pulsing dots on the loading screen, and the short colour fade a button does as you
-          press it.
+          If your device is set to reduce motion, nothing decorative moves. The panels that slide
+          open — the sections of this guide, and Show Codes — open instantly instead, this guide
+          stops gliding when it scrolls itself, the short colour fade a button does under your
+          finger arrives at once, and the three dots on the updating screen stop pulsing. Countdown
+          bars and the right/wrong colour flashes are unchanged, because those are telling you
+          something rather than decorating.
         </p>
         <Subhead>Where it falls short</Subhead>
         <p>Stated plainly, so you know before you try:</p>
@@ -1817,13 +1869,13 @@ export default function GuidePage({
         </UL>
         <Subhead>Stats and bests</Subhead>
         <p>
-          Stats in AoX always track — the clock never stops. You can dim the timing trio (Last / Avg
-          / Med) with a tap while a run is going, but it's visual only, and a completed run always
-          shows its result. Best average and best median are tracked independently — they can come
-          from different runs. Beneath each best, the companion metric from the run that set it is
-          also shown (e.g. the median from the run that set your best average). A <i>Same Round</i>{' '}
-          or <i>Different Rounds</i> tag tells you whether your best average and best median came
-          from the same exceptional run, or from two different strong ones.
+          Stats in AoX always track — the clock never stops. You can blank the timing trio (Last /
+          Avg / Med) with a tap while a run is going, but it's visual only, and a completed run
+          always shows its result. Best average and best median are tracked independently — they can
+          come from different runs. Beneath each best, the companion metric from the run that set it
+          is also shown (e.g. the median from the run that set your best average). A{' '}
+          <i>Same Round</i> or <i>Different Rounds</i> tag tells you whether your best average and
+          best median came from the same exceptional run, or from two different strong ones.
         </p>
         <p>
           Bests stay honest under Override: a finished run's record follows its corrected stats —

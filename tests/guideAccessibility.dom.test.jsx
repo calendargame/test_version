@@ -162,11 +162,11 @@ describe('the four gaps the Accessibility section admits to — each fails when 
 
 describe('the one positive claim in the section that only the stylesheet can answer', () => {
   it('reduce motion zeroes decorative durations and leaves the countdown bar alone', () => {
-    // Protects the Motion paragraph, both sentences. The first is the token: --motion-scale drops
-    // to 0 under the OS setting, and every decorative duration multiplies by it. The second is an
-    // absence — the bar's fill is written inline per frame as a transform, with no duration in the
-    // stylesheet to scale, which is exactly why "countdown bars are unchanged" is true. An added
-    // transition on .bar>span would silently make that sentence wrong, so the absence is pinned.
+    // Protects the Motion paragraph. The token: --motion-scale drops to 0 under the OS setting, and
+    // every decorative duration multiplies by it. Then an absence — the bar's fill is written inline
+    // per frame as a transform, with no duration in the stylesheet to scale, which is exactly why
+    // "countdown bars are unchanged" is true. An added transition on .bar>span would silently make
+    // that sentence wrong, so the absence is pinned.
     expect(cssCode).toContain(':root{--motion-scale:1}')
     expect(cssCode).toContain('@media (prefers-reduced-motion: reduce){:root{--motion-scale:0}}')
     expect(cssCode).toMatch(/\.expander\{[^}]*var\(--motion-scale\)/)
@@ -174,5 +174,49 @@ describe('the one positive claim in the section that only the stylesheet can ans
     expect(barFill, 'index.css: no .bar>span rule').not.toBeNull()
     expect(barFill[1]).not.toContain('transition')
     expect(barFill[1]).not.toContain('--motion-scale')
+  })
+
+  // ★ ROUND 16 — THE SENTENCE THIS PROTECTS CHANGED SHAPE, AND SO DID THE RISK.
+  // Until round 16 the paragraph ended by NAMING the two decorative things that ignored the OS
+  // setting ("the three pulsing dots on the loading screen, and the short colour fade a button does
+  // as you press it"), because --motion-scale had only two consumers. Round 16 scaled all four
+  // stragglers and the paragraph now opens "nothing decorative moves" — a claim about EVERYTHING in
+  // the stylesheet, not about a list. Naming the six consumers one by one would pin what is there
+  // and stay silent about what gets ADDED, which is the only way this sentence can go false now.
+  // So the pin is a SWEEP with a named exemption list, in this file's own spirit: it fails when the
+  // app gains an animation, not when it loses one.
+  it('every timed declaration in index.css is either scaled or a named functional exemption', () => {
+    // The exemptions are the app's functional motion, in index.css's own words: "the .bar countdown
+    // (transform:scaleX, set inline in JS) and the color flashes (.flash-*, which are state
+    // feedback, not movement)". The countdown carries no stylesheet duration at all (pinned above),
+    // so the flashes are the whole list. If a genuinely functional animation is ever added, ADD IT
+    // HERE with a reason — do not widen the regex.
+    const FUNCTIONAL = [
+      'animation:flashGood .55s ease-out forwards',
+      'animation:flashBad .55s ease-out forwards',
+    ]
+    // Every transition/animation shorthand and every -duration/-delay longhand. Comments are already
+    // stripped from cssCode, so index.css's own prose about ".2s" cannot answer for a deleted rule.
+    const timed = cssCode.match(/(?:transition|animation)(?:-duration|-delay)?\s*:[^;}]*/g) ?? []
+    expect(
+      timed.length,
+      'index.css declares no timings at all — the sweep is vacuous',
+    ).toBeGreaterThan(5)
+    const unscaled = timed.filter(
+      (d) => !d.includes('var(--motion-scale)') && !FUNCTIONAL.includes(d),
+    )
+    expect(
+      unscaled,
+      'a timed declaration in index.css ignores --motion-scale. Either multiply its duration by ' +
+        'var(--motion-scale), or — if it is genuinely functional motion — add it to FUNCTIONAL above ' +
+        'AND correct the guide, whose Motion paragraph currently claims nothing decorative moves.',
+    ).toEqual([])
+    // And the four the round actually fixed, by name, so a revert is reported as a revert rather
+    // than as an unfamiliar new rule.
+    for (const sel of ['.surface-button', '.surface-toggle', '.btn-solid', '.boot-d'])
+      expect(
+        cssCode,
+        `${sel} no longer multiplies its duration by --motion-scale (round 16)`,
+      ).toMatch(new RegExp(`\\${sel}\\{[^}]*var\\(--motion-scale\\)`))
   })
 })

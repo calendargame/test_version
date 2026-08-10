@@ -121,9 +121,15 @@ function ClassicMode({
   const date = state.date
   return (
     <div style={{ display: visible ? 'block' : 'none' }}>
-      <div className={saveStats ? '' : 'opacity-50'}>
-        <StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef} />
-      </div>
+      {/* dimmed = Save Stats off = nothing is being recorded: the whole strip dims and every value
+          reads '—'. A group you turned off yourself renders BLANK instead, from `off` inside
+          statsArr — two facts, two flags. See the three-signal note in components/StatPanel. */}
+      <StatPanel
+        stats={statsArr}
+        dimmed={!saveStats}
+        armedSpan={armedSpan}
+        armedBtnRef={armedBtnRef}
+      />
       <div className="mt-3">
         <button
           type="button"

@@ -28,6 +28,12 @@ function BootOverlay({ updating = false }: { updating?: boolean }) {
   // emits only non-negative offsets over a two-value dasharray, which iOS paints correctly.
   // Deliberately ignores Reduce Motion: the trace is the sole FUNCTIONAL progress indicator
   // during a blocking update (the app scales only decorative motion via --motion-scale).
+  // ⚠ AND SINCE ROUND 16 IT IS THE *ONLY* THING ON THIS SCREEN THAT IGNORES THE SETTING — the
+  // "Updating" caption's three-dot pulse (.boot-d, index.css) now multiplies its duration and both
+  // stagger delays by --motion-scale, because an animated ellipsis after a word that already says
+  // "Updating" is decoration. With the trace parked static behind BOOT_TRACE_ANIMATED, that leaves
+  // the Reduce-Motion updating screen completely still; re-enabling the trace (B2) is what gives
+  // the setting's users their progress motion back, and this comment is why that matters.
   const flowRef = useRef<SVGPathElement | null>(null)
   useEffect(() => {
     if (!updating || !BOOT_TRACE_ANIMATED) return

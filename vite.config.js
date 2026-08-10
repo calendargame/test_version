@@ -19,6 +19,12 @@ import { dirname, join } from 'node:path'
 // than a copy kept in step by hand.
 import { BUILD_ID_FILE, BUILD_ID_META, isBuildId } from './src/lib/updateCheck.ts'
 import { verifyDistPrecache, describePrecacheProblems } from './scripts/precacheIntegrity.mjs'
+// The changelog data itself, imported (not read as text) for the deploy-stamp guard below — same
+// mechanism as the updateCheck import above, so the guard sees the real array rather than a regex's
+// opinion of it. src/changelog.ts has no imports of its own and does nothing at module scope, so
+// pulling it into the config graph is inert.
+import { CHANGELOG } from './src/changelog.ts'
+import { checkChangelogStamp, describeChangelogStampMismatch } from './scripts/changelogStamp.mjs'
 
 // Ceiling on Vitest's worker pool — see the long note at `test.maxWorkers` below for why the
 // uncapped default is dangerous rather than merely slow. Clamped to at most 8 and never above what
@@ -203,7 +209,18 @@ const distFiles = (dir, prefix = '') =>
 //
 // The id is a pure function of the pre-injection output, and the post-injection output is a pure
 // function of the id — so two builds are byte-identical if and only if their ids match, which is
-// the property the whole feature rests on. enforce:'post' AND last in the plugin array: it must see
+// the property the whole feature rests on.
+//
+// ⚠ WHAT THE AUTO-STAMP (Q1, round 16) CHANGED, and it is worth knowing: the deploy stamp is now
+// the build clock, so it is inside the main bundle and different for every build. Two builds of the
+// SAME COMMIT are therefore no longer byte-identical and no longer share an id — verified, twice in
+// a row, ids 65bdb2bc… then 38f41c4a…. The property above is untouched (the outputs genuinely do
+// differ), and so is the detector's correctness: a re-deploy of the same commit really does put a
+// different artifact on the site, with a different "Last Updated" and a differently-named bundle,
+// so reporting it as an update is true rather than a false positive. What is gone is the old
+// coincidence that a no-op re-deploy reported nothing. Nothing depends on that coincidence.
+//
+// enforce:'post' AND last in the plugin array: it must see
 // the FINAL bytes, after VitePWA has written sw.js and after testIconVariant has swapped in the
 // gray staging icons and corrected their revisions.
 const buildIdentity = () => {
@@ -290,6 +307,80 @@ const precacheIntegrity = () => {
   }
 }
 
+// ── THE DEPLOY STAMP (round 16, Q1) ───────────────────────────────────────────────────────────
+// src/deployStamp.ts used to carry a hand-typed date that somebody bumped before every push, which
+// made it a GUESS at when the deploy would land rather than a record of when it did (round 14
+// stamped 2:00 AM and went live later than that). BUILD_TIME is the real thing: the clock at the
+// moment this config is evaluated, injected below as __BUILD_TS__ and read by deployStamp.ts.
+// Module scope, so ONE instant serves the whole build — the value handed to `define` and the value
+// the guard checks the changelog against are the same object, and cannot drift apart mid-build.
+const BUILD_TIME = new Date()
+
+// What DEV AND TESTS see instead. Deliberately a frozen sentinel, not the clock, for two reasons.
+// (1) DETERMINISM: the suite mounts the app hundreds of times, the ⚙ panel renders this value as
+// "Last Updated", and the build-change detection compares it against localStorage — a value that
+// moved every run would make any test that ever touched it pass or fail by the hour, and would make
+// the ones that exist today (which capture the stamp at runtime rather than asserting it) quietly
+// vacuous. (2) HONESTY: a dev server is not a deploy, and stamping one with the current time would
+// print a "Last Updated" that never corresponded to anything shipped. The epoch is unmistakably not
+// a deploy date, which is the point — nobody can mistake a dev build for a released one. A dev
+// server therefore renders `Last Updated: 12/31/1969 16:00` in Pacific (verified in a real browser
+// against `npm run dev`); that is this sentinel showing through, not a bug.
+// ⚠ In dev, Vite does NOT substitute defines into the served source — it assigns them onto
+// globalThis from /@vite/env, which /@vite/client imports ahead of the app module. So the served
+// deployStamp.ts still literally reads `new Date(__BUILD_TS__)` and resolves at runtime. Checked in
+// the browser rather than assumed: __BUILD_TS__ is the sentinel, the splash clears, the console is
+// clean, and the boot stamp lands in localStorage.
+// ⚠ This is the ONLY value the app ever sees outside `vite build`; there is no fallback path in
+// deployStamp.ts, so if this define ever stopped being applied the app would fail loudly at module
+// load (a ReferenceError on __BUILD_TS__) rather than silently show a wrong date.
+const DEV_BUILD_TS = '1970-01-01T00:00:00.000Z'
+
+// changelogStamp (Q1 half 2) — the other half of taking the stamp out of human hands. Automating
+// only the stamp would replace a step somebody remembers with a divergence nobody watches, so the
+// build now FAILS unless the newest entry in src/changelog.ts is dated the same PACIFIC calendar day
+// BUILD_TIME lands on. The conversion and the wording live in scripts/changelogStamp.mjs (pure +
+// unit-tested, including both sides of both midnights and both offsets); this is its wiring.
+// ⚠ configResolved, NOT buildStart, AND THAT IS LOAD-BEARING — it was written as buildStart first
+// and the failing build proved it wrong. Throwing from buildStart aborts the bundle but rolldown
+// still runs every other plugin's closeBundle, and precacheIntegrity's then fails on the half-
+// written dist and REPLACES the reported error: `npm run build` exited 1 with a message about
+// Workbox revisions and no mention of the changelog at all. A guard whose whole point is to say
+// what to do must not be maskable by a later hook, so it runs before the bundler exists — nothing
+// has been produced yet, so no closeBundle can run and no second error can be raised. It is also
+// the fastest failure available INSIDE a build: a mis-dated changelog costs a second rather than a
+// full bundle. ⚠ That is a claim about `vite build`, not about the deploy: CI runs the whole
+// test/lint/format/typecheck gate before it ever reaches the build step, so in CI this guard would
+// have fired minutes late. deploy.yml therefore runs the same pure check as its FIRST step (see
+// scripts/checkChangelogDate.mjs); this plugin stays the authority, because a check that lives only
+// in the workflow cannot gate a local `npm run build`.
+// NO MODE IS EXEMPT, deliberately — `npm run analyze` is a `vite build` that writes a complete,
+// uploadable dist, so exempting it would leave a hole in the one place a guard must not have one.
+// The cost is that an analyze run on a day whose changelog is not current fails with deploy advice
+// you did not ask for; the fix in that case is the same one-line edit, or just deploy.
+//
+// ⚠ THE CONSTRAINT THIS IMPOSES ON RE-DEPLOYS, WRITTEN DOWN RATHER THAN DISCOVERED. The rule is
+// EQUALITY against the build clock's Pacific day and BUILD_TIME is taken fresh every build, so
+// re-running an unchanged commit on a LATER Pacific day fails — and three ordinary things do
+// exactly that: deploy.yml's workflow_dispatch button, GitHub's "Re-run all jobs" (including after
+// a `concurrency: cancel-in-progress` cancellation), and the owner's two-repo ritual when staging
+// goes out one evening and live the next morning. In every case the fix is a real commit that
+// re-dates the newest entry; there is no escape hatch, and adding one for workflow_dispatch is an
+// OPEN OWNER DECISION (round 16 review). Do NOT relax the rule to `entry <= today` to make the
+// symptom go away: the equality is what makes a MISSING entry impossible, which is the whole point.
+const changelogStamp = () => ({
+  name: 'changelog-stamp',
+  apply: 'build',
+  configResolved() {
+    const result = checkChangelogStamp(CHANGELOG, BUILD_TIME)
+    if (!result.ok) throw new Error(describeChangelogStampMismatch(result))
+    console.log(
+      `✅ Changelog stamp OK: newest entry ${result.found} matches this build's Pacific date ` +
+        `(stamped ${result.stamp}).`,
+    )
+  },
+})
+
 // The PWA web app manifest, handed to VitePWA below. Module-scope + exported (the
 // swapBlockingStylesheet precedent) so tests/webManifest.test.js can pin the BUILT manifest's
 // keys without running a build — vite-plugin-pwa JSON-serializes these entries into
@@ -333,6 +424,12 @@ export default defineConfig(({ command, mode }) => ({
   define: {
     __SENTRY_DEBUG__: 'false',
     __SENTRY_TRACING__: 'false',
+    // The deploy stamp (Q1, round 16 — see BUILD_TIME / DEV_BUILD_TS above). A real `vite build`
+    // gets the instant it started; dev and Vitest get the frozen sentinel. JSON.stringify because
+    // `define` substitutes RAW EXPRESSION TEXT, so the quotes have to be part of the value.
+    // Base-independent by construction: this is a timestamp, not a URL, so the live '/' build and
+    // the staging '/<repo>/' build stamp identically (each with its own build's clock).
+    __BUILD_TS__: JSON.stringify(command === 'build' ? BUILD_TIME.toISOString() : DEV_BUILD_TS),
   },
   // React Compiler — automatic memoization (Stage D2). @vitejs/plugin-react v6 is Rolldown/oxc-based
   // and dropped its old `babel` option, so the compiler runs through @rolldown/plugin-babel fed the
@@ -341,6 +438,11 @@ export default defineConfig(({ command, mode }) => ({
   // (the preset's applyToEnvironmentHook). All 40 react-hooks violations were fixed first so every
   // component is compiler-safe to optimize.
   plugins: [
+    // First in the array to read first, not for timing: it hooks configResolved, so it already runs
+    // ahead of every build regardless of position (see the long note at changelogStamp above for why
+    // that hook and not buildStart). apply:'build' makes it inert in dev and under Vitest, where
+    // there is no deploy to date.
+    changelogStamp(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     // PWA (Stage D3): installable + fully offline. vite-plugin-pwa generates the web app

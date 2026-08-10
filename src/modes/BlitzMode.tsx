@@ -64,7 +64,7 @@ function BlitzMode({
   const allowMistakes = useModePrefs((s) => s.blitzAllowMistakes),
     setAllowMistakes = useModePrefs((s) => s.setBlitzAllowMistakes) // persisted (mode-prefs store)
   const timingOff = useModePrefs((s) => s.blitzTimingOff),
-    setTimingOff = useModePrefs((s) => s.setBlitzTimingOff) // persisted; VISUAL-ONLY (Q8) — dims the timing trio, the engine clock never stops (no arm/reset)
+    setTimingOff = useModePrefs((s) => s.setBlitzTimingOff) // persisted; VISUAL-ONLY (Q8) — blanks the timing trio, the engine clock never stops (no arm/reset)
   const [active, setActive] = useState(false)
   const [timerDone, setTimerDone] = useState(false)
   const [showTimerDate, setShowTimerDate] = useState(false)
@@ -118,7 +118,7 @@ function BlitzMode({
     suddenAm?: BlitzBest
   }>({ blitzBk: '', suddenBk: '' })
   // saveStats:true ALWAYS (like AoX): the round tracks internally regardless of the global Save
-  // Stats toggle, which now gates only the DISPLAY (dimmed "—" stats), whether a Best is recorded,
+  // Stats toggle, which now gates only the DISPLAY (a dimmed strip of "—"), whether a Best is recorded,
   // and whether Override shows while off. Always-tracking keeps the misclick-rescue credit
   // integrity-safe in practice mode (good ≤ played — played is always incremented on the wrong),
   // so an unscored question can't hit the good>played landmine. (C2 Q2-B; was `saveStats`.)
@@ -637,23 +637,23 @@ function BlitzMode({
   // Streak is hidden only in per-Q sudden death: there a wrong ends the round, so streak
   // always equals score. With Allow Mistakes on it behaves exactly like per-round (C3a).
   const showStreak = !perQ || allowMistakes
-  const sOff = !saveStats // the scoring trio (Score/Accuracy/Streak) — untoggleable, score IS the mode; dimmed only by Save Stats off
   // The timing trio (Last/Average/Median) carries a VISUAL-ONLY hide toggle (Q8): tap any of the
-  // three to dim them all. Unlike Classic/Flash/Deduction there is NO engine timingOff and NO
+  // three to blank them all. Unlike Classic/Flash/Deduction there is NO engine timingOff and NO
   // "Enable and Reset Stats?" arm — Blitz always tracks (saveStats:true above), so hiding can never
-  // desync (structurally desync-proof). Save Stats off dims everything and drops the toggle, exactly
-  // like the scoring trio. (Persisted as blitzTimingOff — excluded from the defaults system.)
-  const tOff = !saveStats || timingOff
+  // desync (structurally desync-proof). (Persisted as blitzTimingOff — excluded from the defaults
+  // system.) Save Stats off drops the toggle, exactly as it does for the scoring trio.
+  //
+  // ★ `off` is the USER'S hide toggle and nothing else (C1, round 16) — so it is bare `timingOff`
+  // here, and the scoring trio (Score/Accuracy/Streak — untoggleable, the score IS the mode) carries
+  // no `off` at all. The Save-Stats fact is `dimmed` on the panel below: one flag, whole strip.
   const tFn = saveStats ? () => setTimingOff((v) => !v) : null
   const statsArr = [
-    { label: 'Score', value: `${S.good}/${S.played}`, off: sOff, fn: null },
-    { label: 'Accuracy', value: fmtAccuracyPct(S.good, S.played), off: sOff, fn: null },
-    ...(showStreak
-      ? [{ label: 'Streak', value: `${S.streak}/${S.best}`, off: sOff, fn: null }]
-      : []),
-    { label: 'Last', value: truncTime(calcLast(S.times)), off: tOff, fn: tFn },
-    { label: 'Average', value: fmtTime(calcAvg(S.times)), off: tOff, fn: tFn },
-    { label: 'Median', value: fmtTime(calcMed(S.times)), off: tOff, fn: tFn },
+    { label: 'Score', value: `${S.good}/${S.played}`, fn: null },
+    { label: 'Accuracy', value: fmtAccuracyPct(S.good, S.played), fn: null },
+    ...(showStreak ? [{ label: 'Streak', value: `${S.streak}/${S.best}`, fn: null }] : []),
+    { label: 'Last', value: truncTime(calcLast(S.times)), off: timingOff, fn: tFn },
+    { label: 'Average', value: fmtTime(calcAvg(S.times)), off: timingOff, fn: tFn },
+    { label: 'Median', value: fmtTime(calcMed(S.times)), off: timingOff, fn: tFn },
   ]
   const date = state.date
   const dateText = shouldShowTimerDate ? fmtDate(date.y, date.m, date.d, date._fmt) : '—'
@@ -662,9 +662,9 @@ function BlitzMode({
     saScore = suddenAmBest[suddenBk]
   return (
     <div style={{ display: visible ? 'block' : 'none' }}>
-      <div className={saveStats ? '' : 'opacity-50'}>
-        <StatPanel stats={statsArr} />
-      </div>
+      {/* dimmed = Save Stats off = nothing is being recorded (whole strip, every value '—'); the
+          timing trio you hid yourself renders BLANK, from `off` in statsArr. See StatPanel. */}
+      <StatPanel stats={statsArr} dimmed={!saveStats} />
       {!perQ && <BlitzBestRow rec={bScore} newFlags={blitzBestNew[blitzBk]} />}
       {perQ && allowMistakes && <BlitzBestRow rec={saScore} newFlags={suddenAmBestNew[suddenBk]} />}
       {perQ && !allowMistakes && (

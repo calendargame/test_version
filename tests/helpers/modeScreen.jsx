@@ -115,10 +115,13 @@ export const statReadouts = () =>
     .map(statCellLabel)
     .filter((label) => label !== null)
 
-// What one readout READS — the cell's value span, which is its last.
+// What one readout READS — the cell's value span, found by ITS OWN marker.
+// ⚠ Reads the value through its OWN marker, [data-statval] — the auto-fit target StatPanel puts on
+// the value span — and NOT "the cell's last span". A cell can carry a trailing screen-reader-only
+// span (the "Off" that names a blanked group, C1 round 16), and last-span would read that instead of
+// the value. The marker names the one element that IS the readout, so it cannot drift again.
 export function statValue(label) {
   const cell = screen.getAllByRole('button').find((b) => statCellLabel(b) === label)
   if (!cell) throw new Error(`statValue(${label}): no such stat cell on screen`)
-  const spans = cell.querySelectorAll('span')
-  return spans[spans.length - 1].textContent.trim()
+  return cell.querySelector('[data-statval]').textContent.trim()
 }

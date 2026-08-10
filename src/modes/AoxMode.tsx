@@ -279,16 +279,18 @@ function AoxMode({
   const accuracyDisplay = fmtAccuracyPct(doneCount, S.played)
   const date = state.date
   // The timing trio (Last/Average/Median) carries a VISUAL-ONLY hide toggle (Q8): tap any of the
-  // three to dim them all. There is NO engine timingOff and NO reset arm — AoX always tracks
+  // three to blank them all. There is NO engine timingOff and NO reset arm — AoX always tracks
   // (saveStats:true above), so hiding can never desync. Hiding suppresses only the LIVE mid-run
   // trio; a COMPLETED run (runPhase "done") always shows its result regardless (the average is the
   // point of the run) — there the trio is a plain result readout, not a toggle. Save Stats off
-  // dims everything and drops the toggle, like the scoring trio. (Persisted as aoxTimingOff —
-  // excluded from the defaults system.)
-  const sOff = !saveStats
+  // drops the toggle, like the scoring trio. (Persisted as aoxTimingOff — excluded from the
+  // defaults system.)
+  //
+  // ★ `timeHidden` is the USER'S hide toggle and nothing else (C1, round 16), so it is what feeds
+  // `off` below; the scoring trio (untoggleable in AoX) carries no `off` at all. The Save-Stats fact
+  // is `dimmed` on the panel: one flag, whole strip. See the three-signal note in StatPanel.
   const runComplete = runPhase === 'done'
   const timeHidden = timingOff && !runComplete
-  const tOff = !saveStats || timeHidden
   const tFn = saveStats && !runComplete ? () => setTimingOff((v) => !v) : null
 
   // Handlers.
@@ -464,21 +466,20 @@ function AoxMode({
 
   return (
     <div style={{ display: visible ? 'block' : 'none' }}>
-      {/* Save Stats off: all stat boxes show "—" with strikethrough labels (matches App). The
-              timing trio also dims on the visual-only toggle (tOff) while a run is live, and taps the
-              toggle (tFn) when Save Stats is on — see the derivations above. */}
-      <div className={saveStats ? '' : 'opacity-50'}>
-        <StatPanel
-          stats={[
-            { label: 'Score', value: scoreDisplay, off: sOff, fn: null },
-            { label: 'Accuracy', value: accuracyDisplay, off: sOff, fn: null },
-            { label: 'Streak', value: `${S.streak}/${S.best}`, off: sOff, fn: null },
-            { label: 'Last', value: truncTime(calcLast(S.times)), off: tOff, fn: tFn },
-            { label: 'Average', value: fmtTime(calcAvg(S.times)), off: tOff, fn: tFn },
-            { label: 'Median', value: fmtTime(calcMed(S.times)), off: tOff, fn: tFn },
-          ]}
-        />
-      </div>
+      {/* dimmed = Save Stats off = nothing is being recorded: the whole strip dims and every value
+          reads '—' (site-wide, every mode). The timing trio you hid yourself renders BLANK instead,
+          from `timeHidden`, and taps the toggle (tFn) when Save Stats is on — derivations above. */}
+      <StatPanel
+        dimmed={!saveStats}
+        stats={[
+          { label: 'Score', value: scoreDisplay, fn: null },
+          { label: 'Accuracy', value: accuracyDisplay, fn: null },
+          { label: 'Streak', value: `${S.streak}/${S.best}`, fn: null },
+          { label: 'Last', value: truncTime(calcLast(S.times)), off: timeHidden, fn: tFn },
+          { label: 'Average', value: fmtTime(calcAvg(S.times)), off: timeHidden, fn: tFn },
+          { label: 'Median', value: fmtTime(calcMed(S.times)), off: timeHidden, fn: tFn },
+        ]}
+      />
       <div className="mt-3 text-xs text-(--tx-300-60)">
         <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-[125px]">

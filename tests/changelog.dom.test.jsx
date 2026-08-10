@@ -79,6 +79,36 @@ describe('changelog data (src/changelog)', () => {
     // the oldest entry to CHANGELOG-ARCHIVE.md when adding a new day.
     expect(CHANGELOG.length).toBeLessThanOrEqual(10)
   })
+
+  it('the nothing-visible fallback line is verbatim, and never shares its entry (round 16)', () => {
+    // The charter's newest rule, made structural. A deploy with nothing a player can see still gets
+    // an entry, because the update dot fires on ANY build change and would otherwise point at a
+    // three-day-old list. Two halves, and the charter states both as absolutes:
+    //   NEVER REWORDED — identical every time so a returning player recognises it at a glance.
+    //   A FALLBACK, NEVER AN ADDITION — the moment a deploy has one visible change this line is
+    //   deleted, so "nothing you can see changed" can never sit beside a line saying otherwise.
+    //   That second half is the one a same-day MERGE gets wrong: yesterday's placeholder must be
+    //   DROPPED when today's real lines land on the same date, not kept above them.
+    // Matched loosely (a phrase, case-insensitively) and then asserted strictly, so a nearly-right
+    // rewrite is caught rather than slipping past as an unrecognised line.
+    const CANONICAL =
+      'Nothing you can see changed this time — just work underneath to keep things running smoothly.'
+    for (const en of CHANGELOG) {
+      const placeholders = en.items.filter((it) => /nothing you can see changed/i.test(it))
+      if (placeholders.length === 0) continue
+      expect(placeholders, `${en.date}: the fallback line appears more than once`).toHaveLength(1)
+      expect(
+        placeholders[0],
+        `${en.date}: the nothing-visible line has been reworded. The charter says never to reword ` +
+          `it — a returning player is meant to recognise it without reading it.`,
+      ).toBe(CANONICAL)
+      expect(
+        en.items,
+        `${en.date}: the nothing-visible line is sharing an entry with real changes. It is a ` +
+          `FALLBACK, never an addition — delete it and let the real lines stand alone.`,
+      ).toEqual([CANONICAL])
+    }
+  })
 })
 
 describe('update-dot flags (plain localStorage)', () => {

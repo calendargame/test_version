@@ -32,6 +32,21 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      # FIRST, because it is the cheapest check in the whole gate (a second) and the only one that
+      # can fail for a reason that has nothing to do with the code. Every deploy ships exactly one
+      # changelog entry dated its own PACIFIC calendar day; the build enforces that too (the
+      # changelog-stamp plugin in vite.config.js is the real authority, since it also gates a local
+      # `npm run build`), but the build step is five minutes down this file, so without this step a
+      # mis-dated changelog costs the entire gate before anyone hears about it.
+      #
+      # ⚠ THIS IS WHY A RE-DEPLOY OF AN UNCHANGED COMMIT CAN FAIL. The rule is EQUALITY against the
+      # build day, so pressing "Run workflow" or "Re-run all jobs" on a LATER Pacific day than the
+      # newest changelog entry fails here — as does pushing the same commit to the staging repo one
+      # evening and the live repo the next morning. That is the guard working, not a fault: the fix
+      # is a commit that re-dates the newest entry (and, if that day already shipped, a new entry for
+      # the new day). There is deliberately no bypass; the failure message spells out both cases.
+      - name: Check the changelog date
+        run: node scripts/checkChangelogDate.mjs
       # Quality gate — a failing test, lint error, TYPE error, or FORMATTING drift blocks the deploy,
       # so broken date math / logic can never reach the site. Tests run first (cheapest signal).
       - name: Run tests

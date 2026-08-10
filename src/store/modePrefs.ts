@@ -16,7 +16,7 @@ import { persist } from 'zustand/middleware'
 // defaults differ (Classic/Deduction launch with timing hidden, Flash with it shown). Those
 // three non-round toggles feed useGameEngine's `timingOff` (timing actually pauses while hidden,
 // with the desync-arm on re-enable). Blitz and AoX instead carry a VISUAL-ONLY timing toggle
-// (blitzTimingOff/aoxTimingOff, launch SHOWN, Q8): it dims the timing trio's display but never
+// (blitzTimingOff/aoxTimingOff, launch SHOWN, Q8): it blanks the timing trio's display but never
 // stops the engine clock — round/run timing is structural (the score/average is the mode), so
 // there is no arm/reset and hiding can never desync. `allowMistakes` is likewise namespaced
 // (blitz*/aox*).
@@ -40,12 +40,12 @@ export type ModePrefsValues = {
   blitzQSec: number
   blitzPerQ: boolean
   blitzAllowMistakes: boolean
-  blitzTimingOff: boolean // VISUAL-ONLY (Q8): dims the timing trio; the engine keeps timing
+  blitzTimingOff: boolean // VISUAL-ONLY (Q8): blanks the timing trio; the engine keeps timing
   // AoX
   aoxN: string
   aoxAllowMistakes: boolean
   aoxOneByOne: boolean
-  aoxTimingOff: boolean // VISUAL-ONLY (Q8): dims the LIVE trio; a completed run still shows its result
+  aoxTimingOff: boolean // VISUAL-ONLY (Q8): blanks the LIVE trio; a completed run still shows its result
   // Deduction
   dedType: string
   dedTimingOff: boolean

@@ -323,9 +323,14 @@ function DeductionMode({
 
   return (
     <div style={{ display: visible ? 'block' : 'none' }}>
-      <div className={saveStats ? '' : 'opacity-50'}>
-        <StatPanel stats={statsArr} armedSpan={armedSpan} armedBtnRef={armedBtnRef} />
-      </div>
+      {/* dimmed = Save Stats off = nothing is being recorded (whole strip, every value '—'); a group
+          you turned off yourself renders BLANK, from `off` inside statsArr. See StatPanel. */}
+      <StatPanel
+        stats={statsArr}
+        dimmed={!saveStats}
+        armedSpan={armedSpan}
+        armedBtnRef={armedBtnRef}
+      />
       <div className="mt-3">
         <button
           type="button"

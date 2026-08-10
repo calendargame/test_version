@@ -1,7 +1,13 @@
 // ★ THE HOOKS ARE NAMED IMPORTS, AND THAT IS LOAD-BEARING — DO NOT "TIDY" IT BACK TO
-// `import * as React` + `const { useEffect, … } = React`. That form (inherited here from main.tsx,
-// where it still stands) defeats the react-hooks / React-Compiler ESLint rules' detection: they
-// resolve hooks through the import, so a namespace binding makes the WHOLE FILE invisible to them.
+// `import * as React` + `const { useEffect, … } = React`. That form defeats the react-hooks /
+// React-Compiler ESLint rules' detection: they resolve hooks through the import, so a namespace
+// binding makes the WHOLE FILE invisible to them. (This file inherited the bad form from main.tsx,
+// which carried it until round 16's B5 — main.tsx now uses named imports too, and the two
+// set-state-in-effect violations that had been hiding behind it were fixed rather than suppressed.
+// LookupCard.tsx and MethodBreakdown.tsx are the last two files still calling their hooks as
+// React.useX, and are still invisible to the rules — see the escalation with round 16. modeHooks
+// and useSettingsCloseEffect also write `import * as React`, but ONLY for React.DependencyList in a
+// type position; their hooks are named imports, so the rules do see them.)
 // Verified by probe in round 14 — swapping this one line back takes `eslint` on this file from
 // reporting a genuine react-hooks/set-state-in-effect error (in the Full Reset safety net, see
 // ~line 545) to clean. Nothing about the code changes; only whether anything is looking at it.

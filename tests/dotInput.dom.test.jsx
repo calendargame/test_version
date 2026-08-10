@@ -38,13 +38,16 @@ function dayState(name) {
   if (c.includes('btn-override-wrong')) return 'override-wrong'
   return 'idle'
 }
+// ⚠ Reads the value through its OWN marker, [data-statval] — the auto-fit target StatPanel puts on
+// the value span — and NOT "the cell's last span". A cell can carry a trailing screen-reader-only
+// span (the "Off" that names a blanked group, C1 round 16), and last-span would read that instead of
+// the value. The marker names the one element that IS the readout, so it cannot drift again.
 function statValue(label) {
   const btn = screen
     .getAllByRole('button')
     .find((b) => Array.from(b.querySelectorAll('span')).some((s) => s.textContent.trim() === label))
   if (!btn) throw new Error(`stat cell "${label}" not found`)
-  const spans = btn.querySelectorAll('span')
-  return spans[spans.length - 1].textContent.trim()
+  return btn.querySelector('[data-statval]').textContent.trim()
 }
 function pressNewAndRead() {
   fireEvent.click(ctrl('New'))

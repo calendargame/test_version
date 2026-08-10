@@ -6,6 +6,13 @@
 // what ships and exactly what the popup draws:
 //   • Newest first. Entry dates are the deploy's Pacific calendar date in ISO form (YYYY-MM-DD);
 //     the popup renders them through the user's Date Format setting, so never encode a format here.
+//     ★ THE NEWEST ENTRY'S DATE IS NOW ENFORCED BY THE BUILD (round 16, Q1). The deploy stamp is
+//     taken from the clock at build time (src/deployStamp.ts), and scripts/changelogStamp.mjs —
+//     wired first in vite.config.js's plugin array — FAILS the build unless the entry at the top of
+//     this array is dated that stamp's PACIFIC day. So a deploy cannot ship without a changelog
+//     entry, and cannot ship one dated a day it did not land on. The two disagree for the 7-8 hours
+//     between Pacific midnight and UTC midnight, which is why the guard converts through the IANA
+//     zone rather than slicing the stamp's ISO prefix.
 //   • ONE entry per Pacific calendar DAY, never per deploy (the round-7 owner call) — so dates
 //     stay unique, which is also the popup's per-entry React-key contract (key={en.date});
 //     changelog.dom.test pins the uniqueness.
@@ -23,6 +30,28 @@
 //     now stacks" line was deleted because round 10 reverted it and no player ever saw it.
 //     Lines already SHIPPED on an earlier day are settled history — never reordered or reworded
 //     to suit a later rule.
+//   • ★ A DEPLOY WITH NOTHING VISIBLE STILL GETS AN ENTRY. The owner's rule, set during round 15
+//     and live from round 15 onward; round 16 is the round that finally wrote it HERE, because this
+//     charter — not the backlog — is the copy a builder actually reads, and he asked for it to be
+//     very, very clear. It is ONE line, and it is this line, VERBATIM, every single time:
+//         "Nothing you can see changed this time — just work underneath to keep things running
+//          smoothly."
+//     WHY IT EXISTS. The update dot fires on ANY build change: the build-stamp detection compares
+//     one stamp against another and cannot tell a rewrite from a typo fix. So a purely internal
+//     deploy still shows the Updating screen, still lights the gear dot, and still nudges the
+//     player to come and read this list. If the newest entry is three days old, the notification
+//     pointed at nothing and the app looks broken or dishonest. The player-noticeable rule exists
+//     to stop JARGON, not to make the app go silent in the one moment it has just announced itself.
+//     IT IS A FALLBACK, NEVER AN ADDITION. The moment a deploy has one genuinely visible change,
+//     this line is DELETED and the real line stands alone. Never both — a real change plus "nothing
+//     you can see changed" is a contradiction on the same date, and under the same-day rule above
+//     that is exactly what a second deploy on a day that already has real lines would produce, so
+//     the merge DROPS this line rather than keeping it.
+//     NEVER REWORD IT. Identical every time, so a returning player recognises it at a glance
+//     instead of reading it. And never dress it up: "performance improvements and bug fixes" is
+//     marketing filler the owner has explicitly rejected, and is usually a lie as well.
+//     ⚠ Use it only when there is genuinely nothing else to say. It is not a shortcut for a deploy
+//     whose visible change is small or awkward to describe — that one gets described.
 //   • TEN entries maximum, ever. When a new day would make it eleven, MOVE the oldest entry to
 //     CHANGELOG-ARCHIVE.md at the repo root (no source file imports it, so retired history costs
 //     the bundle nothing) — do not just let the array grow. Before round-8 the popup sliced the
@@ -177,12 +206,48 @@ export const readUpdateDot = (key: string): boolean => {
   }
 }
 
+// ★ THE DOTS ARE AN EXTERNAL STORE, AND THE SUBSCRIPTION BELOW IS WHAT MAKES THEM ONE.
+// These flags live in localStorage, not in React. Until round 16 App mirrored them into two
+// useStates and kept the mirror in step by calling setGearDot/setChangelogDot from inside effects —
+// which is react-hooks/set-state-in-effect, and the textbook "you might not need an effect" case:
+// the state was never a source of truth, only a copy of this one. The fix is to let components read
+// the flags directly through useSyncExternalStore, so a write here re-renders every reader with no
+// React state and no effect in between.
+//
+// The listener set is module-scope and process-wide, which is correct: the flags are process-wide
+// too. `subscribeUpdateDot` is key-agnostic — a notification wakes every reader and each re-reads
+// its own key. With exactly two keys and two readers that is cheaper than tracking subscriptions
+// per key, and it cannot go stale when a key is added.
+//
+// ⚠ EVERY MUTATION OF A DOT FLAG MUST GO THROUGH markUpdateDot/clearUpdateDot. A direct
+// localStorage.setItem on one of these keys would change the value without notifying, and the UI
+// would not update until something else re-rendered. Verified at the time of writing: these two are
+// the only writers in src/ (tests write through them too).
+const updateDotListeners = new Set<() => void>()
+
+const notifyUpdateDots = (): void => {
+  for (const listener of updateDotListeners) listener()
+}
+
+// The `subscribe` half of useSyncExternalStore's contract. Stable across renders by construction
+// (a module-scope function), so React never needlessly re-subscribes.
+export const subscribeUpdateDot = (listener: () => void): (() => void) => {
+  updateDotListeners.add(listener)
+  return () => {
+    updateDotListeners.delete(listener)
+  }
+}
+
 export const markUpdateDot = (key: string): void => {
   try {
     localStorage.setItem(key, '1')
   } catch {
     /* best-effort */
   }
+  // OUTSIDE the try: a blocked write still has to notify. Readers call readUpdateDot, which returns
+  // false when storage throws, so the UI must be given the chance to re-read and agree with it
+  // rather than keep showing a value nothing can now confirm.
+  notifyUpdateDots()
 }
 
 export const clearUpdateDot = (key: string): void => {
@@ -191,4 +256,5 @@ export const clearUpdateDot = (key: string): void => {
   } catch {
     /* best-effort */
   }
+  notifyUpdateDots()
 }

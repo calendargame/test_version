@@ -75,13 +75,16 @@ function answerWrong() {
   })
 }
 // Stat value by visible label span (other modes' strips are display:none).
+// ⚠ Reads the value through its OWN marker, [data-statval] — the auto-fit target StatPanel puts on
+// the value span — and NOT "the cell's last span". A cell can carry a trailing screen-reader-only
+// span (the "Off" that names a blanked group, C1 round 16), and last-span would read that instead of
+// the value. The marker names the one element that IS the readout, so it cannot drift again.
 function statValue(label) {
   const labelSpan = Array.from(document.querySelectorAll('span')).find(
     (s) => s.textContent.trim() === label && !isHidden(s),
   )
   if (!labelSpan) throw new Error(`stat "${label}" not found`)
-  const spans = labelSpan.parentElement.querySelectorAll('span')
-  return spans[spans.length - 1].textContent.trim()
+  return labelSpan.parentElement.querySelector('[data-statval]').textContent.trim()
 }
 // Tap a stat cell (Q8: the timing-trio cells are buttons that toggle the visual-only hide). The
 // cell is the label span's parent (a <button> for the timing trio); clicking it fires the toggle.
@@ -1107,12 +1110,19 @@ describe('AoX — Q7 round-6 (Reset Settings restoring the run length reconciles
 })
 
 // ── Q8: the visual-only timing-stats hide toggle (Last/Average/Median) ───────────────────────
-// AoX gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it dims the display but the
+// AoX gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it blanks the display but the
 // engine keeps timing (AoX feeds the engine timingOff:false always). So there is NO "Enable and
 // Reset Stats?" arm — hiding can never desync — and the scoring trio stays untoggleable. Hiding
 // suppresses only the LIVE mid-run trio: a COMPLETED run always shows its result (the average is
 // the point of the run). The pref (aoxTimingOff) is excluded from the defaults system (verified in
 // tests/saveDefaults.dom.test.jsx).
+//
+// ⚠ RE-BLESSED for C1 (round 16, the stat-box redesign — approved by the owner as a settled design).
+// A group YOU turned off now renders its value cells BLANK, not as an em dash. The dash was moved to
+// mean one thing only — "no data yet, but there could be" — so that a shown-but-empty stat and a
+// stat you hid stop reading identically. Save Stats off is the third signal: dim, whole strip, which
+// AoX's Save-Stats cases below still pin. Every '—' in this describe that used to mean "hidden" is
+// now '' and says so.
 describe('AoX — Q8 visual-only timing hide', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -1126,7 +1136,7 @@ describe('AoX — Q8 visual-only timing hide', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('tapping a timing stat dims all three (visual only); the scoring trio stays; no reset prompt', () => {
+  it('tapping a timing stat blanks all three (visual only); the scoring trio stays; no reset prompt', () => {
     mountApp()
     switchToAox()
     setN(3)
@@ -1135,9 +1145,10 @@ describe('AoX — Q8 visual-only timing hide', () => {
     answerCorrect() // one solve; run still going
     expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
     clickStat('Average') // hide the timing trio
-    expect(statValue('Last')).toBe('—')
-    expect(statValue('Average')).toBe('—')
-    expect(statValue('Median')).toBe('—')
+    // BLANK — C1's "you turned these off, and they ARE still recording" signal.
+    expect(statValue('Last')).toBe('')
+    expect(statValue('Average')).toBe('')
+    expect(statValue('Median')).toBe('')
     // Scoring trio is untoggleable — still visible.
     expect(statValue('Score')).toBe('1/1')
     expect(statValue('Streak')).toBe('1/1')
@@ -1154,7 +1165,7 @@ describe('AoX — Q8 visual-only timing hide', () => {
     click('Begin')
     answerCorrect() // solve #1 immediate → 0.00s
     clickStat('Last') // hide
-    expect(statValue('Last')).toBe('—')
+    expect(statValue('Last')).toBe('') // blank, not a dash (C1)
     tick(4000)
     answerCorrect() // solve #2 recorded WHILE hidden (~4.00s)
     expect(statValue('Score')).toBe('2/2') // the run kept going
@@ -1174,7 +1185,7 @@ describe('AoX — Q8 visual-only timing hide', () => {
     setN(2)
     click('Begin')
     answerCorrect() // 1/2 → running, trio suppressed
-    expect(statValue('Average')).toBe('—')
+    expect(statValue('Average')).toBe('') // blank, not a dash (C1)
     answerCorrect() // 2/2 → run completes
     expect(statValue('Score')).toBe('2/2')
     // The completed run reveals its result regardless of the hide toggle (the average is the point).

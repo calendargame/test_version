@@ -77,13 +77,16 @@ const visibleText = (text) => {
 // AoX panels also contain "Score" spans). The value is the cell's last <span>. The scoring trio
 // (Score/Accuracy/Streak) cells are <div>s; the timing trio (Last/Average/Median) cells are
 // <button>s since Q8 (the visual-only hide toggle) — statValue reads either the same way.
+// ⚠ Reads the value through its OWN marker, [data-statval] — the auto-fit target StatPanel puts on
+// the value span — and NOT "the cell's last span". A cell can carry a trailing screen-reader-only
+// span (the "Off" that names a blanked group, C1 round 16), and last-span would read that instead of
+// the value. The marker names the one element that IS the readout, so it cannot drift again.
 function statValue(label) {
   const labelSpan = Array.from(document.querySelectorAll('span')).find(
     (s) => s.textContent.trim() === label && !isHidden(s),
   )
   if (!labelSpan) throw new Error(`stat "${label}" not found`)
-  const spans = labelSpan.parentElement.querySelectorAll('span')
-  return spans[spans.length - 1].textContent.trim()
+  return labelSpan.parentElement.querySelector('[data-statval]').textContent.trim()
 }
 // Tap a stat cell (Q8: the timing-trio cells are buttons that toggle the visual-only hide). The
 // cell is the label span's parent (a <button> for the timing trio); clicking it fires the toggle.
@@ -1055,11 +1058,17 @@ describe('Blitz — C3a freshness (suddenAmBest blocks fully-reset until wiped)'
 })
 
 // ── Q8: the visual-only timing-stats hide toggle (Last/Average/Median) ───────────────────────
-// Blitz gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it dims the display but the
+// Blitz gained a per-mode timing-trio hide toggle that is VISUAL ONLY: it blanks the display but the
 // engine keeps timing (Blitz feeds the engine timingOff:false always). So there is NO "Enable and
 // Reset Stats?" arm — hiding can never desync — and the scoring trio (Score/Accuracy/Streak) stays
 // untoggleable. One toggle per mode (blitzTimingOff), shared across Per Round / Per Question, and
 // excluded from the defaults system (verified in tests/saveDefaults.dom.test.jsx).
+//
+// ⚠ RE-BLESSED for C1 (round 16, the stat-box redesign — approved by the owner as a settled design).
+// A group YOU turned off now renders its value cells BLANK, not as an em dash. The dash was moved to
+// mean one thing only — "no data yet, but there could be" — so that a shown-but-empty stat and a
+// stat you hid stop reading identically. Save Stats off is the third signal: dim, whole strip. Every
+// '—' in this describe that used to mean "hidden" is now '' and says so.
 describe('Blitz — Q8 visual-only timing hide', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -1078,7 +1087,7 @@ describe('Blitz — Q8 visual-only timing hide', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('tapping a timing stat dims all three (visual only); the scoring trio stays; no reset prompt', () => {
+  it('tapping a timing stat blanks all three (visual only); the scoring trio stays; no reset prompt', () => {
     mountApp()
     switchToBlitz()
     begin()
@@ -1087,9 +1096,10 @@ describe('Blitz — Q8 visual-only timing hide', () => {
     expect(statValue('Average')).toMatch(/^\d+\.\d{2}s$/)
     expect(statValue('Score')).toBe('1/1')
     clickStat('Average') // hide the timing trio
-    expect(statValue('Last')).toBe('—')
-    expect(statValue('Average')).toBe('—')
-    expect(statValue('Median')).toBe('—')
+    // BLANK — C1's "you turned these off, and they ARE still recording" signal.
+    expect(statValue('Last')).toBe('')
+    expect(statValue('Average')).toBe('')
+    expect(statValue('Median')).toBe('')
     // Scoring trio is untoggleable — still visible.
     expect(statValue('Score')).toBe('1/1')
     expect(statValue('Accuracy')).toBe('100.0%')
@@ -1106,7 +1116,7 @@ describe('Blitz — Q8 visual-only timing hide', () => {
     begin()
     click(correctName(readDate())) // solve #1 immediate → 0.00s
     clickStat('Last') // hide
-    expect(statValue('Last')).toBe('—')
+    expect(statValue('Last')).toBe('') // blank, not a dash (C1)
     tick(4000)
     click(correctName(readDate())) // solve #2 recorded WHILE hidden (~4.00s)
     expect(statValue('Score')).toBe('2/2') // the round kept running
@@ -1126,14 +1136,14 @@ describe('Blitz — Q8 visual-only timing hide', () => {
     tick(500)
     click(correctName(readDate()))
     clickStat('Average') // hide in Per Round
-    expect(statValue('Average')).toBe('—')
+    expect(statValue('Average')).toBe('') // blank, not a dash (C1)
     clickText('Reset') // idle unlocks the sub-mode switch
     act(() => fireEvent.click(ctrl('Per Round'))) // → Per Question
     begin()
     tick(500)
     click(correctName(readDate())) // a Per Question solve
     expect(statValue('Score')).toBe('1/1')
-    expect(statValue('Average')).toBe('—') // still hidden — the toggle is shared
+    expect(statValue('Average')).toBe('') // still hidden — the toggle is shared
   })
 })
 

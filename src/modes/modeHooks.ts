@@ -164,17 +164,25 @@ export function useStatsHideToggles({
   const sLast = calcLast(S.times),
     sAvg = calcAvg(S.times),
     sMed = calcMed(S.times)
-  const sOff = scoringOff || !saveStats
-  const tOff = timingOff || !saveStats
+  // ★ `off` is YOUR toggle and NOTHING ELSE (C1, round 16) — so scoringOff / timingOff go through
+  // untouched. The two used to be wrapped as `scoringOff || !saveStats` and `timingOff || !saveStats`,
+  // which folded two unrelated facts into one bit: turning Save Stats off then struck through and
+  // dashed EVERY box, so your per-group choices disappeared underneath the global one. They were
+  // never lost — both flags persist and come back — but you could not SEE them, and so you could not
+  // predict what a tap would do. The Save-Stats half of those expressions is now `dimmed`, passed to
+  // StatPanel by each screen; see the three-signal note at the top of StatPanel.tsx.
+  //
+  // The FUNCTIONS keep their `saveStats` gate: with nothing being recorded there is nothing to hide,
+  // so the cells go non-interactive (`fn: null`) rather than offering a toggle that would say nothing.
   const sFn = saveStats ? toggleScoringOff : null
   const tFn = saveStats ? toggleTimingOff : null
   const statsArr = [
-    { label: 'Score', value: `${S.good}/${S.played}`, off: sOff, fn: sFn },
-    { label: 'Accuracy', value: fmtAccuracyPct(S.good, S.played), off: sOff, fn: sFn },
-    { label: 'Streak', value: `${S.streak}/${S.best}`, off: sOff, fn: sFn },
-    { label: 'Last', value: truncTime(sLast), off: tOff, fn: tFn },
-    { label: 'Average', value: fmtTime(sAvg), off: tOff, fn: tFn },
-    { label: 'Median', value: fmtTime(sMed), off: tOff, fn: tFn },
+    { label: 'Score', value: `${S.good}/${S.played}`, off: scoringOff, fn: sFn },
+    { label: 'Accuracy', value: fmtAccuracyPct(S.good, S.played), off: scoringOff, fn: sFn },
+    { label: 'Streak', value: `${S.streak}/${S.best}`, off: scoringOff, fn: sFn },
+    { label: 'Last', value: truncTime(sLast), off: timingOff, fn: tFn },
+    { label: 'Average', value: fmtTime(sAvg), off: timingOff, fn: tFn },
+    { label: 'Median', value: fmtTime(sMed), off: timingOff, fn: tFn },
   ]
   const armedSpan =
     timingArmed && saveStats

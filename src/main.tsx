@@ -1,5 +1,14 @@
 import './index.css' // Tailwind (v3, compiled in-build) + the app's custom CSS — replaces the old Play-CDN <script> + inline <style>.
-import * as React from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from 'react'
+import type { SetStateAction } from 'react'
 import ErrorBoundary, { ModeErrorBoundary } from './ErrorBoundary'
 import { initObservability, captureError } from './observability/sentry'
 // createRoot only. This used to reconstruct a ReactDOM object carrying createPortal too, because
@@ -23,7 +32,7 @@ import { installPointerGestures } from './lib/pointerGestures.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
 import { useUpdateCheck } from './components/useUpdateCheck.js'
 import { DEPLOY_TS } from './deployStamp.js'
-import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot } from './changelog.js'
+import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot, subscribeUpdateDot } from './changelog.js'
 import { useSettings } from './store/settings.js'
 import { useModePrefs } from './store/modePrefs.js'
 import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, prefsMatchDefaults } from './store/userDefaults.js'
@@ -58,7 +67,6 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // LookupEntry type ALONE. The three best types are read by AoxMode, BlitzMode,
     // components/BlitzBestRow and src/engine/{aoxBest,blitzBest}.
 
-    const {useEffect,useLayoutEffect,useRef,useState,useCallback,useMemo} = React;
     // ─────────────────────────────────────────────────────────────────────────
     // Date snapshot fields. Every generated date object carries these stamps
     // so that back-browse and codes display always reflect the system that was
@@ -132,9 +140,11 @@ import BlitzMode from './modes/BlitzMode.jsx'
 
 
     // DEPLOY_TS (the deploy stamp the "Last Updated" line renders and the build-change detection
-    // below compares against) -> src/deployStamp.ts, imported at top. ★ THE PER-DEPLOY BUMP LIVES
-    // THERE NOW, not on this line: it is read from BOTH sides of the settings-panel boundary, and
-    // main.tsx cannot be imported by the panel without a cycle.
+    // below compares against) -> src/deployStamp.ts, imported at top. It moved there because it is
+    // read from BOTH sides of the settings-panel boundary, and main.tsx cannot be imported by the
+    // panel without a cycle. ★ THERE IS NO PER-DEPLOY BUMP ANY MORE (round 16, Q1): vite.config.js
+    // injects the build clock as __BUILD_TS__, and the build FAILS if the newest changelog entry is
+    // not dated that stamp's Pacific day. Nothing here has to be edited before a push.
 
     // Post-update splash skip: a one-time sessionStorage flag stamped by BOTH update paths
     // immediately before their reload — the AUTO path's gated reload (controllerchange or the
@@ -208,6 +218,58 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // the normal splash dismissal AND the auto-update Updating handoff — gate on it, so neither can
     // ever reveal an unstyled frame.
     const appCssApplied=()=>window.__cssReady===true||!document.querySelector('link[rel="preload"][as="style"]');
+
+    // ★★ DO NOT HOIST THE `import('./sw.js')` IN App'S SERVICE-WORKER EFFECT TO MODULE SCOPE.
+    // It is tempting, and it looks like a pure win: babel-plugin-react-compiler cannot lower a
+    // dynamic import ("(BuildHIR::lowerExpression) Handle Import expressions") and one unlowerable
+    // expression makes it abandon the ENTIRE enclosing component, so while that call sits inside
+    // App's body the compiler emits exactly one event for the whole of main.tsx — that error,
+    // against App — and App is never memoised at all. Hoisting the expression out does make App
+    // compile (measured: CompileSuccess, 271 memo slots, 68 memo blocks).
+    //
+    // ⚠ IT ALSO BREAKS THE APP TODAY, and the suite proves it: with App compiled, exactly 3 cases go
+    // red. Their ACTUAL failures, read off the run rather than summarised:
+    //     tests/saveDefaults.dom:115  expected 2000 to be 800   (useModePrefs.getState().flashMs)
+    //     tests/saveDefaults.dom:133  expected 2000 to be 800   (the same, one case later)
+    //     tests/settingsPanel.defaults.dom:840  expected true to be false  (offers().gear)
+    // Two of the three are NOT gear assertions at all — Reset Settings simply did not restore the
+    // saved defaults, and the gear line beneath is never reached.
+    //
+    // ★ THE ROOT CAUSE, ESTABLISHED BY CONTROL RATHER THAN BY READING (round 16 review). Delete the
+    // `if(!settingsModified)return;` guard out of `pressResetSettings` (the round-14 dimmed-button
+    // guard, ~line 1392) and, with the hoist still applied, all 52 cases in those two files pass.
+    // So the compiled defect is that MEMOISED HANDLER closing over a STALE `settingsModified` and
+    // bailing out: the tap does nothing at all, which is why one symptom is an unrestored pref and
+    // the other is a gear that never clears. The RENDERED value is right in the same commit — the
+    // case at settingsPanel.defaults:838 asserts the gear is lit and PASSES on the line before —
+    // so this is the handler's closure disagreeing with what was drawn, not a wrong `settingsModified`.
+    //
+    // ⚠ TWO THINGS THAT LOOK LIKE THE CAUSE AND ARE NOT. Both were TRIED, on top of the hoist, and
+    // both left the same 3 cases red — do not spend the afternoon on either again:
+    //   • `prefsAtDefaults` (~line 402) going stale because its zustand selector closes over
+    //     defPrefs. Replacing it with a raw `useModePrefs()` subscription plus the comparison
+    //     computed outside the selector changes nothing. (That probe is sound: without the hoist it
+    //     is 52/52 green, so compilation is the only differentiator.) An earlier draft of THIS
+    //     comment named it as the blocker; it was wrong, and this paragraph is its correction.
+    //   • `defPrefs` being stale inside resetSettings. Reading the effective defaults fresh from
+    //     useUserDefaults.getState() inside the reset changes nothing either.
+    // The guard is DORMANT while App is uncompiled, so nothing ships broken — the harm would be in
+    // fixing the wrong thing. Whatever fix is chosen has to make the guard read a live value without
+    // putting a write in render; that is the work, and it has to land BEFORE the hoist.
+    //
+    // (Also worth knowing before anyone retries this: the compiler DOES run under the Vitest
+    // transform. Look for `$[` / `c(271)`, not `_c(` — the SSR transform rewrites the runtime import
+    // to `__vite_ssr_import_N__.c`, which is why this was previously believed invisible to tests.
+    // And the compile events are readable without a build: run babel over this file with
+    // babel-plugin-react-compiler and a `logger`, which is how the 271/68 above were measured.)
+
+    // The two update-signal dots' getSnapshot functions (Q6), for the useSyncExternalStore reads in
+    // App. Module scope, so each is ONE stable function identity for the life of the page: React
+    // compares the snapshot it gets against the last one with Object.is, and both return a plain
+    // boolean, so a re-read that finds no change re-renders nothing. Inlining these as arrows in the
+    // component would allocate a new getSnapshot every render for no benefit.
+    const readGearDot=()=>readUpdateDot(GEAR_DOT_KEY);
+    const readChangelogDot=()=>readUpdateDot(CHANGELOG_DOT_KEY);
 
     // Q3 auto-update loop breaker: the count of consecutive auto-update attempts, persisted in
     // sessionStorage (it survives same-tab reloads — exactly the shape of the failure loop — but not a
@@ -565,7 +627,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // [] deps because it needs nothing from render: a ref call and a stable setter. The stable
       // identity that falls out of that is what keeps the keydown effect from re-subscribing on
       // every render — a nicety, not a requirement (that effect only swaps one window listener).
-      const switchMode=useCallback((next: React.SetStateAction<string>)=>{
+      const switchMode=useCallback((next: SetStateAction<string>)=>{
         saveReadingPosRef.current?.();
         setMode(next);
       },[]);
@@ -1009,21 +1071,81 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // ruled out). If the auto flow engages during the hold (an even newer version already
       // waiting), hold-end defers to its reload (updateReloadPendingRef) instead of revealing the
       // app for a moment before the navigation.
-      // The two update-signal dot states (Q6) mirror the PERSISTED flags (src/changelog — the
-      // flags alone survive reloads; state is just the render mirror): the detection below marks
-      // both on every build change, opening Settings retires the gear's (the effect further down),
-      // and the first tap on the footer's Changelog link retires the link's — the two-stage
-      // breadcrumb to the changelog popup. Declared HERE, above the effect that sets them.
-      const [gearDot,setGearDot]=useState(()=>readUpdateDot(GEAR_DOT_KEY));
-      const [changelogDot,setChangelogDot]=useState(()=>readUpdateDot(CHANGELOG_DOT_KEY));
+      // The two update-signal dots (Q6) ARE the PERSISTED flags (src/changelog), read live rather
+      // than mirrored: the detection below marks both on every build change, opening Settings
+      // retires the gear's (toggleSettings, immediately below), and the first tap on the footer's
+      // Changelog link retires the link's — the two-stage breadcrumb to the changelog popup.
+      // Declared HERE, above the effect that sets them.
+      // ★ READ STRAIGHT FROM THE PERSISTED FLAGS — no React state, deliberately. These were two
+      // useStates seeded from the flags and re-synced by setGearDot/setChangelogDot calls inside
+      // effects, which is react-hooks/set-state-in-effect and a cascading render: commit → effect →
+      // setState → commit again. The flags in src/changelog were always the source of truth and the
+      // state was always just a copy, so the copy is gone. markUpdateDot/clearUpdateDot notify, and
+      // these two re-render — the same UI, one commit earlier, with no setState anywhere.
+      // The snapshot getters are module-scope constants (readGearDot / readChangelogDot, declared
+      // beside appCssApplied at the top of this file) so their identity is stable across renders.
+      const gearDot=useSyncExternalStore(subscribeUpdateDot,readGearDot);
+      const changelogDot=useSyncExternalStore(subscribeUpdateDot,readChangelogDot);
+      // THE ONE WAY TO OPEN SETTINGS, and the only place the gear's update dot (Q6) is retired.
+      // ★ WHY THIS IS A CALLBACK AND NOT AN EFFECT. The retirement used to be
+      // `useEffect(()=>{if(settingsOpen&&gearDot){clearUpdateDot(…);setGearDot(false);}},[settingsOpen,gearDot])`,
+      // which is a setState run synchronously inside an effect body — react-hooks/set-state-in-effect,
+      // and a real cascading render (open the panel → commit → effect → setState → commit again).
+      // The fix cannot go the other way and put the localStorage write in render: render must stay
+      // pure. So the retirement moves to the EVENT that causes it. Opening is the trigger; an effect
+      // watching the resulting state was only ever an indirect way of observing that event.
+      //
+      // ★ WHY A SHARED CALLBACK. setSettingsOpen has 11 call sites, but 8 pass a literal `false`
+      // (mode keys, H, outside-click, Esc, drag-dismiss, fullReset, the Back button, the mode
+      // selector) and cannot open. The 3 that CAN open are all toggles — the gear's onPointerDown,
+      // the gear's onClick, and the G shortcut — and a toggle does not know which way it is going.
+      // Computing `opening` here once, in one place all three share, is what makes "retire only when
+      // opening" expressible at all.
+      //
+      // ★ WHY IT SETS A VALUE INSTEAD OF `v=>!v`. Because `opening` has to be computed ONCE and
+      // then used twice — to decide the retirement and to set the state — and that is the whole
+      // reason. It is behaviour-neutral: the gear carries BOTH onPointerDown and onClick (pointer
+      // presses toggle on press; the click is kept for keyboard and tests, and lib/pointerGestures
+      // suppresses the real one) and exactly one of them fires per interaction today.
+      // ⚠ AND IT IS NOT A DOUBLE-FIRE SAFETY NET — an earlier draft of this comment claimed it was,
+      // and that claim was FALSE. A browser delivers pointerdown and click as separate tasks, so
+      // React commits between them and the click reads the handler rebuilt against the ALREADY-OPEN
+      // state: `opening` recomputes to false and the panel shuts, exactly as `v=>!v` would. The two
+      // forms differ only when both land inside ONE React batch, which is not how the browser
+      // sequences them. If double-fire safety is ever actually wanted it needs a form that reads the
+      // LIVE value at call time; this is not that, and must not be trusted as if it were.
+      //
+      // ⚠ ONE BRANCH OF THE OLD EFFECT IS INTENTIONALLY NOT CARRIED OVER: its `gearDot` dep ALSO
+      // retired a dot that lit WHILE the panel was already open. That branch was dead under the OLD
+      // model — gearDot was React state that only this file's mount effect could move, and that
+      // effect runs while settingsOpen is still its initial false.
+      // ★ IT IS NOT DEAD ANY MORE, AND THE READ ABOVE IS WHAT CHANGED THAT. gearDot is now
+      // useSyncExternalStore over readGearDot, which re-reads localStorage on every render — and
+      // localStorage is shared across TABS. A second tab of the app detecting the same build change
+      // writes the flag; this tab picks it up on its next render for any reason, with no
+      // notification needed. So a dot CAN now light with the panel open, and with the retirement
+      // living only in toggleSettings it then stays lit until the panel is closed and reopened.
+      // ACCEPTED AS A COSMETIC GAP, deliberately: closing it means an effect watching
+      // [settingsOpen,gearDot] that writes storage, i.e. reinstating the cascading render this round
+      // removed, to shorten by one panel-cycle a stale breadcrumb in a two-tab session. The live
+      // read WIDENS this gap rather than closing it — do not repeat the old "markUpdateDot has two
+      // callers, both mount-only" argument, which reasons about THIS tab and no longer settles it.
+      const toggleSettings=useCallback(()=>{
+        const opening=!settingsOpen;
+        if(opening&&gearDot)clearUpdateDot(GEAR_DOT_KEY); // notifies → the dot re-reads false
+        setSettingsOpen(opening);
+      },[settingsOpen,gearDot]);
       useEffect(()=>{
         const current=DEPLOY_TS.toISOString();
         const changed=buildChanged(readBuildStamp(),current);
         writeBuildStamp(current); // restamp on EVERY boot — the stamp always names the build that last ran
         // The changelog breadcrumb (Q6) lights on EVERY build change — including one the real
         // Updating flow just bridged (the skip-hold boot below suppresses only the SCREEN; the
-        // changelog still has news either way). Persisted flags + the render mirrors.
-        if(changed){markUpdateDot(GEAR_DOT_KEY);markUpdateDot(CHANGELOG_DOT_KEY);setGearDot(true);setChangelogDot(true);}
+        // changelog still has news either way). Marking the PERSISTED flags is all that is needed:
+        // both dots read those flags through useSyncExternalStore (see their declarations above), so
+        // markUpdateDot notifies and re-renders them. There is no React state left to mirror into —
+        // which is exactly why this effect no longer trips react-hooks/set-state-in-effect.
+        if(changed){markUpdateDot(GEAR_DOT_KEY);markUpdateDot(CHANGELOG_DOT_KEY);}
         if(!changed||skipHoldConsumedRef.current)return;
         updateEngagedRef.current=true; // claim the #boot handoff NOW — the splash hands off to the overlay, never to the app
         let cancelled=false;
@@ -1094,7 +1216,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // Category 3b: H — toggle to/from guide, preserving previous non-guide mode
         if(dataKey==='H'){e.preventDefault();switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');setSettingsOpen(false);return;}
         // Category 3c: G — toggle settings popover
-        if(dataKey==='G'){e.preventDefault();setSettingsOpen(v=>!v);return;}
+        if(dataKey==='G'){e.preventDefault();toggleSettings();return;}
         // Category 2: data-key DOM walk for game-loop letters and arrows
         const tagged=document.querySelectorAll<HTMLElement>(`[data-key="${dataKey}"]`);
         for(const btn of tagged){
@@ -1105,7 +1227,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
           btn.click();
           return;
         }
-      };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[switchMode]);
+      };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[switchMode,toggleSettings]);
       // Q4: install the global press-drag-release input controller (slide-off-to-cancel on every button
       // + answer-grid drag-to-select). One set of document pointer listeners; cleanup on unmount.
       useEffect(()=>installPointerGestures(),[]);
@@ -1249,10 +1371,9 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // panel (components/SettingsPanel), so unmounting performs the same discard in one commit
       // instead of four. Their only other consumers — the openers, commits and Back registrations —
       // went into that component with them.
-      // Opening Settings by ANY path retires the gear's update dot (Q6) — the breadcrumb's first
-      // stage is done once the panel is up (the link's own dot inside keeps pointing onward). The
-      // gearDot dep also covers a detection that somehow lands while the panel is already open.
-      useEffect(()=>{if(settingsOpen&&gearDot){clearUpdateDot(GEAR_DOT_KEY);setGearDot(false);}},[settingsOpen,gearDot]);
+      // The gear-dot retirement USED to live here, as an effect watching [settingsOpen,gearDot]. It
+      // moved up to toggleSettings (declared beside gearDot) — see the reasoning there. Nothing
+      // else retires it, so this is the only pointer you need.
       // Restores the settings the ⚙ panel owns — the 14 menu values + the 2 year-range text mirrors —
       // AND the four capturable mode-screen prefs (Flash speed, both Blitz timers, the AoX run length)
       // to their EFFECTIVE defaults: the user's saved personal defaults when they exist (Q7,
@@ -1311,7 +1432,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // sets it, and the gear's twin lives beside it — but the only reader and the only retirer
       // are both in the panel, so the panel gets the boolean and this callback and never touches
       // storage itself. useCallback so a panel re-render is never caused by this identity.
-      const retireChangelogDot=useCallback(()=>{clearUpdateDot(CHANGELOG_DOT_KEY);setChangelogDot(false);},[]);
+      const retireChangelogDot=useCallback(()=>{clearUpdateDot(CHANGELOG_DOT_KEY);},[]); // notifies → the dot re-reads false
       // The four modals' openers, closers and commits (openSaveDefaults / openManageDefaults /
       // openChangelog / commitSaveDefaults / commitManageDefaults / confirmClearDefaults and their
       // close callbacks) -> components/SettingsPanel, with the state they drive.
@@ -1505,14 +1626,15 @@ import BlitzMode from './modes/BlitzMode.jsx'
                       gear-modified (Q8, the flush inside-bottom violet bar — index.css) marks live state ≠
                       the saved defaults while the panel is CLOSED (the open gear is solid purple, no
                       bar); the CORNER UpdateDot marks an update landed since the panel was last opened
-                      (opening clears the flag — the effect above — so it too only ever shows CLOSED).
+                      (opening clears the flag — toggleSettings, which BOTH handlers below call — so it
+                      too only ever shows CLOSED).
                       The gear is the one host in the app that clears the corner badge's per-axis
                       padding precondition (components/UpdateDot + index.css spell it out); its own
                       literal `relative` is what makes it the marker's containing block, since neither
                       indicator's class may be counted on to be present. The marker is aria-hidden, so
                       the aria-label carries BOTH booleans in every combination — the only accessible
                       name this button has, its visible content being a bare glyph. */}
-                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;setSettingsOpen(v=>!v);}} onClick={()=>setSettingsOpen(v=>!v)} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot}/></button>
+                  <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;toggleSettings();}} onClick={()=>toggleSettings()} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot}/></button>
                 </div>
                 {/* mode selector */}
                 {/* Mode CustomSelect. Replaced the original native <select> as part of the

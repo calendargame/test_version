@@ -17,9 +17,12 @@
 //    below, pinned by a test). The URL is built from import.meta.env.BASE_URL because staging is a
 //    SUBPATH (/test_version/) — a root-absolute URL would read the apex build and compare two
 //    different sites.
-//  • DEPLOY_TS is NOT the thing to compare. It is not in index.html (it lives inside the ~476 KB
-//    bundle), and it is a hand-edited literal with no CI gate — a forgotten bump would make the
-//    check confidently lie.
+//  • DEPLOY_TS is NOT the thing to compare, and round 16 did not change that. It is not in
+//    index.html — it lives inside the ~476 KB bundle, so reading the deployed one would mean
+//    downloading the whole build to ask a question about it. (Q1 did remove the OTHER objection
+//    that used to stand here: it is no longer a hand-edited literal that a forgotten bump could
+//    make lie. It is now injected from the build clock, and the changelog date is gated against it.
+//    Still the wrong file to fetch.)
 //  • index.html's hashed bundle name is not enough either: icons ship under STABLE filenames, so an
 //    icon-only deploy changes the output without changing any name in the HTML. The owner's
 //    requirement is explicitly that a deploy changing OUTPUT but not SOURCE is detected.
