@@ -126,6 +126,22 @@ export function describeChangelogStampMismatch({ found, expected, stamp }) {
     `under ${found} describe the deploy that is now landing on ${expected}, so they belong under ` +
     `${expected} — and if ${found} already shipped, its published lines are settled history and ` +
     `stay put while the new day gets its own entry. Every rebuild takes a fresh stamp, so a build ` +
-    `re-run after the next midnight will move the target date again.`
+    `re-run after the next midnight will move the target date again.\n` +
+    `\n` +
+    `IF THIS DEPLOY CHANGES NOTHING A PLAYER CAN SEE — a re-run, or internal work only — you still ` +
+    `owe an entry, because the update dot fires on ANY build change and would otherwise send them ` +
+    `to a stale one. Use the charter's fixed line, verbatim (never reworded, never alongside a real ` +
+    `line):\n` +
+    `\n` +
+    `  {\n` +
+    `    date: '${expected}',\n` +
+    `    items: [\n` +
+    `      'Nothing you can see changed this time — just work underneath to keep things running smoothly.',\n` +
+    `    ],\n` +
+    `  },\n` +
+    `\n` +
+    `⚠ TEN ENTRIES MAXIMUM. If adding this one makes eleven, move the OLDEST to ` +
+    `CHANGELOG-ARCHIVE.md in the same change — otherwise you will trade this failure for a ` +
+    `different one.`
   )
 }
