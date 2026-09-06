@@ -14,6 +14,14 @@ lives with the data, in the charter comment at the top of `src/changelog.ts`.
 
 ## Retired entries
 
-_None yet._ The code file currently holds fewer than ten days, so nothing has aged out. Entries
-begin arriving here the first time a new day pushes the list past ten — at which point this note
-is replaced by the entries themselves.
+### 2026-07-17
+
+- Blitz Per Question gains an Allow Mistakes option, with its own best score and best streak.
+- Timer readouts keep one steady width, so sliders no longer shift as values change.
+- Dropdown menus in the guide close when the page scrolls.
+- Every reset snaps the screen back instantly and cleanly.
+- Deduction stays centered and its layout holds steady while you answer.
+- A View saved defaults link shows exactly what you saved.
+- The app stays portrait: Android installs lock to it, and turning an iPhone sideways brings up a rotate-back screen that pauses any countdown.
+- Text in the guide can now be selected and copied.
+- Plus a round of smaller fixes and polish throughout.

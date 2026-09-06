@@ -437,12 +437,20 @@ describe('the Changelog popup (modal parity + content)', () => {
     expect(lists).toHaveLength(CHANGELOG.length)
     const scrollRegion = dialog.querySelector('.overflow-y-auto')
     for (const l of lists) expect(scrollRegion.contains(l)).toBe(true)
-    // The factory Date Format (Written MDY) renders numerically, the Last-Updated recipe.
-    // Each day renders its own Pacific calendar date (round-7 2026-07-21, round-6 2026-07-19,
-    // round-5 2026-07-17), driven through the same Date Format setting.
-    expect(within(dialog).getByText('7/21/2026')).toBeInTheDocument()
-    expect(within(dialog).getByText('7/19/2026')).toBeInTheDocument()
-    expect(within(dialog).getByText('7/17/2026')).toBeInTheDocument()
+    // EVERY entry's own Pacific date renders, driven through the Date Format setting (the factory
+    // Written MDY renders numerically — the Last-Updated recipe).
+    // ⚠ DERIVED FROM CHANGELOG, NEVER HARD-CODED. Until 2026-09-05 this asserted three literal
+    // dates, and it broke the very first time the ten-day cap rotated: 2026-07-17 aged out into
+    // CHANGELOG-ARCHIVE.md and the test failed on data that had correctly left the array. A test
+    // that names specific rows of the data it is checking is a test with an expiry date on it —
+    // this reads the array instead, so it now covers every entry and survives every rotation.
+    for (const en of CHANGELOG) {
+      const [y, m, d] = en.date.split('-').map(Number)
+      expect(
+        within(dialog).getByText(`${m}/${d}/${y}`),
+        `${en.date} should render as ${m}/${d}/${y}`,
+      ).toBeInTheDocument()
+    }
     // Newest day first, each line verbatim.
     expect(
       within(lists[0])

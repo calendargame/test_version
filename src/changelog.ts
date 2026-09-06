@@ -84,8 +84,15 @@ export type ChangelogEntry = {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
-  // The tenth entry, so the array is now AT the cap: the next new day must move 2026-07-17 to
-  // CHANGELOG-ARCHIVE.md in the same change (see the ten-entry rule in the charter above).
+  {
+    date: '2026-09-05',
+    items: [
+      'Nothing you can see changed this time — just work underneath to keep things running smoothly.',
+    ],
+  },
+  // ★ THE CAP BIT FOR THE FIRST TIME on 2026-09-05: adding the day above made eleven, so
+  // 2026-07-17 moved to CHANGELOG-ARCHIVE.md in the same change. The array is AT ten again —
+  // the next new day retires 2026-07-19 (see the ten-entry rule in the charter above).
   {
     date: '2026-08-10',
     items: [
@@ -200,20 +207,6 @@ export const CHANGELOG: ChangelogEntry[] = [
       'View saved defaults is always available, shows the launch values until you save your own, and now lets you edit and save right from the popup; clearing saved defaults asks for confirmation first.',
       'Reset Settings now restores everything your saved defaults cover, including the four mode-screen values.',
       'Blitz and AoX can hide their time stats; timing quietly carries on, so nothing is lost when you show them again.',
-    ],
-  },
-  {
-    date: '2026-07-17',
-    items: [
-      'Blitz Per Question gains an Allow Mistakes option, with its own best score and best streak.',
-      'Timer readouts keep one steady width, so sliders no longer shift as values change.',
-      'Dropdown menus in the guide close when the page scrolls.',
-      'Every reset snaps the screen back instantly and cleanly.',
-      'Deduction stays centered and its layout holds steady while you answer.',
-      'A View saved defaults link shows exactly what you saved.',
-      'The app stays portrait: Android installs lock to it, and turning an iPhone sideways brings up a rotate-back screen that pauses any countdown.',
-      'Text in the guide can now be selected and copied.',
-      'Plus a round of smaller fixes and polish throughout.',
     ],
   },
 ]
