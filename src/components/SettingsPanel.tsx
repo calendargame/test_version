@@ -819,13 +819,10 @@ export function SettingsPanel({
           (`0 0 8px`, vs the dropdowns' downward-offset shadow) so the shadow extends EQUALLY on all
           four sides — the panel is inset against the screen edge on every side and must read as
           symmetric. It's SUBTLE (12% black, the app's overlay-shadow color) because the card's fill
-          + 1px card border already separate it (the shadow only adds a gentle lift). ⚠ That fill
-          is NOT quite opaque: --card-bg is 93–98% in every theme (95% on the two light ones), a
-          value each theme has carried since the original single-file app, where this panel was
-          the surface's only user. So the page shows faintly through this panel and through every
-          popup card, most visibly on the light themes — by that original design, not by a later
-          slip; and SMALL (8px blur) so it stays clearly contained inside the 1rem gap (vs the
-          dropdowns' 28px blur, which would overflow the cushion and clip at the screen edge).
+          + 1px card border already separate it (the shadow only adds a gentle lift). That fill is
+          SOLID in every theme (--card-bg, index.css), so nothing on the page behind shows through
+          this panel; and SMALL (8px blur) so it stays clearly contained inside the 1rem gap (vs
+          the dropdowns' 28px blur, which would overflow the cushion and clip at the screen edge).
           Bottom cushion: the calc uses REM, not px, so it matches the rem-based side insets EXACTLY
           — left-4/right-4 = 1rem, and the app's root font is FLUID (html{font-size:clamp(...)}), so
           1rem ≠ 16px; a hardcoded px cushion would NOT equal the sides and would drift per-device.
