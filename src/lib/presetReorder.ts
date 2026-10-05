@@ -39,37 +39,39 @@
 // moment the REGISTRY itself changes is different (once, at release, instead of many times during).
 
 /**
- * Which slot the dragged row's current CENTER falls into, given the vertical centers every row
- * occupied at the moment the drag started — ascending, top to bottom, one entry per row in its
- * PRE-drag order (index i is where the row that started at position i was centered). Any one
- * coordinate space will do so long as `centerY` is in the same one — the caller uses the list's
- * scrollable CONTENT (see clampDragCenter).
- * Returns the index of the first slot the dragged row's center has REACHED (at-or-before it);
- * once it has passed every one of them, the last index (moving it there needs nothing to compare
- * past the final slot).
+ * Which slot the dragged row is over: the one whose CENTER is nearest the dragged row's own current
+ * center. `slotMidpoints` are the vertical centers every row occupied at the moment the drag
+ * started — ascending, top to bottom, one entry per row in its PRE-drag order. Any one coordinate
+ * space will do so long as `centerY` is in the same one — the caller uses the list's scrollable
+ * CONTENT (see clampDragCenter).
  *
- * ⚠⚠ THE COMPARISON IS `<=`, NOT `<`, AND THAT ONE CHARACTER IS LOAD-BEARING. The array always
- * contains the DRAGGED row's own starting center at `slotMidpoints[startIndex]` — there is no
- * other way for the caller to supply "every row's" centers, since this function has no notion of
- * which index is "self". A strict `<` makes a dragged row's OWN resting center compare as
- * "already passed" the instant `centerY` is not strictly less than it — true not only while the
- * pointer sits dead still (centerY === its own start center exactly) but for ANY reading at or
- * past it, so a completely stationary press (or a single no-op pointermove reporting the same Y,
- * which real touch hardware does report on a pressure change with zero spatial movement) already
- * resolves one slot past where the drag began. Released there, stepsToReorder swaps two presets
- * that nothing asked to move. `<=` closes exactly that gap: landing EXACTLY on your own center
- * counts as still being there (index unchanged), and only a genuine reading STRICTLY beyond a
- * slot's center counts as having passed it — for every slot, your own start slot included, with
- * no startIndex parameter needed to special-case it. Proved as the load-bearing invariant in
- * tests/presetReorder.test.js: `targetIndexForCenter(slotMidpoints[k], slotMidpoints) === k` for
- * every k, not only the last one (which passed even under the old `<`, by the fallback below —
- * the exact reason the bug went unnoticed until every index was checked, not only the edges).
+ * ★ NEAREST, SO A ROW GIVES WAY WHEN THE DRAGGED ROW IS HALFWAY ONTO IT — IN BOTH DIRECTIONS. The
+ * boundary between two slots is the point midway between their centers, and it is the same boundary
+ * whichever way the row is travelling. Two things follow, and both are why this is the rule:
+ *   1. A PRESS THAT DOES NOT MOVE CHANGES NOTHING, AND NEITHER DOES A SMALL WOBBLE. The dragged
+ *      row's own slot owns half a row's travel either side of where it started.
+ *   2. THE DRAGGED ROW NEVER SITS CLOSER THAN HALF A ROW TO ANY OTHER ROW. The slot it is nearest
+ *      is the one the others have vacated for it (previewShift), so every row still in the list is
+ *      at least half a row-pitch away from it, above or below. That is what lets the dragged row's
+ *      bare marks — its grip and its ✓ — travel without ever coming to rest on the same marks of the
+ *      row underneath (components/PresetManager draws the row with no surface behind them; the
+ *      "held row" rules in index.css cover the instant a row slides past underneath).
+ * The rule this replaced asked "which is the first slot whose center the dragged center has not
+ * yet passed", which is not symmetric: one pixel of travel DOWN already claimed the next slot,
+ * while travelling UP needed a whole row. Released after that one pixel, two presets swapped; and
+ * mid-drag the row below jumped up underneath the dragged row while the two were still all but
+ * coincident — their grips drawn one on top of the other.
+ *
+ * A tie (exactly midway) stays with the EARLIER slot, so the answer never depends on float noise in
+ * the caller's arithmetic going one way or the other between two frames of a still finger.
  */
 export function targetIndexForCenter(centerY: number, slotMidpoints: readonly number[]): number {
-  for (let i = 0; i < slotMidpoints.length; i++) {
-    if (centerY <= slotMidpoints[i]) return i
+  let nearest = 0
+  for (let i = 1; i < slotMidpoints.length; i++) {
+    if (Math.abs(centerY - slotMidpoints[i]) < Math.abs(centerY - slotMidpoints[nearest]))
+      nearest = i
   }
-  return slotMidpoints.length - 1
+  return nearest
 }
 
 /**

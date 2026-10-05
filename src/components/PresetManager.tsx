@@ -181,32 +181,51 @@ import { bandDirection, scrollDelta } from '../lib/pointerGestures.js'
 // spending a reader's attention on a fact that cannot help them decide.
 // ============================================================
 
-// The row glyphs, named here rather than written inline — the row below is dense enough that a
-// bare arrow or ✕ in the markup would read as decoration rather than as the control it labels.
-// ⚠ NEITHER IS aria-hidden AND NEITHER NEEDS TO BE: every control carrying one also carries an
-// aria-label, and an aria-label REPLACES an element's content for a screen reader, so the glyph is
-// already unspoken. (That is the opposite of the ✓ and A markers below, which are bare spans with
-// no name of their own and therefore do need hiding plus an sr-only word.)
-// ⚠ TWO OF THE ORIGINAL THREE ARE GONE, AS OF ROUND 20: MOVE_UP ('↑') and MOVE_DOWN ('↓') named
-// the old reorder buttons this round removed. The SAME reasoning that put them here — name a glyph
-// rather than write it inline, once a row is dense enough for a bare character to read as
-// decoration — is why the handle that replaced them gets a name too (ReorderHandleIcon below); it
-// just cannot be a one-line string constant, because "three plain rounded bars" is markup, not text.
-const DELETE_GLYPH = '✕'
-
-// THE REORDER HANDLE'S GLYPH — three plain horizontal bars, rounded ends, no arrowheads: iOS's own
-// native system reorder icon, shown to the owner and approved before this round began. An inline
-// SVG rather than a Unicode "hamburger"/"equals" character, which renders as three bars of
-// inconsistent weight and spacing across engines — this app never uses icon fonts (see W5Logo,
-// GuidePage's dot diagrams for the house pattern: raw <svg>, stroke/fill: currentColor so it always
-// matches the surrounding text colour, no external asset).
-// aria-hidden="true" here for the identical reason DELETE_GLYPH above needs none of its own: the
-// element that renders this always carries its own aria-label (the row's current position, at the
-// handle below), which replaces this SVG for a screen reader — so the glyph is already unspoken,
-// and the attribute is belt-and-suspenders, matching every other icon in the app.
-function ReorderHandleIcon() {
+// THE ROW'S TWO ICONS — DeleteIcon (the ✕) and ReorderHandleIcon (the grip) — both inline SVG drawn
+// in currentColor, the house pattern (W5Logo, GuidePage's dot diagram): no icon font, no external
+// asset, and always the colour of the text around them.
+// ⚠ BOTH ARE aria-hidden, AND NEITHER NEEDS A NAME OF ITS OWN: the control that renders each one
+// carries an aria-label, which REPLACES an element's content for a screen reader. (That is the
+// opposite of the ✓ and A markers below, which are bare spans with no name of their own and
+// therefore need hiding plus an sr-only word.)
+//
+// ★ THE ✕ IS DRAWN, NOT TYPED. It used to be the character "✕" in the button's text, and a
+// character sits where its font's metrics put it: on its line's baseline, inside a line box, with
+// whatever space that font leaves above and below the ink — which is not the middle of the button,
+// and is a different "not the middle" in each font a device falls back to. Two strokes in a square
+// viewBox have no baseline and no font: the button centres the square (DELETE_BTN_CLASS is a
+// centring flex box) and the cross is centred in the square by construction. Sized in em, so it
+// stays in step with the row's text tier on the app's fluid root font-size.
+function DeleteIcon() {
   return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 16 16" className="size-[1em]" aria-hidden="true" focusable="false">
+      <path
+        d="M3 3 13 13M13 3 3 13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+// The grip: three plain horizontal bars, rounded ends, no arrowheads — iOS's own native system
+// reorder icon, shown to the owner and approved. A Unicode "hamburger" / "equals" character renders
+// as three bars of inconsistent weight and spacing across engines, which is the same reason the ✕
+// above is drawn.
+// `held` is true on the row being dragged: the bars then sit on a patch of the card's own colour
+// (index.css's .held-ink says what that is for).
+function ReorderHandleIcon({ held }: { held: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+      className={held ? HELD_INK_CLASS : undefined}
+    >
       <line
         x1="3"
         y1="4"
@@ -263,12 +282,14 @@ function ReorderHandleIcon() {
 // Manage Presets and the View/Clear Saved Defaults pair wear: pressing it does not always delete (a
 // preset that holds anything asks first), and the rose fill is kept for the button that commits a
 // deletion — the confirmation's own Delete.
-// ⚠ TOUCH SIZE IS A DEVICE-ONLY QUESTION. At the card's ~288px of content it lands near 30×26px, the
+// IT IS A CENTRING BOX: `self-stretch` makes it exactly as tall as the name box beside it (the row's
+// track), and the flex centring puts the icon in the middle of that — both ways, in every font.
+// ⚠ TOUCH SIZE IS A DEVICE-ONLY QUESTION. At the card's ~288px of content it lands near 28×30px, the
 // ⚙ panel's existing control tier (its On/Off switches are px-3 py-1.5 text-xs) and not a new,
 // smaller one — but jsdom lays nothing out, so only the owner's iPhone can say whether it is
 // comfortable.
 const DELETE_BTN_CLASS =
-  'shrink-0 px-2 py-1.5 rounded-xl text-xs border surface-toggle text-(--tx-100-80)'
+  'shrink-0 self-stretch flex items-center justify-center px-2 rounded-xl text-xs border surface-toggle text-(--tx-100-80)'
 // THE GRIP HAS NO BUTTON CHROME AT ALL — no border, no fill — the other half of the owner's call: a
 // bare ≡ says "drag", where a boxed one reads as one more thing to tap. What it keeps is everything
 // a control needs that is not decoration: a hit area wider and taller than its 14px glyph
@@ -296,6 +317,35 @@ const ROW_COL = {
   amnesic: 'col-start-4 row-start-1',
   grip: 'col-start-5 row-start-1',
 } as const
+
+// ── THE ROW IN THE HAND ─────────────────────────────────────────────────────────────────────────
+//
+// ★ WHAT A DRAGGED ROW LOOKS LIKE: ITS PARTS, MOVING TOGETHER — NOT A SLAB. All of it travels (✕,
+// name, ✓, grip: a ✕ left behind beside a gap would read as belonging to nothing), but only the two
+// pieces that are boxes at rest are drawn lifted: the ✕ button and the name box each get the
+// "picked up" shadow. The ✓ and the grip have no box at rest and are given none in the hand — they
+// ride along as the bare marks they are. What this replaced drew ONE rounded surface behind the
+// whole row, the empty stretch between the name and the grip included; the owner found a lifted
+// shape with nothing in most of it strange, and it is gone.
+//
+// Three classes, all index.css's, worn only by the row being dragged:
+//   • HELD_PIECE_CLASS — on the ✕ button and the name box. Their resting fill is a see-through
+//     tint over the card; in the hand the same tint is laid over the card's own solid colour, so
+//     the piece looks exactly as it did and the row passing underneath cannot show through it.
+//   • HELD_SHADOW_CLASS — the lift itself, on two empty boxes drawn in the ✕'s and the name's own
+//     grid cells (heldShadows, in the row). Separate boxes, behind everything in the row, because a
+//     shadow on the pieces themselves falls on the piece beside it: the two are 4px apart and the
+//     shadow spreads 12, so whichever was painted second would smudge the other's edge.
+//   • HELD_INK_CLASS — on the ✓ and the grip's bars (and the A, while that marker exists): a patch
+//     of the card's colour exactly behind the mark, invisible against the card. It is what stops a
+//     row sliding past underneath from drawing its own grip THROUGH this one for the tenth of a
+//     second the two cross. It is not a surface — it has no edge, no shadow and no size beyond the
+//     mark — and it never covers anything at rest: lib/presetReorder's targetIndexForCenter keeps
+//     the dragged row at least half a row from every other, which is further than the patch
+//     reaches.
+const HELD_PIECE_CLASS = 'held-piece'
+const HELD_SHADOW_CLASS = 'held-shadow'
+const HELD_INK_CLASS = 'held-ink'
 
 // THREE PROPS. The first two are the same one fact: which preset the delete confirmation is asking
 // about, or null while the list is showing. Nothing in this card dismisses itself — it has no Close
@@ -847,48 +897,56 @@ export default function PresetManager({
         onScroll={onListScroll}
         className={`${SCROLL_REGION_CLASS} max-h-[45vh] space-y-2 ${scrollFadeClass(scrolledFromTop, atBottom)}`}
       >
-        {presets.map((p, i) => (
-          <div
-            key={p.id}
-            ref={(el) => {
-              if (el) rowRefs.current.set(p.id, el)
-              else rowRefs.current.delete(p.id)
-            }}
-            style={{
-              transform: `translateY(${rowTransform(p.id, i)}px)`,
-              position: drag?.id === p.id ? 'relative' : undefined,
-              zIndex: drag?.id === p.id ? 10 : undefined,
-            }}
-            // Only a row that is NOT the one being dragged transitions — the dragged row must
-            // track the pointer with zero lag (lib/presetReorder's own reasoning for why the live
-            // half is a raw pointer delta), while every other row's previewShift nudge gets its
-            // "sliding to make room" feel from this transition alone, no JS animation of its own.
-            // Absent outside a drag entirely, so the list's normal re-renders (a rename, a create)
-            // never pick up a stray transition.
-            className={
-              drag && drag.id !== p.id ? 'transition-transform duration-150 ease-out' : undefined
-            }
-          >
-            {/* THE ROW IS A GRID, NOT A FLEX ROW — five columns, ✕ · name · ✓ · A · grip on
+        {presets.map((p, i) => {
+          // This row is the one in the hand (HELD_PIECE_CLASS, above the component, says what
+          // that changes about how it is drawn).
+          const held = drag?.id === p.id
+          return (
+            <div
+              key={p.id}
+              ref={(el) => {
+                if (el) rowRefs.current.set(p.id, el)
+                else rowRefs.current.delete(p.id)
+              }}
+              style={{
+                transform: `translateY(${rowTransform(p.id, i)}px)`,
+                position: held ? 'relative' : undefined,
+                zIndex: held ? 10 : undefined,
+              }}
+              // Only a row that is NOT the one being dragged transitions — the dragged row must
+              // track the pointer with zero lag (lib/presetReorder's own reasoning for why the live
+              // half is a raw pointer delta), while every other row's previewShift nudge gets its
+              // "sliding to make room" feel from this transition alone, no JS animation of its own.
+              // Absent outside a drag entirely, so the list's normal re-renders (a rename, a create)
+              // never pick up a stray transition.
+              className={drag && !held ? 'transition-transform duration-150 ease-out' : undefined}
+            >
+              {/* THE ROW IS A GRID, NOT A FLEX ROW — five columns, ✕ · name · ✓ · A · grip on
               screen (both orders are argued at DELETE_BTN_CLASS above), and a SECOND ROW that only
               the width-cap note ever occupies, placed under the name box in the name's own column.
               As a flex row the note had to live outside it with a hand-tuned indent; the ✕ in
               front of the name is a width no fixed indent can know, so the grid does the lining up
               instead. `items-center` works per row track, so the note appearing never moves the
               controls above it. */}
-            <div
-              className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-1 rounded-xl ${
-                // THE LIFT while THIS row is the one being dragged: index.css's
-                // .row-lifted — the card's own fill, so the rows sliding underneath do not show
-                // through the gaps between its controls, and ONE soft all-round shadow. It sits on
-                // THIS element, the controls' own box, rounded to the controls' own radius, so the
-                // lifted shape is the row itself. What it replaced drew the directional
-                // elev-shadow-down (a scroll-BOUNDARY cue whose negative spread leaves the side edges
-                // as slivers) plus a 2% scale that pushed the row out past its own lane — the "white
-                // band with stray shadow edges" the owner photographed.
-                drag?.id === p.id ? 'row-lifted' : ''
-              }`}
-            >
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-1">
+                {/* THE LIFT, while THIS row is the one being dragged: one shadow box behind the ✕
+                and one behind the name box, in those pieces' own cells and of their own size
+                (HELD_SHADOW_CLASS, above the component, says why the shadow is not on the pieces).
+                Decoration only, and only mid-drag — the row's real cells follow, in the order the
+                ★★ above the row's class constants argues. */}
+                {held && (
+                  <>
+                    <div
+                      aria-hidden="true"
+                      className={`${ROW_COL.delete} self-stretch rounded-xl ${HELD_SHADOW_CLASS}`}
+                    />
+                    <div
+                      aria-hidden="true"
+                      className={`${ROW_COL.name} self-stretch rounded-xl ${HELD_SHADOW_CLASS}`}
+                    />
+                  </>
+                )}
+                {/* THE NAME, AS A TEXT BOX            >
               {/* THE NAME, AS A TEXT BOX — the rename IS the field, with no edit mode to enter and no
                 pencil to find.
                 ⚠ IT NAMES ITSELF "Preset name" AND NOTHING MORE, deliberately. A textbox's VALUE is
@@ -899,58 +957,60 @@ export default function PresetManager({
                 ⚠ SELECT-ALL ON ENTRY COMES FOR FREE and must not be added here: lib/textEntry
                 installs it once, at the document, precisely so that the seventh box in the app —
                 this one — gets the rule without a call site remembering it. */}
-              <input
-                type="text"
-                aria-label="Preset name"
-                maxLength={MAX_PRESET_NAME}
-                value={editingText(p.id, p.name)}
-                onFocus={() => {
-                  // Seed the pending edit from the SAVED name.
-                  // ⚠ THE GUARD IS NOT REDUNDANT, AND THE CASE IT COVERS IS NOT MOVING BETWEEN ROWS.
-                  // Leaving a field always blurs it first, and the blur commits and clears `editing`,
-                  // so an ordinary tab or tap arrives here with nothing pending — the guard is silent
-                  // for every route inside the app. What it is for is the WINDOW regaining focus: a
-                  // browser re-fires `focus` on the element that already had it when you come back
-                  // from another app or another tab, and without this line that return would silently
-                  // throw away a half-typed name. iOS does it every time you switch away and back,
-                  // which is the likeliest way anyone would ever meet it.
-                  if (editing?.id !== p.id) setEditing({ id: p.id, text: p.name })
-                }}
-                onChange={(e) => {
-                  // lib/presetNameWidth — measures the candidate against the SWITCHER's live cell
-                  // width (a different, separately-mounted control), not this field's own room, and
-                  // trims to the longest prefix that fits when it does not. See that file and the ★★
-                  // note above for the mechanism and why the cap moved here from a character count.
-                  const { text, capped } = capCandidateToSwitcherWidth(e.target.value)
-                  setEditing({ id: p.id, text })
-                  setNameWidthCapped(capped)
-                }}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    commitRename()
-                    e.currentTarget.blur()
-                  } else if (e.key === 'Escape') {
-                    discardRename(e.currentTarget)
-                  }
-                }}
-                className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs focus:outline-hidden focus-ring`}
-              />
-              {/* THE CURRENT-PRESET MARK, after the name, in a reserved fixed-width slot so every
+                <input
+                  type="text"
+                  aria-label="Preset name"
+                  maxLength={MAX_PRESET_NAME}
+                  value={editingText(p.id, p.name)}
+                  onFocus={() => {
+                    // Seed the pending edit from the SAVED name.
+                    // ⚠ THE GUARD IS NOT REDUNDANT, AND THE CASE IT COVERS IS NOT MOVING BETWEEN ROWS.
+                    // Leaving a field always blurs it first, and the blur commits and clears `editing`,
+                    // so an ordinary tab or tap arrives here with nothing pending — the guard is silent
+                    // for every route inside the app. What it is for is the WINDOW regaining focus: a
+                    // browser re-fires `focus` on the element that already had it when you come back
+                    // from another app or another tab, and without this line that return would silently
+                    // throw away a half-typed name. iOS does it every time you switch away and back,
+                    // which is the likeliest way anyone would ever meet it.
+                    if (editing?.id !== p.id) setEditing({ id: p.id, text: p.name })
+                  }}
+                  onChange={(e) => {
+                    // lib/presetNameWidth — measures the candidate against the SWITCHER's live cell
+                    // width (a different, separately-mounted control), not this field's own room, and
+                    // trims to the longest prefix that fits when it does not. See that file and the ★★
+                    // note above for the mechanism and why the cap moved here from a character count.
+                    const { text, capped } = capCandidateToSwitcherWidth(e.target.value)
+                    setEditing({ id: p.id, text })
+                    setNameWidthCapped(capped)
+                  }}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      commitRename()
+                      e.currentTarget.blur()
+                    } else if (e.key === 'Escape') {
+                      discardRename(e.currentTarget)
+                    }
+                  }}
+                  className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs focus:outline-hidden focus-ring ${held ? HELD_PIECE_CLASS : ''}`}
+                />
+                {/* THE CURRENT-PRESET MARK, after the name, in a reserved fixed-width slot so every
                 name box ends at the same x whether the row is marked or not — the same reason
                 CustomSelect gives its ✓ column a width of its own. aria-hidden + an sr-only word,
                 the idiom every quiet marker in this app uses (the switcher's "A", the footer's
                 Changelog dot), because a bare ✓ is a glyph rather than an accessible name. */}
-              <span className={`${ROW_COL.current} w-3 text-center text-xs text-(--tx-200-80)`}>
-                {p.id === activeId && (
-                  <>
-                    <span aria-hidden="true">✓</span>
-                    <span className="sr-only">Current preset</span>
-                  </>
-                )}
-              </span>
-              {/* The amnesic marker, the SAME letter the switcher shows and in a reserved slot for
+                <span className={`${ROW_COL.current} w-3 text-center text-xs text-(--tx-200-80)`}>
+                  {p.id === activeId && (
+                    <>
+                      <span aria-hidden="true" className={held ? HELD_INK_CLASS : undefined}>
+                        ✓
+                      </span>
+                      <span className="sr-only">Current preset</span>
+                    </>
+                  )}
+                </span>
+                {/* The amnesic marker, the SAME letter the switcher shows and in a reserved slot for
                 the same reason the ✓ beside it is: every row's name box and grip line up whether or
                 not the row is marked. It is read-only here — Amnesic is flipped in ⚙ → Stats, and
                 only for the preset you are on — so this is purely the answer to "which of these
@@ -958,17 +1018,20 @@ export default function PresetManager({
                 ⚠ DIMMED BY OPACITY, NEVER TINTED, and inheriting currentColor: components/
                 PresetSwitcher argues it (a themed colour token would read correctly in one of the
                 two places this letter appears and be invisible in the other). */}
-              <span className={`${ROW_COL.amnesic} w-3 text-center`}>
-                {p.amnesic && (
-                  <>
-                    <span aria-hidden="true" className="text-[0.8em] font-semibold opacity-70">
-                      A
-                    </span>
-                    <span className="sr-only">Amnesic</span>
-                  </>
-                )}
-              </span>
-              {/* THE REORDER GRIP — one control that is both a pointer/touch drag (pointerdown →
+                <span className={`${ROW_COL.amnesic} w-3 text-center`}>
+                  {p.amnesic && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={`text-[0.8em] font-semibold opacity-70 ${held ? HELD_INK_CLASS : ''}`}
+                      >
+                        A
+                      </span>
+                      <span className="sr-only">Amnesic</span>
+                    </>
+                  )}
+                </span>
+                {/* THE REORDER GRIP — one control that is both a pointer/touch drag (pointerdown →
                 pointermove → pointerup/cancel, wired to lib/presetReorder's pure arithmetic above)
                 AND a keyboard reorder action (ArrowUp/ArrowDown). No disabled visual at either end
                 — matching the design decision recorded above the handlers: movePreset already
@@ -985,36 +1048,36 @@ export default function PresetManager({
                 carries the CURRENT POSITION so a screen reader announces a new value after a
                 keyboard move — this app uses no aria-live (SettingsPanel's Check-for-updates button
                 argues why), so a changed name on a still-FOCUSED element is what gets announced. */}
-              <div
-                role="button"
-                tabIndex={0}
-                aria-label={`Reorder ${p.name}, position ${i + 1} of ${presets.length}`}
-                className={`${ROW_COL.grip} ${GRIP_CLASS}`}
-                data-pointer-focus={pointerGripId === p.id || undefined}
-                style={{ touchAction: 'none' }}
-                // (Only its OWN mark: grabbing this grip takes focus from whichever grip had it, and
-                // that one's blur arrives after the grab has marked this one.)
-                onBlur={() => setPointerGripId((held) => (held === p.id ? null : held))}
-                onPointerDown={beginDrag(p, i)}
-                onPointerMove={onDragMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                onKeyDown={onHandleKeyDown(p)}
-              >
-                <ReorderHandleIcon />
-              </div>
-              {/* THE ✕ — LAST in the markup, FIRST on screen (ROW_COL; the ★★ above the row's class
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Reorder ${p.name}, position ${i + 1} of ${presets.length}`}
+                  className={`${ROW_COL.grip} ${GRIP_CLASS}`}
+                  data-pointer-focus={pointerGripId === p.id || undefined}
+                  style={{ touchAction: 'none' }}
+                  // (Only its OWN mark: grabbing this grip takes focus from whichever grip had it, and
+                  // that one's blur arrives after the grab has marked this one.)
+                  onBlur={() => setPointerGripId((held) => (held === p.id ? null : held))}
+                  onPointerDown={beginDrag(p, i)}
+                  onPointerMove={onDragMove}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                  onKeyDown={onHandleKeyDown(p)}
+                >
+                  <ReorderHandleIcon held={held} />
+                </div>
+                {/* THE ✕ — LAST in the markup, FIRST on screen (ROW_COL; the ★★ above the row's class
                 constants says why the two orders differ). */}
-              <button
-                type="button"
-                aria-label={`Delete ${p.name}`}
-                aria-disabled={!canDelete || undefined}
-                onClick={() => pressDelete(p.id)}
-                className={`${ROW_COL.delete} ${DELETE_BTN_CLASS} ${canDelete ? '' : NOT_OFFERED_BTN_CLASS}`}
-              >
-                {DELETE_GLYPH}
-              </button>
-              {/* THE WIDTH-CAP NOTE — WIDTH LANGUAGE, NEVER A CHARACTER COUNT, because a character
+                <button
+                  type="button"
+                  aria-label={`Delete ${p.name}`}
+                  aria-disabled={!canDelete || undefined}
+                  onClick={() => pressDelete(p.id)}
+                  className={`${ROW_COL.delete} ${DELETE_BTN_CLASS} ${canDelete ? '' : NOT_OFFERED_BTN_CLASS} ${held ? HELD_PIECE_CLASS : ''}`}
+                >
+                  <DeleteIcon />
+                </button>
+                {/* THE WIDTH-CAP NOTE — WIDTH LANGUAGE, NEVER A CHARACTER COUNT, because a character
                 count is no longer the true reason a keystroke stopped landing (lib/presetNameWidth,
                 and the ★★ note above this component). Shown only for the row currently being typed
                 into, only while its most recent keystroke actually had to be trimmed — it disappears
@@ -1023,14 +1086,15 @@ export default function PresetManager({
                 (column 2) and running to the row's end. Same visual tier as the "cannot be deleted"
                 note below, for the same reason: a small fact about why a control just did what it
                 did. */}
-              {editing?.id === p.id && nameWidthCapped && (
-                <div className="col-start-2 col-span-4 row-start-2 pl-1 pt-1 text-[11px] text-(--tx-300-60)">
-                  That&apos;s as long as this name can display.
-                </div>
-              )}
+                {editing?.id === p.id && nameWidthCapped && (
+                  <div className="col-start-2 col-span-4 row-start-2 pl-1 pt-1 text-[11px] text-(--tx-300-60)">
+                    That&apos;s as long as this name can display.
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {/* The reason behind the dimmed ✕, shown only while it is dimmed. A withheld control states
           THAT it is unavailable; nothing about it can state WHY, and "the last one won't delete" is

@@ -909,25 +909,90 @@ describe('reordering', () => {
       expect(transformOf('Timed')).toBe('translateY(0px)')
     })
 
-    // ★ THE LIFT IS ONE CLASS ON THE ROW'S OWN BOX (index.css .row-lifted: the card's fill + one
-    // even shadow), worn only mid-drag. The old lift — a directional boundary shadow plus a scale —
-    // is what drew the owner's "white band with stray shadow edges"; neither may come back.
-    it('the row being dragged wears the lift, and only while it is being dragged', () => {
+    // ★ THE ROW IN THE HAND IS ITS PARTS, NOT A SLAB. Only the two pieces that are boxes at rest —
+    // the ✕ button and the name box — are drawn lifted: each turns opaque (held-piece) and gets a
+    // shadow box of its own behind it (held-shadow). The ✓ and the grip ride along bare, on an
+    // invisible patch of the card's colour (held-ink). The whole-row surface this replaced
+    // (row-lifted) drew a rounded shape around the row's empty space too; it must not come back,
+    // and neither may the lift before that — a directional boundary shadow plus a scale.
+    const heldShadows = (name) =>
+      [...rowOf(name).children].filter((c) => /held-shadow/.test(c.className))
+    it('the row being dragged lifts its ✕ and its name box, and nothing else, only while it is dragged', () => {
       act(() => {
         createPreset('Timed')
       })
+      act(() => switchPreset(2)) // Timed is the current preset: its row carries the ✓
       openManager()
       stubRowRects(['Preset 1', 'Timed'])
       const handle = reorderHandle('Timed')
-      expect(rowOf('Timed').className).not.toMatch(/row-lifted/)
+      const pieces = (name) => [
+        nameBoxes().find((el) => el.value === name),
+        rowButton(name, 'delete'),
+      ]
+      const marks = (name) => [
+        within(rowOf(name)).queryByText('✓'),
+        reorderHandle(name).querySelector('svg'),
+      ]
+      const atRest = (name) => {
+        for (const el of pieces(name)) expect(el.className).not.toMatch(/held-/)
+        for (const el of marks(name).filter(Boolean))
+          expect(el.getAttribute('class') ?? '').not.toMatch(/held-/)
+        expect(heldShadows(name)).toHaveLength(0)
+      }
+      atRest('Timed')
       act(() => handle.dispatchEvent(pointerEvt('pointerdown', 60)))
-      expect(rowOf('Timed').className).toMatch(/row-lifted/)
-      expect(rowOf('Preset 1').className).not.toMatch(/row-lifted/)
+      for (const el of pieces('Timed')) expect(el.className).toMatch(/(^|\s)held-piece(\s|$)/)
+      for (const el of marks('Timed'))
+        expect(el.getAttribute('class')).toMatch(/(^|\s)held-ink(\s|$)/)
+      // One shadow box per lifted piece, in that piece's own grid cell, hidden from a screen reader.
+      const shadows = heldShadows('Timed')
+      expect(shadows).toHaveLength(2)
+      const cellOf = (el) => el.className.match(/col-start-\d/)[0]
+      expect(shadows.map(cellOf).sort()).toEqual(pieces('Timed').map(cellOf).sort())
+      for (const el of shadows) expect(el.getAttribute('aria-hidden')).toBe('true')
+      // The grip itself stays bare: no fill, no shadow, no lifted piece.
+      expect(handle.className).not.toMatch(/held-|surface-/)
+      atRest('Preset 1')
+      // No surface on the row's own box, and neither of the older lifts.
       for (const el of [rowOf('Timed'), rowOf('Timed').parentElement]) {
-        expect(el.className).not.toMatch(/elev-shadow|scale-/)
+        expect(el.className).not.toMatch(/row-lifted|held-|elev-shadow|scale-|rounded/)
       }
       act(() => handle.dispatchEvent(pointerEvt('pointerup', 60)))
-      expect(rowOf('Timed').className).not.toMatch(/row-lifted/)
+      atRest('Timed')
+    })
+
+    it('index.css draws the lift on the shadow boxes alone, and the held pieces opaque', () => {
+      const css = readFileSync(resolve(__dirname, '../src/index.css'), 'utf8').replace(
+        /\/\*[\s\S]*?\*\//g,
+        '',
+      )
+      expect(css).not.toMatch(/row-lifted/)
+      const rule = (cls) => new RegExp(`\\.${cls}\\{([^}]*)\\}`).exec(css)?.[1]
+      // The piece: the resting tint over the card's solid fill — and no shadow of its own.
+      expect(rule('held-piece')).toMatch(/var\(--stgl-bg\).*var\(--card-bg\)/)
+      expect(rule('held-piece')).not.toMatch(/box-shadow/)
+      // The shadow box: behind the row's cells, the theme's own shadow, every side.
+      expect(rule('held-shadow')).toMatch(/z-index:-1/)
+      expect(rule('held-shadow')).toMatch(/box-shadow:0 3px 12px rgb\(var\(--shadow-elev-c\)/)
+      // The bare marks: the card's colour and nothing that could be seen against it.
+      expect(rule('held-ink')).toBe('background:var(--card-bg);box-shadow:0 0 0 2px var(--card-bg)')
+      // held-piece has to out-rank the resting surface fills, so it comes after them.
+      expect(css.indexOf('.held-piece{')).toBeGreaterThan(css.indexOf('.surface-tray{'))
+      expect(css.indexOf('.held-piece{')).toBeGreaterThan(css.indexOf('.surface-toggle{'))
+    })
+
+    // ★ THE ✕ IS A DRAWN ICON IN A CENTRING BOX, not a character on a text baseline — which is what
+    // left it visibly off-centre in its pill.
+    it('the ✕ is an svg drawn in currentColor, centred by its button', () => {
+      openManager()
+      const btn = rowButton('Preset 1', 'delete')
+      expect(btn.textContent).toBe('')
+      const svg = btn.querySelector('svg')
+      expect(svg.getAttribute('aria-hidden')).toBe('true')
+      expect(svg.querySelector('path').getAttribute('stroke')).toBe('currentColor')
+      expect(btn.className).toMatch(/(^|\s)flex(\s|$)/)
+      expect(btn.className).toMatch(/items-center/)
+      expect(btn.className).toMatch(/justify-center/)
     })
 
     // ★ A move or a lift can arrive before the render that follows the press. Found in real

@@ -548,16 +548,6 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .elev-shadow-down{box-shadow:0 4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .elev-shadow-up{box-shadow:0 -4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .card{background:var(--card-bg);border:1px solid var(--card-bd)}
-/* THE LIFTED ROW — the Presets popup's row while it is being dragged by its grip
-   (components/PresetManager). The card's own fill, so
-   the rows sliding underneath cannot show through the gaps between its controls, and ONE soft,
-   even shadow on every side — the "picked up"
-   cue, which is a different thing from elev-shadow-down's "content slides under this fixed edge"
-   and so does not borrow it (that one is directional, with a negative spread that leaves only
-   slivers at the sides, and it scales with --shade, a scroll signal that means nothing here). The
-   theme's own shadow colour and strength, so the violet-glow themes lift in violet like every other
-   elevation in them. */
-.row-lifted{background:var(--card-bg);box-shadow:0 3px 12px rgb(var(--shadow-elev-c) / var(--shadow-elev-a))}
 .panel{background:var(--panel-bg);border:1px solid var(--panel-bd)}
 .thin{border:1px solid var(--thin-bd)}
 /* ★ THE .2s BACKGROUND FADE — the app's three interactive surfaces (these two + .btn-solid below)
@@ -582,6 +572,30 @@ input,textarea{user-select:text;-webkit-user-select:text}
    must not brighten as one block on hover; its unselected segments carry their own per-target
    hover (hover:bg-(--stgl-hov)) instead. */
 .surface-tray{background:var(--stgl-bg);border-color:var(--sbtn-bd)}
+/* THE ROW IN THE HAND — the Presets popup's row while it is being dragged by its grip
+   (components/PresetManager, which says what the row looks like and why; these are the three rules
+   that draw it). They come AFTER the two surface rules above on purpose: .held-piece is worn
+   together with one of them and has to win the background.
+   .held-piece — the ✕ button and the name box. At rest their fill is --stgl-bg, a see-through tint,
+     over the card. Here the same tint is laid over the card's own SOLID colour, so the piece looks
+     exactly as it did and nothing sliding underneath shows through it. Two background IMAGES, with
+     the colour beneath them left alone: the ✕ button's background-color carries a .2s transition
+     (.surface-toggle), and changing it would fade the piece through a darker tint as it lifts.
+   .held-shadow — the "picked up" cue: ONE soft, even shadow on every side, on an empty box of the
+     piece's own size and radius drawn behind the row's cells (z-index -1 inside the dragged row,
+     which is its own stacking context while it is held). It is a different thing from
+     elev-shadow-down's "content slides under this fixed edge" and so does not borrow it (that one
+     is directional, with a negative spread that leaves only slivers at the sides, and it scales
+     with --shade, a scroll signal that means nothing here). The theme's own shadow colour and
+     strength, so the violet-glow themes lift in violet like every other elevation in them.
+   .held-ink — the ✓ and the grip's bars. A patch of the card's colour exactly behind the mark, with
+     a 2px rim of the same colour and no shadow: invisible against the card, and what a row passing
+     underneath disappears behind instead of drawing its own mark through this one. The rim is a
+     box-shadow SPREAD rather than padding so the mark's own box, and the row's layout, do not
+     change by a pixel when the row is picked up. */
+.held-piece{background-image:linear-gradient(var(--stgl-bg),var(--stgl-bg)),linear-gradient(var(--card-bg),var(--card-bg))}
+.held-shadow{z-index:-1;pointer-events:none;box-shadow:0 3px 12px rgb(var(--shadow-elev-c) / var(--shadow-elev-a))}
+.held-ink{background:var(--card-bg);box-shadow:0 0 0 2px var(--card-bg)}
 /* .svalue-input — the tap-to-type edit box inside SliderValueEditor's readout cell (round 8).
    The box is OUT OF FLOW (absolutely positioned over the cell), so it can never size that cell:
    the always-mounted invisible strut is the only in-flow child and sizes it alone, in BOTH states.

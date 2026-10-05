@@ -17,16 +17,12 @@ import {
 } from '../src/lib/presetReorder.js'
 
 describe('targetIndexForCenter(centerY, slotMidpoints)', () => {
-  // Three evenly-spaced rows, centers at 50 / 150 / 250 — matches a 100px row height.
+  // Three evenly-spaced rows, centers at 50 / 150 / 250 — a 100px row pitch.
   const midpoints = [50, 150, 250]
 
-  // ★★ THE LOAD-BEARING INVARIANT, and the one this file exists to prove first: a drag that has
-  // not moved AT ALL — centerY sitting exactly at the dragged row's OWN starting center — must
-  // resolve to that SAME index, for every row, not only the one at the end. This is the bug the
-  // function's own header comment now argues in full: a `<` comparison here made a completely
-  // stationary press already preview a swap for every row except the last (the last one alone
-  // passed by accident, via the fallback return, which is exactly why it went unnoticed until
-  // every index — not just the edges — was checked here).
+  // ★★ THE LOAD-BEARING INVARIANT: a drag that has not moved AT ALL — centerY sitting exactly at
+  // the dragged row's OWN starting center — resolves to that SAME index, for every row. Checked for
+  // every index and not only the ends: an earlier rule passed for the last row alone, by accident.
   it('AT REST — landing exactly on a slot`s own center resolves to that SAME index, for every slot', () => {
     expect(targetIndexForCenter(50, midpoints)).toBe(0)
     expect(targetIndexForCenter(150, midpoints)).toBe(1)
@@ -38,17 +34,22 @@ describe('targetIndexForCenter(centerY, slotMidpoints)', () => {
     expect(targetIndexForCenter(0, midpoints)).toBe(0)
   })
 
-  it('resolves to the slot whose midpoint the center has not yet reached', () => {
-    // Strictly between two midpoints: still counts as "not yet reached" the far one.
-    expect(targetIndexForCenter(60, midpoints)).toBe(1)
+  // ★ THE SLOT IS THE NEAREST ONE, so the boundary between two slots is midway between their
+  // centers — and it is the SAME boundary travelling down as travelling up. The rule this replaced
+  // gave the next slot away after one pixel of travel downward and needed a whole row upward.
+  it('a small move off a slot`s center, either way, stays in that slot', () => {
+    expect(targetIndexForCenter(51, midpoints)).toBe(0)
+    expect(targetIndexForCenter(99, midpoints)).toBe(0)
     expect(targetIndexForCenter(149, midpoints)).toBe(1)
+    expect(targetIndexForCenter(151, midpoints)).toBe(1)
+    expect(targetIndexForCenter(101, midpoints)).toBe(1)
+    expect(targetIndexForCenter(199, midpoints)).toBe(1)
+    expect(targetIndexForCenter(201, midpoints)).toBe(2)
   })
 
-  it('is INCLUSIVE at a midpoint — landing exactly on one counts as having reached (arrived at) it', () => {
-    // centerY <= slotMidpoints[i] is the comparison, so centerY===midpoints[i] itself satisfies
-    // the test and the loop stops AT i rather than moving past it.
-    expect(targetIndexForCenter(150, midpoints)).toBe(1)
-    expect(targetIndexForCenter(250, midpoints)).toBe(2) // the last slot's own midpoint too
+  it('exactly midway between two slots stays with the earlier one', () => {
+    expect(targetIndexForCenter(100, midpoints)).toBe(0)
+    expect(targetIndexForCenter(200, midpoints)).toBe(1)
   })
 
   it('clamps to the LAST index once the center has passed every midpoint', () => {
@@ -59,6 +60,28 @@ describe('targetIndexForCenter(centerY, slotMidpoints)', () => {
     expect(targetIndexForCenter(-50, [75])).toBe(0)
     expect(targetIndexForCenter(75, [75])).toBe(0)
     expect(targetIndexForCenter(500, [75])).toBe(0)
+  })
+
+  // ★★ WHAT THE NEAREST-SLOT RULE BUYS, STATED AS THE THING THE PLAYER SEES: wherever the dragged
+  // row is held, every OTHER row — drawn where previewShift puts it — is at least half a row-pitch
+  // away from it. The dragged row carries bare marks (its grip, its ✓) with no surface behind
+  // them, so a row resting closer than that would have its own grip drawn through the dragged one.
+  // Swept over several start slots and every position a pixel apart, in a list of thirty.
+  it('keeps every other row at least half a row away from the dragged row, wherever it is held', () => {
+    const pitch = 38
+    const slots = Array.from({ length: 30 }, (_, i) => 15 + i * pitch)
+    let nearest = Infinity
+    for (const start of [0, 1, 14, 28, 29]) {
+      for (let center = slots[0]; center <= slots[slots.length - 1]; center++) {
+        const preview = targetIndexForCenter(center, slots)
+        for (let i = 0; i < slots.length; i++) {
+          if (i === start) continue
+          const drawnAt = slots[i] + previewShift(i, start, preview, pitch)
+          nearest = Math.min(nearest, Math.abs(drawnAt - center))
+        }
+      }
+    }
+    expect(nearest).toBeGreaterThanOrEqual(pitch / 2)
   })
 })
 
