@@ -171,19 +171,13 @@ export function installGuideScroller(container) {
     onWrite: (cb) => {
       afterWrite.fn = cb
     },
-    // The reading line the accordion seats a tapped panel on (--bar-h + --guide-panel-gap). Set on
-    // THE SCROLL BOX AND NOWHERE ELSE, which is the whole value of this line.
-    // ⚠ It used to be set on <html> as well, "because jsdom does not inherit custom properties down
-    // the tree". jsdom does — verified against the 29.1.1 this repo runs: a property set on
-    // documentElement reads back off a descendant through getComputedStyle. So the second write was
-    // not belt-and-braces, it was a BLINDFOLD: with the seat resolvable from <html>, no test could
-    // tell whether the coordinator reads it off the scroller (where index.css declares it) or off
-    // the document. Off the document it would find the registered initial-value of 0px, which is
-    // finite, so the read succeeds, the fallback ladder never engages, and every tapped panel seats
-    // at the scrollport's top edge — UNDER the fixed bar — with the whole suite still green.
-    // One writer, on the element the app names, so the seating tests discriminate.
+    // The line the accordion glides a tapped section to, and the line an open section's header
+    // docks against: the fixed bar's underside, which the app reads as --bar-h off the scroll box
+    // (it inherits there from <html>, where App writes it). Set here ON THE SCROLL BOX, so a test's
+    // line is the one the element the app reads from reports, whatever else has written the token
+    // further up the tree.
     setSeat: (px) => {
-      scrollerAncestor(target)?.style.setProperty('--seat-top', `${px}px`)
+      scrollerAncestor(target)?.style.setProperty('--bar-h', `${px}px`)
     },
     // The two surfaces this screen writes its 0…1 --shade onto, as RAW strings: '' means never
     // written, which round 10 proved is a different state from a written 0 (an unwritten --shade
@@ -237,14 +231,19 @@ export function installGuideScroller(container) {
 // `visible` is fixed at true: the model resolves and reports against a screen that is on show, so a
 // hidden standalone guide is not a state this harness can describe. Whether the guide survives
 // being hidden is a MODE question, and mode belongs to App — tests/guideScroll.dom asks it there.
-function GuideHarness() {
+function GuideHarness({ onBarYield }) {
   const scrollerRef = useRef(null)
   // App's readGuideOffset, minus the mode it tracks: this harness's guide is always on screen.
   const readingOffset = useCallback(() => scrollerRef.current?.scrollTop ?? 0, [])
   return (
     <div ref={scrollerRef} id="appScroll" className={`absolute inset-0 ${SCROLLER_CORE_CLASS}`}>
       <div className="mx-auto px-4 w-full max-w-[30rem] min-h-full flex flex-col pb-3">
-        <GuidePage visible scrollerRef={scrollerRef} readingOffset={readingOffset} />
+        <GuidePage
+          visible
+          scrollerRef={scrollerRef}
+          readingOffset={readingOffset}
+          onBarYield={onBarYield}
+        />
       </div>
     </div>
   )
@@ -254,9 +253,14 @@ function GuideHarness() {
 // several screenfuls long — the state every caller wants and none has yet wanted to vary, so it is
 // a fact rather than a parameter (guide.setContent is there for the day one does). Call
 // `guide.restore()` in an afterEach, as with installGuideScroller.
+// `barYields` is every share of its shadow the guide has told the bar to keep, in order — App's
+// half of the hand-off is a multiplication (tests/guideScroll.dom drives it through the real App),
+// so what a standalone guide can be asked is only what it SAID.
 export function renderGuidePage() {
-  const view = render(<GuideHarness />)
+  const barYields = []
+  const view = render(<GuideHarness onBarYield={(share) => barYields.push(share)} />)
   const guide = installGuideScroller(view.container)
+  guide.barYields = barYields
   guide.setContent(3000)
   return { ...view, guide }
 }

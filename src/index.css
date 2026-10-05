@@ -70,29 +70,25 @@
    and .svalue-input's note further down is edited to say so.
    ⚠ The closing brace is the LAST LINE OF THE FILE. Adding a STYLE RULE after it puts that rule
    back outside the cascade entirely and re-opens exactly this bug; the guard test fails the suite
-   if anything ever lands there. The two @property registrations directly below are the ONE
-   deliberate exception, and they sit ABOVE the layer rather than after it — read on. */
+   if anything ever lands there. The @property registration directly below is the ONE
+   deliberate exception, and it sits ABOVE the layer rather than after it — read on. */
 
-/* ★★ THE TWO @property REGISTRATIONS LIVE OUT HERE, ABOVE THE LAYER, AND THAT IS LOAD-BEARING —
-   DO NOT TIDY THEM BACK INSIDE.
-   They are REGISTRATIONS, not style rules: @property has no selector, wins no cascade fight and
-   takes no part in layer ordering, so nothing about the fix above wants them layered. What it does
-   want is for them to keep working, and inside `@layer components{}` they measurably stop.
+/* ★★ THE @property REGISTRATION LIVES OUT HERE, ABOVE THE LAYER, AND THAT IS LOAD-BEARING —
+   DO NOT TIDY IT BACK INSIDE.
+   It is a REGISTRATION, not a style rule: @property has no selector, wins no cascade fight and
+   takes no part in layer ordering, so nothing about the fix above wants it layered. What it does
+   want is for it to keep working, and inside `@layer components{}` it measurably stops.
    WHAT BREAKS. Tailwind v4 emits a `@layer properties` block holding an @supports fallback — a
    plain-token declaration of every registered custom property, for engines with no @property at
-   all (Safari ≤16.3, Firefox <128, both inside this build's target set). It builds that block by
-   collecting the @property rules it finds at the stylesheet's TOP LEVEL. Wrapped in a layer they
-   are not found, and the fallback declarations simply vanish from the built CSS — verified by
-   diffing the compiled output, not inferred: with them inside the layer, `--seat-top: 0px` and
-   `--shade: 1` are both absent from that @supports block; hoisted back out, both return.
-   WHY THAT IS NOT COSMETIC. Unregistered and unfallen-back, --seat-top computes to its literal
-   substituted token stream, `calc(var(--bar-h) + var(--guide-panel-gap))`. GuidePage reads it with
-   parseFloat, which answers NaN, and a `|| 0` turns that into a seat depth of ZERO — the settings
-   and guide panels seating BEHIND the fixed bar, which is a bug this project has already shipped
-   once and paid for. --shade loses its `1` and every boundary shadow with it.
-   tests/cascadeLayerGuard.test.js pins both halves: these two registrations are outside every
-   layer, and the compiled @supports fallback really does carry both tokens. */
-@property --seat-top{syntax:"<length>";inherits:true;initial-value:0px}
+   all. It builds that block by collecting the @property rules it finds at the stylesheet's TOP
+   LEVEL. Wrapped in a layer they are not found, and the fallback declaration simply vanishes from
+   the built CSS — verified by diffing the compiled output, not inferred: with the registration
+   inside the layer, `--shade: 1` is absent from that @supports block; hoisted back out, it
+   returns.
+   WHY THAT IS NOT COSMETIC. Without its fallback, --shade loses its `1` on such an engine and
+   every boundary shadow goes with it.
+   tests/cascadeLayerGuard.test.js pins both halves: the registration is outside every layer, and
+   the compiled @supports fallback really does carry the token. */
 @property --shade{syntax:"<number>";inherits:false;initial-value:1}
 
 @layer components{
@@ -347,10 +343,8 @@ input,textarea{user-select:text;-webkit-user-select:text}
    tests/scrollRegionGuard.test.js fails the suite on any scroller built outside it. */
 /* ONE feather depth for every edge fade in the app — the container masks below AND the
    guide's fixed doc-fade strips further down. Tokenized in round 8 so no fade site can
-   carry a hardcoded twin that drifts from the rest. It is deliberately NOT part of the guide's
-   reading line any more (--seat-top below derives from the panel gap instead, round 9):
-   --fade-h is shared with the settings popover, the changelog and the Lookup scrollers, so it
-   can never be retuned to serve the accordion alone. */
+   carry a hardcoded twin that drifts from the rest. It is shared with the settings popover, the
+   changelog and the Lookup scrollers, so it can never be retuned to serve one screen alone. */
 :root{--fade-h:24px}
 .fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h));mask-image:linear-gradient(to bottom,transparent,black var(--fade-h))}
 .fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent)}
@@ -390,65 +384,29 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .doc-fade-top{position:fixed;top:var(--bar-h);left:0;right:0;height:var(--fade-h);pointer-events:none;opacity:var(--shade,1);background:linear-gradient(to bottom,var(--bg1),transparent)}
 .doc-fade-bottom{position:fixed;bottom:0;left:0;right:0;height:var(--fade-h);z-index:2;pointer-events:none;opacity:var(--shade,1);background:linear-gradient(to top,var(--bg1),transparent)}
 /* --guide-panel-gap — the vertical gap between How-to-Play accordion panels, and the ONE home
-   of that number. components/GuidePage lays its section list out with space-y-(--guide-panel-gap)
-   and --seat-top below derives the accordion's reading line from the same token, so the gap the
-   reader sees and the gap the scroll math assumes cannot drift apart. The value is byte-for-byte
+   of that number: components/GuidePage lays its section list out with
+   space-y-(--guide-panel-gap). The value is byte-for-byte
    what the `space-y-2` utility it replaced produced — Tailwind spacing step 2 — which keeps the
    guide on the same fluid rem scale as every other gap in the app (index.css already reads
    --spacing directly for .svalue-input). 0.5rem = 8.46px at the owner's 16.92px fluid root. */
 :root{--guide-panel-gap:calc(var(--spacing) * 2)}
-/* --seat-top — the guide's READING LINE, defined once (round 8; re-derived round 9). The
-   fixed bar owns viewport y 0…--bar-h, so any panel edge at or above --bar-h is hidden by it.
-   Seating the TAPPED panel at --bar-h + --guide-panel-gap therefore lands the BOTTOM edge of the
-   panel above it exactly on the bar's underside: the reader sees the tapped panel and no sliver
-   of its predecessor. That is the whole rule.
-
-   Round 8 seated at --bar-h + --fade-h instead, on the theory that the line should clear the top
-   feather. It overshot by --fade-h − --guide-panel-gap = 24 − 8.46 = 15.5px, and that is exactly
-   how much of the previous panel stayed in frame (the owner's report). Neither of the two
-   obvious repairs is available: widening every panel gap to the feather's depth would add ~357px
-   (~30%) to the guide, and --fade-h is shared with the settings popover, the changelog and the
-   Lookup scrollers so it cannot shrink. Accepted consequence: the tapped panel's top corners now
-   sit inside the feather and soften slightly, while its title glyphs land ~25px down, clear of it.
-   That softening is intended — do not "fix" it.
-
-   Both consumers want that same line and both read this one value: scroll-padding-top gives the
-   native scrollport the identical seat (a Tab into a guide header lands where a tap lands), and
-   lib/accordionMotion's seatTop is read off it in JS.
-   WHERE IT IS DECLARED, and why that is not a guide-mode rule any more (round 13). It used to
-   ride on html[data-doc-scroll], because the scrollport was the document and the attribute was
-   the only way to say "guide mode". The scrollport is now #appScroll in EVERY mode, and the rule
-   went onto it UNCONDITIONALLY rather than being re-gated behind some replacement stamp — because
-   unconditional is what is actually true: the bar is fixed over the top --bar-h of that scrollport
-   on every screen, so content the browser scrolls to the scrollport's top edge lands UNDER the bar
-   on every screen. A seat below the bar is a property of the scroller, not of the guide. The extra
-   --guide-panel-gap is the accordion's tuning and costs the game screens ~8px of seat depth on the
-   native scroll paths they had no seat at all on before, which is a fix in the same direction.
-   The JS read moved with the declaration: GuidePage reads its ladder off the scroll container, not
-   off <html> — rung 2 (scroll-padding-top) is a NON-inherited property and would read `auto`
-   anywhere else. --seat-top itself is registered inherits:true below, so it resolves on the
-   container whether it is declared there or higher up.
-   @property REGISTRATION makes the JS read cheap: registered, the computed value is a resolved
-   <length> in px. It is NOT a guarantee, because @property itself is not universal (Safari ≤16.3,
-   Firefox <128 — Tailwind emits an @supports fallback for this very token further up this
-   stylesheet, which is the proof they're in the target set). Unregistered, the property computes
-   to its substituted token stream — the literal "calc(var(--bar-h) + var(--guide-panel-gap))" —
-   so the JS reader must never treat a failed parse as zero. It doesn't: GuidePage reads a LADDER
-   — this token, then the resolved scroll-padding-top on this very rule (the same declaration seen
-   through a standard property, which every engine we can test resolves to absolute px), then
-   --bar-h, which is a literal px token and so cannot fail to parse anywhere. The last rung seats
-   one panel gap shallow and nothing worse; the ladder is written out in full at the read site.
-   ⚠ Whatever fed the seat must stay parseable in isolation — do not fold --guide-panel-gap into
-   --bar-h to "simplify", or the floor becomes a calc() and NaNs with everything above it.
-   inherits:true so descendants can read it too. The 0px initial value is what any element OUTSIDE
-   #appScroll's subtree computes — the fixed bar, the portaled menus and modals, <html> itself —
-   in every mode, guide included; nothing out there reads the token, and the one JS reader is
-   handed the scroll container precisely so it never asks an element that would answer 0. */
-/* ↑ the `@property --seat-top` registration this paragraph describes is NOT here: it sits above
-   the `@layer components{` opening brace, with the ★★ block that explains why a registration
-   inside a layer loses its @supports fallback. Its syntax/inherits/initial-value are unchanged. */
-#appScroll{--seat-top:calc(var(--bar-h) + var(--guide-panel-gap));scroll-padding-top:var(--seat-top)}
-/* .guide-head — a How-to-Play section header, which PINS under the fixed bar while its own
+/* THE SCROLLPORT STARTS AT THE BAR'S UNDERSIDE. The fixed bar owns viewport y 0…--bar-h on EVERY
+   screen, so anything the browser scrolls to the scrollport's top edge would land UNDER it.
+   scroll-padding-top tells the browser where the usable top really is, which is what makes a Tab
+   into any control — a How-to-Play section header above all — bring it to rest just under the
+   bar instead of behind it. It is on #appScroll unconditionally because that is what is true: a
+   usable top below the bar is a property of this scroller, not of any one screen.
+   IT IS ALSO THE GUIDE'S ONE DOCKING LINE, by being the same number three ways: this padding (where
+   a focused header lands), the scroller's own padding-top (which is what a sticky header's `top:0`
+   is measured from — .guide-head, below), and the line components/GuidePage glides a section you
+   open to. A header you Tab to, a header you open, and a header that docks as you scroll all come
+   to rest on the same pixel.
+   The line used to sit one panel gap LOWER for a tapped section than the spot its header docked
+   at, so a section came to rest in one place and then rode up to another as soon as you scrolled.
+   The gap was there to hide the bottom edge of the section above, and flush hides it too — it is
+   simply further behind the bar. */
+#appScroll{scroll-padding-top:var(--bar-h)}
+/* .guide-head — a How-to-Play section header, which DOCKS flush under the fixed bar while its own
    section's content scrolls beneath it (components/GuidePage). Every header carries
    it, open or not, so the header is the same element in both states and nothing about it changes
    on a toggle; only the open section has any room to stick in, because a sticky box is held inside
@@ -456,29 +414,33 @@ input,textarea{user-select:text;-webkit-user-select:text}
      • top:0 IS the bar's underside. A sticky box pins inside its scroller's scrollport MINUS the
        scroller's padding, and #appScroll's padding-top is exactly --bar-h (the inline style in
        main.tsx that starts every screen below the fixed bar) — so a `top:var(--bar-h)` here would
-       count the bar twice and pin a whole bar-height too low (measured, round 23). Pinning at the
-       bar rather than at --seat-top is deliberate: the seat is where a tapped header comes to REST,
-       one panel gap below the bar, and pinning there would leave that gap as a strip of scrolling
-       text between the bar and the header. So a resting header rides up that one gap with the page
-       and only then pins — the moment content starts to pass under it.
+       count the bar twice and pin a whole bar-height too low (measured, round 23).
+     • ONE DOCKING POSITION. That same line is where a section you OPEN is brought to rest
+       (GuidePage glides the header's top onto it) and where a header you Tab to lands
+       (#appScroll's scroll-padding-top, above). So opening a section puts its header exactly
+       where scrolling would have docked it: flush against the bar, the section's own top border
+       tucked behind the bar, and nothing moves when you then start to scroll.
      • the fill is the panel's own (--panel-bg) composited over the page (--bg1), which is exactly
        what the wrapper shows behind a transparent header at rest — no visible change there — but
-       OPAQUE, so text scrolling under a pinned header cannot show through it.
+       OPAQUE, so text scrolling under a docked header cannot show through it.
      • ONLY THE OPEN SECTION'S HEADER IS LIFTED over the guide's fixed top feather (the
        [aria-expanded="true"] rule below; .doc-fade-top comes later in the DOM, so it paints over
-       anything not lifted). The open header is the one that can pin, and a pinned header sits
+       anything not lifted). The open header is the one that can dock, and a docked header sits
        wholly inside that strip, which would otherwise wash its title out. Every CLOSED header
        stays under both feathers: it is page content, and its title has to soften at the top and
        bottom edges with the panel border beside it — lifting them all made every title run
        full-strength to the edge and stop dead while its own border faded.
-     • AND NO HEADER IS LIFTED OVER THE BOTTOM FEATHER, the open one included: nothing pins at the
+     • AND NO HEADER IS LIFTED OVER THE BOTTOM FEATHER, the open one included: nothing docks at the
        foot of the page, so whatever arrives there is content scrolling into view. .doc-fade-bottom
        takes z-index:2 — one above the open header — for exactly that.
      • --shade:0 is its resting shadow strength, overriding @property's initial 1 (which is for a
        boundary with no writer at all). GuidePage writes the live value onto the OPEN section's
-       header only, so the elev-shadow-down it carries appears only once content is actually under
-       it and ramps in over --fade-h like every other boundary shadow; a closed header never has
-       content under it and rests at 0.
+       header only. ONE SHADOW, UNDER WHICHEVER EDGE THE TEXT IS SLIDING BENEATH: while a header is
+       docked the text slides under the HEADER's edge, so the header wears the elev-shadow-down it
+       carries — ramping in over --fade-h once text is actually under it, like every other boundary
+       shadow — and the bar above it wears none; with no header docked the bar's shadow is what the
+       scroll position makes it and the header's is 0. lib/guideDock is that rule, and proves the
+       two are never on together. A closed header never has content under it and rests at 0.
    The wrapper's rounded corners still clip it, via overflow:clip there — hidden would make the
    wrapper a scroll container of its own, and a sticky box sticks to its NEAREST scroll container. */
 .guide-head{position:sticky;top:0;background:linear-gradient(var(--panel-bg),var(--panel-bg)) var(--bg1);--shade:0}
@@ -524,7 +486,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    JS write is rejected at parse time and the last good value survives. Unregistered, the same
    write would substitute garbage into the calc() and make box-shadow invalid at computed-value
    time — the whole shadow gone. initial-value:1 (and the matching literal `,1)` fallback for
-   engines with no @property, the --seat-top ladder's defensive posture) means an UNWRITTEN
+   engines with no @property) means an UNWRITTEN
    boundary shows its full static shadow, the pre-round-10 look — never an invisible one. In
    practice nothing is ever unwritten: every host writes its shades from a LAYOUT effect in the
    same commit that mounts the element, so the first painted frame is already correct.
@@ -542,9 +504,8 @@ input,textarea{user-select:text;-webkit-user-select:text}
    it would zero the shadow outright. Worth noting the other direction too: the transition this
    replaced WAS decorative motion, and it never multiplied by --motion-scale, so Reduce Motion
    never switched it off. Deleting it is a small win for that setting quite apart from the lag. */
-/* ↑ the `@property --shade` registration this paragraph describes is NOT here either: it sits
-   above the `@layer components{` opening brace beside --seat-top's, for the reason set out in the
-   ★★ block there. Its syntax/inherits/initial-value are unchanged. */
+/* ↑ the `@property --shade` registration this paragraph describes is NOT here: it sits above the
+   `@layer components{` opening brace, for the reason set out in the ★★ block there. */
 .elev-shadow-down{box-shadow:0 4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .elev-shadow-up{box-shadow:0 -4px 6px -2px rgb(var(--shadow-elev-c) / calc(var(--shadow-elev-a) * var(--shade,1)))}
 .card{background:var(--card-bg);border:1px solid var(--card-bd)}

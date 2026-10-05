@@ -728,19 +728,21 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // the bar is really 71.765625px tall and offsetHeight reported 72, so --bar-h — and with it
       // everything positioned from --bar-h — sat 0.234px too low. That was the whole of the
       // hairline he reported in How to Play (a faint line of the PREVIOUS panel's bottom border
-      // touching the bar with no gap, gone after scrolling a hair further). SEVEN readers share
+      // touching the bar with no gap, gone after scrolling a hair further). SIX readers share
       // this one token and every one of them sharpens at once:
-      //   1. --seat-top (index.css) — the accordion's reading line, --bar-h + one panel gap.
-      //   2. scroll-padding-top on that same rule — the native scrollport seat (Tab to a header).
+      //   1. scroll-padding-top on #appScroll (index.css) — where a control you Tab to comes to
+      //      rest, a How-to-Play section header above all.
+      //   2. GuidePage's docking line — where a section you open is glided to, and the line its
+      //      dock tracker measures the open header against.
       //   3. .doc-fade-top's top offset — where the guide's top feather starts.
-      //   4. the app scroller's paddingTop below — where its content starts. Padding on a scroll
+      //   4. the app scroller's paddingTop below — where its content starts, and so the line a
+      //      docked section header's `top:0` sticks at (index.css .guide-head). Padding on a scroll
       //      box lives INSIDE the box, so this reader feeds that scroller's own scrollHeight and
       //      therefore its scroll range. (Until round 13 the guide released the clamps and this
       //      same padding fed the DOCUMENT's height instead; one scroller now, one meaning.)
       //   5. the settings popover's max-height calc.
       //   6. CustomSelect's open dropdown, which WATCHES this property: its trigger is in the bar,
       //      so a change here means the trigger moved and the fixed panel must re-measure.
-      //   7. GuidePage's seat ladder, last rung (--seat-top → scroll-padding-top → --bar-h).
       // Reader 3 is the structural one, and the reason this fix is a guarantee rather than a hope
       // about how a given renderer rounds: with an exact --bar-h the feather begins EXACTLY where
       // the bar ends, so it covers anything that could still bleed through. At 0.234px low there
@@ -970,13 +972,27 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // already applied, and the indicators are right on the FIRST painted frame. As a passive
       // effect it would evaluate after the paint, so returning to a scrolled guide flashed one
       // frame with no bar shadow and no top fade.
+      // ★ THE BAR'S SHADOW HAS TWO INPUTS, AND ONE WRITER (paintBarShade). `edge` is the strength
+      // the scroll position gives it — the effect below, the same on every screen. `yield` is the
+      // share of that the bar KEEPS, which is 1 everywhere except How to Play with a section open:
+      // there the open section's header docks flush under the bar, the text slides under the
+      // HEADER's edge rather than the bar's, and the header wears the shadow instead (GuidePage's
+      // dock tracker measures it and calls yieldBarShade; lib/guideDock is the rule, and proves the
+      // two shadows are never on together). The two inputs arrive from two listeners on the same
+      // scroll event, in no particular order — so each one stores its number and BOTH repaint the
+      // product. Whichever runs second writes the final value, and it is the same value either way,
+      // before the frame is painted.
+      const barShadeRef=useRef({edge:0,yield:1});
+      const paintBarShade=useCallback(()=>writeShade(htpStickyBarRef.current,barShadeRef.current.edge*barShadeRef.current.yield),[]);
+      const yieldBarShade=useCallback((share: number)=>{barShadeRef.current.yield=share;paintBarShade();},[paintBarShade]);
       useLayoutEffect(()=>{
         const rampPx=readShadeRampPx();
         // One writer for every boundary this screen owns; a ref that isn't mounted is skipped.
         const paint=(scrollTop:number,scrollHeight:number,clientHeight:number)=>{
           const gaps=scrollEdgeGaps(scrollTop,scrollHeight,clientHeight);
           const top=edgeShade(gaps.top,0,rampPx);
-          writeShade(htpStickyBarRef.current,top);
+          barShadeRef.current.edge=top;
+          paintBarShade();
           writeShade(docFadeTopRef.current,top);
           writeShade(docFadeBottomRef.current,edgeShade(gaps.bottom,BOTTOM_EDGE_BAND_PX,rampPx));
           return gaps;
@@ -1014,7 +1030,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         el.addEventListener('scroll',evaluate,{passive:true});
         const stopExtent=observeScrollExtent(el,evaluate);
         return()=>{el.removeEventListener('scroll',evaluate);stopExtent();};
-      },[mode]);
+      },[mode,paintBarShade]);
       // Root-scroll invariant on MOUNT and on BFCache restore — nothing else. The division of
       // labour, stated explicitly because this effect used to overreach (round 8):
       //   • the scroll-ownership layout effect above owns the position on a mode switch (restore
@@ -2476,7 +2492,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
             (components/scrollRegion): it fills the viewport, so its scrollbar already paints at the
             screen edge past the content wrapper's px-4 — no inner lane needed.
             id="appScroll" is a real styling hook, not decoration: index.css hangs the scrollport's
-            seat (--seat-top + scroll-padding-top) and the focus-outline suppression off it, and
+            usable top (scroll-padding-top) and the focus-outline suppression off it, and
             neither can be expressed as a Tailwind utility.
             tabIndex −1 makes it PROGRAMMATICALLY focusable and nothing more — it is not in the tab
             order, so the app-wide Tab binding and the modals' tab traps (which enumerate
@@ -2548,7 +2564,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
               so App — which owns the container — passes it down. The ref itself, not its current
               value: App's own layout effects and GuidePage's toggle read it at different moments,
               and a value read at render time would be null on the first pass. */}
-          <ModeErrorBoundary key={"guide-"+guideResetKey} mode="How to Play" active={mode==="guide"} onCrash={discardGuidePlace}><GuidePage visible={mode==="guide"} scrollerRef={appScrollRef} readingOffset={readGuideOffset}/></ModeErrorBoundary>
+          <ModeErrorBoundary key={"guide-"+guideResetKey} mode="How to Play" active={mode==="guide"} onCrash={discardGuidePlace}><GuidePage visible={mode==="guide"} scrollerRef={appScrollRef} readingOffset={readGuideOffset} onBarYield={yieldBarShade}/></ModeErrorBoundary>
         </div>
         </div>
         {/* The guide's two soft edges — ⚠ KEPT ACROSS ROUND 13, and the reason changed. They exist

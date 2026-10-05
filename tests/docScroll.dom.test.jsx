@@ -349,19 +349,13 @@ const ruleBody = (re) => {
 }
 
 describe('index.css — the rules the move re-hosted, and the clamps it made permanent', () => {
-  it('hosts the reading line on the scrollport itself, as bar + ONE PANEL GAP', () => {
-    // The gap, not the feather (round 9). The fixed bar hides everything above --bar-h, so
-    // seating the tapped panel one panel-gap below it lands the bottom edge of the panel above
-    // exactly on the bar's underside — out of frame. bar + --fade-h overshot by 24 − 8.46 = 15.5px
-    // and left that much of the previous panel showing, which is the bug that fixed.
-    // It rode on html[data-doc-scroll] until round 13 and now rides on #appScroll — unconditionally,
-    // because the bar is fixed over the top of that scrollport on EVERY screen, so a seat below the
-    // bar is a property of the scroller rather than of the guide. scroll-padding-top is what the
-    // native focus path honours (tests/expander.dom points here for that).
-    const body = ruleBody(/#appScroll\{--seat-top:([^}]*)\}/)
-    expect(body).toContain('calc(var(--bar-h) + var(--guide-panel-gap))')
-    expect(body).not.toContain('--fade-h')
-    expect(body).toContain('scroll-padding-top:var(--seat-top)')
+  it('hosts the scrollport’s usable top on the scrollport itself: the bar’s underside', () => {
+    // The fixed bar hides everything above --bar-h, on EVERY screen, so the padding is on
+    // #appScroll unconditionally — a usable top below the bar is a property of the scroller rather
+    // than of the guide. scroll-padding-top is what the native focus path honours
+    // (tests/expander.dom points here for that), and it is the same line a How-to-Play section
+    // header docks at and is glided to when opened: flush under the bar, not a panel gap below it.
+    expect(css).toContain('#appScroll{scroll-padding-top:var(--bar-h)}')
   })
 
   it('kills overflow-anchor across the guide’s subtree — and no wider', () => {

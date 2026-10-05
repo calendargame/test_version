@@ -8,13 +8,10 @@
 // it runs in Node with no rendering.
 // The felt motion itself — panels and scroll riding one clock — is on-device truth.
 //
-// Every fixture below uses SEAT, the reading line index.css derives: --bar-h + one guide
-// panel gap (--seat-top = --bar-h + --guide-panel-gap). On the owner's device that is
-// 57 + 8.46 = 65.46px — 0.5rem at his 16.92px fluid root — rounded to 65 here so the fixture
-// arithmetic reads cleanly; accordionScrollTarget is linear in seatTop, so the fraction
-// proves nothing the round number doesn't. Round 9 moved the line off --bar-h + --fade-h
-// (81): the feather is 15.5px deeper than the panel gap, and that is exactly how much of the
-// previous panel it left showing above the tapped one.
+// Every fixture below uses SEAT, the reading line: the fixed bar's underside (--bar-h), which is
+// where a tapped section's header is brought to rest and where it docks while the section scrolls.
+// A real bar's height is fractional; 65 here so the fixture arithmetic reads cleanly —
+// accordionScrollTarget is linear in seatTop, so a fraction proves nothing the round number doesn't.
 import { describe, it, expect } from 'vitest'
 import {
   ACCORDION_EASE_CSS,

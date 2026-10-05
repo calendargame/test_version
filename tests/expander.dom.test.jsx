@@ -264,7 +264,7 @@ describe('GuideSection accordion contract (aria + coordinator landmarks)', () =>
     // nothing in src/ calls scrollIntoView, there is no fragment navigation, and native
     // focus scrolling targets the focused HEADER BUTTON, not this wrapper. The reading
     // line is declared once, as scroll-padding-top on the app's one scrollport
-    // (index.css --seat-top on #appScroll), which the focus path DOES honour — pinned in
+    // (index.css, on #appScroll), which the focus path DOES honour — pinned in
     // docScroll.dom.
     expect(wrapper.className).not.toContain('scroll-mt')
   })

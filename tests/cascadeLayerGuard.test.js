@@ -163,31 +163,26 @@ describe('cascade-layer guard (round 17) — no custom rule may outrank a Tailwi
     expect(orphans).toEqual([])
   })
 
-  it('the two @property registrations stay outside the layer, and keep their @supports fallback', () => {
-    // THE REGRESSION THIS EXISTS FOR. Wrapping the custom block in `@layer components` swept both
-    // `@property` rules inside it too. Tailwind collects only the TOP-LEVEL registrations when it
+  it('the @property registration stays outside the layer, and keeps its @supports fallback', () => {
+    // THE REGRESSION THIS EXISTS FOR. Wrapping the custom block in `@layer components` swept the
+    // `@property` rule inside it too. Tailwind collects only the TOP-LEVEL registrations when it
     // builds `@layer properties` — the @supports block that declares each registered property as a
-    // plain token for engines with no @property support (Safari ≤16.3, Firefox <128, both inside
-    // this build's targets). Layered, they were not collected, and `--seat-top: 0px` and
-    // `--shade: 1` vanished from the built CSS with no error anywhere. --seat-top then computes to
-    // the literal `calc(var(--bar-h) + var(--guide-panel-gap))`, GuidePage's parseFloat answers
-    // NaN, and a `|| 0` seats the panels at zero — behind the fixed bar, a bug this project has
-    // already shipped once. Placement is asserted AND its consequence is asserted, because the
-    // consequence is the half a future Tailwind change could break without moving anything.
+    // plain token for engines with no @property support. Layered, it was not collected, and
+    // `--shade: 1` vanished from the built CSS with no error anywhere — taking every boundary
+    // shadow with it on such an engine. Placement is asserted AND its consequence is asserted,
+    // because the consequence is the half a future Tailwind change could break without moving
+    // anything.
     const registered = []
     compiled.root.walkAtRules('property', (a) => {
       if (!a.params.startsWith('--tw-')) registered.push([a.params, layerOf(a)])
     })
-    expect(registered).toEqual([
-      ['--seat-top', null],
-      ['--shade', null],
-    ])
+    expect(registered).toEqual([['--shade', null]])
     const fallback = []
     compiled.root.walkAtRules('supports', (at) => {
       at.walkDecls((d) => {
-        if (d.prop === '--seat-top' || d.prop === '--shade') fallback.push(`${d.prop}: ${d.value}`)
+        if (d.prop === '--shade') fallback.push(`${d.prop}: ${d.value}`)
       })
     })
-    expect(fallback.sort()).toEqual(['--seat-top: 0px', '--shade: 1'])
+    expect(fallback).toEqual(['--shade: 1'])
   })
 })

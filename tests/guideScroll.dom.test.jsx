@@ -140,8 +140,8 @@ afterEach(() => {
   document.getElementById('root')?.remove()
   delete document.visibilityState
   document.documentElement.scrollTop = 0
-  // --seat-top is NOT in this list, deliberately: the model writes it on the scroll box alone (the
-  // element the app reads it from), which dies with the tree cleanup() takes down.
+  // (The docking line a seating test stands up is written on the scroll box — guide.setSeat — and
+  // dies with the tree cleanup() takes down.)
   for (const prop of ['--fade-h', '--bar-h', '--motion-scale'])
     document.documentElement.style.removeProperty(prop)
 })
@@ -619,8 +619,7 @@ describe('tapping a section carries the reading position with it', () => {
     act(() => frames.at(-1)(10000))
   }
   // The state every case here starts from: a real reading page, the reader partway down it, and
-  // the reading line stood up at the owner's own fractional seat (57px bar + 8.46px gap at his
-  // 16.92px fluid root).
+  // the docking line — the bar's underside — stood up at a fractional height, as a real bar's is.
   const readingPage = (at = 500, seat = 65.46) => {
     const { container } = mountApp()
     pressKey('H')
@@ -635,9 +634,9 @@ describe('tapping a section carries the reading position with it', () => {
   it('seats the tapped panel on the reading line, landing on a WHOLE pixel', () => {
     // Scenario A end to end. headerDocTop 0 + 500, seat 65.46 → a raw target of 434.54, which the
     // engine used to be free to round either way. Integers are the one offset every quantisation
-    // grid represents exactly, and CEIL is the safe direction: overshooting hides a fraction more
-    // of a panel nobody is reading, undershooting reveals the previous panel's translucent bottom
-    // border as a hairline under the bar — the owner's report that started this.
+    // grid represents exactly, and CEIL is the safe direction: an overshoot of a fraction is
+    // invisible (the header sticks ON the line), an undershoot leaves the header a fraction below
+    // it — not the docked picture it is meant to be identical to.
     const { container, g } = readingPage()
     openingPanelHeight(400.4)
     const frames = manualFrames()
@@ -872,6 +871,114 @@ describe('the guide’s edges track the reading position and the content', () =>
     expect(g.topShade()).toBe('1.000')
   })
 
+  // ★ ONE SHADOW, UNDER WHICHEVER EDGE THE TEXT IS SLIDING BENEATH — the App half. The guide
+  // measures its open header and tells App what share of its shadow the bar keeps
+  // (tests/guideStickyHeader.dom, and tests/guideDock for the rule at every position); App owns the
+  // bar, so App multiplies. These drive the real App, and read the one number that reaches the bar.
+  describe('the bar gives its shadow up to a docked section header', () => {
+    const LINE = 71.75
+    const HEAD_H = 44
+    // The open header and its section, wherever a case puts them; everything else is a zero rect.
+    let place = null
+    const dockRects = () => {
+      rectSpy = vi
+        .spyOn(Element.prototype, 'getBoundingClientRect')
+        .mockImplementation(function () {
+          const rect = (top, bottom) => ({
+            height: bottom - top,
+            width: 0,
+            top,
+            left: 0,
+            right: 0,
+            bottom,
+            x: 0,
+            y: top,
+          })
+          if (place && this.id === 'guide-head-stats') return rect(place.top, place.top + HEAD_H)
+          if (place && this.id === 'guide-sec-stats') return rect(place.natural, place.floor)
+          return rect(0, 0)
+        })
+    }
+    const below = (gap) => ({ top: LINE + gap, natural: LINE + gap, floor: LINE + gap + 2000 })
+    const stuck = (depth) => ({ top: LINE, natural: LINE - depth, floor: LINE + HEAD_H + 2000 })
+    const reading = () => {
+      const { container } = mountApp()
+      pressKey('H')
+      const g = installGuide(container)
+      g.setContent(4000)
+      g.setSeat(LINE)
+      dockRects()
+      g.scrollTo(900) // far past the top ramp: left to itself, the bar's shadow is at full strength
+      return { container, g }
+    }
+    const headShade = (container) =>
+      container.querySelector('#guide-head-stats').style.getPropertyValue('--shade')
+
+    it('wears its own shadow while no section is open', () => {
+      const { g } = reading()
+      expect(g.topShade()).toBe('1.000')
+    })
+
+    it('keeps it while the open header is still on its way up the page', () => {
+      const { container, g } = reading()
+      place = below(300)
+      tap(container, 'stats')
+      expect(g.topShade()).toBe('1.000')
+      expect(headShade(container)).toBe('0.000')
+    })
+
+    it('fades it out as the header comes up to dock — the scroll strength times the share kept', () => {
+      const { container, g } = reading()
+      place = below(300)
+      tap(container, 'stats')
+      place = below(12.25) // (12.25 − 0.5) / (24 − 0.5) = half
+      g.scrollTo(1188)
+      expect(g.topShade()).toBe('0.500')
+      expect(headShade(container)).toBe('0.000')
+    })
+
+    it('has NONE while the header is docked, and the header wears the shadow instead', () => {
+      const { container, g } = reading()
+      place = stuck(0) // just docked: nothing under the header yet — neither shadow
+      tap(container, 'stats')
+      expect([g.topShade(), headShade(container)]).toEqual(['0.000', '0.000'])
+      place = stuck(60) // text under the header
+      g.scrollTo(960)
+      expect([g.topShade(), headShade(container)]).toEqual(['0.000', '1.000'])
+    })
+
+    it('takes it back the moment the section is closed', () => {
+      const { container, g } = reading()
+      place = stuck(0)
+      tap(container, 'stats')
+      expect(g.topShade()).toBe('0.000')
+      tap(container, 'stats')
+      expect(g.topShade()).toBe('1.000')
+    })
+
+    it('takes it back on leaving How to Play with a header docked — the game screens are unaffected', () => {
+      const { container, g } = reading()
+      place = stuck(60)
+      tap(container, 'stats')
+      g.scrollTo(960)
+      expect(g.topShade()).toBe('0.000')
+      pressKey('K') // Classic: scrolled to its top, where the bar's own strength is 0
+      place = null
+      pressKey('H') // …and back, to the reading position, with the section still open
+      place = below(300)
+      g.scrollTo(961)
+      expect(g.topShade()).toBe('1.000')
+    })
+
+    it('near the top of the page the two factors multiply: a faint scroll shadow, faded further', () => {
+      const { container, g } = reading()
+      place = below(12.25) // the bar keeps half
+      tap(container, 'stats')
+      g.scrollTo(12) // 12px into the page's own 24px ramp: half strength
+      expect(g.topShade()).toBe('0.250')
+    })
+  })
+
   it('watches the guide’s CONTENT, not just the box it sits in', () => {
     // scrollHeight is the children's stacked height, so the children are the subject. An observer
     // on the box alone can only ever report a viewport change — which is the shape the clamped
@@ -937,21 +1044,23 @@ describe('index.css — the feather token and the reading line it is NOT derived
     expect(css).toContain(':root{--fade-h:24px}') // the single home of the value
   })
 
-  it('REGISTERS --seat-top as a <length> so JS reads a resolved px value, not a calc string', () => {
-    // Load-bearing, not decorative: unregistered, getComputedStyle hands back the literal "calc(…)"
-    // token stream → parseFloat NaN. GuidePage survives that (it walks down a ladder to
-    // scroll-padding-top and then --bar-h), but this registration is what makes the direct read
-    // exact on every engine that has @property — i.e. the owner's.
-    const prop = ruleBody(/@property --seat-top\{([^}]*)\}/)
-    expect(prop).toContain('syntax:"<length>"')
-    expect(prop).toContain('inherits:true')
-    expect(prop).toContain('initial-value:0px')
+  it('has ONE docking line — the bar’s underside — and no second token for where a section rests', () => {
+    // A section you open used to be seated on a line of its own (--seat-top), one panel gap below
+    // the line its header docks at while you scroll — two resting places for one header. There is
+    // one now: --bar-h, which the scrollport's padding (the stick), its scroll-padding-top (a Tab
+    // into a header) and GuidePage's glide all read. A second token coming back is that bug.
+    expect(css).not.toContain('seat-top')
+    expect(css).toContain('#appScroll{scroll-padding-top:var(--bar-h)}')
+    const guideSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'components', 'GuidePage.tsx'),
+      'utf8',
+    )
+    expect(guideSource).not.toContain('seat-top')
+    expect(guideSource).toContain("getPropertyValue('--bar-h')")
   })
 
-  it('keeps ONE home for the panel gap — the token the guide lays out with and the seat derives from', () => {
-    // The gap the reader sees and the gap the scroll math assumes are the same declaration. A
-    // literal space-y-2 back on the guide's section list would silently restore that bug the next
-    // time either number moved.
+  it('keeps ONE home for the panel gap — the token the guide lays its sections out with', () => {
+    // A literal space-y-2 back on the guide's section list would be a second home for the number.
     expect(css).toContain(':root{--guide-panel-gap:calc(var(--spacing) * 2)}')
     const guideSource = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'components', 'GuidePage.tsx'),

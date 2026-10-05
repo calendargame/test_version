@@ -23,7 +23,8 @@ import {
   accordionScrollTarget,
   accordionToggleMs,
 } from '../lib/accordionMotion.js'
-import { edgeShade, observeScrollExtent, readShadeRampPx, writeShade } from './scrollRegion.js'
+import { observeScrollExtent, readShadeRampPx, writeShade } from './scrollRegion.js'
+import { dockShades, NO_DOCK, type HeaderDockGeometry } from '../lib/guideDock.js'
 
 // GuidePage / GuideSection — the How-to-Play tab: an accordion of documentation
 // sections (each a GuideSection wrapping an Expander) covering every observable
@@ -60,27 +61,51 @@ import { edgeShade, observeScrollExtent, readShadeRampPx, writeShade } from './s
 // the number of sections.
 const sectionDomId = (id: string) => `guide-sec-${id}`
 const panelDomId = (id: string) => `guide-panel-${id}`
-// …and the header button, which since round 23 can PIN under the bar: the pin tracker and
-// the collapse-in-place both measure it against its wrapper, and both find it from the open id.
+// …and the header button, which DOCKS under the bar while its section is open: the dock tracker
+// and the collapse-in-place both measure it against its wrapper, and both find it from the open id.
 const headerDomId = (id: string) => `guide-head-${id}`
+
+// readBarHeight — the fixed bar's height in px, which is the viewport y of its underside: THE LINE
+// an open section's header docks against, and the line a section you open is glided to (they are
+// one line — index.css's .guide-head says why). --bar-h is a literal px token App writes on <html>
+// from the bar's own measured height (main.tsx's syncBarHeight) and it inherits down to the
+// scroller, so this is a plain number wherever a stylesheet is served. NaN where none is (jsdom);
+// each caller says what it does then.
+const readBarHeight = (scrollerStyle: CSSStyleDeclaration): number =>
+  parseFloat(scrollerStyle.getPropertyValue('--bar-h'))
+
+// headerDockGeometry — the open header measured against its own section and against the line, in
+// one read: the five numbers lib/guideDock turns into the two shadow strengths. `lineY` is the
+// caller's (the bar's underside, in viewport y); the rest come off two rectangles.
+// The wrapper's border is what separates its edge from where the header can actually be — the
+// header's natural spot is just INSIDE the top border, and the lowest its bottom can reach is just
+// inside the bottom one. clientTop is that border's width; .panel draws the same border on every
+// side, so it is the bottom's width too.
+function headerDockGeometry(id: string, lineY: number): HeaderDockGeometry | null {
+  const wrapper = document.getElementById(sectionDomId(id))
+  const header = document.getElementById(headerDomId(id))
+  if (!wrapper || !header) return null
+  const w = wrapper.getBoundingClientRect()
+  const h = header.getBoundingClientRect()
+  return {
+    lineY,
+    headerTop: h.top,
+    headerBottom: h.bottom,
+    naturalTop: w.top + wrapper.clientTop,
+    floorY: w.bottom - wrapper.clientTop,
+  }
+}
 
 // headerPinDepth — how far a section's header has been carried DOWN its own wrapper by the sticky
 // pin, in px: 0 at its natural spot (the section's top edge, just inside the border), growing as
-// content scrolls up under a pinned header. It is the one measure of "pinned" this file uses, and
-// it is deliberately the header's displacement rather than a comparison against a pin line: a
-// sticky box is displaced from its in-flow spot exactly when it is stuck, so this is 0 on every
-// frame where nothing is under the header — the resting seat a tap glides a header to included —
-// with no line to read, no token to parse and no tolerance to tune. clientTop is the wrapper's top
-// border, which sits between the wrapper's edge and the header's natural spot. Clamped at 0
-// because a fractional layout can leave a −0.x residue at rest.
+// content scrolls up under a docked header. It is deliberately the header's displacement rather
+// than a comparison against the line: a sticky box is displaced from its in-flow spot exactly when
+// it is stuck, so this is 0 on every frame where nothing is under the header — a header that has
+// only just arrived at the line included. Clamped at 0 because a fractional layout can leave a
+// −0.x residue at rest.
 function headerPinDepth(id: string): number {
-  const wrapper = document.getElementById(sectionDomId(id))
-  const header = document.getElementById(headerDomId(id))
-  if (!wrapper || !header) return 0
-  return Math.max(
-    0,
-    header.getBoundingClientRect().top - wrapper.getBoundingClientRect().top - wrapper.clientTop,
-  )
+  const g = headerDockGeometry(id, NaN)
+  return g ? Math.max(0, g.headerTop - g.naturalTop) : 0
 }
 
 // startScrollWriter — the coordinator's per-frame scroll driver, pointed at the element
@@ -173,8 +198,8 @@ export function GuideSection({
           if (selectionSuppressesToggle(window.getSelection(), e.currentTarget)) return
           onToggle(id)
         }}
-        // guide-head is the sticky pin and its opaque fill; elev-shadow-down is the pinned look,
-        // held at --shade 0 until GuidePage's pin tracker says content is under it (round 23).
+        // guide-head is the sticky dock and its opaque fill; elev-shadow-down is the docked header's
+        // shadow, held at --shade 0 until GuidePage's dock tracker says text is under it.
         className="guide-head elev-shadow-down w-full text-left px-4 py-3 flex items-center justify-between"
       >
         <span className="text-sm font-semibold text-(--tx-50) select-text">{title}</span>
@@ -349,14 +374,20 @@ function DotDiagram() {
 // guide (main.tsx's guideScrollYRef) — so App answers it: live while the guide is on screen,
 // remembered while it is not. A function, asked at the moment the page hides, for the same reason
 // scrollerRef is a ref.
+// `onBarYield` hands App the share of its own shadow the top bar should keep, 0…1 — 0 while the
+// open section's header is docked against the bar and wearing the shadow itself, 1 whenever no
+// header is docked (the dock tracker below; lib/guideDock is the rule). App owns the bar and the
+// rest of what decides its shadow, so App does the multiplying.
 export default function GuidePage({
   visible,
   scrollerRef,
   readingOffset,
+  onBarYield,
 }: {
   visible: boolean
   scrollerRef: RefObject<HTMLDivElement | null>
   readingOffset: () => number
+  onBarYield: (share: number) => void
 }) {
   // The open section — seeded from the place parked before a reload (store/sessionGuide), so a reload
   // reopens the section the reader had open; App seeds the offset from the same place. Read once.
@@ -440,37 +471,56 @@ export default function GuidePage({
   // pre-multiplies the writer's duration exactly as the panels' CSS calc does, so Reduce
   // Motion (scale 0) jumps instantly to the correct end state (jsdom's empty var read is
   // NaN → treated as 1, animate).
-  // THE PIN TRACKER (round 23) — writes the open section's header its pinned look: the --shade
-  // its elev-shadow-down reads, ramped from 0 over --fade-h by how far content has scrolled under
-  // it (headerPinDepth). That is the owner's rule made literal: OPENING a section never pins it —
-  // the glide seats the header at its natural spot, where the depth is 0 — and the shadow appears
-  // only once content really is under the header, going again as you scroll back up. The ramp is
-  // the one every boundary shadow in the app uses (components/scrollRegion), so the header and the
-  // bar above it speak the same language.
+  // THE DOCK TRACKER — one shadow, under whichever edge the text is sliding beneath. While a
+  // section is open its header docks flush against the bar, and from then on the header's underside
+  // is the edge the section's text slides under, not the bar's. So on every frame this measures the
+  // open header (headerDockGeometry), asks lib/guideDock for the two strengths, and writes both in
+  // the same breath: the header's own --shade, and the share of its shadow the bar keeps
+  // (onBarYield). lib/guideDock argues the rule and proves the two are never on together; what
+  // matters HERE is that both leave from one measurement in one callback, so there is no frame
+  // that has one side of the hand-off and not the other.
+  // That is also the owner's first rule for these headers, kept: OPENING a section never makes it
+  // look pinned. The glide brings the header to the line with nothing under it, where both
+  // strengths are 0; the header's shadow appears only as text really goes under it, and goes again
+  // on the way back up.
   // It re-reads on the scroller's scroll AND on any change to its extent (observeScrollExtent):
-  // the depth also moves without a scroll event whenever layout above the header changes — the
-  // panel above it collapsing as this one opens, above all. Both write paint only (the shade),
-  // which is the contract observeScrollExtent's callback must keep.
+  // the geometry also moves without a scroll event whenever layout above the header changes — the
+  // panel above it collapsing as this one opens, above all. Both write paint only (two shadow
+  // strengths), which is the contract observeScrollExtent's callback must keep.
   // A LAYOUT effect for the same reason as useScrollEdgeState: evaluated after paint, a return to a
-  // guide left mid-section would show one frame of an unshadowed pinned header. Only the OPEN
-  // header is tracked — a closed one has no room to pin in (index.css .guide-head) — and the
-  // cleanup rests the header it wrote to at 0, so a section that closes or loses the screen never
-  // keeps a stale shadow. Off-screen there is nothing to track: a hidden guide cannot scroll.
+  // guide left mid-section would show one frame of the bar's shadow over a docked header. Only the
+  // OPEN header is tracked — a closed one has no room to dock in (index.css .guide-head) — and the
+  // cleanup rests the header at 0 and hands the bar its whole shadow back, so a section that closes
+  // or loses the screen leaves nothing behind. Off-screen there is nothing to track: a hidden guide
+  // cannot scroll.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current
     const header = visible && open ? document.getElementById(headerDomId(open)) : null
     if (!open || !scroller || !header) return
     const rampPx = readShadeRampPx()
-    const evaluate = () => writeShade(header, edgeShade(headerPinDepth(open), 0, rampPx))
+    // Live: the same object answers with the current --bar-h on every read, so a bar that changes
+    // height (a rotation, the fluid root font) moves the line with it.
+    const scrollerStyle = getComputedStyle(scroller)
+    const evaluate = () => {
+      // The bar is fixed to the top of the viewport and the scroller's box starts there too, so the
+      // bar's underside is the scroller's top plus the bar's height. Unmeasurable (NaN, where no
+      // stylesheet is served) leaves the bar's shadow alone — lib/guideDock's own rule.
+      const lineY = scroller.getBoundingClientRect().top + readBarHeight(scrollerStyle)
+      const geometry = headerDockGeometry(open, lineY)
+      const shades = geometry ? dockShades(geometry, rampPx) : NO_DOCK
+      writeShade(header, shades.header)
+      onBarYield(shades.barYield)
+    }
     evaluate()
     scroller.addEventListener('scroll', evaluate, { passive: true })
     const stopExtent = observeScrollExtent(scroller, evaluate)
     return () => {
       scroller.removeEventListener('scroll', evaluate)
       stopExtent()
-      writeShade(header, 0)
+      writeShade(header, NO_DOCK.header)
+      onBarYield(NO_DOCK.barYield)
     }
-  }, [visible, open, scrollerRef])
+  }, [visible, open, scrollerRef, onBarYield])
   const toggle = useCallback(
     (id: string) => {
       cancelScrollWriter()
@@ -538,16 +588,10 @@ export default function GuidePage({
       if (!tapped || !scroller || scroller.scrollHeight <= 0) return
       const scrollY = scroller.scrollTop
       const tappedRect = tapped.getBoundingClientRect()
-      // --motion-scale is an app-wide token and stays a documentElement read. The SEAT is read off
-      // the scroller, because that is where index.css now declares it — and rung 2 of the ladder
-      // below, scroll-padding-top, is a non-inherited property that would answer `auto` anywhere
-      // else. --seat-top itself is registered inherits:true, so it resolves here whether it is
-      // declared on this element or above it.
+      // --motion-scale is an app-wide token and stays a documentElement read.
       const motionScale = parseFloat(
         getComputedStyle(document.documentElement).getPropertyValue('--motion-scale'),
       )
-      const scrollerStyle = getComputedStyle(scroller)
-      const seatTop = parseFloat(scrollerStyle.getPropertyValue('--seat-top'))
       const target = accordionScrollTarget({
         scrollY,
         // The scroller's own visible height. This is where round 10's caveat about
@@ -557,50 +601,29 @@ export default function GuidePage({
         // including the padding-top that seats the content below the fixed bar, which is inside the
         // box and therefore inside scrollHeight too, so the two agree by construction.
         viewportH: scroller.clientHeight,
-        // The guide's READING LINE (index.css): the fixed bar's height plus ONE panel gap, so a
-        // tapped panel seated there pushes the bottom edge of the panel above it exactly onto the
-        // bar's underside. --seat-top is registered with @property, so on engines that implement
-        // @property this read is already a resolved px length. On engines that DON'T — Safari
-        // ≤16.3 and Firefox <128, both inside this build's target set, which is exactly why
-        // Tailwind emits its own @supports fallback for the same token into the same stylesheet —
-        // an unregistered custom property computes to its substituted token stream, i.e. the
-        // literal "calc(var(--bar-h) + var(--guide-panel-gap))", which parseFloats to NaN.
-        // Defaulting that NaN to 0 would seat every tapped panel at viewport y = 0, UNDER the
-        // fixed bar: a worse bug than the one this token exists to fix, and a silent one. So the
-        // read walks DOWN a ladder, each rung strictly weaker and strictly safer than the one
-        // above, and nothing but the last can reach 0:
-        //   1. --seat-top itself, already a resolved px length wherever @property is implemented.
-        //   2. scroll-padding-top — the SAME declaration through a standard property, which is
-        //      expected to resolve its calc() to an absolute length at computed-value time. That
-        //      is the behaviour of every engine we can test, but it is an expectation about the
-        //      untestable ones, not a proof, which is why it is not the last rung.
-        //   3. --bar-h, a literal px token written by App's syncBarHeight onto <html> (and
-        //      defaulted in index.css) — fractional since round 10, which parseFloat handles
-        //      exactly as well as a whole number, and it INHERITS down to this element, so this
-        //      rung cannot fail on any engine that inherits custom properties. It is the seat minus
-        //      one panel gap — a few px shallow, hiding the panel above a hair less completely, and
-        //      nothing worse. --guide-panel-gap cannot be added back here: it computes to
-        //      calc(.25rem * 2), NaN by the same rule as rung 1.
-        // jsdom applies no stylesheets and returns '' for all three, landing on 0 — there the
-        // panels still toggle on the shared clock, writer-less.
-        seatTop: Number.isFinite(seatTop)
-          ? seatTop
-          : parseFloat(scrollerStyle.scrollPaddingTop) ||
-            parseFloat(scrollerStyle.getPropertyValue('--bar-h')) ||
-            0,
+        // THE LINE a tapped section is glided to: the bar's underside, which is exactly where its
+        // header docks while the section scrolls (index.css .guide-head) — one docking position,
+        // whether you arrive by opening the section or by scrolling it. Where no stylesheet is
+        // served (jsdom) the token is empty and this lands on 0; there the panels still toggle on
+        // the shared clock, writer-less.
+        seatTop: readBarHeight(getComputedStyle(scroller)) || 0,
         // The height of everything the scroller can scroll through. scrollHeight has no fractional
         // twin to switch to — the spec defines it as a rounded integer and exposes nothing else, so
         // this one read stays as it is. Its error is bounded at half a pixel and lands only in
         // finalMaxScroll, which is itself a clamp. (lib/accordionMotion still calls this field
         // docH; it was named when the document was the scroller and its test pins the name.)
         docH: scroller.scrollHeight,
-        // The tapped wrapper's top in the SCROLLER's content space: its viewport y, minus the
-        // scroller's own viewport y, plus how far the scroller has already been scrolled. The
-        // middle term was structurally 0 while the document scrolled — the document's box starts at
-        // the viewport origin by definition — which is why this used to read `rect.top + scrollY`.
-        // #appScroll is `absolute inset-0` so it too is at the origin today, but that is a layout
-        // choice rather than a definition, and the general form costs one rect read.
-        headerDocTop: tappedRect.top - scroller.getBoundingClientRect().top + scrollY,
+        // The tapped HEADER's natural top in the SCROLLER's content space: the wrapper's viewport y
+        // plus its top border (the header sits just inside it), minus the scroller's own viewport
+        // y, plus how far the scroller has already been scrolled. The header's top, not the
+        // wrapper's, is what has to land on the line: that is the edge the stick holds there, so a
+        // section you open comes to rest on the very pixel it docks at — its border tucked behind
+        // the bar, as it is whenever the header is docked. (The scroller's own y was structurally 0
+        // while the document scrolled, and #appScroll is `absolute inset-0` so it is 0 today too,
+        // but that is a layout choice rather than a definition, and the general form costs one
+        // rect read.)
+        headerDocTop:
+          tappedRect.top + tapped.clientTop - scroller.getBoundingClientRect().top + scrollY,
         closingH,
         // A closing panel above the tapped header pulls it up by its own collapse; the
         // tapped section's own panel sits BELOW its header, so a plain close never does.
@@ -627,10 +650,9 @@ export default function GuidePage({
     //     The guide-only pb-2.5 on the fixed bar (main.tsx) absorbs the other half, which centres
     //     the bar's shadow line in the same 20px gap. Both halves are guide-only, and neither is
     //     what the other screens use (the game modes open on StatPanel's mt-4).
-    //   • the panel gap as a TOKEN, not a utility step: index.css derives the accordion's reading
-    //     line (--seat-top) from the same --guide-panel-gap, so seating a tapped panel one gap
-    //     below the fixed bar hides the panel above it exactly. A literal space-y-2 here would be
-    //     a second home for that number and the two would drift.
+    //   • the panel gap as a TOKEN, not a utility step: --guide-panel-gap (index.css) is the one
+    //     home of that number, and tests pin this className to it. A literal space-y-2 here would
+    //     be a second home and the two would drift.
     // data-guide is a STYLING HOOK, not state: index.css kills scroll anchoring across this
     // subtree, which is the pair to the coordinator above (an engine that anchors would move the
     // scroller underneath the writer while the panels grow). It sits on this element because this
@@ -820,17 +842,19 @@ export default function GuidePage({
             The sections of this guide open one at a time — opening a section closes the one before
             it. When a section opens or closes, the page scrolls along with the motion whenever
             that's needed to keep your place: instead of sliding off-screen, the section you tapped
-            comes to rest just clear of the bar at the top, with its title fully readable. The last
+            comes to rest right under the bar at the top, with its title fully readable. The last
             section or two are the exception — the page has already run out of room to scroll by
             then, so they settle wherever the bottom of the page allows.
           </li>
           <li>
-            While you read down a long section, its title stays pinned just under the bar at the
-            top, so you can always see which section you&apos;re in and tap it closed from anywhere
-            in it. Opening a section doesn&apos;t pin it — the title only pins, and picks up a soft
-            shadow, once the text starts scrolling underneath it, and it lets go again when you
-            scroll back up. Closing a section from its pinned title leaves the title right where it
-            is while the section folds away below it.
+            While you read down a long section, its title stays docked right under the bar at the
+            top — the same spot a section you open comes to rest in — so you can always see which
+            section you&apos;re in and tap it closed from anywhere in it. The title picks up a soft
+            shadow only once the text starts scrolling underneath it, and loses it again when you
+            scroll back up; while a title is docked, the bar&apos;s own shadow steps aside for it,
+            so the shadow is always under whichever edge the text is sliding beneath. Closing a
+            section from its docked title leaves the title right where it is while the section folds
+            away below it.
           </li>
           <li>
             The guide holds its place while you're in the app: switch to a mode, play, and come back

@@ -3,7 +3,7 @@
 // Kept apart from the component (components/GuidePage.tsx) for the lib/selectionGuard
 // reasons: the component file only exports components (the react-refresh rule), and every
 // decision here is trivially unit-testable without rendering anything. GuidePage owns the
-// DOM reads (rendered heights, rects, the --seat-top / --motion-scale vars) and the rAF
+// DOM reads (rendered heights, rects, the --bar-h / --motion-scale vars) and the rAF
 // scroll writer; this module owns what the numbers MEAN: how long a toggle takes, the
 // curve the panels and the writer both run, and where the scroller must land.
 //
@@ -99,18 +99,17 @@ export const accordionEase = (t: number): number => {
 //                 content height by definition, it includes the padding-top that seats the content
 //                 below the fixed bar, and scrollHeight includes that same padding — so the two
 //                 terms of every range below are measured in one consistent frame.
-//   seatTop       the reading line: the viewport y a tapped panel's top edge should land on,
-//                 = the fixed bar's height PLUS one guide panel gap (--seat-top, registered in
-//                 index.css as --bar-h + --guide-panel-gap). The gap is what makes it exact —
-//                 seat the tapped panel one gap below the bar and the BOTTOM edge of the panel
-//                 above it lands precisely on the bar's underside, out of frame. NOT the bar
-//                 alone (that seats the previous panel's bottom a full gap into view) and NOT
-//                 bar + fade, which round 8 used and which overshot by fade − gap, leaving a
-//                 15.5px sliver of the previous panel showing.
+//   seatTop       the reading line — where a tapped section's header should land: the bar's underside
+//                 (--bar-h), which is the same line the header docks at while its section scrolls
+//                 (index.css .guide-head) — so a section you open comes to rest exactly where it
+//                 will stay. It used to be one panel gap lower, to put the BOTTOM edge of the
+//                 section above precisely on the bar's underside; flush, that edge is simply
+//                 further behind the bar.
 //   docH          the scroller's current scrollHeight — an INTEGER by spec, with no fractional
 //                 twin to switch to. Its half-pixel worst case reaches only finalMaxScroll,
 //                 which is a clamp, so nothing downstream compounds it.
-//   headerDocTop  the tapped section wrapper's current top in the scroller's content space
+//   headerDocTop  the tapped section HEADER's natural top in the scroller's content space (its
+//                 wrapper's top plus the wrapper's border)
 //   closingH      the closing panel's current RENDERED height (0 when nothing closes;
 //                 mid-flight re-toggles pass the interpolated value, keeping the math exact)
 //   closingAbove  true when that panel sits above the tapped header, so its collapse
@@ -158,10 +157,13 @@ export interface AccordionToggleGeometry {
 // integers are the only scroll offsets every engine can represent EXACTLY — whatever a platform's
 // quantisation grid is (1px, 1/DPR, 1/64px), it contains the integers — so handing over a whole
 // number turns the engine's own rounding into a no-op instead of a coin flip the geometry cannot
-// see. CEIL rather than round because the two directions do not cost the same: overshooting hides
-// a fraction more of a panel nobody is reading, while undershooting reveals the previous panel's
-// translucent bottom border (45% alpha in the default theme) as a hairline touching the bar —
-// the owner's report that started this. Two placements are load-bearing. INSIDE the clamps, so a
+// see. CEIL rather than round because the two directions do not cost the same: overshooting by a
+// fraction of a pixel is invisible — the header sticks at the line, so it is drawn exactly ON the
+// line, carried that fraction down its own section — while undershooting leaves the header a
+// fraction BELOW the line with a sliver of its section's top border showing between it and the
+// bar, a different picture from the docked one it is meant to be identical to. (lib/guideDock's
+// DOCK_SETTLE_PX is the other half: that fraction of carry casts no shadow.) Two placements are
+// load-bearing. INSIDE the clamps, so a
 // target the document is too short to reach still resolves to the exact finalMaxScroll (B says
 // why that value must not be pushed up). BEFORE the epsilon, which is the honest order: the
 // epsilon asks "would the writer travel less than a pixel", and after the ceil that is a question
