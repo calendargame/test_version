@@ -9,30 +9,12 @@
 // Module scope is also where they belong: they are frozen tables, not state, and re-creating them
 // per render would hand PillTray a new options array on every pass.
 //
-// MODE_LABELS deliberately did NOT come with them: it drives the bar's mode CustomSelect, which is
-// not part of the panel and stays in main.tsx.
+// Default Mode's two rows are NOT here: they are the page list itself (lib/modes' PAGES — the
+// practice modes on the first row, the other pages on the second), so the panel takes
+// PRACTICE_MODE_OPTIONS and OTHER_PAGE_OPTIONS straight from there.
 import type { FormatId } from '../lib/format.js'
-import type { InputStyle, DefaultMode } from '../store/settings.js'
+import type { InputStyle } from '../store/settings.js'
 import type { DotRotation } from '../lib/dotLayout.js'
-
-// Default Mode — the page a preset OPENS ON (round 21). Seven choices = the seven entries of the
-// bar's mode CustomSelect (main.tsx MODE_LABELS), split across TWO stacked PillTrays reading and
-// writing the ONE `defaultMode` setting (the Date Format family pattern): the five practice modes
-// on the first row, Lookup + How to Play on the second. Whichever row does not hold the active
-// value simply shows no selected segment. The labels are duplicated from MODE_LABELS rather than
-// imported because MODE_LABELS deliberately stays in main.tsx (it drives a bar control, not a
-// panel picker) — tests/ pins the two together.
-export const DEFAULT_MODE_PRIMARY: { value: DefaultMode; label: string }[] = [
-  { value: 'classic', label: 'Classic' },
-  { value: 'aox', label: 'MoX' },
-  { value: 'deduction', label: 'Deduction' },
-  { value: 'flash', label: 'Flash' },
-  { value: 'blitz', label: 'Blitz' },
-]
-export const DEFAULT_MODE_SECONDARY: { value: DefaultMode; label: string }[] = [
-  { value: 'lookup', label: 'Lookup' },
-  { value: 'guide', label: 'How to Play' },
-]
 
 // Date Format — five ids across TWO trays but ONE setting and ONE radiogroup, so whichever half
 // doesn't hold the active id simply shows no selected segment. Sharing a group is also why 'MDY'

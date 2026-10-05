@@ -249,9 +249,8 @@ export default function CustomSelect({
     const ro = new ResizeObserver(sync)
     if (measureRef.current) ro.observe(measureRef.current)
     return () => ro.disconnect()
-    // options is a fresh array every render at the mode call site (MODE_LABELS is defined in App's
-    // body); depend on a stable signature of it, not its identity, so this doesn't re-subscribe on
-    // every render. The mirror re-renders with the new labels regardless, and the ResizeObserver
+    // A call site may hand over a fresh options array on every render; depend on a stable signature
+    // of it, not its identity, so this doesn't re-subscribe on every render. The mirror re-renders with the new labels regardless, and the ResizeObserver
     // above catches any width change that causes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerMatchesDropdown, options.map((o) => o.value).join(OPTION_VALUE_SEPARATOR)])

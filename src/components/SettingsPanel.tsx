@@ -42,9 +42,8 @@ import {
   LIGHT_THEMES,
   CHANCE_OPTIONS,
   LEAP_CHANCE_OPTIONS,
-  DEFAULT_MODE_PRIMARY,
-  DEFAULT_MODE_SECONDARY,
 } from './settingsOptions.js'
+import { PRACTICE_MODE_OPTIONS, OTHER_PAGE_OPTIONS } from '../lib/modes.js'
 import {
   FOOTER_RESET_BTN_CLASS,
   NOT_OFFERED_BTN_CLASS,
@@ -1011,12 +1010,12 @@ export function SettingsPanel({
               <PillTray
                 value={defaultMode}
                 onChange={setDefaultMode}
-                options={DEFAULT_MODE_PRIMARY}
+                options={PRACTICE_MODE_OPTIONS}
               />
               <PillTray
                 value={defaultMode}
                 onChange={setDefaultMode}
-                options={DEFAULT_MODE_SECONDARY}
+                options={OTHER_PAGE_OPTIONS}
               />
             </PillGroup>
           </div>

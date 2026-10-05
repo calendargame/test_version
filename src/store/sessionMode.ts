@@ -1,4 +1,4 @@
-import { DEFAULT_MODE_VALUES } from './settings.js'
+import { isPageId } from '../lib/modes.js'
 import type { DefaultMode } from './settings.js'
 
 // store/sessionMode.ts — the CURRENT PAGE, per preset, for THIS browsing session only (round 21).
@@ -32,9 +32,6 @@ const KEY = 'cg-session-mode-v1'
 
 type PageMap = Record<string, DefaultMode>
 
-const isMode = (v: unknown): v is DefaultMode =>
-  typeof v === 'string' && (DEFAULT_MODE_VALUES as readonly string[]).includes(v)
-
 const read = (): PageMap => {
   try {
     const raw = window.sessionStorage.getItem(KEY)
@@ -43,7 +40,7 @@ const read = (): PageMap => {
     if (!parsed || typeof parsed !== 'object') return {}
     const out: PageMap = {}
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>))
-      if (isMode(v)) out[k] = v
+      if (isPageId(v)) out[k] = v
     return out
   } catch {
     return {}

@@ -4,6 +4,7 @@ import { PRESET_STORE_KEYS, presetKey, presetScopedStorage, mergeOverDefaults } 
 import { readItem } from './storageHealth.js'
 import type { FormatId } from '../lib/format.js'
 import { isDotRotation, type DotRotation } from '../lib/dotLayout.js'
+import { isPageId, type PageId } from '../lib/modes.js'
 
 // settings.js — the ⚙ Settings store (Stage C, Steps 5a + 5b).
 //
@@ -37,27 +38,16 @@ import { isDotRotation, type DotRotation } from '../lib/dotLayout.js'
 // (Settings → Input). Stored as an enum (not a boolean) so more layouts can be added later.
 export type InputStyle = 'buttons' | 'dots'
 
-// defaultMode — the page a preset OPENS ON (round 21). One of the seven entries of the bar's
-// mode CustomSelect (main.tsx MODE_LABELS): the five practice modes, Lookup, and How to Play
-// ('guide'). It is a per-preset ⚙ setting like the fifteen above it — persisted here, captured by
+// defaultMode — the page a preset OPENS ON (round 21). One of the pages in lib/modes' PAGES — the
+// practice modes, Lookup, and How to Play ('guide') — and saved by its ID, never by its position
+// in that list, so reordering the pages cannot change what a stored value means. It is a per-preset ⚙ setting like the fifteen above it — persisted here, captured by
 // Save Defaults (SavedDefaults.settings is a full SettingsValues snapshot, so it rides along with
 // no extra wiring) and restored by Reset Settings / Full Reset. It only takes EFFECT on a cold
 // open or a preset switch — main.tsx reads it then via readStoredDefaultMode below and calls
 // switchMode; nothing else consults it. The app-global "open in which preset" pin is a SEPARATE
 // thing and lives on the registry (store/presets' openInPreset), not here — this store is
 // per-preset and cannot hold a global.
-export type DefaultMode = 'classic' | 'flash' | 'blitz' | 'deduction' | 'aox' | 'lookup' | 'guide'
-export const DEFAULT_MODE_VALUES: readonly DefaultMode[] = [
-  'classic',
-  'flash',
-  'blitz',
-  'deduction',
-  'aox',
-  'lookup',
-  'guide',
-]
-export const isDefaultMode = (v: unknown): v is DefaultMode =>
-  typeof v === 'string' && (DEFAULT_MODE_VALUES as readonly string[]).includes(v)
+export type DefaultMode = PageId
 // `dotRotation` — Settings → Display → Rotate Dots, a three-way pill: Standard / 45° CCW / 90° CCW
 // (round 23). ITS HISTORY, because two older shapes of it are still out there in saved data and
 // migrateDotRotation below reads both: it launched as `dotOrientation: 'columns' | 'rows'` (a
@@ -321,7 +311,7 @@ export const readStoredDefaultMode = (presetId: number): DefaultMode => {
       envelope && typeof envelope === 'object' ? (envelope as { state?: unknown }).state : null
     const v =
       state && typeof state === 'object' ? (state as { defaultMode?: unknown }).defaultMode : null
-    return isDefaultMode(v) ? v : 'classic'
+    return isPageId(v) ? v : 'classic'
   } catch {
     return 'classic'
   }

@@ -40,7 +40,7 @@ import { usePresets } from './store/presets.js'
 import { activeDataId, selectAmnesic, discardParkedStats } from './store/amnesic.js'
 import { setPresetAmnesic, commitOpenedPreset } from './store/presetControl.js'
 import { openBrowsingSession } from './store/browsingSession.js'
-import { useSettings, readStoredDefaultMode, isDefaultMode } from './store/settings.js'
+import { useSettings, readStoredDefaultMode } from './store/settings.js'
 import { readSessionMode, writeSessionMode } from './store/sessionMode.js'
 import { discardSessionRounds, discardSessionRound } from './store/sessionRound.js'
 import { discardSessionHistories, discardSessionHistory } from './store/sessionHistory.js'
@@ -61,6 +61,7 @@ import type { CodeDate } from './components/MethodBreakdown.jsx'
 import RotateOverlay from './components/RotateOverlay.jsx'
 import BootOverlay from './components/BootOverlay.jsx'
 import { rollFormat, isTouch } from './lib/modeFormat.js'
+import { PAGE_OPTIONS, PAGE_BY_KEY, isPageId } from './lib/modes.js'
 import ClassicMode from './modes/ClassicMode.jsx'
 import FlashMode from './modes/FlashMode.jsx'
 import DeductionMode from './modes/DeductionMode.jsx'
@@ -119,13 +120,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // what App does take from that module. Read by components/LookupCard (MONTH + DAY),
     // components/WeekdayAnswer, components/GuidePage, lib/method and modes/DeductionMode (DAY);
     // lib/format itself uses MONTH internally in fmt/fmtPartial.
-    // MODE_LABELS drives the header mode CustomSelect (the customSelect dropdown
-    // that replaced the native <select>). Order here = order shown in the dropdown.
-    const MODE_LABELS=[{value:'classic',label:'Classic'},{value:'aox',label:'MoX'},{value:'deduction',label:'Deduction'},{value:'flash',label:'Flash'},{value:'blitz',label:'Blitz'},{value:'lookup',label:'Lookup'},{value:'guide',label:'How to Play'}];
+    // The pages and their order -> src/lib/modes.ts (PAGES). App takes PAGE_OPTIONS for the bar's
+    // mode CustomSelect — the order there is the order the dropdown shows — and PAGE_BY_KEY for the
+    // letter keys that switch page.
     // ⚙ Settings PICKER option arrays (WRITTEN_FORMATS / NUMERIC_FORMATS / INPUT_STYLES /
     // DARK_THEMES / LIGHT_THEMES / CHANCE_OPTIONS / LEAP_CHANCE_OPTIONS) -> src/components/
-    // settingsOptions.ts, imported by the panel itself. MODE_LABELS above stayed here because it
-    // drives the BAR's mode CustomSelect, which is not part of the panel.
+    // settingsOptions.ts, imported by the panel itself.
     // Method-code maps + the per-date code summary (METHOD_*, JULIAN_AB_MAP, normalizeMod7,
     // canonicalizeMod, calcDayCode, calcCdCode, yearParts, computeMethodSummary) → src/lib/method.js.
     // NOT imported here any more: computeMethodSummary was App's only reader and it left with the
@@ -856,14 +856,14 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // sessionStorage — survives a reload, gone on a full close). It resolves a functional updater
       // against modeRef (it has [] deps and cannot read `mode`), records the resolved page under the
       // ACTIVE preset's id, then commits. Every path still routes through here — the bar's mode
-      // CustomSelect, the K/F/B/A/D/L mode keys, H, the Back button, fullReset — so the per-preset
-      // page is captured wherever the change came from. isDefaultMode keeps a garbage value (only
+      // CustomSelect, the pages' letter keys, the Back button, fullReset — so the per-preset
+      // page is captured wherever the change came from. isPageId keeps a garbage value (only
       // reachable from a tampered sessionStorage the boot effect feeds back in) out of the store.
       const switchMode=useCallback((next: SetStateAction<string>)=>{
         saveReadingPosRef.current?.();
         const resolved=typeof next==='function'?(next as (m:string)=>string)(modeRef.current):next;
         modeRef.current=resolved;
-        if(isDefaultMode(resolved))writeSessionMode(usePresets.getState().activeId,resolved);
+        if(isPageId(resolved))writeSessionMode(usePresets.getState().activeId,resolved);
         setMode(resolved);
       },[]);
       // Scroll ownership on a mode change — ONE effect, no second opinion. Every scroll position
@@ -1529,11 +1529,17 @@ import BlitzMode from './modes/BlitzMode.jsx'
         else if(k.length===1){const upper=k.toUpperCase();if(upper>='A'&&upper<='Z')dataKey=upper;}
         if(!dataKey)return;
         if(isAppWidePopupOpen())return; // the page behind it is inert to EVERY category (see above)
-        // Category 3a: mode switching — direct switchMode (no DOM button per mode)
-        const MODE_KEYS: Record<string, string>={K:'classic',F:'flash',B:'blitz',A:'aox',D:'deduction',L:'lookup'};
-        if(MODE_KEYS[dataKey]){e.preventDefault();switchMode(MODE_KEYS[dataKey]);setSettingsOpen(false);return;}
-        // Category 3b: H — toggle to/from guide, preserving previous non-guide mode
-        if(dataKey==='H'){e.preventDefault();switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');setSettingsOpen(false);return;}
+        // Category 3a/3b: a page's letter (lib/modes' PAGES carries each one) — direct switchMode, no
+        // DOM button per page. Every letter goes TO its page except How to Play's, which TOGGLES:
+        // pressed on the guide it returns to the previous non-guide page.
+        const page=PAGE_BY_KEY[dataKey];
+        if(page){
+          e.preventDefault();
+          if(page.id==='guide')switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');
+          else switchMode(page.id);
+          setSettingsOpen(false);
+          return;
+        }
         // Category 3c: G — toggle settings popover. ⚠ Unlike the mode letters and H, which REPLACE
         // the screen and take any mode-screen modal with it (that mode's own `confirmOpen && !visible`
         // render guard drops it), G opening the panel while a non-panel modal is up — the per-mode
@@ -2394,7 +2400,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
                   preset switcher beside it already wears, so the two now match by construction
                   instead of by coincidence. */}
               <div className="shrink-0">
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={MODE_LABELS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus:outline-hidden focus-ring text-left"/>
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={PAGE_OPTIONS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus:outline-hidden focus-ring text-left"/>
               </div>
               {/* THE ⚙ AT THE FAR EDGE. The gear moved from the INSIDE of the old right-hand pair
                   to the OUTSIDE of it (owner's layout: gear far right); flattening the row to four
