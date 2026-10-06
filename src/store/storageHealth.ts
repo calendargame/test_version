@@ -141,6 +141,9 @@ export function writeItem(storage: Storage, key: string, value: string): boolean
   return true
 }
 
+/** Is any save for this storage area being held — i.e. is THIS area the one that is full? */
+export const isHolding = (storage: Storage): boolean => held.has(storage)
+
 /** What (storage, key) holds — the value held for it when its last save was refused. */
 export function readItem(storage: Storage, key: string): string | null {
   return held.get(storage)?.get(key) ?? storage.getItem(key)

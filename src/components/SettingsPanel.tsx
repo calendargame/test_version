@@ -30,6 +30,7 @@ import PresetManager from './PresetManager.jsx'
 import CustomSelect from './CustomSelect.jsx'
 import { PresetOptionLabel } from './PresetSwitcher.jsx'
 import { SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './scrollRegion.js'
+import { useStorageUsage } from '../store/storageUsage.js'
 import Popup from './Popup.js'
 import { useLayer } from './overlayStack.js'
 import { MODAL_CARD_CLASS, MODAL_CARD_SHADOW } from './modalContract.js'
@@ -718,6 +719,9 @@ export function SettingsPanel({
   // Updates section) and nowhere else. Don't re-add it here. With zero focusable controls the
   // shared trapModalTab pins focus on the dialog card (its degenerate branch) rather than letting
   // Tab walk out to the panel beneath.
+  const storagePercent = useStorageUsage((u) => u.percent)
+  const storageWarning = useStorageUsage((u) => u.warning)
+  const openStorageUsage = useStorageUsage((u) => u.openPopup)
   const changelogJsx = changelogOpen && (
     <Popup id="changelog" onDismiss={closeChangelog}>
       <div
@@ -1570,6 +1574,21 @@ export function SettingsPanel({
             >
               dayoftheweekcalculation@gmail.com
             </a>
+          </div>
+          {/* HOW FULL THE DEVICE'S ROOM FOR THE APP IS (store/storageUsage) — always shown, and a
+              tap opens the breakdown (components/StorageUsagePopup, App's). On a row of its own:
+              the metadata row below is already full at a phone's width. From the warning line up
+              it wears the warning colour (index.css's .storage-warn), with the words for it for a
+              screen reader — colour alone says nothing to one. */}
+          <div>
+            <button
+              type="button"
+              onClick={openStorageUsage}
+              className={`select-none rounded-md px-1 -mx-1 underline${storageWarning ? ' storage-warn' : ''}`}
+            >
+              Storage used: {storagePercent}%
+              {storageWarning && <span className="sr-only">, almost full</span>}
+            </button>
           </div>
           {/* ── THE APP-METADATA ROW, now the last thing in the panel and SPREAD ACROSS IT (owner's
               call, this round — it was left-packed behind a gap-3 until the saved-defaults pair

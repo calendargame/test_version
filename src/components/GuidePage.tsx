@@ -1680,11 +1680,11 @@ export default function GuidePage({
             work: they leave the screen, and any popup belonging to it goes at the same moment.{' '}
             <Kbd>G</Kbd> still closes the ⚙ menu together with any of its popups, but does nothing
             while a game screen&apos;s own popup (such as a Reset Stats question or a breakdown) is
-            open. The one popup those keys can&apos;t take with them is the &quot;Your progress
-            isn&apos;t being saved&quot; notice, which belongs to no screen: while it is up the mode
-            letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing either, until you close it.{' '}
-            <Kbd>Tab</Kbd> stays inside the popup rather than opening the mode selector (see
-            Accessibility).
+            open. The two popups those keys can&apos;t take with them are the ones that belong to no
+            screen — the &quot;Your progress isn&apos;t being saved&quot; notice and the{' '}
+            <b>Storage used</b> breakdown: while one of them is up the mode letters, <Kbd>H</Kbd>{' '}
+            and <Kbd>G</Kbd> do nothing either, until you close it. <Kbd>Tab</Kbd> stays inside the
+            popup rather than opening the mode selector (see Accessibility).
           </li>
           <li>
             <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use{' '}
@@ -2613,6 +2613,16 @@ export default function GuidePage({
             score.
           </li>
         </UL>
+        <p>
+          A device gives the app a fixed amount of room for all of this, and the ⚙ menu always shows
+          how much of it is in use: <b>Storage used</b>, at the foot of the menu. Tap it to see what
+          is using the room — each mode&apos;s solve times, the Lookup history, each preset&apos;s
+          other data — and what you can clear to get some back: <b>Reset Stats</b> in a mode,{' '}
+          <b>Clear History</b> in Lookup, or deleting a preset you no longer use. The first time it
+          passes 80% that same breakdown opens by itself, once. After that it stays out of your way,
+          but the line stays in a warning colour and the ⚙ button keeps its dot until the number is
+          back under 80%.
+        </p>
         <p>
           If this device ever runs out of room for the app&apos;s saved data, a popup tells you so.
           You can keep playing — nothing already saved is lost, and your newest answers and changes

@@ -29,6 +29,8 @@ import { isAppWidePopupOpen, isPopupOpen, useBackButton, useLayer, usePopupOpen 
 import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
 import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
+import StorageUsagePopup from './components/StorageUsagePopup.jsx'
+import { useStorageUsage, watchStorageUsage, refreshStorageUsage } from './store/storageUsage.js'
 import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
@@ -1370,6 +1372,13 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // The snapshot getters are module-scope constants (readGearDot / readChangelogDot, declared
       // beside appCssApplied at the top of this file) so their identity is stable across renders.
       const gearDot=useSyncExternalStore(subscribeUpdateDot,readGearDot);
+      // ★ THE GEAR'S DOT HAS A SECOND REASON: the device's room for the app is nearly used up
+      // (store/storageUsage's `warning`). It is the SAME dot, lit for either reason — but this reason
+      // is not a stored flag: it is the reading itself, so opening ⚙ does not clear it (that clears
+      // only the update flag, below) and it goes out by itself the moment usage drops back under.
+      const storageWarning=useStorageUsage(s=>s.warning);
+      // The reading is kept current from here on (one now; the rest are argued in the store).
+      useEffect(()=>watchStorageUsage(),[]);
       const changelogDot=useSyncExternalStore(subscribeUpdateDot,readChangelogDot);
       // THE ONE WAY TO OPEN SETTINGS, and the only place the gear's update dot is retired.
       // ★ WHY THIS IS A CALLBACK AND NOT AN EFFECT. The retirement used to be
@@ -1418,6 +1427,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       const toggleSettings=useCallback(()=>{
         const opening=!settingsOpen;
         if(opening&&gearDot)clearUpdateDot(GEAR_DOT_KEY); // notifies → the dot re-reads false
+        if(opening)refreshStorageUsage(); // the panel's "Storage used" line shows the device as it is now
         setSettingsOpen(opening);
       },[settingsOpen,gearDot]);
       useEffect(()=>{
@@ -2450,7 +2460,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
                     indicator's class may be counted on to be present. The marker is aria-hidden, so
                     the aria-label carries BOTH booleans in every combination — the only accessible
                     name this button has, its visible content being a bare glyph. */}
-                <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;toggleSettings();}} onClick={()=>toggleSettings()} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot}/></button>
+                <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;toggleSettings();}} onClick={()=>toggleSettings()} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":"",storageWarning?"storage almost full":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot||storageWarning}/></button>
               </div>
             </div>
             {/* ⚙ THE SETTINGS PANEL, at the slot its markup used to occupy inline. Three things
@@ -2588,6 +2598,9 @@ import BlitzMode from './modes/BlitzMode.jsx'
         {mode==="guide"?<div ref={docFadeBottomRef} aria-hidden="true" className="doc-fade-bottom"/>:null}
         {/* A save the device refused (store/storageHealth) — the one notice that can open on its
             own, from any screen, the moment it happens. It reads its own open flag. */}
+        {/* The early warning, and the breakdown behind ⚙'s "Storage used" line (store/storageUsage).
+            Before the notice, which opens on top of it when both are due. */}
+        <StorageUsagePopup/>
         <StorageFullNotice/>
         </>
       );

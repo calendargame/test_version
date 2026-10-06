@@ -876,6 +876,11 @@ button:focus,select:focus{outline:none}
 /* The in-flow marker, for text links: margin-inline-start is the gap from the last glyph, in em
    again so the gap tracks the type it trails. */
 [data-update-dot="inline"]{display:inline-block;margin-inline-start:.3em}
+/* The ⚙ panel's "Storage used" line from the warning line up (store/storageUsage). Amber: a caution
+   about STATE — unlike the update dot's blue, which means news. Deeper on the light themes (the
+   .gear-modified pattern). */
+.storage-warn{color:rgba(251,191,36,.95)}
+[data-theme="light"] .storage-warn,[data-theme="parchment"] .storage-warn{color:rgba(180,83,9,.95)}
 /* The boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
    once its check has FOUND a newer build — round 11; never on a press with nothing to get —
    and by the auto-update-on-open boot check when a freshly-deployed version is waiting; the LOADING

@@ -158,7 +158,7 @@ const resolve = <T>(next: Updater<T>, prev: T): T =>
 
 // ── The permanent list ────────────────────────────────────────────────────────────────────────
 
-const LOOKUP_HISTORY_KEY = 'cg-lookup-v1'
+export const LOOKUP_HISTORY_KEY = 'cg-lookup-v1'
 
 export type LookupHistoryState = {
   history: LookupEntry[]
