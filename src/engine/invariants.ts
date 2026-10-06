@@ -282,6 +282,11 @@ const isMarked = (btns: Btns | undefined): boolean => {
 // the memory alone, so the fault is reported again on every walk until it is gone. Whenever the
 // arrays are not the last ones seen — another mode's engine, the oldest cards forgotten (every
 // index shifts), a restore — the cards are simply asked again; it can only ever ask MORE.
+// ★ ALL OF IT RESTS ON ONE THING: NOTHING WRITES INTO A CARD OR A HISTORY ARRAY IN PLACE — a write
+// would leave the same object at the same index, and the walk would never look at it again. That is
+// not left to care: engine/freeze freezes every state, all the way down, in the fuzz survey (every
+// state of every sequence) and in the hook in development and under test, so such a write throws
+// where it is made instead of slipping past this memory.
 // ⚠ NOT A WeakSet OF CHECKED CARDS, which is what this was first. Looking a card up in one was
 // cheap; ADDING to it was not — play makes a new entry object every time a card moves, and each one
 // went into a weak collection the garbage collector then has to trace. In the app that is nothing.

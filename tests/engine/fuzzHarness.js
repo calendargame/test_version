@@ -22,6 +22,7 @@ import {
 import { isDeepStrictEqual } from 'node:util'
 import { parkedText, restoreParked } from '../../src/engine/parkedHistory.js'
 import { checkGameInvariants } from '../../src/engine/invariants.js'
+import { deepFreeze } from '../../src/engine/freeze.js'
 import { computeStreaks } from '../../src/engine/streak.js'
 import { computeHasCredit } from '../../src/engine/answerButtons.js'
 import { createRefModel, applyRefModel, compareRefModel } from './referenceModel.js'
@@ -905,7 +906,15 @@ export function runSequence(seed, steps, cov, profile) {
     }
     cov.hydrated++
   }
-  let state = initEngine(randDate(rnd), initialStats)
+  // ★ EVERY STATE IS FROZEN, ALL THE WAY DOWN, BEFORE THE NEXT ACTION IS APPLIED TO IT (engine/freeze)
+  // — the first one here, and below every state the reducer returns, every restored one and every
+  // one with its oldest cards forgotten. So a reducer case, the restore door or forgetOldestCards
+  // that wrote into a state it was handed — instead of returning new objects — throws at that line,
+  // in whichever profile first reaches it. engine/invariants remembers which history cards have
+  // passed its calendar tripwires by object identity, which is sound only if no card is ever changed
+  // in place; this is what holds the engine to that. (Incremental: a state shares almost everything
+  // with the frozen one before it, so freezing it costs what the transition made.)
+  let state = deepFreeze(initEngine(randDate(rnd), initialStats))
   // The independent reference model — replays the same action stream and is compared
   // field-by-field after every action. Seeded with the only display facts it consumes: whether the
   // initial question is a Deduction puzzle (and, per ANSWER, whether the click was correct), plus the
@@ -924,7 +933,7 @@ export function runSequence(seed, steps, cov, profile) {
       // The screen's half of the switch (see P_PANEL_CLOSES): the one REGEN_DATE, asked for exactly
       // when the engine says the waiting date is one the calendar in force does not have.
       if (chance(rnd, P_PANEL_CLOSES) && waitingDateMissing(state, useJulian)) {
-        state = gameReducer(state, { type: 'REGEN_DATE', nextDate: randDate(rnd) })
+        state = deepFreeze(gameReducer(state, { type: 'REGEN_DATE', nextDate: randDate(rnd) }))
         if (model) applyRefModel(model, 'REGEN', null, { liveAfter: liveQuestion(state) })
         cov.missingRegens++
       }
@@ -942,7 +951,7 @@ export function runSequence(seed, steps, cov, profile) {
       if (profile.pTrim && state.stack.length && chance(rnd, profile.pTrim)) {
         const k = 1 + Math.floor(rnd() * state.stack.length)
         priorHistory = [...priorHistory, ...state.stack.slice(0, k).map((e) => !!e.hasCredit)]
-        state = forgetOldestCards(state, k)
+        state = deepFreeze(forgetOldestCards(state, k))
         cov.forgotten++
       }
       const back = restoreParked(
@@ -966,7 +975,7 @@ export function runSequence(seed, steps, cov, profile) {
           nowStats: back?.engine.stats,
           recent,
         }
-      state = back.engine
+      state = deepFreeze(back.engine)
       cov.reloads++
       if (state.backDepth > 0) cov.reloadsDeep++
       // …AND AS AN OLDER BUILD WOULD HAVE PARKED IT: the same state with no calendar on any card,
@@ -1005,7 +1014,7 @@ export function runSequence(seed, steps, cov, profile) {
       if (timingShown || waitingDateMissing(state, useJulian)) {
         if (!timingShown) cov.missingRegens++
         const before = state
-        state = gameReducer(state, { type: 'REGEN_DATE', nextDate: randDate(rnd) })
+        state = deepFreeze(gameReducer(state, { type: 'REGEN_DATE', nextDate: randDate(rnd) }))
         if (state === before) cov.restoreKept++
         else {
           cov.restoreRegen++
@@ -1140,7 +1149,7 @@ export function runSequence(seed, steps, cov, profile) {
     if (kind === 'BACK' && state.stack.length) cov.back++
     if (state.date.type) cov.deduction++
     const prev = state
-    state = gameReducer(state, action)
+    state = deepFreeze(gameReducer(state, action))
     // A full RESET re-inits the engine blank (bestFloor/streakCarry → 0), so the hydrated prefix is
     // gone — drop it for the oracle in lockstep with the model's own RESET clear (referenceModel.js).
     // (priorTimes feeds only createRefModel at seed time + the model clears its own copy, so the oracle

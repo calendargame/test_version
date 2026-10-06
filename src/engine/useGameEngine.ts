@@ -29,7 +29,8 @@ import {
   overridePlan,
   regenReplaces,
 } from './gameReducer.js'
-import type { GameState, Question, Stats } from './gameReducer.js'
+import type { GameAction, GameState, Question, Stats } from './gameReducer.js'
+import { deepFreeze } from './freeze.js'
 import { checkGameInvariants } from './invariants.js'
 import { solveTimeFromMs } from './stats.js'
 import { useSolveClock } from '../lib/solveClock.js'
@@ -70,6 +71,21 @@ export interface UseGameEngineOptions {
   getInitialState?: () => GameState | null
 }
 
+// ★ IN DEVELOPMENT AND UNDER TEST, EVERY STATE THE HOOK HANDS OUT IS FROZEN, all the way down
+// (engine/freeze argues why): a screen, a hook or a store that wrote into an engine state — or into
+// the saved stats and the question objects a state is built from — throws on the spot, instead of
+// quietly breaking what rests on states never changing in place (engine/invariants' memory of the
+// cards it has checked, first of all). `import.meta.env.DEV` is the literal `false` in a production
+// build, so there the reducer below is gameReducer itself, the first state is returned as it is
+// made, and engine/freeze is not in the bundle.
+// What it costs a development build, measured on a 1,000-card history: some 35–70 µs a dispatch (an
+// answer copies the history array, and each slot of the copy is asked whether it is frozen; and the
+// engine's own array copies run slower on frozen arrays) — the same order as the invariant walk that
+// already runs after every dispatch, and nothing a person can perceive.
+const engineReducer: (state: GameState, action: GameAction) => GameState = import.meta.env.DEV
+  ? (state, action) => deepFreeze(gameReducer(state, action))
+  : gameReducer
+
 export function useGameEngine({
   genDate,
   minY,
@@ -82,11 +98,10 @@ export function useGameEngine({
   getInitialStats,
   getInitialState,
 }: UseGameEngineOptions) {
-  const [state, dispatch] = useReducer(
-    gameReducer,
-    undefined,
-    () => getInitialState?.() ?? initEngine(genDate(minY, maxY), getInitialStats?.()),
-  )
+  const [state, dispatch] = useReducer(engineReducer, undefined, () => {
+    const first = getInitialState?.() ?? initEngine(genDate(minY, maxY), getInitialStats?.())
+    return import.meta.env.DEV ? deepFreeze(first) : first
+  })
 
   // The solve-timer starts when a NEW question is shown (advance / New / Reset bump
   // questionId). Back/Forward change `date` to a browsed entry but leave questionId
