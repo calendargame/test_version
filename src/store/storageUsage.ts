@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import { PRESET_STORE_KEYS, FIRST_PRESET_ID, usePresets } from './presets.js'
+import { PRESET_STORE_KEYS, presetIdOfSuffix, usePresets } from './presets.js'
 import { parseTimesKey, CHUNK_TIMES } from './progressStorage.js'
 import { isHolding, tryWriteItem, useStorageHealth } from './storageHealth.js'
 import { useProgress } from './progress.js'
 import { useLookupHistory, LOOKUP_HISTORY_KEY } from './lookupHistory.js'
+import { isRecord } from './json.js'
 
 // store/storageUsage.ts — HOW FULL THE DEVICE'S ROOM FOR THIS APP IS, AND WHAT IS FILLING IT.
 //
@@ -68,17 +69,13 @@ export type UsageRow =
 
 export type UsageReading = { used: number; rows: UsageRow[] }
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v)
-
 // Which preset a per-preset store key belongs to, and whether it is the progress key — or null for
 // a key that is not one of the four.
 function parsePresetKey(key: string): { presetId: number; progress: boolean } | null {
   for (const base of Object.values(PRESET_STORE_KEYS)) {
     if (!key.startsWith(base)) continue
-    const scope = key.slice(base.length)
-    const presetId = scope === '' ? FIRST_PRESET_ID : /^~p\d+$/.test(scope) ? +scope.slice(2) : NaN
-    if (!Number.isNaN(presetId)) return { presetId, progress: base === PRESET_STORE_KEYS.progress }
+    const presetId = presetIdOfSuffix(key.slice(base.length))
+    if (presetId !== null) return { presetId, progress: base === PRESET_STORE_KEYS.progress }
   }
   return null
 }

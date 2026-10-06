@@ -1,9 +1,10 @@
 import type { PersistStorage, StorageValue } from 'zustand/middleware'
-import { usePresets, presetKey, PRESET_STORE_KEYS } from './presets.js'
+import { usePresets } from './presets.js'
 import { useSessionAmnesic, amnesicModeOf } from './sessionAmnesic.js'
 import { readItem, writeItem } from './storageHealth.js'
-import { createProgressCodec, removeProgressCopy } from './progressStorage.js'
+import { createProgressCodec, removeProgressCopy, mainKeyOf } from './progressStorage.js'
 import { captureError } from '../observability/sentry.js'
+import { sameJson } from './json.js'
 import type { AmnesicMode } from './amnesicMode.js'
 import type { ProgressValues } from './progress.js'
 
@@ -184,12 +185,6 @@ export const activeBestsId = (): string =>
 
 // ── The session copy ──────────────────────────────────────────────────────────────────────────
 
-// The stats key for one preset — the SAME key in either storage area. Sharing the spelling is safe
-// because the two areas are separate namespaces (nothing in localStorage can collide with anything
-// in sessionStorage), and it is what lets the payload keep its exact shape and `version` stamp
-// across the move, so migrate/merge behave identically wherever the bytes came from.
-const statsKey = (presetId: number) => presetKey(PRESET_STORE_KEYS.progress, presetId)
-
 // sessionStorage, or null when the browser refuses it. Read through a try/catch rather than left to
 // throw, because the two areas fail INDEPENDENTLY and this one must not take the other down: a
 // browser that allows localStorage but refuses sessionStorage still has to run a non-amnesic
@@ -225,10 +220,11 @@ export function discardSessionStats(presetId: number): void {
  * it is and has written nothing yet, or the browser refuses sessionStorage).
  *
  * ★ IT LIVES HERE RATHER THAN AT ITS CALLER for the reason every other function in this section
- * does: the stats key's spelling and the guarded sessionStorage open are this file's, and a second
- * copy of either somewhere else is how the two areas come to disagree about where a preset's
- * session stats are. store/presetControl's isPresetFactory is the one caller — it has to ask
- * whether a preset about to be deleted holds anything, and for an amnesic preset the session copy
+ * does: the guarded sessionStorage open is this file's, and a second copy of it somewhere else is
+ * how the two areas come to disagree about where a preset's session stats are (the key's own
+ * spelling is store/progressStorage's mainKeyOf — the same name in either area).
+ * store/presetControl's isPresetFactory is the one caller — it has to ask whether a preset about
+ * to be deleted holds anything, and for an amnesic preset the session copy
  * is one of the two places that can answer yes.
  * ⚠ RAW TEXT, NOT A PARSED PAYLOAD, deliberately: the caller compares it against store/progress'
  * factory value with exactly the machinery it already uses for the permanent copy. Parsing it here
@@ -237,7 +233,7 @@ export function discardSessionStats(presetId: number): void {
 export function readSessionStats(presetId: number): string | null {
   try {
     const ss = openSessionStorage()
-    return ss ? readItem(ss, statsKey(presetId)) : null
+    return ss ? readItem(ss, mainKeyOf(presetId)) : null
   } catch {
     /* storage refused — the session copy only ever lived in memory */
     return null
@@ -323,8 +319,6 @@ const readEnvelope = (text: string | null): Envelope | null => {
   }
 }
 
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
-
 export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
   // ⚠ EAGER, exactly as presetScopedStorage is and for the same reason: a browser that throws on the
   // localStorage property access must be found out HERE, so the store lands on persist's
@@ -379,7 +373,7 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
   ) => {
     if (!handed || handed.presetId !== presetId || !handed.readable) return
     if (keys.every((key) => state[key] === handed!.maps[key])) return
-    const text = readItem(ls, statsKey(presetId))
+    const text = readItem(ls, mainKeyOf(presetId))
     const parked = readEnvelope(text)
     if (text !== null && !parked) {
       handed.readable = false
@@ -393,7 +387,7 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
     const kept = Object.fromEntries(keys.map((key) => [key, state[key] ?? {}]))
     writeItem(
       ls,
-      statsKey(presetId),
+      mainKeyOf(presetId),
       JSON.stringify(
         parked ? { ...parked, state: { ...parked.state, ...kept } } : { state: kept, version },
       ),
@@ -427,7 +421,7 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
         captureError(e instanceof Error ? e : new Error(String(e)), { tripwire: 'progressSession' })
       }
       const keep = keptKeys(mode)
-      const text = keep.length ? readItem(ls, statsKey(presetId)) : null
+      const text = keep.length ? readItem(ls, mainKeyOf(presetId)) : null
       const parked = readEnvelope(text)
       handed = { presetId, readable: text === null || parked !== null, maps: {} }
       const state: Record<string, unknown> = {}

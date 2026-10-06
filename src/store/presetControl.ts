@@ -24,6 +24,7 @@ import { useSettings, SETTINGS_DEFAULTS } from './settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from './modePrefs.js'
 import { useProgress, makeProgressDefaults } from './progress.js'
 import { useUserDefaults, makeUserDefaultsDefaults } from './userDefaults.js'
+import { sameJson } from './json.js'
 
 // store/presetControl.ts — the things you can DO to the set of presets, and the only place allowed
 // to do them.
@@ -159,16 +160,17 @@ const reloadPresetStores = () => {
 
 // Remove one preset's saved copy — its four keys and nothing else. Derived from the key record
 // rather than by scanning localStorage for a pattern, so it cannot sweep up a neighbour, and so a
-// fifth per-preset store becomes deletable by the act of being listed there. (The progress key's
-// sealed chunks of solve times are part of that key's copy and go with it —
-// store/progressStorage's removeProgressCopy, which lists exactly this preset's.)
+// fifth per-preset store becomes deletable by the act of being listed there. (The progress key goes
+// through store/progressStorage's removeProgressCopy instead of the loop: its sealed chunks of solve
+// times are part of that key's copy and go with it, and that function lists exactly this preset's.)
 // Swallows a refusing localStorage: there is nothing to delete in a browser that has stored nothing.
 // Through store/storageHealth's removeItem, so a save the device REFUSED for one of these keys is
 // forgotten with the key — a deleted preset must not be written back out when room appears.
 const clearPresetStorage = (presetId: number) => {
   try {
     for (const baseKey of Object.values(PRESET_STORE_KEYS))
-      removeItem(window.localStorage, presetKey(baseKey, presetId))
+      if (baseKey !== PRESET_STORE_KEYS.progress)
+        removeItem(window.localStorage, presetKey(baseKey, presetId))
     removeProgressCopy({ area: window.localStorage, presetId })
   } catch {
     /* storage refused — nothing was ever written, so nothing is left behind */
@@ -247,30 +249,11 @@ const presetStorageInUse = (presetId: number): boolean => {
 // stats on mount). Those presets hold KEYS and no DATA. So the test is per store, and it is
 // ABSENT **or** EQUAL TO THAT STORE'S OWN DEFAULTS.
 
-// Deep value equality over JSON. Not a shallow compare, and not JSON.stringify either: store/
-// progress' defaults NEST (five Stats objects, each carrying a `times` array, beside four empty
-// best-records), so `===` would call every fresh preset non-factory, and stringify would make the
-// answer depend on key ORDER, which nothing guarantees across a persist round trip.
-// ⚠ NaN COMPARES FALSE here (`a === b` fails and neither branch below rescues it) — which is the
-// safe direction: a number that cannot be a stored value means "ask".
-const sameJson = (a: unknown, b: unknown): boolean => {
-  if (a === b) return true
-  if (Array.isArray(a) || Array.isArray(b))
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((v, i) => sameJson(v, b[i]))
-    )
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
-  const left = a as Record<string, unknown>
-  const right = b as Record<string, unknown>
-  const keys = Object.keys(left)
-  return (
-    keys.length === Object.keys(right).length &&
-    keys.every((k) => k in right && sameJson(left[k], right[k]))
-  )
-}
+// (Compared with store/json's sameJson — deep, and blind to key order: store/progress' defaults NEST
+// (five Stats objects, each carrying a `times` array, beside four empty best-records), so `===` would
+// call every fresh preset non-factory, and comparing text would make the answer depend on key ORDER.
+// A NaN compares false there — the safe direction: a number that cannot be a stored value means
+// "ask".)
 
 // Does one SAVED payload hold nothing but that store's factory values?
 //

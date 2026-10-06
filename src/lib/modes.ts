@@ -36,7 +36,7 @@ export type PageId = Page['id']
 export type PracticeModeId = Extract<Page, { practice: true }>['id']
 type PracticeMode = Extract<Page, { practice: true }>
 
-export const PAGE_IDS: readonly PageId[] = PAGES.map((p) => p.id)
+const PAGE_IDS: readonly PageId[] = PAGES.map((p) => p.id)
 export const isPageId = (v: unknown): v is PageId =>
   typeof v === 'string' && (PAGE_IDS as readonly string[]).includes(v)
 

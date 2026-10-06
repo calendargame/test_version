@@ -6,6 +6,7 @@ import { checkStatsInvariants } from '../engine/invariants.js'
 import { PRESET_STORE_KEYS, mergeOverDefaults } from './presets.js'
 import { presetStatsStorage } from './amnesic.js'
 import { useSettings } from './settings.js'
+import { isRecord } from './json.js'
 
 // store/progress.ts — saved gameplay progress (Stage D1).
 //
@@ -121,7 +122,6 @@ const blankStats = (): Stats => ({ played: 0, good: 0, streak: 0, best: 0, times
 // The older build that may still be open on this origin is not harmed: to it a missing key and one
 // of these records read the same (it falls back to the same empty record for both).
 // Exported for tests.
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object'
 const SAYS_NOTHING: { [K in Exclude<keyof ProgressValues, 'stats'>]: (rec: unknown) => boolean } = {
   blitzBest: (r) => isRecord(r) && r.score === 0 && r.streak === 0,
   suddenAmBest: (r) => isRecord(r) && r.score === 0 && r.streak === 0,

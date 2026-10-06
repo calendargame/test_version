@@ -1,5 +1,5 @@
 import type { StorageValue } from 'zustand/middleware'
-import { presetKey, PRESET_STORE_KEYS, FIRST_PRESET_ID } from './presets.js'
+import { presetKey, presetIdOfSuffix, PRESET_STORE_KEYS } from './presets.js'
 import {
   readItem,
   writeItem,
@@ -8,6 +8,7 @@ import {
   storageSpaceFreed,
 } from './storageHealth.js'
 import { captureError } from '../observability/sentry.js'
+import { isRecord } from './json.js'
 
 // store/progressStorage.ts — HOW THE SAVED PROGRESS IS LAID OUT ON THE DEVICE, so that saving an
 // answer costs the same however many solve times a player has.
@@ -78,9 +79,9 @@ export const CHUNK_TIMES = 250
  * "correct answers ≠ saved times" with no `timesLost`, so sealing below it would hand them a false
  * "Enable and Reset Stats?" they do not have today; above it they are already wrong after a reload.
  */
-export const SEAL_ABOVE = 1000
+const SEAL_ABOVE = 1000
 /** The chunk keys' base name. Namespaced per preset exactly as the four store keys are. */
-export const TIMES_KEY = 'cg-times-v1'
+const TIMES_KEY = 'cg-times-v1'
 
 // How many chunks a silo of `len` times is sealed into: all but the newest 250–499.
 const sealedChunks = (len: number): number =>
@@ -89,7 +90,13 @@ const sealedChunks = (len: number): number =>
 /** One copy of the saved progress: a preset's, in one storage area. */
 export type ProgressCopy = { area: Storage; presetId: number }
 
-const mainKeyOf = (presetId: number): string => presetKey(PRESET_STORE_KEYS.progress, presetId)
+/**
+ * The main key of one preset's saved progress — the SAME name in either storage area (the two are
+ * separate namespaces, and sharing the spelling is what lets a copy keep its exact shape and
+ * `version` stamp wherever it lives).
+ */
+export const mainKeyOf = (presetId: number): string =>
+  presetKey(PRESET_STORE_KEYS.progress, presetId)
 // ⚠ WITH THE TRAILING COLON, so preset 1's family is never a prefix of preset 12's.
 const familyOf = (presetId: number): string => `${presetKey(TIMES_KEY, presetId)}:`
 
@@ -120,12 +127,11 @@ export function parseTimesKey(
   if (!key.startsWith(TIMES_KEY)) return null
   const colon = key.indexOf(':')
   if (colon < 0) return null
-  const scope = key.slice(TIMES_KEY.length, colon)
-  const presetId = scope === '' ? FIRST_PRESET_ID : /^~p\d+$/.test(scope) ? +scope.slice(2) : NaN
+  const presetId = presetIdOfSuffix(key.slice(TIMES_KEY.length, colon))
   const rest = key.slice(colon + 1)
   const cut = rest.lastIndexOf(':')
   const dot = rest.indexOf('.', cut + 1)
-  if (Number.isNaN(presetId) || cut < 0 || dot < 0) return null
+  if (presetId === null || cut < 0 || dot < 0) return null
   const index = Number(rest.slice(cut + 1, dot))
   if (!Number.isInteger(index) || index < 0) return null
   return { presetId, silo: rest.slice(0, cut), index, id: rest.slice(dot + 1) }
@@ -139,9 +145,6 @@ const keysUnder = (area: Storage, prefix: string): string[] => {
   }
   return keys
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v)
 
 // ── A save the old 1,000-time cap trimmed ─────────────────────────────────────────────────────
 //
@@ -161,10 +164,13 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 // ⚠ ONE THING IT CANNOT KNOW: whether some of that gap was answers given while timing was hidden
 // (the popup's real case). In a trimmed save those are indistinguishable from discarded times, so
 // they are folded into the baseline — the only alternative is the false popup this exists to end.
+const LEGACY_TIMES_CAP = 1000
+// The saved-shape version in which the cap went — the stamp of the FIRST build that keeps every
+// solve time. ⚠ A fact about history, not "the store's current version" (store/progress' `version`,
+// which is the same number today and moves on with the next shape change): a save stamped older than
+// THIS was written by a build that trims, whatever the current version has become by then.
+const TIMES_KEPT_VERSION = 5
 // Exported for tests.
-export const LEGACY_TIMES_CAP = 1000
-/** The saved-shape version from which every solve time is kept (store/progress' `version`). */
-export const TIMES_KEPT_VERSION = 5
 export function baselineTrimmedTimes(stats: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [key, silo] of Object.entries(stats)) {

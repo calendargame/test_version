@@ -95,8 +95,8 @@ export const moveEntryToTop = (prev: LookupEntry[], id: string): LookupEntry[] =
 
 // Merge the permanent list with this session's amnesic-suppressed overflow for DISPLAY. Session
 // entries lead: they are always the most recent thing that can have happened relative to whatever
-// the permanent list held the moment Amnesic turned on, since nothing NEW can be prepended to the
-// permanent list while the active preset is amnesic (that is the whole point of the suppression).
+// the permanent list held the moment Amnesic went to Full, since nothing NEW can be prepended to the
+// permanent list while the active preset is on Full (that is the whole point of the suppression).
 // ⚠ THE ONE ORDERING NUANCE THIS TRADES AWAY, named rather than hidden: if the player leaves an
 // amnesic preset mid-session and looks something up from a NON-amnesic one afterwards, that newer
 // permanent entry is NOT re-sorted ahead of older session entries by wall-clock time — it lands

@@ -86,6 +86,15 @@ export const FIRST_PRESET_ID = 1
 export const presetKey = (baseKey: string, presetId: number): string =>
   presetId === FIRST_PRESET_ID ? baseKey : `${baseKey}~p${presetId}`
 
+/**
+ * presetKey read backwards: the preset a key belongs to, from what follows its base name — nothing
+ * for the first preset, `~p<id>` for any other — or null when that is neither. The ONE reader of the
+ * scheme, for the code that has to sort keys it finds on the device by owner (the sealed solve-time
+ * chunks in store/progressStorage, the usage reading in store/storageUsage).
+ */
+export const presetIdOfSuffix = (suffix: string): number | null =>
+  suffix === '' ? FIRST_PRESET_ID : /^~p\d+$/.test(suffix) ? +suffix.slice(2) : null
+
 // ── What a preset is, as a saved value ────────────────────────────────────────────────────────
 
 export type Preset = {
