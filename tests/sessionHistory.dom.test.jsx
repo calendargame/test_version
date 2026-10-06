@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// sessionHistory.dom — Classic / Flash / Deduction's back/forward history is kept for the BROWSING
+// sessionHistory.dom — Classic / Deduction / Flash's back/forward history is kept for the BROWSING
 // SESSION (the owner: "only truly closing the app starts fresh"): a reload keeps it, a preset switch
 // keeps each preset's own, and a guest's Amnesic interlude hands yours back when it ends. A real
 // close, Reset Stats, Full Reset and a preset delete clear it — and nothing brings cleared data back.

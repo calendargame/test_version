@@ -81,7 +81,7 @@ function engineUntouched(s: GameState) {
 // answers, offering to wipe their stats for nothing.)
 export const timingMismatch = (S: Stats): boolean => S.good - (S.timesLost ?? 0) !== S.times.length
 
-// Shared "hideable stats" chrome for the three non-timed modes (Classic, Flash, Deduction): the
+// Shared "hideable stats" chrome for the three non-timed modes (Classic, Deduction, Flash): the
 // show/hide toggles, the "Enable and Reset Stats?" mismatch case, and the 6-box stats array for
 // <StatPanel>. Both toggles (`timingOff` + `scoringOff`) are owned by the component and persisted in
 // the mode-prefs store, so they're passed in with their setters (timingOff also feeds useGameEngine).
@@ -212,7 +212,7 @@ export function useStatsHideToggles({
   return { statsArr, enableResetOpen, confirmEnableReset, closeEnableReset }
 }
 
-// "Reset Stats" confirm for the casual modes (Classic / Flash / Deduction). Round 21 replaced
+// "Reset Stats" confirm for the casual modes (Classic / Deduction / Flash). Round 21 replaced
 // the two-tap in-place arm — button flips to "Reset Stats?" in rose, 3s window, click-outside
 // disarm — with the shared ConfirmModal, opened from the mode component. `onResetTap` opens the
 // popup; `confirmReset` runs `resetFn` (Classic/Deduction = eng.resetStats; Flash passes its own
@@ -343,7 +343,7 @@ export function useMountedBestsId(): string {
 }
 
 // ── A CASUAL MODE'S HISTORY, KEPT FOR THE BROWSING SESSION ────────────────────────────────────────
-// The halves a Classic / Flash / Deduction engine needs: the read at mount, the park, and the one
+// The halves a Classic / Deduction / Flash engine needs: the read at mount, the park, and the one
 // function that tells every mounted casual screen to park. The whole design — when a history is
 // written, what retires it, the size budgets — is argued in store/sessionHistory (the storage) and
 // engine/parkedHistory (the engine).

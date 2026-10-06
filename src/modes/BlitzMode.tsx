@@ -966,7 +966,7 @@ function BlitzMode({
   // always equals score. With Allow Mistakes on it behaves exactly like per-round.
   const showStreak = !perQ || allowMistakes
   // The timing trio (Last/Mean/Median) carries a VISUAL-ONLY hide toggle: tap any of the
-  // three to blank them all. Unlike Classic/Flash/Deduction there is NO engine timingOff and NO
+  // three to blank them all. Unlike Classic/Deduction/Flash there is NO engine timingOff and NO
   // "Enable and Reset Stats?" arm — Blitz always tracks (saveStats:true above), so hiding can never
   // desync (structurally desync-proof). (Persisted as blitzTimingOff — excluded from the defaults
   // system.) Save Stats off drops the toggle, exactly as it does for the scoring trio.

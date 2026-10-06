@@ -1188,7 +1188,7 @@ describe('Blitz — visual-only timing hide', () => {
     expect(statValue('Score')).toBe('1/1')
     expect(statValue('Accuracy')).toBe('100.0%')
     expect(statValue('Streak')).toBe('1/1')
-    // VISUAL ONLY: never the Classic/Flash/Deduction "Enable and Reset Stats?" confirmation.
+    // VISUAL ONLY: never the Classic/Deduction/Flash "Enable and Reset Stats?" confirmation.
     expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
     clickStat('Median') // tapping any timing box re-shows all three
     expect(statValue('Mean')).toMatch(/^\d+\.\d{2}s$/)
@@ -1317,7 +1317,7 @@ describe('Blitz — visual-only timing hide', () => {
 // net's own files could not make honestly. tests/settingsPanel.defaults pins the Classic screen
 // only, on the reasoning that Reset Settings bumps no remount key so one screen answers for six —
 // sound for the panel's own state, and not sound for a screen that RECONCILES itself against the
-// settings when the popover closes. Blitz and AoX are the two that do, and they are the two with
+// settings when the popover closes. AoX and Blitz are the two that do, and they are the two with
 // something in progress to lose, so both cases land in the files that already have the harness.
 //
 // ⚠ WHAT MAKES THE FIRST CASE A REAL QUESTION rather than a tautology, and it is the whole reason

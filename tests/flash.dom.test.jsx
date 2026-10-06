@@ -43,7 +43,7 @@ function isHidden(el) {
   return false
 }
 
-// The visible Flash date (numeric-ymd, pinned). Excludes the hidden AoX/Classic dates.
+// The visible Flash date (numeric-ymd, pinned). Excludes the hidden Classic/AoX dates.
 function readDate() {
   const els = Array.from(document.querySelectorAll('div')).filter(
     (e) => e.children.length === 0 && /^-?\d+-\d+-\d+$/.test(e.textContent.trim()) && !isHidden(e),

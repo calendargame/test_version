@@ -458,7 +458,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
     //
     // Manages mode switching, per-mode preserved state (dateByMode, calcOpenByMode,
     // preservedByModeRef, stacksByModeRef, timerDoneSnapRef), stats tracking, and the
-    // still-fused rendering (Lookup/How to Play). Classic, Flash, Blitz, Deduction + AoX are
+    // still-fused rendering (Lookup/How to Play). Classic, Deduction, Flash, AoX + Blitz are
     // their own self-contained components (ClassicMode/FlashMode/BlitzMode/DeductionMode on the
     // shared engine, AoxMode).
     // ============================================================
@@ -2088,7 +2088,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // outside the "nothing writes the permanent stats of an amnesic preset" rule rather than an
         // exception to it. The argument in full is at store/amnesic's discardParkedStats.
         if (activeAmnesicMode() !== 'off') discardParkedStats(usePresets.getState().activeId);
-        // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, the stat-visibility
+        // Per-mode setup (Flash speed, AoX/Blitz config, Deduction sub-type, the stat-visibility
         // toggles) → launch defaults. Runs BEFORE the remount-key bumps so the modes re-read the
         // now-default prefs. The store holds no "last mode" and never has — WHICH mode you were on
         // is plain useState in App, which is the whole reason a cold start always opens Classic.

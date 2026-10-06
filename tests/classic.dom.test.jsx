@@ -898,7 +898,7 @@ describe('Classic — settings regen deferred to popover close', () => {
 // The Reset Stats button opens a ConfirmModal (round 21 replaced the two-tap in-place arm) and
 // only clears on the popup's Confirm — preventing an accidental wipe of lifetime stats (it's also
 // the `S` shortcut). The popup + has-data gate live in the shared useResetStatsConfirm hook, used
-// identically by Flash + Deduction, so pinning it on Classic covers all three.
+// identically by Deduction + Flash, so pinning it on Classic covers all three.
 describe('Classic — Reset Stats confirmation popup', () => {
   beforeEach(() => {
     localStorage.clear()

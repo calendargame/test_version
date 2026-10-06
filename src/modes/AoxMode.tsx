@@ -963,7 +963,7 @@ function AoxMode({
         </div>
         {/* Show Codes — the SHARED MethodBreakdownSection, exactly like the other four modes
                 (round 8). AoX's gate isn't "is there a date" but "is the date SHOWABLE": the run
-                is idle, or a One-by-One date is still hidden. Passing null then is how Blitz and Flash
+                is idle, or a One-by-One date is still hidden. Passing null then is how Flash and Blitz
                 already spell the same thing, and it drives the disabled classes, the aria-disabled and
                 the panel's closed state off one value. `codesDisabled` can only turn true in the same
                 React update that clears calcOpen (reset / hidden-mid-run batch resetStats with the

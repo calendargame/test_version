@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 // has judged it yet, and its first answer would record a solve time. engine/useGameEngine works that
 // out for its own question (every mode screen runs on that hook) and reports it here; nothing else
 // decides it. So no clock is running on an answered or revealed card, on an ended round or run, on a
-// Blitz / MoX / Flash screen that has not been started, on Lookup or How to Play, or in a mode whose
+// Flash / MoX / Blitz screen that has not been started, on Lookup or How to Play, or in a mode whose
 // times are not being recorded (timing hidden, or Save Stats off).
 //
 // WHO ASKS. Anything the app does BY ITSELF that would get between a player and a timed answer waits

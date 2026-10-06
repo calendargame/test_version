@@ -369,7 +369,7 @@ describe('score-integrity regressions (the Session-6 flip-flop, now the specifie
 })
 
 describe('hydration score integrity — Best/Streak survive Override after a load-from-prior-session (2026-06-20)', () => {
-  // The continuous modes (Classic/Flash/Deduction) HYDRATE lifetime stats on mount but NOT the history
+  // The continuous modes (Classic/Deduction/Flash) HYDRATE lifetime stats on mount but NOT the history
   // behind them, so the in-session stack is EMPTY while `best`/`streak` carry a prior-session record.
   // Before the fix, all 5 OVERRIDE paths recomputed streak/best from the empty stack via
   // streaksFromStacks and COLLAPSED both to the current in-session run — the owner-reported bug "best

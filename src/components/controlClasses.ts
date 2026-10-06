@@ -147,7 +147,7 @@ export const buttonStateClass = (
 // derives its own text-sm variant from it (see `baseBtn` in DeductionMode).
 export const BASE_BTN = 'w-full rounded-2xl border px-4 py-3 text-base shadow-xs select-none'
 // ANSWER_GRID_GAP — the ONE gutter every gap-spaced answer grid wears: the weekday grid below
-// (worn by Classic/Flash/Blitz/AoX through the single WeekdayAnswer) and all three Deduction
+// (worn by Classic/Flash/AoX/Blitz through the single WeekdayAnswer) and all three Deduction
 // sub-mode grids plus the Year sizer strut. Deduction's Day and Year used to run gap-2 while
 // Month and the weekday grid ran gap-3, so the gutter visibly CHANGED as you switched Deduction
 // sub-mode (round 9); they were widened onto this token, never the reverse. Sharing it also

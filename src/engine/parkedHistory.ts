@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // engine/parkedHistory.ts — what a casual mode's PARKED HISTORY is, and what comes back from one.
 //
-// store/sessionHistory keeps a Classic / Flash / Deduction engine in sessionStorage for the browsing
+// store/sessionHistory keeps a Classic / Deduction / Flash engine in sessionStorage for the browsing
 // session and never looks inside it; this file is the other half — the text that is parked, and the
 // state that is accepted on the way back. (The same split as store/sessionRound and the mode screens
 // for the timed modes' parked rounds.) modes/modeHooks joins the two.

@@ -17,7 +17,7 @@ import type { FormatId } from '../lib/format.js'
 //
 // Extracted from main.jsx in Stage C, Step 4g (verbatim). Round 8 folded AoxMode's
 // hand-rolled copy of the toggle + freeze onto this component, so all SIX codes panels
-// (Classic, Blitz, Flash, Deduction, AoX, Lookup) are now literally this one implementation.
+// (Classic, Deduction, Flash, AoX, Blitz, Lookup) are now literally this one implementation.
 
 // The Show/Hide Codes toggle's className. Every one of the six sites reaches it through this
 // component, so the six can no longer drift — which they had (round 8 found AoX's inline

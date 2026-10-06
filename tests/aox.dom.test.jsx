@@ -1235,7 +1235,7 @@ describe('AoX — visual-only timing hide', () => {
     // Scoring trio is untoggleable — still visible.
     expect(statValue('Score')).toBe('1/1')
     expect(statValue('Streak')).toBe('1/1')
-    // VISUAL ONLY: never the Classic/Flash/Deduction "Enable and Reset Stats?" confirmation.
+    // VISUAL ONLY: never the Classic/Deduction/Flash "Enable and Reset Stats?" confirmation.
     expect(screen.queryByText('Enable and Reset Stats?')).toBeNull()
     clickStat('Median') // tapping any timing box re-shows all three
     expect(statValue('Mean')).toMatch(/^\d+\.\d{2}s$/)

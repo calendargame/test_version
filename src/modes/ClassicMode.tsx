@@ -36,7 +36,7 @@ import { useBackButton } from '../components/overlayStack.js'
 // display toggles (timing/scoring hide, the timing-desync two-tap) and the transient
 // button flash. App no longer renders Classic inline — it just mounts <ClassicMode/>
 // and passes the settings down (like it does for AoxMode). This is the first mode
-// carved out of App's fused rendering; Flash/Blitz/Deduction follow onto the same engine.
+// carved out of App's fused rendering; Deduction/Flash/Blitz follow onto the same engine.
 // ============================================================
 function ClassicMode({
   visible,
@@ -110,7 +110,7 @@ function ClassicMode({
   }, [state.stats, setModeStats])
   const { flash, setFlashWithTimeout } = useButtonFlash() // green/red answer pulse
   // Hideable stats chrome (show/hide toggles + the "Enable and Reset Stats?" desync confirm + the
-  // 6-box stats strip), shared with Flash/Deduction via useStatsHideToggles.
+  // 6-box stats strip), shared with Deduction/Flash via useStatsHideToggles.
   const { statsArr, enableResetOpen, confirmEnableReset, closeEnableReset } = useStatsHideToggles({
     eng,
     timed: [eng],

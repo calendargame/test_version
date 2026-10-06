@@ -184,7 +184,7 @@ describe('Save Defaults + gear indicator', () => {
     expect(useUserDefaults.getState().saved).not.toBeNull() // Full Reset never clears the snapshot
   })
 
-  // The Blitz/AoX visual-only timing toggles (blitzTimingOff/aoxTimingOff) are NON-capturable —
+  // The AoX/Blitz visual-only timing toggles (aoxTimingOff/blitzTimingOff) are NON-capturable —
   // same family as Per Round / Allow Mistakes / the Deduction sub-type. Save Defaults never records
   // them, the gear "modified" bar never lights for them, and Full Reset returns them to factory.
   it('the Blitz/AoX visual timing toggles are excluded from Save Defaults and the gear bar, and reset by Full Reset', () => {

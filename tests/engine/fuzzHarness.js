@@ -396,7 +396,7 @@ export const PROFILES = {
   // ── Timed-mode strong-oracle profile ──
   // The Blitz per-round / per-question surface = the Classic engine PLUS the two timeout actions
   // (LOCK_REVEAL = per-round timeout, no stat; TIMEOUT_MISS = per-question miss). Those are gated to
-  // the active live edge (see runSequence), so the EXACT oracle stays valid. No `complete` (Blitz/Flash
+  // the active live edge (see runSequence), so the EXACT oracle stays valid. No `complete` (Flash/Blitz
   // never hold a solve) and no RESET_ROUND (it keeps stats while wiping history — oracle-incompatible;
   // it's the timed modes' "Reset", separately exercised by the inequality profiles). This exact-checks
   // that the timeout actions never desync good/best/streak in combination with the override/history
@@ -538,7 +538,7 @@ export const PROFILES = {
   // ── The restore round trip (store/sessionHistory) ──
   // A casual mode's history is parked when its screen is about to go away — a reload, a preset
   // switch, an Amnesic interlude — and restored when the screen comes back. These profiles restore
-  // mid-play, often, on the casual surface (no RESET_ROUND and no timeouts: Classic/Flash/Deduction
+  // mid-play, often, on the casual surface (no RESET_ROUND and no timeouts: Classic/Deduction/Flash
   // never send them), hydrated half the time — and demand the restored state be the state parked,
   // under the exact oracle and, in the first, the independent reference model too. Half the restores
   // (pRestoreRegen) then apply the LIVE-QUESTION RULE's regeneration, exactly as a screen whose

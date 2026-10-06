@@ -31,7 +31,7 @@ function mountApp() {
   document.body.appendChild(root)
   return render(<App />)
 }
-// The Classic/Flash/Blitz/AoX mode panels are always-mounted but display:none; Deduction is
+// The Classic/Flash/AoX/Blitz mode panels are always-mounted but display:none; Deduction is
 // conditionally rendered (visible). isHidden walks ancestors so raw DOM queries (date, stat
 // spans) ignore the hidden panels. getByRole already excludes display:none subtrees.
 function isHidden(el) {
@@ -868,7 +868,7 @@ describe('Deduction — round 8: Day / Month / Year answer buttons share one tex
 // The owner saw the space between Deduction's answer buttons CHANGE with the sub-mode: Month ran
 // gap-3 while Day and Year ran gap-2 (12.69px vs 8.46px at his 16.92px fluid root). Day and Year
 // were widened onto gap-3 — the value Month already had, and the one the weekday grid has always
-// had (Classic/Flash/Blitz/AoX all render the single WeekdayAnswer, so there is exactly one of
+// had (Classic/Flash/AoX/Blitz all render the single WeekdayAnswer, so there is exactly one of
 // those to check) — never the reverse. All of them now read one ANSWER_GRID_GAP, which as a bonus
 // puts them on a shared column lattice: at a common gap g a 6-col col-span-2 is exactly (W−2g)/3,
 // a 3-col column, and a col-span-3 is exactly (W−g)/2, a 2-col column, so the sub-modes' invisible

@@ -12,7 +12,7 @@
 // gone altogether since round 23: nothing reverses an answer by restoring stats any more — see
 // OVERRIDE. The wrong answer's solve time it kept beside it lives on the card, GameState.card.)
 //
-// This is the engine ALL FIVE modes run on (Classic/Flash/Blitz/Deduction directly;
+// This is the engine ALL FIVE modes run on (Classic/Deduction/Flash/Blitz directly;
 // AoX via the same hook + a component run/Best layer). The full action set lives here:
 // the question loop (NEW/ANSWER/REVEAL/SHOW_CODES/RESET), the OVERRIDE toggle (ONE operation —
 // flip the card it points at between "as you answered it" and "overridden", then recompute; see
@@ -229,7 +229,7 @@ export interface GameState {
   // browseHasCredit / liveSolveTime, so it always describes whatever card is being shown.
   card: CardMeta
   // ── Hydration baseline (the prior-session record the in-session stack CANNOT reconstruct) ──
-  // A continuous mode (Classic/Flash/Deduction) HYDRATES lifetime stats on mount (initEngine's
+  // A continuous mode (Classic/Deduction/Flash) HYDRATES lifetime stats on mount (initEngine's
   // initialStats) but NOT the history behind them, so `best`/`streak` carry a prior-session record while
   // `stack` starts empty. OVERRIDE recomputes streak/best from the whole credit sequence
   // (creditSequence), which (without these) collapses the hydrated record down to the current in-session
@@ -260,7 +260,7 @@ export interface GameState {
   // correspondence is asserted outright by checkGameInvariants ('card ledger'), so the fuzz proves
   // it across millions of generated games instead of it resting on this paragraph.
   // It seeds at initEngine from the hydrated total (0 for a blank/timed start — which is why
-  // Blitz/AoX, whose Begin/Reset is a full RESET, are unchanged BY CONSTRUCTION rather than by a
+  // AoX/Blitz, whose Begin/Reset is a full RESET, are unchanged BY CONSTRUCTION rather than by a
   // special case), re-zeroes on RESET with the stats it clears, and re-bases to the KEPT `played`
   // on RESET_ROUND (the timed modes' mid-round Reset wipes history but keeps lifetime stats).
   historyBase: number
@@ -321,7 +321,7 @@ export type GameAction =
   // The toggle. It carries NO direction — the direction is read off the card it points at (see
   // overridePlan), which is what makes a double-dispatch or a stale caller unable to stack credit.
   // `hold` (the run modes): a toggle that CREDITS the live card stays on it, locked, instead of
-  // advancing — MoX's completing solve, and a Blitz/MoX round/run that stays ended.
+  // advancing — MoX's completing solve, and a MoX/Blitz run/round that stays ended.
   | { type: 'OVERRIDE'; useJulian: boolean; tracking: boolean; nextDate: Question; hold?: boolean }
   | { type: 'BACK' }
   | { type: 'FORWARD'; useJulian: boolean }
@@ -418,7 +418,7 @@ const blankCard = (): CardMeta => ({ wrongTime: null, answered: null })
 export const questionIdAfterReset = (state: GameState): number => state.questionId + 1
 
 // The launch / fresh-question engine state for a given starting date. `initialStats` lets a
-// continuous mode (Classic/Flash/Deduction) HYDRATE its lifetime stats from saved progress on
+// continuous mode (Classic/Deduction/Flash) HYDRATE its lifetime stats from saved progress on
 // mount (Stage D1); omitted ⇒ a blank slate (timed modes, and the remount after a Full Reset).
 export const initEngine = (date: Question, initialStats?: Stats): GameState => ({
   date,
@@ -1190,7 +1190,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // Re-base the card ledger onto the stats that SURVIVE (unlike RESET, which zeroes them):
         // the history behind them is gone, so everything counted so far is now "behind the empty
         // stack". Flash's mid-round Reset therefore keeps numbering forward — the next card is the
-        // 502nd, not the 1st — while Blitz/AoX, which reset via RESET, restart at 1. Without this
+        // 502nd, not the 1st — while AoX/Blitz, which reset via RESET, restart at 1. Without this
         // the badge would fall back to a session number the surviving Score box contradicts, which
         // is the very defect this ledger exists to close.
         historyBase: state.stats.played,

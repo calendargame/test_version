@@ -12,7 +12,7 @@
 // ⚠ BLANK MEANS HIDDEN AND NOTHING MORE, and the shorthand it replaced ("you turned these off; they
 // ARE still recording") was wrong twice over. Whether hiding also PAUSES is the caller's business,
 // not the panel's: the scoring trio keeps recording in every mode and the timing trio keeps
-// recording in Blitz/AoX (visual-only), but hiding timing in Classic/Deduction/Flash stops the
+// recording in AoX/Blitz (visual-only), but hiding timing in Classic/Deduction/Flash stops the
 // clock outright and re-enabling after answering costs a full reset. And it is not always the
 // user's own doing — Classic and Deduction SHIP with timing hidden, which is the launch case pinned
 // further down. Only the first of those halves is exercised by the RECORDING case below (the

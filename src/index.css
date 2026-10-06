@@ -832,7 +832,7 @@ button:focus,select:focus{outline:none}
 [data-hit-pad~="l"]{--hit-l:var(--hit-half)}
 [data-hit-pad]::after{content:"";position:absolute;top:calc(-1 * (var(--hit-bd) + var(--hit-t)));right:calc(-1 * (var(--hit-bd) + var(--hit-r)));bottom:calc(-1 * (var(--hit-bd) + var(--hit-b)));left:calc(-1 * (var(--hit-bd) + var(--hit-l)))}
 /* 7-dot day-of-week input (Settings → Input → Dots) — the logo's 7-position layout as an alternate
-   answer grid for the weekday modes (Classic/Flash/Blitz/AoX). .dot-box keeps the SAME height as the
+   answer grid for the weekday modes (Classic/Flash/AoX/Blitz). .dot-box keeps the SAME height as the
    4-row labelled-button grid so switching layouts never shrinks the answer panel; the square 3×3
    .dot-cluster (which carries data-answer-grid, so the pointer controller's drag-to-select AND the
    keyboard 0–9 children[idx] path both operate on it) is centred inside it. DOM order stays Sun..Sat;

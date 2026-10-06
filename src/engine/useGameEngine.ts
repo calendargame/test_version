@@ -14,7 +14,7 @@
 // a press would do to which card), and the action callbacks the UI wires to buttons.
 //
 // Mode-untangle (Stage C, Step 6, sub-step 1c). Classic is the first consumer;
-// Flash/Blitz/Deduction pass their own config when they move onto the engine.
+// Deduction/Flash/Blitz pass their own config when they move onto the engine.
 //
 // useReducer infers `dispatch: Dispatch<GameAction>` from the typed reducer, so
 // every dispatch below is checked against the action union (Stage C, TypeScript).
@@ -58,9 +58,9 @@ export interface UseGameEngineOptions {
   // the engine never re-hydrates mid-session. Omitted ⇒ blank stats (timed modes; post-Full-Reset remount).
   getInitialStats?: () => Stats
   // Seed the reducer with a PARKED engine instead of a fresh question. A GETTER, read ONCE inside the
-  // lazy init. Two kinds of screen pass one: the timed modes (Blitz / MoX) return their ENDED round
+  // lazy init. Two kinds of screen pass one: the timed modes (MoX / Blitz) return their ENDED round
   // from store/sessionRound, so the remount a preset switch causes lands the incoming copy's own
-  // ended round back on screen; the casual modes (Classic / Flash / Deduction) return the history
+  // ended round back on screen; the casual modes (Classic / Deduction / Flash) return the history
   // they last parked (store/sessionHistory), with the waiting question settled by modes/modeHooks'
   // restoredEngine. Returns null (or is omitted) ⇒ a fresh question. When it returns a state, genDate
   // is not called and getInitialStats is ignored — the parked state already carries its stats (a
@@ -183,7 +183,7 @@ export function useGameEngine({
   // good+1 on a played of 0, an impossible 1/0. Fix 2026-06-06 (tests: classic.dom "Save Stats /
   // Override availability"). saveStatsThisQ === null (no stat action yet) falls back to the live
   // setting, which is also what dims the button on a fresh question in a casual mode with Save Stats
-  // off. Blitz and MoX feed the engine saveStats:true always, so for them this reads simply "is
+  // off. MoX and Blitz feed the engine saveStats:true always, so for them this reads simply "is
   // there a card to toggle".
   const overrideAvail = effectiveSaveStats(state, saveStats) && plan !== null
   // THE WORD IT READS: Undo when the card it points at is already overridden, Override otherwise —

@@ -16,7 +16,7 @@ import { PRESET_STORE_KEYS, presetScopedStorage, mergeOverDefaults } from './pre
 // the per-mode show/hide stat toggles (timing/scoring), namespaced per mode since their
 // defaults differ (Classic/Deduction launch with timing hidden, Flash with it shown). Those
 // three non-round toggles feed useGameEngine's `timingOff` (timing actually pauses while hidden,
-// with the desync-arm on re-enable). Blitz and AoX instead carry a VISUAL-ONLY timing toggle
+// with the desync-arm on re-enable). AoX and Blitz instead carry a VISUAL-ONLY timing toggle
 // (blitzTimingOff/aoxTimingOff, launch SHOWN): it blanks the timing trio's display but never
 // stops the engine clock — round/run timing is structural (the score/average is the mode), so
 // there is no arm/reset and hiding can never desync. `allowMistakes` is likewise namespaced
@@ -80,7 +80,7 @@ export type ModePrefsState = ModePrefsValues & {
 }
 
 // The launch defaults — single source of truth, reused by resetModePrefs(). Timing hidden by
-// default in Classic/Deduction, shown in Flash; Blitz and AoX launch with their VISUAL-ONLY
+// default in Classic/Deduction, shown in Flash; AoX and Blitz launch with their VISUAL-ONLY
 // timing SHOWN (blitzTimingOff/aoxTimingOff false). The Flash reveal (2s) and Blitz
 // per-question countdown (10s) launch at beginner-friendly lengths (Round-2 timer audit,
 // 2026-07-12, owner-ratified — a newcomer doing the mental method needs the headroom; elites

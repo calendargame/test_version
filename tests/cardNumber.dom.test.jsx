@@ -3,14 +3,14 @@
 // The Q# card-number badge — the small label at the top-right of the date card (sub-group 3A).
 //
 // THE DEFECT THIS FILE EXISTS FOR. The badge used to be the card's 1-based slot in THIS SESSION's
-// browsable history (`stack.length + 1`). In Classic, Flash and Deduction the SCORE is hydrated
+// browsable history (`stack.length + 1`). In Classic, Deduction and Flash the SCORE is hydrated
 // from saved progress at mount while the history stack deliberately starts empty, so the badge and
 // the Score box it sits beside had never agreed: a player 500 cards in answered one, pressed <,
 // and read "Q1" next to a Score of "471/501".
 //
 // THE RULE THE BADGE NOW FOLLOWS: it counts whatever the Score box beside it counts. A mode with
 // its own score and stats counts separately — so Deduction's Day / Month / Year each carry their
-// own numbering, and Blitz / AoX, whose Begin/Reset zeroes score and history together, keep
+// own numbering, and AoX / Blitz, whose Begin/Reset zeroes score and history together, keep
 // counting from Q1 within the round or run (that is the same number they showed before, which is
 // what makes the change invisible there).
 //
@@ -33,7 +33,7 @@ function mountApp() {
   return render(<App />)
 }
 // Every mode panel stays mounted (display:none for the inactive ones), so raw DOM queries must
-// walk ancestors to skip the hidden ones — the same isHidden the Blitz/Deduction files use.
+// walk ancestors to skip the hidden ones — the same isHidden the Deduction/Blitz files use.
 function isHidden(el) {
   for (let n = el; n; n = n.parentElement) if (n.style && n.style.display === 'none') return true
   return false

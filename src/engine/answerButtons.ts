@@ -4,7 +4,7 @@
 // `btns` is a map { buttonIndex: state } where state is one of:
 //   'correct' | 'wrong-latest' | 'wrong-prev' | 'override-wrong'.
 //
-// Shared by App (Classic/Flash/Blitz/Deduction handlers), AoxMode, and the game
+// Shared by App (Classic/Deduction/Flash/Blitz handlers), AoxMode, and the game
 // reducer — ONE copy. Pure (no app state, no React). Extracted from main.jsx in
 // the mode-untangle (Stage C, Step 6) so the engine and the mode components can
 // both import them (the reducer can't import from main.jsx — that'd be circular).

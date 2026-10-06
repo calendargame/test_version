@@ -2,7 +2,7 @@
 // engine/stats.ts — pure time-stat helpers (average / median / last).
 //
 // One copy, shared by the mode screens' stat strips (modes/modeHooks for Classic / Flash /
-// Deduction, and Blitz / MoX directly), engine/aoxBest (a run's Best Mean / Best Median) and
+// Deduction, and MoX / Blitz directly), engine/aoxBest (a run's Best Mean / Best Median) and
 // engine/runBreakdown (the breakdown's summary, which must print the strip's own numbers).
 // Pure — no app state, no React. `times` is an array of seconds; all three
 // return null on an empty array (rendered as "—" by the formatters).

@@ -20,7 +20,7 @@ import { useActiveAmnesicMode } from '../store/amnesic.js'
 //                       ⚠ "HIDDEN", NOT "still recording", AND NOT "you turned it off" — both of
 //                       those are true of most callers and false of some, and this panel cannot tell
 //                       which caller it has. Recording continues for the scoring trio in every mode,
-//                       and for the timing trio in Blitz/AoX (visual-only). It does NOT continue
+//                       and for the timing trio in AoX/Blitz (visual-only). It does NOT continue
 //                       for the timing trio in Classic/Deduction/Flash: there `off` rides the same
 //                       flag as useGameEngine's `tracking`, so hiding actually STOPS the clock and
 //                       re-enabling after answering costs a full reset (modes/modeHooks
@@ -108,7 +108,7 @@ import { useActiveAmnesicMode } from '../store/amnesic.js'
 // button in place of the three time cells while a two-tap arm was live — with two 1px phantom
 // spacers to keep the surrounding flex math pixel-identical. That arm is the shared ConfirmModal
 // now (modes/modeHooks' useStatsHideToggles), so the strip is always just six cells and this file
-// no longer has a per-caller special case. Blitz/AoX never used it; Classic/Flash/Deduction now
+// no longer has a per-caller special case. AoX/Blitz never used it; Classic/Deduction/Flash now
 // render the popup themselves.
 //
 // Extracted from main.jsx in Stage C, Step 4b. ⚠ The label's className keeps a SPACE before `${s.off…}`

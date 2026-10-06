@@ -27,7 +27,7 @@ import { isRecord } from './json.js'
 //   • The engine's live question, history stacks, locked/revealed flags, etc. — never HERE. (A
 //     casual mode's are kept for the browsing session, in sessionStorage: store/sessionHistory. A
 //     real close still discards them.)
-//   • Blitz/AoX engine stats — those are per-round/run scores, not lifetime totals;
+//   • AoX/Blitz engine stats — those are per-run/round scores, not lifetime totals;
 //     only their bests above persist. (An ENDED round or run is kept for the browsing session:
 //     store/sessionRound.)
 //   • The "new best ★" markers — nothing is stored for them at all: each is read off the round id
