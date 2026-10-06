@@ -596,12 +596,11 @@ describe('reordering', () => {
       expect(grip).not.toMatch(/(^|\s)border(\s|$)/)
       expect(grip).not.toMatch(/surface-/)
       // …but it is still a control: a grab cursor for a mouse, and a focus ring for the keyboard —
-      // the popup's own, drawn on whatever the keyboard is on inside a popup (tests/keyboardFocus),
-      // so the grip asks for nothing. What it must NOT do is switch that ring off: a Tailwind
+      // the app's one ring, drawn on whatever the keyboard is on (tests/keyboardFocus), so the
+      // grip asks for nothing. What it must NOT do is switch that ring off: a Tailwind
       // outline utility on :focus is what removed the grip's only keyboard indicator once.
       expect(grip).toMatch(/cursor-grab/)
       expect(grip).not.toMatch(/outline-/)
-      expect(reorderHandle('Preset 1').closest('.focus-scope')).not.toBeNull()
     })
 
     it('the width-cap note sits under the NAME, in the row`s own grid, not under the ✕', () => {

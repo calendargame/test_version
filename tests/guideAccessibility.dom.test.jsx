@@ -5,7 +5,7 @@
 // ★ WHY THIS FILE EXISTS AT ALL, and it is not "coverage". Every other claim the How-to-Play guide
 // makes describes behaviour the suite already drives, so a change that falsified one would go red
 // somewhere. The Accessibility section is different in one specific way: four of its sentences
-// describe things the app DOES NOT DO — no focus ring outside the ⚙ menu and the popups, no pinch-zoom, unnamed history buttons and
+// describe things the app DOES NOT DO — a page that Tab does not walk, no pinch-zoom, unnamed history buttons and
 // mode-screen sliders, and a game loop that withholds a button by dimming it without saying so
 // (the ⚙ footer and Show Codes being the two places that do say so). Fixing any of those is a
 // strict improvement that no existing test would notice, and the instant it lands the guide is
@@ -27,7 +27,7 @@
 // together, in one commit.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
@@ -77,43 +77,21 @@ describe('the guide names its Accessibility section and puts it where the sectio
 })
 
 describe('the four gaps the Accessibility section admits to — each fails when the app improves', () => {
-  it('GAP 1: outside the ⚙ menu and the popups, no focus ring is drawn', () => {
-    // Protects: "Outside the ⚙ menu and the popups, nothing draws a focus ring…" The ring exists
-    // now (tests/keyboardFocus owns it) and its ONE rule is confined to a .focus-scope — so the gap
-    // is exactly "everything that is not inside one". Three halves: buttons everywhere else are
-    // still blanket-suppressed, every ring rule names a scope, and the only two scopes in the app
-    // are the ⚙ menu's card and the popup scrim. Give the game screens or the top bar a ring and
-    // one of these goes red; rewrite the sentence in the same change.
-    // ⚠ EVERY SELECTOR OF EVERY RULE THAT DRAWS A RING, not the first one of the first. This used
-    // to find a ring rule by its `:focus` and read only the text before it — so a rule whose SECOND
-    // selector had no :focus and no scope ("…,[data-kbd-cursor]") passed, and that selector ringed
-    // the options of the frosted lists in the top bar while this sentence said nothing there was
-    // ringed. A ring is found by what it draws (a solid 2px outline in a ring colour), and each
-    // comma-separated selector of its rule has to sit inside a scope.
-    expect(cssCode).toContain('button:focus,select:focus{outline:none}')
+  it('GAP 1 IS CLOSED: the keyboard`s ring is drawn wherever the keyboard can land', () => {
+    // The sentence this guarded — "Outside the ⚙ menu and the popups, nothing draws a focus ring" —
+    // is gone from the guide with the gap. What stands in its place is the Keyboard Input note's
+    // claim that the ring is on whatever has the keyboard, on every screen, and never in a list:
+    // the ONE rule that draws it is gated on the keyboard mark and on nothing narrower
+    // (tests/keyboardFocus owns the rule itself), and no list option can wear it.
     const ringRules = [...cssCode.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, , body]) =>
       /outline:2px solid var\(--kbd-ring/.test(body),
     )
     expect(ringRules.length).toBe(1)
     const selectors = ringRules[0][1].split(/,(?![^(]*\))/).map((s) => s.trim())
-    expect(selectors.length).toBeGreaterThan(0)
-    for (const selector of selectors)
-      expect(selector).toMatch(/^:root\[data-keyboard\] \.focus-scope /)
-    // …and nothing the stylesheet rings is a mark a list could put on its options.
-    expect(cssCode).not.toMatch(
-      /\[role="(listbox|option)"\][^{}]*\{[^}]*outline:2px solid (?!transparent)/,
-    )
-    const scoped = ['src/components', 'src/modes', 'src']
-      .flatMap((dir) =>
-        readdirSync(join(dirname(fileURLToPath(import.meta.url)), '..', dir))
-          .filter((f) => /\.tsx?$/.test(f))
-          .map((f) => `${dir}/${f}`),
-      )
-      .filter((f) => /['"` ]focus-scope[ '"`]/.test(repoFile(f)))
-    expect(scoped.sort()).toEqual([
-      'src/components/SettingsPanel.tsx',
-      'src/components/modalContract.ts',
-    ])
+    expect(selectors).toHaveLength(1)
+    expect(selectors[0]).toMatch(/^:root\[data-keyboard\] :focus:not\(/)
+    expect(selectors[0]).toContain('[role="option"]')
+    expect(repoFile('src', 'components', 'GuidePage.tsx')).not.toMatch(/nothing draws a focus ring/)
   })
 
   it('GAP 2: pinch-zoom is still switched off in the viewport meta', () => {

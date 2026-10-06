@@ -277,7 +277,7 @@ body{color:var(--body-color)}
    keeps the element out of the tab order entirely, so nothing about Tab (bound app-wide to the
    mode selector) or the modal tab traps changes.
    No focus indicator, and that is a decision rather than an omission. The app's focus ring is for
-   the controls in the ⚙ menu and the popups (THE KEYBOARD FOCUS RING, further down); a UA outline
+   controls (THE KEYBOARD FOCUS RING, further down, which leaves this element out by name); a ring
    here would be a box around the entire viewport. Nor is it hiding one from anybody: a scroll
    container is not a control, it is never focused by a user gesture, and the feedback for "this is what the arrow
    keys move" is the page moving. `outline:none` flatly rather than :focus-visible, so the answer
@@ -451,6 +451,10 @@ input,textarea{user-select:text;-webkit-user-select:text}
    wrapper a scroll container of its own, and a sticky box sticks to its NEAREST scroll container. */
 .guide-head{position:sticky;top:0;background:linear-gradient(var(--panel-bg),var(--panel-bg)) var(--bg1);--shade:0}
 .guide-head[aria-expanded="true"]{z-index:1}
+/* The keyboard's focus ring on a header (THE KEYBOARD FOCUS RING, below) sits 5px in: the header is a
+   square-cornered button inside a wrapper that clips to rounded corners, and a ring any nearer the
+   edge has its own corners cut off by them. */
+.guide-head{--kbd-ring-offset:-5px}
 /* --shade — how strongly a boundary asserts itself, 0…1 (round 10 item B). It is the scroller's
    distance from that edge, measured in px and divided by --fade-h (the same feather depth the
    masks use — the app's one "you are near a boundary" ramp, so the shadow and the fade speak
@@ -548,7 +552,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    COLOUR: the theme's own label tone, thinned — so it is right in all five themes with no table of
    its own, and calm: it has to sit under numbers the player is reading without competing with them.
    pointer-events:none, so the frame never takes a tap meant for the strip. */
-.session-only{position:relative}
+.session-only{position:relative;--kbd-ring-offset:-5px}
 .session-only::after{content:"";position:absolute;inset:0;border:1.5px dashed color-mix(in oklab,var(--tx-200-80) 70%,transparent);border-radius:inherit;pointer-events:none}
 .panel.session-only{border-color:transparent}
 .session-only-outset::after{inset:-.1875rem -.25rem;border-radius:.5rem}
@@ -625,7 +629,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    design: it was the v3→v4 cascade regression the ★★ block at the top of this layer describes,
    read as a feature. The rule is now in `components`, so a utility CAN override any of these. It
    costs nothing today, checked rather than assumed: the element's className is
-   `svalue-input surface-tray text-right tabular-nums text-xs focus-ring`, and
+   `svalue-input surface-tray text-right tabular-nums text-xs`, and
    not one of those classes declares position, inset, border-width/style, border-radius,
    padding-inline, margin-inline/block or appearance. The geometry still stands unopposed — it now
    stands there because nothing contests it, which is a fact anyone can check, rather than because
@@ -662,7 +666,6 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .btn-solid[aria-disabled="true"],.btn-solid:disabled{opacity:.6;cursor:not-allowed}
 button,input,select{-webkit-tap-highlight-color:transparent}
 button{touch-action:manipulation}
-button:focus,select:focus{outline:none}
 /* Flash keyframes drive the visual layers that change during a flash:
    background and border-color. If any layer is omitted, the button's other
    CSS transitions will leak in and cause a 150ms fade on that property —
@@ -713,73 +716,70 @@ button:focus,select:focus{outline:none}
    on the owner's device twice. Recorded here so nobody rediscovers it as a bug. */
 [data-select-trigger]{touch-action:none}
 .drag-target{outline:2px solid var(--drag-ring);outline-offset:-2px}
-/* ★ THE KEYBOARD FOCUS RING — where the keyboard is, in the ⚙ menu and in every popup.
-   WHERE: inside a .focus-scope — the ⚙ menu's card (components/SettingsPanel) and every popup's
-   scrim (components/Popup), the two places a keyboard walks controls one at a time. The rule is
-   written against the SCOPE, not against a class each control would have to remember to wear, so
-   it reaches every control in them by construction: buttons, the option a setting's arrows are on,
-   switches, text boxes, sliders, the list buttons, links, the reorder grip — and whatever is added
-   next. Outside a scope nothing draws one; the guide's "Where it falls short" says so. EVERY
-   selector that draws the ring starts at a scope (tests/keyboardFocus fails on one that does not):
-   an unscoped half of this rule once put a ring on the options of the frosted lists in the top bar.
-   WHEN: only while the KEYBOARD is what is being used — :root[data-keyboard], kept by
-   lib/keyboardFocus, which argues why the app decides that itself. So it is never drawn for a
-   finger or a mouse press, on any control, however the press came to focus it; and the first key
-   that follows a press puts it on.
+/* ★ THE KEYBOARD FOCUS RING — where the keyboard is, on every screen.
+   WHERE: on whatever control has the keyboard, anywhere in the app — the ⚙ menu and the popups,
+   where Tab walks the controls one at a time, and equally the top bar's buttons and the page's own
+   controls (the answer and action buttons, the stats boxes, a time readout, a guide section's
+   header, Lookup's box), which Shift+Tab reaches and Enter and Space press. The rule is written
+   against :focus itself, not against a class each control would have to remember to wear, so it
+   reaches every control by construction — and whatever is added next.
+   WHEN: only while the KEYBOARD is what the player is finding their way with — :root[data-keyboard],
+   kept by lib/keyboardFocus, which argues why the app decides that itself and which keys count
+   (Tab, and an arrow that moves focus; never a game shortcut, never Enter or Space, never typing).
+   So it is never drawn for a finger or a mouse press, on any control, however the press came to
+   focus it — and a player using the number keys with a hand on the mouse never sees one. EVERY
+   selector that draws the ring starts at that attribute (tests/keyboardFocus fails on one that
+   does not).
    WHAT: the press-drag ring's own geometry (.drag-target, above) — 2px, INSET, so no scroll region
    can clip it and it never spills onto a neighbour — in the strongest colour the surface has
-   (--kbd-ring): the card's top text tier by default, where the drag ring is tuned to be faint;
-   and on a FILLED control — the purple of a chosen option or
-   a switched-on switch (.btn-solid), the rose of a reset button (.ring-on-fill, worn beside that
-   fill in components/controlClasses) — white, like its label, and 2px further in. Further in
-   because a white ring on the very edge of a fill is only visible against a dark card: on the two
-   light themes it melts into the white around the button and reads as the button shrinking. With
-   the fill on both sides of it, it is a ring in every theme. Solid and bright, it cannot be taken
-   for Amnesic's dashed frame (.session-only). That one is a ::after border and this one an
-   outline, so neither switches the other off — but nothing wears both today (the dashed frame
-   lives on the game screens, outside every scope), and at this inset the ring would be drawn
-   exactly over the dashes: a control that ever does wear both must set --kbd-ring-offset further
-   in, so the two are seen side by side.
+   (--kbd-ring): the top text tier by default, where the drag ring is tuned to be faint;
+   and on a FILLED control — the purple of a chosen option, a switched-on switch, a Begin button or
+   the open gear (.btn-solid), the rose of a reset button (.ring-on-fill, worn beside that fill in
+   components/controlClasses), the green and the red of an answered day (.btn-correct-persist,
+   .btn-wrong-persist) — white, like its label, and 2px further in. Further in because a white ring
+   on the very edge of a fill is only visible against a dark surface: on the two light themes it
+   melts into the white around the button and reads as the button shrinking. With the fill on both
+   sides of it, it is a ring in every theme. An answer dot is a circle, and the ring follows it.
+   NEVER TO BE TAKEN FOR AMNESIC'S DASHED FRAME (.session-only): that one is dashed, thin and
+   muted, this one solid and bright — and where a control wears both (the stats strip, when the
+   whole strip is one button) the ring is drawn 5px in, clear inside the dashes, instead of on top
+   of them (.session-only's own rule sets that). (That one is a ::after border and this one an outline, so neither switches the other
+   off.)
    ONE CONTROL TAKES IT ON THE OUTSIDE (.ring-outside): the tap-to-type readout beside a slider
    (components/SliderValueEditor) is a button exactly the size of its digits — no padding for a
-   ring to sit in, filled or not — so there the ring is drawn 2px clear of the box, in the card's
-   colour, which shows against the card and against the purple of a changed readout alike. The
+   ring to sit in, filled or not — so there the ring is drawn 2px clear of the box, in the top text
+   colour, which shows against the surface and against the purple of a changed readout alike. The
    press-drag ring takes the same place on it (the rule after .ring-outside's own, below): drawn
-   inset it ran straight through the digits, on the mode screens as well as here.
+   inset it ran straight through the digits.
    A CONTROL THAT IS GREYED OUT AND MARKED UNAVAILABLE (aria-disabled) TAKES A DOTTED RING, not the
    solid one. It is still a stop for Tab on purpose — that is how a keyboard or a screen reader
    finds out it is there and unavailable, and a button that greys out under the keyboard (Save
    Defaults, the moment it has saved) must not throw the keyboard off it — so it has to show where
    the keyboard is; and it must not look like a control a press would work on.
-   THE LINE BEFORE IT is the other half: inside a scope the BROWSER draws nothing of its own — not
-   its default ring on a text box, a link or the grip, and not for a press. The outline is kept but
+   THE LINE BEFORE IT is the other half: the BROWSER draws nothing of its own, anywhere — not its
+   default ring on a text box, a link or the grip, and not for a press. The outline is kept but
    transparent (not `none`), so forced-colors mode, which paints transparent outlines, still shows
-   its users where focus is.
+   its users where focus is. It is this one line, in `components`, and NOT Tailwind's
+   focus:outline-hidden on each control: a utility outranks this whole layer, so a control wearing
+   that utility could never be given the ring (tests/keyboardFocus keeps the utility out of the
+   source).
    NOT RINGED, each for its own reason:
-     • the popup's CARD and the ⚙ menu's own card — each holds focus only so that Tab starts
-       inside it; a ring round a whole dialog or a whole menu is noise. (The menu's card IS a
-       scope, so the first line below names the scope itself as well as what is in it.)
+     • WHAT HOLDS FOCUS WITHOUT BEING A CONTROL — a popup's card ([role="dialog"]) and the ⚙ menu's
+       own card (#settings-popover), each focused only so that Tab starts inside it, and the page's
+       scroller (#appScroll), focused so the scroll keys work on How to Play. A ring round a whole
+       dialog, a whole menu or the whole screen is noise.
      • a SLIDER's track — 5px tall, so the ring goes on its thumb instead (the two rules after);
-     • ANYTHING IN AN OPEN DROPDOWN LIST. A list is driven from its button, which keeps the real
-       focus and — inside a scope — the ring; the cursor in the list is the list's own soft grey
-       box, and the frosted lists carry no ring in the top bar or in the ⚙ menu
-       (components/CustomSelect). */
-.focus-scope:focus,.focus-scope :focus{outline:2px solid transparent;outline-offset:-2px}
-:root[data-keyboard] .focus-scope :focus:not([role="dialog"],[type="range"]){outline:2px solid var(--kbd-ring,var(--tx-50));outline-offset:var(--kbd-ring-offset,-2px)}
-:root[data-keyboard] .focus-scope [aria-disabled="true"]:focus{outline-style:dotted}
-:root[data-keyboard] .focus-scope input[type="range"]:focus::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
-:root[data-keyboard] .focus-scope input[type="range"]:focus::-moz-range-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
-.btn-solid,.ring-on-fill{--kbd-ring:#fff;--kbd-ring-offset:-4px}
+     • ANYTHING IN AN OPEN DROPDOWN LIST ([role="option"]). A list is driven from its button, which
+       keeps the real focus and the ring; the cursor in the list is the list's own soft grey box,
+       and the frosted lists carry no ring anywhere (components/CustomSelect). */
+:focus{outline:2px solid transparent;outline-offset:-2px}
+:root[data-keyboard] :focus:not([role="dialog"],[role="option"],[type="range"],#settings-popover,#appScroll){outline:2px solid var(--kbd-ring,var(--tx-50));outline-offset:var(--kbd-ring-offset,-2px)}
+:root[data-keyboard] [aria-disabled="true"]:focus{outline-style:dotted}
+:root[data-keyboard] input[type="range"]:focus::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
+:root[data-keyboard] input[type="range"]:focus::-moz-range-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
+.btn-solid,.ring-on-fill,.btn-correct-persist,.btn-wrong-persist{--kbd-ring:#fff;--kbd-ring-offset:-4px}
 .ring-outside{--kbd-ring:var(--tx-50);--kbd-ring-offset:2px}
 .ring-outside.drag-target{outline-offset:2px}
-/* …AND OUTSIDE A SCOPE: .focus-ring is the class a control wears to say "the browser draws no focus
-   look on me" — the text boxes and list buttons that also live on the game screens and in the top
-   bar, where the browser would otherwise put its own ring on a tapped box. The same transparent
-   outline, for the same forced-colors reason. It is a class here in `components` and NOT Tailwind's
-   focus:outline-hidden, deliberately: a utility outranks this whole layer, so a control wearing
-   that utility inside a scope could never be given the ring above (tests/keyboardFocus keeps the
-   utility out of the source). */
-.focus-ring:focus{outline:2px solid transparent;outline-offset:2px}
 /* The mode-selector dropdown (the only [data-select-group] portal) has a theme-INVARIANT frosted-light
    surface with dark text (CustomSelect's portaled listbox), so the per-theme ring tuned for the app
    surfaces would vanish on it — pin its ring to the fixed dark brand accent in every theme. */

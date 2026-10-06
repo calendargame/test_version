@@ -118,8 +118,7 @@ export const FOOTER_META_ROW_CLASS = 'flex items-center flex-wrap justify-betwee
 // of ours. (Every text input in the app now states this: here, the Lookup date field, and
 // SliderValueEditor's edit box via .svalue-input. Range sliders are deliberately untouched —
 // their native track/thumb IS the control that index.css styles.)
-export const NUM_INPUT_BASE =
-  'appearance-none rounded-xl px-2 text-center tabular-nums text-xs focus-ring'
+export const NUM_INPUT_BASE = 'appearance-none rounded-xl px-2 text-center tabular-nums text-xs'
 export const NUM_INPUT_CLASS = NUM_INPUT_BASE + ' border surface-tray'
 // Presentational primitives (NewBestStar, SectionLabel, Kbd) + their class consts → src/components/primitives.jsx, imported at top.
 // buttonStateClass — picks the className for an answer-grid button based on its

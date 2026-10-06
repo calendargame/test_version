@@ -26,10 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 // The scrim: full-screen, above everything, centring its card. components/Popup is its only user.
-// focus-scope: inside it the keyboard's focus ring is drawn on whichever control has the keyboard
-// (index.css, "THE KEYBOARD FOCUS RING") — term 4's Tab has somewhere visible to land.
-export const MODAL_SCRIM_CLASS =
-  'focus-scope fixed inset-0 z-[60] flex items-center justify-center px-4'
+export const MODAL_SCRIM_CLASS = 'fixed inset-0 z-[60] flex items-center justify-center px-4'
 // The dim, worn by the TOP popup's scrim alone (term 5).
 export const MODAL_DIM_CLASS = 'bg-black/40'
 // The card: the popover's own surface language, py-4 only — horizontal padding belongs to the rows

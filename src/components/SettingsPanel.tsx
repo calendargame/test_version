@@ -864,8 +864,6 @@ export function SettingsPanel({
           (components/scrollRegion) — this popover IS the reference treatment (card py-4 only, the
           px-4 scrollbar lane inside the scroller, edge fades) every other scroll region now
           shares.
-          focus-scope: the keyboard's ring is drawn on whichever control in here has it (index.css,
-          "THE KEYBOARD FOCUS RING") — the same scope every popup's scrim is.
           tabIndex −1 + its name: the card is what HOLDS the keyboard when the menu opens and the
           keyboard is not already in the top bar (components/overlayStack's "THE KEYBOARD'S REACH";
           src/main.tsx hands it over as the menu's `hold`) — so the first Tab lands on the first
@@ -879,7 +877,7 @@ export function SettingsPanel({
         tabIndex={-1}
         data-drag-dismiss
         style={MODAL_CARD_SHADOW}
-        className="focus-scope absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]"
+        className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]"
       >
         <div
           ref={popoverInnerScrollRef}
@@ -965,7 +963,7 @@ export function SettingsPanel({
                 ariaLabel="Open in"
                 showChevron
                 dropdownWidth="at-least-trigger"
-                className="w-full min-w-0 border surface-tray rounded-xl px-3 py-1.5 pr-6 text-xs font-medium text-left text-(--tx-100-80) focus-ring"
+                className="w-full min-w-0 border surface-tray rounded-xl px-3 py-1.5 pr-6 text-xs font-medium text-left text-(--tx-100-80)"
               />
             </div>
             {/* ⚠⚠ data-drag-stay, AND IT IS NOT DECORATION — IT IS WHAT MAKES THIS BUTTON WORK AT

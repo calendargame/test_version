@@ -616,7 +616,7 @@ export default function LookupCard({
               }
             }}
             placeholder={`e.g., ${inputMeta.example}`}
-            className="appearance-none border surface-tray rounded-xl px-3 py-2 text-base focus-ring flex-1 min-w-0"
+            className="appearance-none border surface-tray rounded-xl px-3 py-2 text-base flex-1 min-w-0"
           />
           <button
             type="button"

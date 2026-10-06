@@ -236,7 +236,8 @@ describe('the outline costs no layout', () => {
       expect(at, selector).toBeGreaterThan(-1)
       return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at))
     }
-    expect(rule('.session-only')).toBe('position:relative')
+    // (…and where the keyboard's focus ring sits on a host that wears the frame: clear inside it.)
+    expect(rule('.session-only')).toBe('position:relative;--kbd-ring-offset:-5px')
     expect(rule('.panel.session-only')).toBe('border-color:transparent')
     const frame = Object.fromEntries(
       rule('.session-only::after')

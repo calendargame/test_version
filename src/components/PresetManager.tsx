@@ -1016,7 +1016,7 @@ export default function PresetManager({
                         discardRename(e.currentTarget)
                       }
                     }}
-                    className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs focus-ring ${held ? HELD_PIECE_CLASS : ''}`}
+                    className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs ${held ? HELD_PIECE_CLASS : ''}`}
                   />
                   {/* THE CURRENT-PRESET MARK, after the name, in a reserved fixed-width slot so every
                 name box ends at the same x whether the row is marked or not — the same reason

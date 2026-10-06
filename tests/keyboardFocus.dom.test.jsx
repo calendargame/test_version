@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 //
-// keyboardFocus.dom — THE KEYBOARD'S FOCUS RING, in the ⚙ menu and in every popup.
+// keyboardFocus.dom — THE KEYBOARD'S FOCUS RING, on every screen.
 //
 // The ring is three facts joined by one stylesheet rule, and each fact has its own owner:
 //   • WHICH control has focus — the browser's :focus;
 //   • WHETHER the keyboard is what is being used — src/lib/keyboardFocus, one attribute on <html>;
-//   • WHERE a ring is drawn at all — a .focus-scope: the ⚙ menu's card and every popup's scrim.
+//   • WHICH KEYS count as finding your way by keyboard — Tab, and an arrow that moves focus; never
+//     a game shortcut. The ring is drawn anywhere a control has focus, so this is what keeps it off
+//     a button a mouse player clicked a moment ago and is now answering with the number keys.
 //
 // ⚠ WHAT NO CASE HERE CAN PROVE. jsdom draws nothing and has no cascade worth trusting for layered
 // CSS, so "a ring is on the screen" is not a thing this file can see. What it pins is each fact
@@ -18,14 +20,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { installKeyboardFocus, KEYBOARD_ATTR } from '../src/lib/keyboardFocus.js'
-import {
-  resetAppState,
-  mountApp,
-  openSettings,
-  openModal,
-  modalScrim,
-} from './helpers/settingsPanel.jsx'
-import { MODAL_SCRIM_CLASS } from '../src/components/modalContract.js'
+import { resetAppState, mountApp, openSettings, pressKey } from './helpers/settingsPanel.jsx'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const cssCode = readFileSync(join(root, 'src', 'index.css'), 'utf8').replace(
@@ -63,13 +58,11 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
     expect(byKeyboard()).toBe(false)
   })
 
-  it('a key on a control is the keyboard; the next press of a finger or mouse is not', () => {
-    key('ArrowRight', button)
+  it('Tab is the keyboard; the next press of a finger or mouse is not', () => {
+    key('Tab', button)
     expect(byKeyboard()).toBe(true)
     press(button)
     expect(byKeyboard()).toBe(false)
-    key(' ', button) // the first key after a press: the keyboard has taken over
-    expect(byKeyboard()).toBe(true)
   })
 
   it('Tab counts from anywhere — it is the key that moves focus', () => {
@@ -78,6 +71,49 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
     press()
     key('Tab', box) // …including from inside a text box
     expect(byKeyboard()).toBe(true)
+  })
+
+  // ★ The app's keys are mostly shortcuts, pressed with a hand on the mouse — and the button last
+  // clicked still has focus. Any key used to count, which was harmless only while the ring was drawn
+  // in the ⚙ menu and the popups alone.
+  it.each([...'0123456789', 'n', 'r', 'o', 'c', 's', 'k', 'd', 'f', 'a', 'b', 'l', 'h', 'g'])(
+    'a game shortcut is NOT the keyboard: %s',
+    (shortcut) => {
+      press(button)
+      button.focus()
+      key(shortcut, button)
+      expect(byKeyboard()).toBe(false)
+    },
+  )
+
+  it('Enter, Space and Escape press or close what is there: they change nothing either way', () => {
+    press(button)
+    for (const k of ['Enter', ' ', 'Escape', 'Backspace', 'Delete']) key(k, button)
+    expect(byKeyboard()).toBe(false)
+    key('Tab', button)
+    for (const k of ['Enter', ' ', 'Escape', '3', 'n']) key(k, button)
+    expect(byKeyboard()).toBe(true) // …and a keyboard user stays one
+  })
+
+  it('an arrow is the keyboard only when it MOVES FOCUS — a page shortcut (← →, ↑ ↓) does not', async () => {
+    const other = document.createElement('button')
+    document.body.append(other)
+    press(button)
+    button.focus()
+    for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'])
+      key(k, button) // nothing answers by moving focus: Back, Forward, Lookup's history
+    expect(byKeyboard()).toBe(false)
+    // A control whose arrows walk its options moves focus as it handles the key.
+    button.addEventListener('keydown', (e) => e.key === 'ArrowRight' && other.focus())
+    key('ArrowRight', button)
+    expect(byKeyboard()).toBe(true)
+    // …and the watch does not outlive the key's own turn: a focus that arrives later is not its.
+    press(button)
+    key('ArrowLeft', button)
+    await new Promise((done) => setTimeout(done))
+    act(() => other.focus())
+    expect(byKeyboard()).toBe(false)
+    other.remove()
   })
 
   // A phone's on-screen keyboard sends the same key events as a real one. A tap into a year box
@@ -102,6 +138,7 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
     for (const k of ['Shift', 'Control', 'Alt', 'Meta']) key(k, button)
     key('r', button, { ctrlKey: true })
     key('Tab', button, { altKey: true })
+    key('Tab', button, { ctrlKey: true })
     key('c', button, { metaKey: true })
     expect(byKeyboard()).toBe(false)
     key('Tab', button, { shiftKey: true }) // Shift+Tab is a Tab
@@ -112,7 +149,7 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
     const stop = (e) => e.stopPropagation()
     button.addEventListener('keydown', stop)
     button.addEventListener('pointerdown', stop)
-    key('Enter', button)
+    key('Tab', button)
     expect(byKeyboard()).toBe(true)
     press(button)
     expect(byKeyboard()).toBe(false)
@@ -129,36 +166,44 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
 })
 
 describe('the rule in index.css that draws it', () => {
-  it('rings what has focus inside a scope, only while the keyboard is in use', () => {
-    const rule = new RegExp(
-      `(?:^|\\})\\s*:root\\[${KEYBOARD_ATTR}\\] \\.focus-scope :focus:not\\(([^)]*)\\)\\{([^}]*)\\}`,
-    ).exec(cssCode)
-    expect(rule).not.toBeNull()
+  const RING = `:root[${KEYBOARD_ATTR}] :focus:not(`
+  it('rings what has focus, anywhere, only while the keyboard is in use', () => {
+    const at = cssCode.indexOf(RING)
+    expect(at).toBeGreaterThan(-1)
+    const [, excluded, body] = /:not\(([^)]*)\)\{([^}]*)\}/.exec(cssCode.slice(at))
     // A real, solid, 2px line in a named colour — and INSIDE the control's edge by default, so no
     // scroll region can clip it.
-    expect(rule[2]).toBe(
+    expect(body).toBe(
       'outline:2px solid var(--kbd-ring,var(--tx-50));outline-offset:var(--kbd-ring-offset,-2px)',
     )
-    // The two things in a scope that take focus and are not ringed themselves.
-    expect(rule[1].split(',').sort()).toEqual(['[role="dialog"]', '[type="range"]'].sort())
+    // What takes focus and is not ringed: the three things that hold it without being a control
+    // (a popup's card, the ⚙ menu's card, the page's scroller), a slider's track (its thumb is
+    // ringed instead) and anything in an open list.
+    expect(excluded.split(',').sort()).toEqual(
+      [
+        '[role="dialog"]',
+        '[role="option"]',
+        '[type="range"]',
+        '#settings-popover',
+        '#appScroll',
+      ].sort(),
+    )
   })
 
-  it('EVERY selector that draws a ring starts at a scope and at the keyboard mark', () => {
-    // The rule above once had a second, unscoped half — `,[data-kbd-cursor]` — and it ringed the
-    // arrow-reached option of the frosted lists in the TOP BAR, outside every scope. A rule is as
-    // wide as its widest selector, so each comma-separated one is checked on its own.
+  it('EVERY selector that draws a ring starts at the keyboard mark', () => {
+    // A rule is as wide as its widest selector, so each comma-separated one is checked on its own.
     const rings = [...cssCode.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, , body]) =>
       /outline:2px solid var\(--kbd-ring/.test(body),
     )
     expect(rings.length).toBe(1)
     for (const selector of rings[0][1].split(/,(?![^(]*\))/))
-      expect(selector.trim().startsWith(`:root[${KEYBOARD_ATTR}] .focus-scope `)).toBe(true)
+      expect(selector.trim().startsWith(`:root[${KEYBOARD_ATTR}] `)).toBe(true)
     expect(cssCode).not.toContain('data-kbd-cursor')
   })
 
   it('a control marked unavailable takes a DOTTED ring, not the solid one', () => {
     expect(cssCode).toContain(
-      `:root[${KEYBOARD_ATTR}] .focus-scope [aria-disabled="true"]:focus{outline-style:dotted}`,
+      `:root[${KEYBOARD_ATTR}] [aria-disabled="true"]:focus{outline-style:dotted}`,
     )
   })
 
@@ -173,32 +218,41 @@ describe('the rule in index.css that draws it', () => {
     for (const [, selector] of visible) expect(selector).toContain(`:root[${KEYBOARD_ATTR}]`)
   })
 
-  it('inside a scope the browser draws nothing of its own, for a press or for a key', () => {
-    // …the scope ITSELF included: the ⚙ menu's card is a scope and holds the keyboard when the
-    // menu opens.
-    expect(cssCode).toContain(
-      '.focus-scope:focus,.focus-scope :focus{outline:2px solid transparent;outline-offset:-2px}',
-    )
+  it('the browser draws nothing of its own, anywhere, for a press or for a key', () => {
+    expect(cssCode).toContain(':focus{outline:2px solid transparent;outline-offset:-2px}')
+    // …and nothing blanks it out for one kind of control: forced-colors mode paints a transparent
+    // outline, and `none` would take that away.
+    expect(cssCode).not.toMatch(/(button|select|input|a)[^{},]*:focus\{outline:none\}/)
   })
 
   it('a slider wears it on the thumb — in both engines` spelling', () => {
     for (const thumb of ['::-webkit-slider-thumb', '::-moz-range-thumb'])
       expect(cssCode).toContain(
-        `:root[${KEYBOARD_ATTR}] .focus-scope input[type="range"]:focus${thumb}{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}`,
+        `:root[${KEYBOARD_ATTR}] input[type="range"]:focus${thumb}{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}`,
       )
   })
 
   it('is white and further in on a filled control, and outside the readout — the drag ring too', () => {
-    expect(cssCode).toContain('.btn-solid,.ring-on-fill{--kbd-ring:#fff;--kbd-ring-offset:-4px}')
+    // Purple, rose, and the green and red of an answered day.
+    expect(cssCode).toContain(
+      '.btn-solid,.ring-on-fill,.btn-correct-persist,.btn-wrong-persist{--kbd-ring:#fff;--kbd-ring-offset:-4px}',
+    )
     expect(cssCode).toContain('.ring-outside{--kbd-ring:var(--tx-50);--kbd-ring-offset:2px}')
     // The press-drag ring is inset everywhere else; on the readout that ran it through the digits.
     expect(cssCode).toContain('.ring-outside.drag-target{outline-offset:2px}')
   })
 
+  // Amnesic's dashed frame and the ring can now be on one control: the stats strip, when the whole
+  // strip is one button. At the ring's usual inset it would be drawn exactly over the dashes.
+  it('sits clear inside Amnesic`s dashed frame where a control wears both', () => {
+    expect(cssCode).toContain('.session-only{position:relative;--kbd-ring-offset:-5px}')
+    expect(cssCode).toMatch(/\.session-only::after\{[^}]*inset:0;border:1\.5px dashed/)
+  })
+
   // A Tailwind utility outranks the whole `components` layer the ring lives in, so one outline
   // utility on a control would silently take the ring off it — which is how the reorder grip lost
-  // its only keyboard indicator once. The suppressor is index.css's .focus-ring class instead.
-  it('no control in the app wears a Tailwind outline utility', () => {
+  // its only keyboard indicator once.
+  it('no control in the app wears a Tailwind outline utility, or a class of its own for the ring', () => {
     const files = []
     const walk = (dir) => {
       for (const name of readdirSync(dir)) {
@@ -209,14 +263,15 @@ describe('the rule in index.css that draws it', () => {
     }
     walk(join(root, 'src'))
     const offenders = files.filter((f) =>
-      /(^|[\s"'`:])outline-(hidden|none|\d|offset-)/.test(readFileSync(f, 'utf8')),
+      /(^|[\s"'`:])(outline-(hidden|none|\d|offset-)|focus-ring|focus-scope)/.test(
+        readFileSync(f, 'utf8'),
+      ),
     )
     expect(offenders).toEqual([])
-    expect(cssCode).toContain('.focus-ring:focus{outline:2px solid transparent;outline-offset:2px}')
   })
 })
 
-describe('the scopes: the ⚙ menu and every popup', () => {
+describe('on the mounted app', () => {
   beforeEach(() => {
     resetAppState()
   })
@@ -225,29 +280,43 @@ describe('the scopes: the ⚙ menu and every popup', () => {
     document.getElementById('root')?.remove()
   })
 
-  it('the ⚙ menu`s card is a focus scope', () => {
+  // ★ The case the whole key rule exists for: a player with a hand on the mouse clicks a button —
+  // it keeps focus — and plays on with the shortcut keys. No ring may ever light on that button.
+  it('a click, then every game shortcut: the keyboard mark never lights', () => {
     mountApp()
-    openSettings()
-    expect(document.getElementById('settings-popover').classList.contains('focus-scope')).toBe(true)
+    const fresh = screen.getByRole('button', { name: 'New' })
+    press(fresh)
+    act(() => fresh.focus())
+    for (const k of ['3', 'n', 'r', 'c', 'c', 'ArrowLeft', 'ArrowRight', 'o', 'd', 'k', 'l']) {
+      pressKey(k)
+      expect([k, byKeyboard()]).toEqual([k, false])
+    }
+    for (const k of ['ArrowUp', 'ArrowDown', 'Backspace', 'h', 'h', 'g', 'g', 'Escape']) {
+      pressKey(k)
+      expect([k, byKeyboard()]).toEqual([k, false])
+    }
   })
 
-  // Every popup is drawn in components/Popup, and the scope is its scrim's own class — so a popup
-  // cannot be without it. Three are opened here (a list of controls, a text-only card, and the one
-  // with the reorder grip); the rest need arranging to open at all and add nothing to the claim.
-  it.each(['manage', 'changelog', 'presets'])('the %s popup`s scrim is a focus scope', (modal) => {
+  it('Tab lights it (the keyboard is on the Mode button), and a press puts it out', () => {
     mountApp()
-    openSettings()
-    openModal(modal)
-    expect(modalScrim(modal).classList.contains('focus-scope')).toBe(true)
-    expect(modalScrim(modal).className).toContain(MODAL_SCRIM_CLASS)
-  })
-
-  it('the app keeps the mark: a key sets it, a press clears it', () => {
-    mountApp()
-    key('Tab')
+    pressKey('Tab')
     expect(byKeyboard()).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Mode,/ }))
     press()
     expect(byKeyboard()).toBe(false)
+  })
+
+  it('an arrow along a setting`s options moves focus, so it lights it', () => {
+    mountApp()
+    openSettings()
+    const pills = within(document.getElementById('settings-popover')).getAllByRole('radio')
+    const chosen = pills.find((pill) => pill.tabIndex === 0)
+    press(chosen)
+    act(() => chosen.focus())
+    expect(byKeyboard()).toBe(false)
+    key('ArrowRight', chosen)
+    expect(document.activeElement).not.toBe(chosen)
+    expect(byKeyboard()).toBe(true)
   })
 
   // The open list is driven from its button, which keeps the real focus — so the BUTTON is what the
@@ -264,11 +333,7 @@ describe('the scopes: the ⚙ menu and every popup', () => {
     key('ArrowDown', trigger)
     const options = screen.getAllByRole('option')
     expect(document.activeElement).toBe(trigger)
-    expect(trigger.closest('.focus-scope')).not.toBeNull() // it is in a scope: the ring is drawn
     expect(trigger.getAttribute('aria-activedescendant')).toBe(options[1].id)
-    for (const option of options) {
-      expect(option.hasAttribute('data-kbd-cursor')).toBe(false)
-      expect(option.closest('.focus-scope')).toBeNull() // …and the list is in none
-    }
+    for (const option of options) expect(option.hasAttribute('data-kbd-cursor')).toBe(false)
   })
 })

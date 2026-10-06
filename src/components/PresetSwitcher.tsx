@@ -286,7 +286,7 @@ export default function PresetSwitcher({
       // is not a flex container) — it is here defensively, so a future wrapping change cannot
       // reintroduce a content-based floor on the one control that is supposed to have none. The
       // MODE SELECTOR deliberately keeps NEITHER class: it stays shrink-to-fit, exactly as before.
-      className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus-ring text-left w-full min-w-0"
+      className="panel rounded-xl px-2.5 py-2 pr-6 text-sm text-left w-full min-w-0"
     />
   )
 }

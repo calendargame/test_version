@@ -89,11 +89,11 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     // replacement is the claim that NOTHING is written there any more: the guide is now a change
     // of what a container shows, not a change of what the page is. Asserted twice over — the live
     // DOM across a full round trip, and the source, so a dormant copy of the rule cannot survive.
-    // ONE attribute is written on <html> by something that is not a mode, and this case drives the
-    // app with keys, so it meets it: lib/keyboardFocus marks the document while the keyboard is
-    // what is being used (it is what the focus ring is drawn from — tests/keyboardFocus). It says
-    // how the app is being driven, never which page is showing: the same mark for H as for K, gone
-    // again with the app. So it is asserted to be exactly that, and left out of the comparison.
+    // ONE attribute is written on <html> by something that is not a mode: lib/keyboardFocus marks
+    // the document while the player is finding their way by keyboard (it is what the focus ring is
+    // drawn from — tests/keyboardFocus). It says how the app is being driven, never which page is
+    // showing, and a mode letter is a shortcut that does not set it at all — so it is asserted to
+    // stay off through the round trip, and left out of the comparison.
     const { unmount } = mountApp()
     const html = document.documentElement
     const names = () =>
@@ -107,7 +107,7 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     for (const key of ['H', 'K', 'H']) {
       pressKey(key)
       expect(names()).toEqual(launch)
-      expect(html.hasAttribute(KEYBOARD_ATTR)).toBe(true)
+      expect(html.hasAttribute(KEYBOARD_ATTR)).toBe(false)
     }
     unmount()
     expect(names()).toEqual(launch)
@@ -338,12 +338,16 @@ describe('the scroll container is the guide’s keyboard target', () => {
     ).not.toContain(el)
   })
 
-  it('draws no focus ring — the app draws none anywhere, and this one would frame the screen', () => {
+  it('draws no focus ring — it is not a control, and a ring on it would frame the screen', () => {
     // Not an oversight and not a WCAG hole: a scroll container is not a control, it is never
     // focused by a user gesture, and its "indicator" is the page moving. `outline:none` flatly
     // rather than :focus-visible, so the result cannot depend on an engine's guess about whether a
-    // programmatic focus followed a keypress.
+    // programmatic focus followed a keypress — and the keyboard's ring, which is drawn on every
+    // control in the app, leaves it out by name.
     expect(srcFile('index.css')).toContain('#appScroll{outline:none}')
+    expect(srcFile('index.css')).toMatch(
+      /:root\[data-keyboard\] :focus:not\([^)]*#appScroll[^)]*\)/,
+    )
   })
 })
 

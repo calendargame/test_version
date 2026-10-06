@@ -2470,7 +2470,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
                   preset switcher beside it already wears, so the two now match by construction
                   instead of by coincidence. */}
               <div className="shrink-0">
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={PAGE_OPTIONS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus-ring text-left"/>
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={PAGE_OPTIONS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm text-left"/>
               </div>
               {/* THE ⚙ AT THE FAR EDGE. The gear moved from the INSIDE of the old right-hand pair
                   to the OUTSIDE of it (owner's layout: gear far right); flattening the row to four

@@ -1979,12 +1979,11 @@ export default function GuidePage({
           round-15 draft said "sliding panels, fades, and this guide's own scrolling" when no fade
           was scaled at all; the word is honest now, which is why it is back.)
           ★ THE KNOWN-GAPS BLOCK IS LOAD-BEARING, not throat-clearing. Each line is a thing the
-          code does NOT do, checked one at a time: the keyboard's focus ring is drawn only inside
-          a .focus-scope — the ⚙ menu's card and the popup scrim (index.css, "THE KEYBOARD FOCUS
-          RING") — so everywhere else button:focus{outline:none} still stands and nothing is drawn,
-          the top bar's two list buttons included; on the open page plain Tab is bound to the mode
-          selector (main.tsx's key handler), so no key puts the keyboard on the preset button
-          directly;
+          code does NOT do, checked one at a time: on the open page plain Tab is bound to the mode
+          selector (main.tsx's key handler), so the page's own controls are reached by the
+          browser's Shift+Tab alone and no key puts the keyboard on the preset button directly
+          (the focus ring is NOT one of the gaps any more: index.css's "THE KEYBOARD FOCUS RING"
+          draws it wherever the keyboard is, and lib/keyboardFocus says which keys count);
           index.html
           sets user-scalable=no on purpose; the < and > history buttons carry only their glyph and
           the mode-screen range inputs carry no aria-label (the DefaultsCard copies do); and the
@@ -2115,19 +2114,26 @@ export default function GuidePage({
             name you are typing in.
           </li>
           <li>
-            In the ⚙ menu and in every popup, the control the keyboard is on is outlined: a solid
-            ring just inside its edge — white on a filled button, round the handle on a slider, and
+            Wherever the keyboard is, the control it is on is outlined — on the game screens,
+            Lookup, this guide and the top bar as much as in the ⚙ menu and the popups: a solid ring
+            just inside its edge — white on a filled button (a purple one, a rose one, a day you
+            have answered), following the circle of an answer dot, round the handle on a slider, and
             round the outside of a time readout, which is no bigger than its digits. It is drawn
-            only while you are using the keyboard. A tap or a click never draws it, on anything; the
-            first key you press afterwards does — unless you are typing in a box, which shows its
-            own caret, and where only <Kbd>Tab</Kbd> counts. A control that is greyed out and marked
-            unavailable can still be reached, and its ring is <i>dotted</i> rather than solid: the
-            keyboard is there, and pressing will do nothing. Nothing inside an open list is
-            outlined, in the top bar or in the menu: the soft grey box on an option is where the
-            keyboard is, and the ring stays on the list&apos;s button (for <b>Open in</b> — the two
-            lists in the top bar have none, like the rest of the bar). None of this is the dashed
-            outline Amnesic puts round numbers that won&apos;t be kept — that one is dashed and
-            fainter, marks numbers rather than a control, and has nothing to do with the keyboard.
+            only while you are finding your way by keyboard, which means after <Kbd>Tab</Kbd> or{' '}
+            <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd>, or an arrow key that moves you from one control to the
+            next (along a setting&apos;s options, through a list, on a slider). A tap or a click
+            never draws it, on anything, and puts it out if it was showing. Nor does any other key
+            start it: the answer keys, the Game Actions, the mode letters, <Kbd>H</Kbd> and{' '}
+            <Kbd>G</Kbd>, <Kbd>Enter</Kbd>, <Kbd>Space</Kbd> and anything typed in a box leave
+            things as they are — so playing with the number keys and a mouse never lights a ring on
+            the button you last clicked. A control that is greyed out and marked unavailable can
+            still be reached, and its ring is <i>dotted</i> rather than solid: the keyboard is
+            there, and pressing will do nothing. Nothing inside an open list is outlined, in the top
+            bar or in the menu: the soft grey box on an option is where the keyboard is, and the
+            ring stays on the list&apos;s button. None of this is the dashed outline Amnesic puts
+            round numbers that won&apos;t be kept — that one is dashed and fainter, marks numbers
+            rather than a control, and has nothing to do with the keyboard; where the stats strip
+            wears it and has the keyboard too, the solid ring sits just inside the dashes.
           </li>
           <li>
             The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button — but it
@@ -2184,17 +2190,13 @@ export default function GuidePage({
         <p>Stated plainly, so you know before you try:</p>
         <UL>
           <li>
-            Outside the ⚙ menu and the popups, nothing draws a focus ring: on the game screens,
-            Lookup, this guide and the top bar there&apos;s no outline showing which button the
-            keyboard is on. That includes the two lists in the top bar — the keyboard can be on the
-            preset or the mode button, and open it, with nothing drawn to say so.
-          </li>
-          <li>
-            On the page, <Kbd>Tab</Kbd> is the mode selector&apos;s and does not walk from control
-            to control, so there is no one key for the preset list: the keyboard gets onto its
-            button by stepping back from the mode button (Keyboard Input has the steps). Everything
-            else that opens has a key of its own or is reached by <Kbd>Tab</Kbd> inside the ⚙ menu
-            or a popup.
+            On the page, <Kbd>Tab</Kbd> is the mode selector&apos;s and does not walk forwards from
+            control to control. The page&apos;s own controls that have no key of their own — a
+            section of this guide, the stats boxes, a time readout, the strip of an ended run or
+            round, the preset list&apos;s button — are reached only by <Kbd>Shift</Kbd>+
+            <Kbd>Tab</Kbd>, which steps backwards through them from wherever the keyboard is
+            (Keyboard Input has the steps for the preset button). Inside the ⚙ menu and the popups{' '}
+            <Kbd>Tab</Kbd> walks both ways.
           </li>
           <li>
             Pinch-to-zoom is switched off deliberately, to keep the app feeling like an app rather

@@ -7,6 +7,7 @@
 // places this app has:
 //   • a TEXT BOX matches it on every focus, a tap included — so a ring drawn from it would light up
 //     under a finger entering a year or a preset name;
+//   • it is lit by ANY key, a game shortcut included — see the rule below for why that cannot do;
 //   • a focus placed BY SCRIPT matches it whenever the keyboard was the last thing the browser saw
 //     — and a press here often focuses from script: grabbing a preset's reorder grip, releasing a
 //     press-drag on a year box, choosing a pill (components/PillTray focuses the one it activates,
@@ -18,18 +19,25 @@
 // THE RULE:
 //   • ANY PRESS (pointerdown — finger, mouse, pen) ⇒ not the keyboard. It is taken at the press
 //     going DOWN, which is before the press focuses anything, so no ring can flash first.
-//   • A KEY ⇒ the keyboard — with two exceptions, both things that are not "driving the app by
-//     keyboard":
-//       – TYPING IN A TEXT BOX. A phone's on-screen keyboard sends the same key events, so "a key
-//         was pressed" there says nothing about a real keyboard; and a box being typed into has its
-//         own caret to show where it is. Tab is the one key that counts even from a box, because
-//         it moves focus to another control.
-//       – A MODIFIER OR A SHORTCUT (Shift on its way to Shift+Tab, Ctrl+R, Alt+Tab away, ⌘-anything):
-//         held or chorded keys that are addressed to the browser or the system, not to a control.
-//     So after a tap on a control, the first arrow / Space / Tab that follows puts the ring on it —
-//     the keyboard has taken over, and the ring says where it is.
+//   • A KEY THAT MOVES THE KEYBOARD FROM ONE CONTROL TO ANOTHER ⇒ the keyboard. Those are the keys
+//     of someone finding their way round by keyboard, and there are two kinds:
+//       – TAB, with or without Shift, from anywhere (a text box included): moving focus is all it
+//         does.
+//       – AN ARROW, Home or End — when it is the focused control's own key: on a slider (it moves
+//         the thumb under the keyboard), or wherever the press MOVES FOCUS (along a setting's
+//         options, say). The second is found out rather than assumed: the key arms a watch for the
+//         rest of its own turn, and focus arriving somewhere in that turn is the answer.
+//   • EVERY OTHER KEY CHANGES NOTHING, in either direction. ★ That is the point of the rule, since
+//     the ring is drawn on every screen and not only in the ⚙ menu: the app's keys are mostly
+//     SHORTCUTS — the answer keys 0–9, N, R, O, C, S, ← and →, the mode letters, H, G — pressed by
+//     players who have a hand on the mouse or a finger on the screen, and a button they clicked a
+//     moment ago still has focus. A shortcut that counted as "the keyboard" would light a ring on
+//     that button in the middle of a game. Enter and Space change nothing either: they press what
+//     already has the keyboard, wherever it is. Nor does typing in a text box (a phone's on-screen
+//     keyboard sends the same key events as a real one), nor a modifier or a chord addressed to the
+//     browser or the system (Shift on its way to Shift+Tab, Ctrl+R, Alt+Tab away, ⌘-anything).
 //
-// Nothing here reads focus or marks an element: which control HAS focus is the browser's :focus,
+// Nothing here reads which control has focus or marks an element: that is the browser's :focus,
 // and the stylesheet joins the two.
 import { opensKeyboard } from './textEntry.js'
 
@@ -37,14 +45,35 @@ import { opensKeyboard } from './textEntry.js'
 // pins the two together.
 export const KEYBOARD_ATTR = 'data-keyboard'
 
-const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'Fn'])
+const MOVES_WITHIN = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
 
 const setKeyboard = (on: boolean) => document.documentElement.toggleAttribute(KEYBOARD_ATTR, on)
 
-const onPointerDown = () => setKeyboard(false)
+// An arrow has just gone down on something that is not a slider: has it moved focus? Armed for the
+// rest of that key's own turn — the control's handler runs inside it, and so does anything React
+// does on its account — and stood down by a timer that cannot run before the turn is over (or by
+// the next key or press, whichever comes first).
+let watching = false
+const standDown = () => {
+  watching = false
+}
+
+const onPointerDown = () => {
+  watching = false
+  setKeyboard(false)
+}
 const onKeyDown = (e: KeyboardEvent) => {
-  if (e.ctrlKey || e.metaKey || e.altKey || MODIFIER_KEYS.has(e.key)) return
-  if (e.key !== 'Tab' && opensKeyboard(e.target)) return
+  watching = false // a new key: whatever the last one was watching for, its turn is over
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.key === 'Tab') return setKeyboard(true)
+  if (!MOVES_WITHIN.has(e.key) || opensKeyboard(e.target)) return
+  if (e.target instanceof HTMLInputElement) return setKeyboard(true) // a slider's own key
+  watching = true
+  setTimeout(standDown)
+}
+const onFocusIn = () => {
+  if (!watching) return
+  watching = false
   setKeyboard(true)
 }
 
@@ -56,9 +85,12 @@ export function installKeyboardFocus() {
   // out of reach of the ones that stop a press or a key they consider theirs.
   window.addEventListener('pointerdown', onPointerDown, true)
   window.addEventListener('keydown', onKeyDown, true)
+  window.addEventListener('focusin', onFocusIn, true)
   return () => {
     window.removeEventListener('pointerdown', onPointerDown, true)
     window.removeEventListener('keydown', onKeyDown, true)
+    window.removeEventListener('focusin', onFocusIn, true)
+    watching = false
     setKeyboard(false)
   }
 }

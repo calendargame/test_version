@@ -174,7 +174,7 @@ export default function SliderValueEditor({
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
-      className="svalue-input surface-tray text-right tabular-nums text-xs focus-ring"
+      className="svalue-input surface-tray text-right tabular-nums text-xs"
     />,
   )
 }
