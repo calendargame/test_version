@@ -4,7 +4,7 @@ import { useSessionAmnesic, amnesicModeOf } from './sessionAmnesic.js'
 import { readItem, writeItem } from './storageHealth.js'
 import { createProgressCodec, removeProgressCopy, mainKeyOf } from './progressStorage.js'
 import { captureError } from '../observability/sentry.js'
-import { sameJson } from './json.js'
+import { isRecord, sameJson } from './json.js'
 import type { AmnesicMode } from './amnesicMode.js'
 import type { ProgressValues } from './progress.js'
 
@@ -352,30 +352,51 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
     return { presetId, mode: amnesicModeOf(presetId) }
   }
 
-  // ★ WHAT THE STORE WAS LAST HANDED FROM A PERMANENT COPY'S KEPT KEYS — the guard on writeKept.
-  // The kept maps in memory may be written back only when they are known to have STARTED as that
-  // permanent copy's: `presetId` says whose, `readable` that the copy could be read (or was absent),
-  // and `maps` holds the very objects handed over, so a save that did not touch them is recognised
-  // without reading anything.
+  // ★ WHAT THE STORE WAS HANDED FROM A PERMANENT COPY'S KEPT KEYS, AND WHAT IT HAS DONE TO THEM SINCE
+  // — the guard on writeKept, and its memory. The kept maps in memory may be written back only when
+  // they are known to have STARTED as that permanent copy's: `presetId` says whose, and `readable`
+  // that the copy could be read (or was absent). The rest is what lets a save tell its own changes
+  // from everybody else's:
+  //   `base`  each kept map as the permanent copy held it when this page loaded it;
+  //   `maps`  the store's map objects as they stood at the last save, so a save that did not touch
+  //           them is recognised by identity;
+  //   `mine`  per map, the records THIS PAGE has changed since it loaded, each with the value it
+  //           last saved for it (`undefined`: it took the record away);
+  //   `text`  the permanent copy's text as this page last read or wrote it.
+  type Maps = Partial<Record<ProgressKey, unknown>>
   let handed: {
     presetId: number
     readable: boolean
-    maps: Partial<Record<ProgressKey, unknown>>
+    base: Maps
+    maps: Maps
+    mine: Partial<Record<ProgressKey, Map<string, unknown>>>
+    text: string | null
   } | null = null
+  const records = (map: unknown): Record<string, unknown> => (isRecord(map) ? map : {})
 
   // Save the kept maps into one preset's permanent main key — and nothing else into it.
-  // ★ READ, REPLACE THE KEPT MAPS, WRITE BACK. The text is read as it stands NOW (a save the device
-  // refused included, store/storageHealth), so whatever the permanent copy holds besides the kept
-  // maps — its stats, with every solve time and any sealed-chunk record, and its version stamp — goes
-  // back exactly as it came, whoever wrote it last. Nothing from the session can be in what is
-  // written: this function is never given the session's stats.
+  // ★ READ, LAY THIS PAGE'S OWN CHANGES OVER IT, WRITE BACK. The text is read as it stands NOW (a
+  // save the device refused included, store/storageHealth), so whatever the permanent copy holds
+  // besides the kept maps — its stats, with every solve time and any sealed-chunk record, and its
+  // version stamp — goes back exactly as it came, whoever wrote it last. Nothing from the session
+  // can be in what is written: this function is never given the session's stats.
+  // ★ RECORD BY RECORD, NOT MAP BY MAP — because the permanent copy has other writers: another tab
+  // on Off saves the WHOLE copy, from the Best maps it loaded, on every answer. For each record:
+  //   • one this page has JUST changed (it differs from what the page held at its last save) is
+  //     written — the newest save wins, as it does everywhere;
+  //   • one this page changed EARLIER is put back if the copy has gone back to what it held when
+  //     this page loaded — i.e. a save that never knew of the change undid it. (That is the Best a
+  //     Stats Only session sets and another tab's next answer used to erase for good.) If the copy
+  //     holds anything else there, somebody saved a record of their own after this page did, and
+  //     theirs stands;
+  //   • every other record is the copy's own, passed through.
   // ⚠ THREE WAYS IT WRITES NOTHING:
   //   • the store's kept maps did not start as this copy's (`handed`) — a new best must never replace
   //     records this page has not read;
   //   • the permanent copy cannot be read — it is left exactly as it is, as the load left it, and the
   //     bests of this session last only as long as the page (reported, not hidden);
-  //   • the maps say what the copy already says. Most saves are a stat moving, and for those the
-  //     copy is not even read.
+  //   • the copy already says what the rules above come to. Most saves are a stat moving with the
+  //     copy untouched since this page last looked, and those cost one comparison of its text.
   const writeKept = (
     presetId: number,
     keys: readonly ProgressKey[],
@@ -383,8 +404,8 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
     version: number | undefined,
   ) => {
     if (!handed || handed.presetId !== presetId || !handed.readable) return
-    if (keys.every((key) => state[key] === handed!.maps[key])) return
     const text = readItem(ls, mainKeyOf(presetId))
+    if (text === handed.text && keys.every((key) => state[key] === handed!.maps[key])) return
     const parked = readEnvelope(text)
     if (text !== null && !parked) {
       handed.readable = false
@@ -393,16 +414,34 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
       })
       return
     }
-    for (const key of keys) handed.maps[key] = state[key]
-    if (keys.every((key) => sameJson(state[key] ?? {}, parked?.state[key] ?? {}))) return
-    const kept = Object.fromEntries(keys.map((key) => [key, state[key] ?? {}]))
-    writeItem(
-      ls,
-      mainKeyOf(presetId),
-      JSON.stringify(
-        parked ? { ...parked, state: { ...parked.state, ...kept } } : { state: kept, version },
-      ),
+    handed.text = text
+    const kept: Record<string, unknown> = {}
+    let changed = false
+    for (const key of keys) {
+      const now = records(state[key])
+      const was = records(handed.maps[key])
+      const base = records(handed.base[key])
+      const theirs = records(parked?.state[key])
+      const mine = (handed.mine[key] ??= new Map())
+      for (const id of new Set([...Object.keys(now), ...Object.keys(was)]))
+        if (!sameJson(now[id], was[id])) mine.set(id, now[id]) // changed by this page, just now
+      handed.maps[key] = state[key]
+      const out = { ...theirs }
+      for (const [id, value] of mine) {
+        const fresh = !sameJson(value, was[id]) // …in this very save
+        if (!fresh && !sameJson(theirs[id], base[id])) continue // somebody else's later record
+        if (sameJson(theirs[id], value)) continue
+        if (value === undefined) delete out[id]
+        else out[id] = value
+        changed = true
+      }
+      kept[key] = out
+    }
+    if (!changed) return
+    handed.text = JSON.stringify(
+      parked ? { ...parked, state: { ...parked.state, ...kept } } : { state: kept, version },
     )
+    writeItem(ls, mainKeyOf(presetId), handed.text)
   }
 
   return {
@@ -434,12 +473,20 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
       const keep = keptKeys(mode)
       const text = keep.length ? readItem(ls, mainKeyOf(presetId)) : null
       const parked = readEnvelope(text)
-      handed = { presetId, readable: text === null || parked !== null, maps: {} }
+      handed = {
+        presetId,
+        readable: text === null || parked !== null,
+        base: {},
+        maps: {},
+        mine: {},
+        text,
+      }
       const state: Record<string, unknown> = {}
       for (const key of AMNESIC_CLEARS[mode])
         if (session && key in session.state) state[key] = session.state[key]
       for (const key of keep)
-        if (parked && key in parked.state) handed.maps[key] = state[key] = parked.state[key]
+        if (parked && key in parked.state)
+          handed.base[key] = handed.maps[key] = state[key] = parked.state[key]
       if (Object.keys(state).length === 0) return null
       // The version stamp is the copy's whose shape a migration could still have to rewrite — the
       // permanent one when it supplied the Best maps (store/progress' `migrate` rewrites nothing

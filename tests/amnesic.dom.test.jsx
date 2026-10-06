@@ -671,6 +671,78 @@ describe('Stats Only: the stats are the session’s, the Bests are the permanent
 // THE SIX CHANGES. One rule covers them all — the session's copy is discarded, then everything is
 // read again — and this is that rule checked pair by pair, on what is on screen (the store) and on
 // what is on the device.
+// ★ THE PERMANENT COPY HAS OTHER WRITERS. Another tab on Off (the live site beside the staging
+// one: two tabs of one origin) saves the WHOLE copy on every answer, from the Best maps it loaded.
+// A Best this page saved on Stats Only must survive that — it used to be erased for good, because
+// this page only wrote its Best maps when they changed in memory.
+describe('Stats Only: a Best survives another tab saving the permanent copy', () => {
+  const KEY = 'cg-progress-v1'
+  const REC = (score) => ({ score, streak: score, scoreRoundId: score, streakRoundId: score })
+  const onDevice = () => JSON.parse(localStorage.getItem(KEY)).state
+  const answer = (n) =>
+    useProgress.getState().setModeStats('classic', { ...ZERO.stats.classic, played: n, good: n })
+  // The other tab saves: the copy AS IT LOADED IT (`loaded`), with one more answer of its own and
+  // whatever it did to the Bests.
+  const otherTabSaves = (loaded, bests = {}) => {
+    const copy = JSON.parse(loaded)
+    copy.state.stats.classic.played += 1
+    copy.state.blitzBest = { ...copy.state.blitzBest, ...bests }
+    localStorage.setItem(KEY, JSON.stringify(copy))
+    return copy.state.stats
+  }
+  let loaded
+  beforeEach(() => {
+    resetAppState()
+    recordEverything(7)
+    useProgress.getState().setBlitzBest({ old: REC(4) })
+    loaded = parked() // …what both tabs loaded
+    setAmnesic('stats')
+    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(9) })) // this page's new Best
+    expect(Object.keys(onDevice().blitzBest)).toEqual(['old', 'mine'])
+  })
+
+  it('a save that never knew of it puts the copy back — and this page’s next answer restores the Best', () => {
+    const theirStats = otherTabSaves(loaded)
+    expect(Object.keys(onDevice().blitzBest)).toEqual(['old']) // erased…
+    answer(1) // …until this page next saves anything at all
+    expect(onDevice().blitzBest).toEqual({ old: REC(4), mine: REC(9) })
+    expect(onDevice().stats).toEqual(theirStats) // the other tab's answer is untouched
+  })
+
+  it('the other tab’s own new Best is kept beside it', () => {
+    otherTabSaves(loaded, { theirs: REC(6) })
+    answer(1)
+    expect(onDevice().blitzBest).toEqual({ old: REC(4), theirs: REC(6), mine: REC(9) })
+  })
+
+  it('a record the other tab saved LATER for the same set-up stands — until this page beats it again', () => {
+    otherTabSaves(loaded, { mine: REC(11) })
+    answer(1)
+    expect(onDevice().blitzBest.mine).toEqual(REC(11)) // theirs was the later save
+    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(12) }))
+    expect(onDevice().blitzBest.mine).toEqual(REC(12)) // and now this page's is
+  })
+
+  it('a Best this page took back stays taken back', () => {
+    useProgress.getState().setBlitzBest(({ mine: _gone, ...rest }) => rest) // an Override undid it
+    expect(Object.keys(onDevice().blitzBest)).toEqual(['old'])
+    otherTabSaves(loaded)
+    answer(1)
+    expect(Object.keys(onDevice().blitzBest)).toEqual(['old'])
+  })
+
+  it('with nobody else writing, an answer still costs the permanent copy nothing', () => {
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    answer(1)
+    answer(2)
+    const permanent = writes.mock.calls.filter(
+      ([key], i) => key === KEY && writes.mock.contexts[i] === localStorage,
+    )
+    expect(permanent).toHaveLength(0)
+    writes.mockRestore()
+  })
+})
+
 describe('changing the value mid-session: all six ordered pairs', () => {
   beforeEach(() => resetAppState())
 
