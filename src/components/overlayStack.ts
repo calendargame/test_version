@@ -36,9 +36,11 @@ import { dismissKeyboard, opensKeyboard } from '../lib/textEntry.js'
 // tab), Back with something open should close it — not exit the whole app. So each open entry
 // pushes ONE history entry: pressing Back fires `popstate`, which closes the TOP-most entry (the
 // browser already popped its history entry). Closing something via the UI instead steps BACK past
-// its entry with a guarded traversal (popOverlay — batched, so overlays closing together step back
-// together) — the entry itself survives as a dead forward entry (a traversal cannot delete; see the
-// bounce below) — keeping position in lockstep with what's open. When nothing is open, Back does
+// its entry with a guarded traversal (settle — one traversal however many overlays closed together)
+// — the entry itself survives as a dead forward entry (a traversal cannot delete) — keeping position
+// in lockstep with what's open. Every marker entry records HOW DEEP it is (entryDepth, below), which
+// is what lets one rule keep that lockstep everywhere: the place in the history is never left
+// deeper than the newest thing still open. When nothing is open, Back does
 // its normal thing (leaves the app). A single module-level popstate listener drives the stack, so
 // nested overlays close one at a time, newest-first. In a browser tab the entries help beyond the
 // hardware button — a back-swipe closes the overlay instead of leaving the site.
@@ -71,10 +73,23 @@ type Entry = {
   appWide: boolean
   // A scrim-less layer's own press handler, called for a press anywhere while it is the top layer.
   press: Press | null
+  // Which history entry is its own: how many overlay entries deep (see entryDepth).
+  depth: number
 }
 
 const stack: Entry[] = []
 let ignorePop = false
+// ★ HOW DEEP THE HISTORY ENTRY WE ARE STANDING ON IS — 0 on the page's own entry, n on the n-th
+// overlay entry above it. Every marker entry is written with its depth ({cgOverlay, cgDepth}), so
+// this is read straight off the entry: at import (a reload lands wherever the last page was) and on
+// every traversal. A marker an older build wrote carries no depth and counts as 1 — "at least one
+// overlay entry deep", which is all that can be known of it and all settle() needs.
+const depthOf = (state: unknown): number => {
+  const marker = state as { cgOverlay?: unknown; cgDepth?: unknown } | null
+  if (!marker?.cgOverlay) return 0
+  return typeof marker.cgDepth === 'number' && marker.cgDepth >= 1 ? marker.cgDepth : 1
+}
+let entryDepth = typeof window !== 'undefined' ? depthOf(window.history.state) : 0
 // ★ THE ENTRY THIS PAGE LOADED ON MAY ALREADY BE AN OVERLAY'S. A reload keeps the session history
 // and the place in it — so a page reloaded while something was open starts life sitting ON that
 // thing's marker entry, with nothing open (a new page has an empty stack). If the next thing to
@@ -87,7 +102,12 @@ let ignorePop = false
 // on the page's own entry. Read once, here, at import — before anything can have opened — and
 // dropped by the first open or the first traversal, after which the place is no longer the one the
 // page loaded on.
-let onLoadedOverlayEntry = typeof window !== 'undefined' && !!window.history.state?.cgOverlay
+// ⚠ AND WHEN THE PAGE WAS RELOADED WITH TWO THINGS OPEN, the entry taken over is the SECOND one
+// deep, and the first is still underneath it — owned by nothing. Taking over the newest entry alone
+// left that one behind: closing the overlay landed on it, and the next Back was a press that did
+// nothing. The overlay that takes the entry over keeps the entry's own depth, and settle() steps
+// past everything under it that nothing owns.
+let onLoadedOverlayEntry = entryDepth > 0
 // The newest entry that answers `is` — every rule in this file is "the top one of some kind".
 const topWhere = (is: (entry: Entry) => boolean): Entry | undefined => {
   for (let i = stack.length - 1; i >= 0; i--) if (is(stack[i])) return stack[i]
@@ -156,8 +176,13 @@ const IOS_STANDALONE =
 if (typeof window !== 'undefined') {
   window.addEventListener('popstate', (event) => {
     onLoadedOverlayEntry = false // a traversal: wherever this is, it is not where the page loaded
+    entryDepth = depthOf(event.state)
     if (ignorePop) {
-      ignorePop = false // this popstate came from our own unwind (or bounce) — not a real Back
+      // This popstate came from our own settle() — not a real Back. Settle once more from where it
+      // landed: something else may have closed while the traversal was on its way, and a marker
+      // with no depth (an older build's) can have another like it underneath.
+      ignorePop = false
+      settle()
       return
     }
     // A real Back press: close the top-most overlay. The browser already popped its history entry,
@@ -168,20 +193,42 @@ if (typeof window !== 'undefined') {
     if (top) {
       notify()
       top.close()
-      return
     }
-    // Nothing is open, yet the entry landed on carries our marker: the user moved FORWARD onto the
-    // dead entry of an already-closed overlay (a UI close backs past its entry but cannot delete
-    // it). Bounce straight back — guarded, so the resulting popstate is swallowed above — instead
-    // of parking the user where Back would need two presses. Unreachable under IOS_STANDALONE in
-    // the steady state (no entries are ever created there), and left ungated on purpose: it also
-    // self-heals entries left in the session history by a build from before the installed app
-    // stopped creating them.
-    if (event.state?.cgOverlay) {
-      ignorePop = true
-      window.history.back()
-    }
+    // …and wherever that landed, do not stay on an entry nothing owns (settle, below): the entry of
+    // an overlay that is already closed — moved FORWARD onto, or left underneath the one this Back
+    // just closed by a reload with two things open.
+    settle()
   })
+}
+
+// ── THE PLACE IN THE HISTORY NEVER SITS DEEPER THAN THE NEWEST THING STILL OPEN ────────────────
+// The one rule that keeps the history and the stack in lockstep, run after everything that can part
+// them — an overlay closed from the UI (popOverlay), a Back press (above), and the popstate of the
+// traversal this itself asked for. If the entry we are on is deeper than the entry of the top open
+// overlay (0 with nothing open), the entries in between belong to nothing: step back past all of
+// them in ONE guarded traversal, whose popstate the listener above swallows. Three things were
+// separate cases before this was one rule, and each could leave a Back press that did nothing:
+//   • a UI close — it steps back past the closed overlay's entry (and, in the same step, past any
+//     dead one under it);
+//   • the dead-entry bounce — Forward onto the leftover entry of a closed overlay snaps straight
+//     back, however many such entries the move crossed;
+//   • a reload with two things open — the overlay that came back took over the newest entry, and
+//     the older one under it was left for the player to press Back through.
+// ⚠ ONE TRAVERSAL IN FLIGHT AT A TIME. `ignorePop` is a single flag, so a second traversal asked for
+// before the first one's popstate arrives would be answered by a popstate nothing was waiting for —
+// taken for a real Back, and closing something. So while one is in flight this does nothing, and the
+// listener settles again when it lands, from the depth it actually landed on.
+// Never forwards: an overlay whose own entry is ahead of where we stand (its opening raced a
+// traversal) is simply closed by the next Back, which is the right answer too.
+// Ungated by IOS_STANDALONE on purpose: no entry is ever created there, so there is nothing to step
+// past in the steady state — and an entry left in the session history by a build from before the
+// installed app stopped creating them still heals itself.
+function settle() {
+  if (ignorePop) return
+  const owned = stack.length ? stack[stack.length - 1].depth : 0
+  if (entryDepth <= owned) return
+  ignorePop = true
+  window.history.go(owned - entryDepth)
 }
 
 // ── ESCAPE AND A PRESS OUTSIDE ─────────────────────────────────────────────────────────────────
@@ -227,8 +274,14 @@ if (typeof window !== 'undefined') {
   )
 }
 
-function pushOverlay(entry: Entry) {
-  if (typeof window === 'undefined' || stack.some((e) => e.id === entry.id)) return
+function pushOverlay(opened: Omit<Entry, 'depth'>) {
+  if (typeof window === 'undefined' || stack.some((e) => e.id === opened.id)) return
+  // Its history entry: a new one, one deeper than where we stand — or, for the first overlay to
+  // open on a page that loaded onto a previous load's marker entry, that entry taken over at the
+  // depth it already has (see onLoadedOverlayEntry). The iOS installed app writes no history, so an
+  // overlay there owns the entry it opened on.
+  const takeOver = onLoadedOverlayEntry || IOS_STANDALONE
+  const entry: Entry = { ...opened, depth: takeOver ? entryDepth : entryDepth + 1 }
   stack.push(entry)
   notify()
   // ★ OPENING AN OVERLAY TAKES THE KEYBOARD DOWN (round 18). The owner's rule, verbatim: "when the
@@ -256,15 +309,15 @@ function pushOverlay(entry: Entry) {
   // standing. Either way opening something is not a discard — Escape is the discard, everywhere.
   dismissKeyboard()
   if (IOS_STANDALONE) return
-  // Its history entry: a new one — or, for the first overlay to open on a page that loaded onto a
-  // previous load's marker entry, that entry taken over (see onLoadedOverlayEntry).
-  if (onLoadedOverlayEntry) window.history.replaceState({ cgOverlay: entry.id }, '')
-  else window.history.pushState({ cgOverlay: entry.id }, '')
+  const marker = { cgOverlay: entry.id, cgDepth: entry.depth }
+  if (takeOver) window.history.replaceState(marker, '')
+  else window.history.pushState(marker, '')
+  entryDepth = entry.depth
   onLoadedOverlayEntry = false
 }
 
-// ⚠⚠ OVERLAYS THAT CLOSE TOGETHER UNWIND TOGETHER — ONE TRAVERSAL, ONE IGNORED popstate. This used
-// to call history.back() once per closing overlay, each marked by setting the one `ignorePop` flag.
+// ⚠⚠ OVERLAYS THAT CLOSE TOGETHER UNWIND TOGETHER — ONE TRAVERSAL, ONE IGNORED popstate. This once
+// called history.back() once per closing overlay, each marked by setting the one `ignorePop` flag.
 // That is only sound for ONE overlay at a time, and several routinely close in a single commit: G,
 // or any mode letter, shuts the whole ⚙ panel with whatever is open inside it — and the preset
 // manager's delete question makes that THREE entries ('settings', 'presets', 'presets-delete').
@@ -279,16 +332,16 @@ function pushOverlay(entry: Entry) {
 //     and it leaves two dead entries behind. A counter in place of the flag would be right for the
 //     first engine and would EAT the user's next real Back press in the second.
 // One `history.go(-n)` is a single traversal in every engine, with exactly one popstate, so exactly
-// one ignore is always right. The closes are gathered in a microtask: every cleanup of one React
-// commit runs synchronously before it, so a whole panel's worth lands in one count, and nothing a
-// user does can come in between. (A traversal was never synchronous anyway — history.back() only
-// queues one — so deferring the call moves nothing a user could observe.)
-let pendingUnwind = 0
-const flushUnwind = () => {
-  const n = pendingUnwind
-  pendingUnwind = 0
-  ignorePop = true
-  window.history.go(-n) // step back past every entry the closed overlays pushed (one popstate, ignored)
+// one ignore is always right — and settle() (above) asks for exactly one, to wherever the newest
+// thing still open is. The closes are gathered in a microtask: every cleanup of one React commit
+// runs synchronously before it, so a whole panel's worth is gone from the stack before the one
+// settle runs, and nothing a user does can come in between. (A traversal was never synchronous
+// anyway — history.back() only queues one — so deferring the call moves nothing a user could
+// observe.)
+let settleQueued = false
+const settleQueuedCloses = () => {
+  settleQueued = false
+  settle()
 }
 
 function popOverlay(id: string) {
@@ -298,7 +351,9 @@ function popOverlay(id: string) {
   stack.splice(i, 1)
   notify()
   if (IOS_STANDALONE) return // no entry was pushed for this overlay → no history to unwind
-  if (pendingUnwind++ === 0) queueMicrotask(flushUnwind)
+  if (settleQueued) return
+  settleQueued = true
+  queueMicrotask(settleQueuedCloses)
 }
 
 // Register `id` as open while `isOpen` is true. `id` must be stable + unique per INSTANCE across

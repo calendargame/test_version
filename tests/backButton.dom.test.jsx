@@ -5,8 +5,10 @@
 // overlay pushes one {cgOverlay} entry so Back closes it, while the iOS INSTALLED app
 // (navigator.standalone === true) never touches history at all — iOS honors edge swipes over the
 // stack with no gesture opt-out, so entries there turn into swipe-navigation ping-pong. These
-// tests pin both regimes plus the dead-forward-entry bounce (Forward onto the leftover entry of a
-// closed overlay snaps straight back).
+// tests pin both regimes plus the one rule that keeps the place in the history in step with what
+// is open (the stack's settle): it is never left deeper than the newest thing still open — after a
+// UI close, after a Forward onto the leftover entry of a closed overlay, and after a reload with
+// one or TWO things open. Every marker entry records its depth ({cgOverlay, cgDepth}).
 //
 // Harness notes: IOS_STANDALONE is sampled at MODULE SCOPE, so every test sets
 // navigator.standalone first and then imports a fresh copy of the module (vi.resetModules +
@@ -130,8 +132,8 @@ describe('Android-like (navigator.standalone undefined) — entries pushed', () 
         <SelfClosing id="b" />
       </>,
     )
-    expect(pushSpy).toHaveBeenNthCalledWith(1, { cgOverlay: 'a' }, '')
-    expect(pushSpy).toHaveBeenNthCalledWith(2, { cgOverlay: 'b' }, '')
+    expect(pushSpy).toHaveBeenNthCalledWith(1, { cgOverlay: 'a', cgDepth: 1 }, '')
+    expect(pushSpy).toHaveBeenNthCalledWith(2, { cgOverlay: 'b', cgDepth: 2 }, '')
     // A real Back press manifests as a popstate (the browser already popped the entry itself).
     act(() => window.dispatchEvent(new PopStateEvent('popstate')))
     expect(log).toEqual(['b']) // LIFO: newest overlay closes first, the other survives
@@ -216,10 +218,47 @@ describe('Android-like (navigator.standalone undefined) — entries pushed', () 
     // the guarded bounce snaps back and its own popstate is swallowed.
     act(() => window.history.forward())
     await flushTraversals()
-    expect(backSpy).toHaveBeenCalledTimes(1) // the bounce, and nothing more
-    expect(goSpy).toHaveBeenCalledTimes(1) // …beside the one UI-close unwind
+    expect(goSpy).toHaveBeenCalledTimes(2) // the UI-close unwind, then the bounce — and nothing more
+    expect(goSpy).toHaveBeenLastCalledWith(-1)
+    expect(backSpy).not.toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
     expect(window.history.state?.cgOverlay).toBeUndefined() // rests on the base entry again
+  })
+
+  it('Forward across TWO dead entries bounces all the way back in one traversal', async () => {
+    const useBackButton = await freshUseBackButton()
+    function Host({ open }) {
+      useBackButton(open, () => {}, 'settings')
+      useBackButton(open, () => {}, 'presets')
+      return null
+    }
+    const { rerender } = render(<Host open />)
+    rerender(<Host open={false} />)
+    await flushTraversals() // both closed: two dead forward entries
+    goSpy.mockClear()
+    act(() => window.history.go(2)) // onto the deeper one
+    await flushTraversals()
+    expect(window.history.state?.cgOverlay).toBeUndefined() // not parked on the first one either
+  })
+
+  it('an overlay closed from under one that stays open moves nothing — and Back still ends on the page', async () => {
+    const useBackButton = await freshUseBackButton()
+    const closeTop = vi.fn()
+    function Host({ lower }) {
+      useBackButton(lower, () => {}, 'codes')
+      useBackButton(true, closeTop, 'settings')
+      return null
+    }
+    window.history.pushState({ sentinel: true }, '')
+    const { rerender } = render(<Host lower />)
+    rerender(<Host lower={false} />) // the lower one closes; the top one is still open on its entry
+    await flushTraversals()
+    expect(goSpy).not.toHaveBeenCalled()
+    expect(window.history.state).toEqual({ cgOverlay: 'settings', cgDepth: 2 })
+    act(() => window.history.back()) // a real Back: closes the top one…
+    await flushTraversals()
+    expect(closeTop).toHaveBeenCalledTimes(1)
+    expect(window.history.state).toEqual({ sentinel: true }) // …and does not stop on the dead entry
   })
 })
 
@@ -248,7 +287,7 @@ describe('a page that loaded onto an overlay entry (a reload with something open
     render(<Guide />)
     expect(pushSpy).not.toHaveBeenCalled()
     expect(window.history.length).toBe(before)
-    expect(window.history.state).toEqual({ cgOverlay: 'guide' })
+    expect(window.history.state).toEqual({ cgOverlay: 'guide', cgDepth: 1 })
     act(() => window.history.back()) // a real Back press
     await flushTraversals()
     expect(close).toHaveBeenCalledTimes(1)
@@ -265,7 +304,7 @@ describe('a page that loaded onto an overlay entry (a reload with something open
     render(<Codes />)
     expect(pushSpy).not.toHaveBeenCalled()
     expect(window.history.length).toBe(before)
-    expect(window.history.state).toEqual({ cgOverlay: 'codes' })
+    expect(window.history.state).toEqual({ cgOverlay: 'codes', cgDepth: 1 })
   })
 
   it('only the FIRST overlay takes it over — the next one pushes its own entry as always', async () => {
@@ -277,7 +316,7 @@ describe('a page that loaded onto an overlay entry (a reload with something open
     }
     render(<Two />)
     expect(pushSpy).toHaveBeenCalledTimes(1)
-    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'settings' }, '')
+    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'settings', cgDepth: 2 }, '')
   })
 
   it('once the player has moved in the history, an overlay pushes its own entry', async () => {
@@ -289,7 +328,7 @@ describe('a page that loaded onto an overlay entry (a reload with something open
       return null
     }
     render(<Guide />)
-    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'guide' }, '')
+    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'guide', cgDepth: 1 }, '')
   })
 
   it('a page that loaded on its own entry is untouched: the first overlay pushes', async () => {
@@ -299,7 +338,100 @@ describe('a page that loaded onto an overlay entry (a reload with something open
       return null
     }
     render(<Guide />)
-    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'guide' }, '')
+    expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'guide', cgDepth: 1 }, '')
+  })
+
+  // ★ A RELOAD WITH TWO THINGS OPEN (round 24). Show Codes open with the ⚙ menu over it, say: the
+  // page comes back on the SECOND marker entry with the first still underneath, and only Show Codes
+  // comes back open. It takes the newest entry over — and used to leave the older one under it for
+  // the player to press Back through: one press that did nothing.
+  describe('…with TWO things open', () => {
+    // The previous page, as this build leaves the history: a base entry, then two marker entries.
+    async function reloadedOnTwo(markers) {
+      window.history.pushState({ sentinel: true }, '')
+      for (const marker of markers) window.history.pushState(marker, '')
+      pushSpy.mockClear()
+      return freshUseBackButton()
+    }
+    const BOTH = [
+      { cgOverlay: 'codes', cgDepth: 1 },
+      { cgOverlay: 'settings', cgDepth: 2 },
+    ]
+
+    it('ONE Back closes the overlay that came back and lands on the page — no dead press', async () => {
+      const useBackButton = await reloadedOnTwo(BOTH)
+      const close = vi.fn()
+      function Codes() {
+        const [open, setOpen] = useState(true)
+        useBackButton(
+          open,
+          () => {
+            close()
+            setOpen(false)
+          },
+          'codes',
+        )
+        return null
+      }
+      render(<Codes />)
+      expect(pushSpy).not.toHaveBeenCalled() // it took the newest entry over, at that entry's depth
+      expect(window.history.state).toEqual({ cgOverlay: 'codes', cgDepth: 2 })
+      act(() => window.history.back()) // ONE real Back press
+      await flushTraversals()
+      expect(close).toHaveBeenCalledTimes(1)
+      expect(window.history.state).toEqual({ sentinel: true }) // past the older entry too
+    })
+
+    it('closing it from the UI lands on the page as well', async () => {
+      const useBackButton = await reloadedOnTwo(BOTH)
+      function Codes({ open }) {
+        useBackButton(open, () => {}, 'codes')
+        return null
+      }
+      const { rerender } = render(<Codes open />)
+      rerender(<Codes open={false} />)
+      await flushTraversals()
+      expect(goSpy).toHaveBeenCalledTimes(1)
+      expect(goSpy).toHaveBeenCalledWith(-2) // one traversal, past both
+      expect(window.history.state).toEqual({ sentinel: true })
+    })
+
+    it('with nothing coming back open, the first Back lands on the page', async () => {
+      await reloadedOnTwo(BOTH)
+      act(() => window.history.back())
+      await flushTraversals()
+      expect(window.history.state).toEqual({ sentinel: true })
+    })
+
+    it('a second overlay opened after the takeover sits one deeper, and each close lands right', async () => {
+      const useBackButton = await reloadedOnTwo(BOTH)
+      function Host({ menu, codes }) {
+        useBackButton(codes, () => {}, 'codes')
+        useBackButton(menu, () => {}, 'settings')
+        return null
+      }
+      const { rerender } = render(<Host codes menu={false} />)
+      rerender(<Host codes menu />)
+      expect(pushSpy).toHaveBeenCalledWith({ cgOverlay: 'settings', cgDepth: 3 }, '')
+      rerender(<Host codes menu={false} />)
+      await flushTraversals()
+      expect(window.history.state).toEqual({ cgOverlay: 'codes', cgDepth: 2 })
+      rerender(<Host codes={false} menu={false} />)
+      await flushTraversals()
+      expect(window.history.state).toEqual({ sentinel: true })
+    })
+
+    it('markers an OLDER build left (no depth) are stepped past one at a time, to the page', async () => {
+      const useBackButton = await reloadedOnTwo([{ cgOverlay: 'codes' }, { cgOverlay: 'settings' }])
+      function Codes({ open }) {
+        useBackButton(open, () => {}, 'codes')
+        return null
+      }
+      const { rerender } = render(<Codes open />)
+      rerender(<Codes open={false} />)
+      await flushTraversals()
+      expect(window.history.state).toEqual({ sentinel: true })
+    })
   })
 })
 
@@ -334,6 +466,7 @@ describe('iOS standalone (navigator.standalone === true) — history never writt
     act(() =>
       window.dispatchEvent(new PopStateEvent('popstate', { state: { cgOverlay: 'settings' } })),
     )
-    expect(backSpy).toHaveBeenCalledTimes(1)
+    expect(goSpy).toHaveBeenCalledTimes(1)
+    expect(goSpy).toHaveBeenCalledWith(-1)
   })
 })
