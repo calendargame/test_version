@@ -55,6 +55,25 @@
 // share of its shadow; on the line, the header's shadow is on whenever text is under the header.
 // The one place both are 0 is a header docked with nothing under it yet — a section just opened —
 // which is exactly the case that must not look pinned.
+//
+// ── TWO MOMENTS THE POSITION ALONE GETS WRONG ───────────────────────────────────────────────
+// Both are a tap on a header, and in both the numbers above are true and the picture is not:
+//
+//   ARRIVING — a section is opened while its header's natural spot is ABOVE the line (the header
+//     was partly under the bar when it was tapped, or the keyboard opened it). The stick puts it on
+//     the line at once, carried down from that spot, so `depth` is above 0 and the rule above would
+//     light its shadow — for the length of the glide that is bringing the section down to meet it,
+//     going out as the glide lands. That is a section being OPENED looking pinned, which is the one
+//     thing these headers must never do. While the glide is in flight the header casts nothing
+//     (dockShades' `arriving`); the bar's share follows the header's place as always.
+//
+//   RELEASING — a section is closed, or swapped for another, from its docked header. The moment it
+//     is no longer the open section nothing is docked, and by position alone the bar is owed its
+//     whole shadow and the header none: the bar's went from nothing to full, and the header's from
+//     full to nothing, in ONE frame, while the panel under the header took a third of a second to
+//     fold away. So the hand-back is spread over that same fold (releaseShades): the header's
+//     shadow goes out as the text it was cast on does, and the bar's share rises to meet whatever
+//     the position then says — never above it (the caller takes the smaller of the two).
 import { edgeShade } from '../components/scrollRegion.js'
 
 // A docked header counts as having text under it only past this depth. A section that has just been
@@ -92,10 +111,12 @@ export interface DockShades {
 /** With no header to consider — no section open, or the guide off screen — the bar is unaffected. */
 export const NO_DOCK: DockShades = { header: 0, barYield: 1 }
 
-export function dockShades(g: HeaderDockGeometry, rampPx: number): DockShades {
+export function dockShades(g: HeaderDockGeometry, rampPx: number, arriving = false): DockShades {
   const depth = g.headerTop - g.naturalTop
   const room = g.floorY - g.headerBottom
-  const header = Math.min(edgeShade(depth, DOCK_SETTLE_PX, rampPx), edgeShade(room, 0, rampPx))
+  const header = arriving
+    ? 0
+    : Math.min(edgeShade(depth, DOCK_SETTLE_PX, rampPx), edgeShade(room, 0, rampPx))
   if (header > 0) return { header, barYield: 0 }
   // A line that cannot be measured (no bar to read) leaves the bar's shadow exactly as it is.
   const offset = Math.abs(g.headerTop - g.lineY)
@@ -103,4 +124,15 @@ export function dockShades(g: HeaderDockGeometry, rampPx: number): DockShades {
     header: 0,
     barYield: Number.isFinite(offset) ? edgeShade(offset, DOCK_LINE_BAND_PX, rampPx) : 1,
   }
+}
+
+/**
+ * A header letting go of the shadows it held, `progress` of the way through (0 at the tap, 1 when
+ * its panel has finished folding away — the caller eases it on the fold's own curve). `from` is what
+ * was on screen at the tap: the header's strength, and the share the bar was keeping. The header's
+ * goes to nothing and the bar's share to all of it, in step.
+ */
+export function releaseShades(from: DockShades, progress: number): DockShades {
+  const p = Math.min(1, Math.max(0, progress))
+  return { header: from.header * (1 - p), barYield: from.barYield + (1 - from.barYield) * p }
 }

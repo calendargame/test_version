@@ -98,3 +98,38 @@ export function installResizeObserver() {
     },
   }
 }
+
+// THE APP'S FRAMES, DRIVEN BY HAND. Two things in the guide run on requestAnimationFrame — the
+// glide that carries an opened section to the line, and a closing header letting go of its shadow
+// — and "what is on screen on WHICH frame" is exactly what their tests are about. So every callback
+// the app asks for is held, and a test runs them at a clock of its own choosing: `at(ms)` runs the
+// frame(s) waiting, stamped `ms` after the first one this driver was asked for. cancelAnimationFrame
+// is honoured, so a cancelled glide really stops. Install with vi (the caller's), restore in an
+// afterEach.
+export function holdFrames(vi) {
+  let next = 1
+  const waiting = new Map()
+  const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+    waiting.set(next, cb)
+    return next++
+  })
+  const caf = vi
+    .spyOn(window, 'cancelAnimationFrame')
+    .mockImplementation((id) => void waiting.delete(id))
+  return {
+    // How many frames the app is waiting on.
+    pending: () => waiting.size,
+    // Run every frame that was waiting when this was called (not the ones they ask for in turn).
+    at(ms) {
+      const due = [...waiting.entries()]
+      for (const [id, cb] of due) {
+        waiting.delete(id)
+        cb(ms)
+      }
+    },
+    restore() {
+      raf.mockRestore()
+      caf.mockRestore()
+    },
+  }
+}

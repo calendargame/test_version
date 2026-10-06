@@ -42,7 +42,8 @@ import {
 } from '../src/store/presetControl.js'
 import { forgetBrowsingSession } from '../src/store/browsingSession.js'
 import { installGuideScroller } from './helpers/guideScroller.jsx'
-import { installResizeObserver } from './helpers/scrollGeometry.js'
+import { installResizeObserver, holdFrames } from './helpers/scrollGeometry.js'
+import { ACCORDION_MS_FLOOR } from '../src/lib/accordionMotion.js'
 
 // CustomSelect and the Save Defaults popup portal into #root, so the harness must provide one.
 function mountApp() {
@@ -947,13 +948,24 @@ describe('the guide’s edges track the reading position and the content', () =>
       expect([g.topShade(), headShade(container)]).toEqual(['0.000', '1.000'])
     })
 
-    it('takes it back the moment the section is closed', () => {
+    it('takes it back when the section is closed — over the fold, not in the frame of the tap', () => {
       const { container, g } = reading()
       place = stuck(0)
       tap(container, 'stats')
       expect(g.topShade()).toBe('0.000')
-      tap(container, 'stats')
-      expect(g.topShade()).toBe('1.000')
+      const frames = holdFrames(vi)
+      try {
+        tap(container, 'stats')
+        expect(g.topShade()).toBe('0.000') // the tap's own frame: nothing has jumped
+        act(() => frames.at(0))
+        act(() => frames.at(ACCORDION_MS_FLOOR / 4))
+        expect(Number(g.topShade())).toBeGreaterThan(0)
+        expect(Number(g.topShade())).toBeLessThan(1)
+        act(() => frames.at(ACCORDION_MS_FLOOR))
+        expect(g.topShade()).toBe('1.000')
+      } finally {
+        frames.restore()
+      }
     })
 
     it('takes it back on leaving How to Play with a header docked — the game screens are unaffected', () => {

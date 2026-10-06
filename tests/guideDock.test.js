@@ -9,7 +9,13 @@
 // top reaches the line, sticks there while the section scrolls beneath it, and is carried out under
 // the bar when the section's foot reaches its own.
 import { describe, it, expect } from 'vitest'
-import { dockShades, NO_DOCK, DOCK_SETTLE_PX, DOCK_LINE_BAND_PX } from '../src/lib/guideDock.js'
+import {
+  dockShades,
+  releaseShades,
+  NO_DOCK,
+  DOCK_SETTLE_PX,
+  DOCK_LINE_BAND_PX,
+} from '../src/lib/guideDock.js'
 
 const RAMP = 24
 const LINE = 71.765625 // a real bar's height: fractional
@@ -154,5 +160,62 @@ describe('dockShades — the hand-off across a whole scroll', () => {
       })
       expect(outside).toBe(0)
     }
+  })
+})
+
+// ── THE TWO MOMENTS THE POSITION ALONE GETS WRONG ───────────────────────────────────────────────
+describe('ARRIVING — a section opened with its header above the line casts nothing during the glide', () => {
+  it('by position alone it would: the stick has carried the header down over its own section', () => {
+    // The header's natural spot is 30px above the line (it was half under the bar when tapped).
+    expect(dockShades(sticky(LINE - BORDER - 30, 1500), RAMP).header).toBe(1)
+  })
+
+  it('while the glide carries the section down to it, the header wears none — at every depth', () => {
+    for (const carried of [30, 24, 12.5, 5, 1, 0]) {
+      const s = dockShades(sticky(LINE - BORDER - carried, 1500), RAMP, true)
+      expect(s).toEqual({ header: 0, barYield: 0 }) // docked on the line: the bar keeps none either
+    }
+  })
+
+  it('arriving from BELOW the line is the ordinary case: the bar`s share still follows the gap', () => {
+    const gap = DOCK_LINE_BAND_PX + (RAMP - DOCK_LINE_BAND_PX) / 2
+    expect(dockShades(sticky(LINE + gap - BORDER, 1500), RAMP, true).barYield).toBeCloseTo(0.5, 9)
+  })
+})
+
+describe('RELEASING — a closed header hands its shadows back in step', () => {
+  const docked = { header: 1, barYield: 0 }
+  it('starts from exactly what was on screen, and ends with the header bare and the bar whole', () => {
+    expect(releaseShades(docked, 0)).toEqual(docked)
+    expect(releaseShades(docked, 1)).toEqual(NO_DOCK)
+    expect(releaseShades({ header: 0.4, barYield: 0 }, 0)).toEqual({ header: 0.4, barYield: 0 })
+    expect(releaseShades({ header: 0.4, barYield: 0 }, 1)).toEqual(NO_DOCK)
+  })
+
+  it('in between, what the header has let go of is what the bar has been given', () => {
+    let prev = releaseShades(docked, 0)
+    for (let i = 1; i <= 100; i++) {
+      const s = releaseShades(docked, i / 100)
+      expect(s.header + s.barYield).toBeCloseTo(1, 12)
+      expect(s.header).toBeLessThanOrEqual(prev.header)
+      expect(s.barYield).toBeGreaterThanOrEqual(prev.barYield)
+      // No step is a jump: a hundredth of the fold moves either by a hundredth.
+      expect(Math.abs(s.barYield - prev.barYield)).toBeLessThanOrEqual(0.01 + 1e-12)
+      prev = s
+    }
+  })
+
+  it('a header that was not docked had nothing to hand back, and nothing moves', () => {
+    for (const p of [0, 0.3, 1]) expect(releaseShades(NO_DOCK, p)).toEqual(NO_DOCK)
+  })
+
+  it('a share the bar was already partly keeping only ever rises from there', () => {
+    const from = { header: 0, barYield: 0.5 }
+    expect(releaseShades(from, 0.5)).toEqual({ header: 0, barYield: 0.75 })
+  })
+
+  it('progress outside 0…1 is held at the ends', () => {
+    expect(releaseShades(docked, -1)).toEqual(docked)
+    expect(releaseShades(docked, 2)).toEqual(NO_DOCK)
   })
 })
