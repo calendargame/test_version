@@ -87,7 +87,8 @@ const unmountApp = () => {
   cleanup()
   document.getElementById('root')?.remove()
 }
-const popup = () => screen.queryByRole('dialog', { name: /^Storage used: (\d+%|—)$/ })
+const popup = () =>
+  screen.queryByRole('dialog', { name: /^Storage used: (\d+%|not measured yet)$/ })
 const line = () => panel().getByRole('button', { name: /^Storage used: / })
 const gearLit = () => gear().querySelector('[data-update-dot]').getAttribute('data-lit') === 'true'
 // What the gear's dot is saying — which is its colour (components/UpdateDot; index.css).
@@ -939,11 +940,130 @@ describe('on the mounted app, with a timed question on screen', () => {
 
   it('before the device has been measured the line shows a dash, and says why', () => {
     freshPage(null)
+    useProgress.getState().setModeStats('classic', long(40))
     mountApp()
     openSettings()
+    // On screen: a dash, the app's sign for "no number to show". Read aloud: the reason.
     expect(line().textContent).toBe('Storage used: —not measured yet')
+    expect(line().querySelector('[aria-hidden="true"]').textContent).toBe('—')
+    expect(line().querySelector('.sr-only').textContent).toBe('not measured yet')
     expect(line().className).not.toContain('storage-warn')
     tap(line())
-    expect(popup()).not.toBeNull()
+    const card = popup()
+    expect(card).not.toBeNull()
+    // The popup has the room to say it in words, and says what happens next.
+    expect(card.querySelector('#storage-usage-title').textContent).toBe(
+      'Storage used: not measured yet',
+    )
+    expect(card.textContent).toMatch(/hasn.t been measured yet, so there are no percentages/)
+    expect(card.textContent).toMatch(/measures it by itself a moment after it opens/)
+    // What is saved is still listed by name — with no figure beside anything.
+    const rows = within(card)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent)
+    expect(rows).toContain('Classic solve times (40)')
+    expect(card.textContent).not.toMatch(/%/)
+  })
+})
+
+// ── WHAT THE POPUP LISTS, ON A DEVICE WITH LITTLE ON IT ──────────────────────────────────────────
+// Everything under 1% used to be gathered into one line, so a device with little saved showed a
+// single row — "Everything saved <1%" — that named nothing. The largest owners are now listed by
+// name whatever they hold.
+describe('the breakdown names what is saved at every size', () => {
+  beforeEach(() => resetAppState())
+  afterEach(unmountApp)
+  const rowsShown = () =>
+    within(popup())
+      .getAllByRole('listitem')
+      .filter((li) => !li.closest('.list-disc'))
+      .map((li) => li.textContent)
+
+  it('an almost-empty device: each thing saved is named, with "<1%" beside it', () => {
+    useProgress.getState().setModeStats('classic', long(12))
+    useLookupHistory.getState().setHistory([{ id: 'a', y: 2001, m: 1, d: 1 }])
+    mountApp()
+    openSettings()
+    tap(line())
+    const rows = rowsShown()
+    expect(rows).toContain('Classic solve times (12)<1%')
+    expect(rows).toContain('Lookup history (1)<1%')
+    expect(rows.some((t) => /^Bests, settings and saved defaults<1%$/.test(t))).toBe(true)
+    expect(rows.join('|')).not.toMatch(/Everything saved/)
+    // The app's own few keys are nobody's to clear: they are the one unnamed line, and the last.
+    expect(rows.at(-1)).toBe('Everything else<1%')
+  })
+
+  it('largest first; small owners past the first five are gathered, large ones never are', () => {
+    freshPage(1_000_000)
+    for (let i = 0; i < 4; i++) createPreset(`P${i + 2}`)
+    // Preset 1: one big owner and four small ones.
+    useProgress.getState().setModeStats('classic', long(9000))
+    for (const silo of ['flash', 'dedDay', 'dedMonth', 'dedYear'])
+      useProgress.getState().setModeStats(silo, long(30))
+    mountApp()
+    openSettings()
+    tap(line())
+    const rows = rowsShown()
+    expect(rows[0]).toMatch(/^Preset 1: Classic solve times \(9,000\)\d+%$/)
+    expect(rows.at(-1)).toMatch(/^Everything else/)
+    expect(rows.length).toBe(6) // the five largest, and the rest in one line
+  })
+})
+
+// ── "TO MAKE ROOM" SAYS ONLY WHAT IS TRUE FOR THE PRESET YOU ARE ON ──────────────────────────────
+// Reset Stats frees room only while Amnesic is Off (store/amnesic's resetStatsFreesRoom, proved
+// against the device in the group above). Both popups used to recommend it whatever the value.
+describe.each([
+  ['off', null],
+  ['stats', 'Stats Only'],
+  ['full', 'Full'],
+])('the advice while the preset is on Amnesic: %s', (mode, label) => {
+  beforeEach(() => {
+    resetAppState()
+    act(() => setPresetAmnesic(1, mode))
+  })
+  afterEach(unmountApp)
+  const bullets = (card) => [...card.querySelectorAll('.list-disc li')].map((li) => li.textContent)
+
+  it('the Storage used popup', () => {
+    mountApp()
+    openSettings()
+    tap(line())
+    const advice = bullets(popup())
+    // The two that work under every value are always offered.
+    expect(advice.some((t) => /^Clear History, on the Lookup page, empties/.test(t))).toBe(true)
+    expect(
+      advice.some((t) => /^Deleting a preset you no longer use removes everything/.test(t)),
+    ).toBe(true)
+    const offered = advice.some((t) => /^Reset Stats, on a mode.s own screen, clears/.test(t))
+    expect(offered).toBe(resetStatsFreesRoom(mode))
+    if (label === null) expect(advice).toHaveLength(3)
+    else {
+      // Named, because it is the first thing a player reaches for — as something that will NOT
+      // help here, with the value by its name and what to do instead.
+      const warning = advice.find((t) => /^Reset Stats won.t make room/.test(t))
+      expect(warning).toContain(`Amnesic is on ${label}`)
+      expect(warning).toMatch(/set Amnesic to Off first/)
+      expect(advice.at(-1)).toBe(warning)
+    }
+  })
+
+  it('the storage-full notice', () => {
+    mountApp()
+    act(() => useStorageHealth.setState({ unsaved: true, noticeOpen: true }))
+    const notice = screen.getByRole('dialog', { name: /^Your progress isn.t being saved$/ })
+    expect(notice.textContent).toMatch(/delete a preset you no longer use/)
+    if (label === null) {
+      expect(notice.textContent).toMatch(/or use\s+Reset Stats in a mode whose history/)
+      expect(notice.textContent).not.toMatch(/won.t\s+make room/)
+    } else {
+      expect(notice.textContent).toMatch(/Clear History, on the Lookup page/)
+      expect(notice.textContent).toMatch(
+        new RegExp(`Reset Stats won.t\\s+make room while this preset.s Amnesic is on ${label}`),
+      )
+      expect(notice.textContent).not.toMatch(/or use\s+Reset Stats in a mode whose history/)
+    }
+    expect(notice.textContent).toMatch(/saved by itself/)
   })
 })

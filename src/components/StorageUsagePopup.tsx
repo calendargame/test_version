@@ -4,6 +4,9 @@ import { useStorageUsage } from '../store/storageUsage.js'
 import type { UsageRow } from '../store/storageUsage.js'
 import { usePresets } from '../store/presets.js'
 import type { Preset } from '../store/presets.js'
+import { resetStatsFreesRoom, useActiveAmnesicMode } from '../store/amnesic.js'
+import { amnesicLabel } from './settingsOptions.js'
+import { modeNames } from '../lib/modes.js'
 
 // StorageUsagePopup — what is using the device's room for this app, and how to get some back.
 //
@@ -15,16 +18,19 @@ import type { Preset } from '../store/presets.js'
 //
 // Rendered once, at App level, and reads its own open flag — the same arrangement as the
 // storage-full notice, and for the same reason: it can open from any screen. Through the shared
-// Popup shell, so it is a normal stacked popup (Escape, Back, the dim, the focus trap and the
+// Popup shell, so it is a normal stacked popup (Escape, Back, the dim, the keyboard's reach and the
 // status-bar strip are the shell's) — and app-wide: no screen or panel owns it, so a mode letter
 // under it does nothing (components/overlayStack's isAppWidePopupOpen).
 
-const MODE_NAME: Record<string, string> = {
-  classic: 'Classic',
-  flash: 'Flash',
-  dedDay: 'Deduction (Day)',
-  dedMonth: 'Deduction (Month)',
-  dedYear: 'Deduction (Year)',
+// The saved stats' own names for the things solve times are kept for, in the app's words. Each is
+// built from the mode's name in lib/modes — the one place a mode is named — so a rename there
+// renames it here.
+const TIMES_OWNER: Record<string, string> = {
+  classic: modeNames('classic'),
+  flash: modeNames('flash'),
+  dedDay: `${modeNames('deduction')} (Day)`,
+  dedMonth: `${modeNames('deduction')} (Month)`,
+  dedYear: `${modeNames('deduction')} (Year)`,
 }
 
 const count = (n: number): string => n.toLocaleString('en-US')
@@ -37,8 +43,22 @@ function rowLabel(row: UsageRow, presets: Preset[]): string {
   const preset = presets.find((p) => p.id === row.presetId)
   const who = preset ? (presets.length > 1 ? `${preset.name}: ` : '') : 'A deleted preset: '
   if (row.kind === 'preset') return `${who}Bests, settings and saved defaults`
-  return `${who}${MODE_NAME[row.silo] ?? row.silo} solve times (${count(row.count)})`
+  return `${who}${TIMES_OWNER[row.silo] ?? row.silo} solve times (${count(row.count)})`
 }
+
+// ★ WHICH OWNERS ARE LISTED BY NAME, AT EVERY SIZE. The list answers "what is using the room", and
+// it has to answer it on a device that is nearly empty as well as on one that is nearly full:
+//   • every owner holding 1% or more of the room is listed — on a filling device those are the
+//     ones worth clearing, and there are never many (at most a hundred, in practice a handful);
+//   • and the LARGEST owners are listed whatever they hold, until the list is LISTED_AT_LEAST long.
+//     Without that, a device with little on it showed one line — "Everything saved <1%" — which
+//     says nothing about what is there; and before the limit is measured there is no percentage to
+//     sort anything out by at all.
+//   • what is left over is one last line, "Everything else": the many small owners a player with
+//     several presets has (each preset × each mode), and the app's own few keys, which are nobody's
+//     to clear.
+// Largest first, so the line to act on is the first one read.
+const LISTED_AT_LEAST = 5
 
 export default function StorageUsagePopup() {
   const open = useStorageUsage((s) => s.popupOpen)
@@ -48,16 +68,20 @@ export default function StorageUsagePopup() {
   const rows = useStorageUsage((s) => s.rows)
   const limit = useStorageUsage((s) => s.limit)
   const presets = usePresets((s) => s.presets)
+  const amnesic = useActiveAmnesicMode()
   if (!open) return null
-  // Each owner's share of the WHOLE allowance, so the shares add up to the headline. Anything under
-  // one percent is gathered into the last line rather than listed as a column of "<1%".
+  // Each owner's share of the WHOLE allowance, so the shares add up to the headline.
   // ⚠ Until the device's limit has been measured (store/storageUsage) there is no whole to take a
-  // share of: every owner is listed, with no figure beside it, and the headline shows a dash.
-  const share = (chars: number) => (limit === null ? 100 : (chars / limit) * 100)
-  const listed = rows.filter((row) => row.kind !== 'other' && share(row.chars) >= 1)
+  // share of: the owners are listed with no figure beside them, and the card says why.
+  const measured = limit !== null
+  const share = (chars: number) => (measured ? (chars / limit) * 100 : 0)
+  const owners: UsageRow[] = rows
+    .filter((row) => row.kind !== 'other')
+    .sort((a, b) => b.chars - a.chars)
+  const listed = owners.filter((row, i) => i < LISTED_AT_LEAST || share(row.chars) >= 1)
   const rest = rows.filter((row) => !listed.includes(row)).reduce((sum, row) => sum + row.chars, 0)
   const shown = (chars: number) =>
-    limit === null ? '' : share(chars) < 1 ? '<1%' : `${Math.round(share(chars))}%`
+    !measured ? '' : share(chars) < 1 ? '<1%' : `${Math.round(share(chars))}%`
   return (
     <Popup id="storage-usage" onDismiss={close} appWide>
       <div
@@ -69,7 +93,7 @@ export default function StorageUsagePopup() {
         className={MODAL_PLAIN_CARD_CLASS}
       >
         <div id="storage-usage-title" className="text-sm font-semibold text-(--tx-50)">
-          Storage used: {percent === null ? '—' : `${percent}%`}
+          Storage used: {percent === null ? 'not measured yet' : `${percent}%`}
         </div>
         <div className="text-xs text-(--tx-200-80) space-y-2">
           <p>
@@ -77,6 +101,13 @@ export default function StorageUsagePopup() {
               ? 'This device is running out of room for Calendar Game’s saved data. Once it is full, new answers can’t be saved until some room is made.'
               : 'Calendar Game keeps your stats, history and settings on this device, which gives it a fixed amount of room.'}
           </p>
+          {!measured && (
+            <p>
+              How much room this device gives hasn&apos;t been measured yet, so there are no
+              percentages to show. The app measures it by itself a moment after it opens, while no
+              question is being timed — look again shortly.
+            </p>
+          )}
           <p className="font-semibold text-(--tx-100-90)">What is using it</p>
           <ul className="space-y-1">
             {listed.map((row) => (
@@ -90,17 +121,26 @@ export default function StorageUsagePopup() {
             ))}
             {rest > 0 && (
               <li className="flex justify-between gap-3">
-                <span>{listed.length ? 'Everything else' : 'Everything saved'}</span>
+                <span>Everything else</span>
                 <span className="tabular-nums whitespace-nowrap">{shown(rest)}</span>
               </li>
             )}
           </ul>
           <p className="font-semibold text-(--tx-100-90)">To make room</p>
+          {/* ★ ONLY WHAT IS TRUE FOR THE PRESET YOU ARE ON, RIGHT NOW. Reset Stats clears the stats
+              on screen, and under Amnesic: Stats Only or Full those are the session's copy — the
+              saved solve times, which are what is taking the room, are not touched (store/amnesic's
+              resetStatsFreesRoom). So there it is not offered as a way to make room; it is named,
+              because it is the first thing a player would reach for, with what to do instead. The
+              other two work under every value: Clear History empties the saved Lookup list
+              whatever the value, and deleting a preset removes everything it holds. */}
           <ul className="space-y-1 list-disc ps-4">
-            <li>
-              <b>Reset Stats</b>, on a mode&apos;s own screen, clears that mode&apos;s solve times
-              in the preset you are on.
-            </li>
+            {resetStatsFreesRoom(amnesic) && (
+              <li>
+                <b>Reset Stats</b>, on a mode&apos;s own screen, clears that mode&apos;s solve times
+                in the preset you are on.
+              </li>
+            )}
             <li>
               <b>Clear History</b>, on the Lookup page, empties the Lookup history.
             </li>
@@ -108,6 +148,14 @@ export default function StorageUsagePopup() {
               Deleting a preset you no longer use removes everything it holds (⚙ → Global → Manage
               Presets).
             </li>
+            {!resetStatsFreesRoom(amnesic) && (
+              <li>
+                <b>Reset Stats</b> won&apos;t make room while this preset&apos;s Amnesic is on{' '}
+                <b>{amnesicLabel(amnesic)}</b>: it clears only this session&apos;s numbers, and the
+                solve times saved before stay. To clear those, set Amnesic to <b>Off</b> first (⚙ →
+                Stats), then use Reset Stats on the mode&apos;s screen.
+              </li>
+            )}
           </ul>
         </div>
       </div>

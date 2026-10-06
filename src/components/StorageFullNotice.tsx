@@ -1,6 +1,8 @@
 import Popup from './Popup.js'
 import { MODAL_CARD_SHADOW, MODAL_PLAIN_CARD_CLASS } from './modalContract.js'
 import { useStorageHealth } from '../store/storageHealth.js'
+import { resetStatsFreesRoom, useActiveAmnesicMode } from '../store/amnesic.js'
+import { amnesicLabel } from './settingsOptions.js'
 
 // ─────────────────────────────────────────────────────────────────────────
 // StorageFullNotice — the device refused a save, and the player is told.
@@ -32,12 +34,18 @@ import { useStorageHealth } from '../store/storageHealth.js'
 //     updates declines to reload while anything is unsaved.
 //   • "saved by itself" — every held piece is written to its own place as soon as a save fits, or
 //     the moment a deleted preset frees room.
+//   • WHAT MAKES ROOM — only what is true for the preset the player is on (store/amnesic's
+//     resetStatsFreesRoom, the rule components/StorageUsagePopup follows too). Deleting a preset
+//     always does. Reset Stats does only while Amnesic is Off: on Stats Only or Full it clears the
+//     session's numbers and leaves the saved solve times — the thing taking the room — where they
+//     are, so there the notice names Clear History instead and says why Reset Stats will not help.
 // It says nothing about live and staging sharing one allowance — that is true, and it is not the
 // player's business.
 // ─────────────────────────────────────────────────────────────────────────
 export default function StorageFullNotice() {
   const open = useStorageHealth((s) => s.noticeOpen)
   const dismiss = useStorageHealth((s) => s.dismissStorageNotice)
+  const amnesic = useActiveAmnesicMode()
   if (!open) return null
   return (
     <Popup id="storage-full" onDismiss={dismiss} appWide>
@@ -58,11 +66,22 @@ export default function StorageFullNotice() {
             now is safe, and you can keep playing — but your newest answers and changes are only
             kept until you close or reload the app.
           </p>
-          <p>
-            To make room, delete a preset you no longer use (⚙ → Global → Manage Presets), or use
-            Reset Stats in a mode whose history you don&apos;t need. As soon as there&apos;s room,
-            everything that couldn&apos;t be saved is saved by itself.
-          </p>
+          {resetStatsFreesRoom(amnesic) ? (
+            <p>
+              To make room, delete a preset you no longer use (⚙ → Global → Manage Presets), or use
+              Reset Stats in a mode whose history you don&apos;t need. As soon as there&apos;s room,
+              everything that couldn&apos;t be saved is saved by itself.
+            </p>
+          ) : (
+            <p>
+              To make room, delete a preset you no longer use (⚙ → Global → Manage Presets), or
+              empty the Lookup history (Clear History, on the Lookup page). Reset Stats won&apos;t
+              make room while this preset&apos;s Amnesic is on {amnesicLabel(amnesic)} — it clears
+              only this session&apos;s numbers; set Amnesic to Off first (⚙ → Stats) and it clears
+              the saved ones. As soon as there&apos;s room, everything that couldn&apos;t be saved
+              is saved by itself.
+            </p>
+          )}
         </div>
       </div>
     </Popup>
