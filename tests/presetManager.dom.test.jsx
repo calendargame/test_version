@@ -1442,3 +1442,34 @@ describe('deleting', () => {
     expect(isOffered(within(card()).getByRole('button', { name: 'Delete Preset 2' }))).toBe(true)
   })
 })
+
+// ── THE LIST'S CLIP BOX REACHES PAST ITS ROWS, SO A HELD ROW KEEPS ITS SHADOW ────────────────────
+// A scroll region clips at its own edge, and that edge used to be the last row's bottom: the lift's
+// shadow was cut off flat under a row held in the list's last slot (and above one held in the
+// first). jsdom lays nothing out and draws no shadow, so what can be pinned here is the arithmetic
+// that makes the room without moving a row — the region's padding, the margins that cancel it, the
+// height cap's allowance for both, and the wrapper that keeps the margins from leaking into the
+// card's own spacing. The picture itself is checked in a real browser each round.
+describe('the list reaches one card gap past its rows, above and below', () => {
+  const css = readFileSync(resolve('src/index.css'), 'utf8')
+  it('padding, cancelling margins and the cap`s allowance are one number — the card`s row gap', () => {
+    openManager()
+    const region = nameBoxes()[0].closest('.overflow-y-auto')
+    const classes = [...region.classList]
+    expect(classes).toContain('py-3') // room inside the clip box…
+    expect(classes).toContain('-my-3') // …pulled back out, so no row moves
+    expect(classes).toContain('max-h-[calc(45vh_+_1.5rem)]') // …and a long list shows the same 45vh
+    expect(region.parentElement.classList.contains('flow-root')).toBe(true) // margins stay inside
+    expect(card().classList.contains('space-y-3')).toBe(true) // the gap the reach is taken from
+    expect(region.parentElement.parentElement).toBe(card()) // …between the region and its neighbours
+  })
+  it('the shadow it makes room for needs no more than that gap on the side it is cut closest', () => {
+    // 0 3px 12px: it reaches 12 − 3 = 9px above a piece and 12 + 3 = 15px below. The gap is 12px,
+    // so the top is whole and the bottom loses only the last 3px of the blur's tail.
+    const shadow = /\.held-shadow\{[^}]*box-shadow:0 (\d+)px (\d+)px /.exec(css)
+    expect(shadow).not.toBeNull()
+    const [down, blur] = [Number(shadow[1]), Number(shadow[2])]
+    expect(blur - down).toBeLessThanOrEqual(12)
+    expect(blur + down - 12).toBeLessThanOrEqual(3)
+  })
+})
