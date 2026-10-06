@@ -434,6 +434,7 @@ describe('Classic — your toggle and Save Stats are two separate signals (the r
     // tap, since this popup is reached by tapping a stat box and a finger is the likeliest way out.
     expect(within(enableResetDialog()).getAllByRole('button')).toHaveLength(1) // the confirm, alone
     act(() => {
+      fireEvent.pointerDown(enableResetDialog().closest('[data-settings-modal]'))
       fireEvent.click(enableResetDialog().closest('[data-settings-modal]'))
     })
     expect(screen.queryByRole('dialog', { name: 'Enable and Reset Stats?' })).toBeNull()

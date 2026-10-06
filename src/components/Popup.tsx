@@ -19,8 +19,9 @@ import { isTopPopup, usePopupLayer } from './overlayStack.js'
 //   • THE SCRIM TAP. A tap on the scrim itself is `onDismiss` too — and the top scrim covers the
 //     whole screen, so the popup under it cannot be tapped. A tap is a press that both STARTS and
 //     ENDS on the scrim: a press that started on the card and was let go over the dim (a text
-//     selection dragged out of a box, a button press slid off to cancel it) closes nothing, and
-//     neither does one that started on the dim and was let go over the card.
+//     selection dragged out of a box, a button press slid off to cancel it) closes nothing, neither
+//     does one that started on the dim and was let go over the card — and neither does the press
+//     that OPENED the popup, which started before there was a dim to start on.
 //   • ONE DIM, HOWEVER MANY POPUPS ARE OPEN. Only the top popup's scrim paints it, so it always sits
 //     directly under the card in front: the page is darkened once, and a popup that has another
 //     over it is darkened with the page — it reads as waiting, not as a second live card.
@@ -73,18 +74,27 @@ export default function Popup({
     hold: dialog,
     walk: () => scrimRef.current,
   })
-  // Was EITHER END of the press now in progress on the CARD? The click that ends a press is reported
-  // on the nearest element containing both ends of it — so a press that began on the card and was
-  // released over the dim, and one that began on the dim and was released over the card, both arrive
-  // as a click on the scrim, indistinguishable from a tap there by its target alone. The press's own
-  // two ends are what tell them apart, so each is noted as it happens — where the press went down,
-  // then where it came up — and read (and cleared) by the click.
+  // Did the press now in progress GO DOWN ON THIS POPUP'S DIM, and has it stayed off the card since?
+  // Only such a press is a tap on the dim, and the click's own target cannot say so:
+  //   • The click that ends a press is reported on the nearest element containing both ends of it —
+  //     so a press that began on the card and was released over the dim, and one that began on the
+  //     dim and was released over the card, both arrive as a click on the scrim.
+  //   • ★ AND A PRESS THAT BEGAN BEFORE THIS POPUP WAS ON SCREEN ENDS ON ITS DIM TOO. A popup can open
+  //     under a finger that is still down: the ⚙ gear and the top bar's lists act as the press goes
+  //     DOWN, and what opens by itself (the storage warning as ⚙ opens, the storage-full notice the
+  //     moment a save is refused) is then drawn under that finger. A phone sends the rest of such a
+  //     tap — and the click that ends it — to whatever is under the finger NOW, which is this dim.
+  //     Read as a tap, it closed the popup some twenty milliseconds after it opened, with "already
+  //     shown" written down. That press never went down here, so it is not a tap here: ⚠ the note
+  //     starts out as NO, and only a press going down on the dim makes it yes.
+  // So each end is noted as it happens — where the press went down, then where it came up — and read
+  // (and cleared) by the click.
   //   • Going DOWN starts the note afresh, so a press that never became a click (a scroll, a cancel,
-  //     a right-click) cannot disarm the next tap on the dim.
+  //     a right-click) cannot arm or disarm the next one.
   //   • A TOUCH reports where it came up as where it went down — the browser holds a finger's events
   //     on the element it landed on — so a tap on the dim that wanders a few pixels still ends "on
   //     the dim", and a finger that travels further than a tap is not sent as a click at all.
-  const pressOnCardRef = useRef(false)
+  const tapOnDimRef = useRef(false)
   // Is this event ON THE DIM — the scrim itself, or the status-bar strip lying along its top edge
   // (which is part of the dim: same colour, and nothing a player could tell apart from it)?
   const isDim = (e: { target: EventTarget; currentTarget: EventTarget }) =>
@@ -141,15 +151,15 @@ export default function Popup({
       role="presentation"
       className={top ? `${MODAL_SCRIM_CLASS} ${MODAL_DIM_CLASS}` : MODAL_SCRIM_CLASS}
       onPointerDown={(e) => {
-        pressOnCardRef.current = !isDim(e)
+        tapOnDimRef.current = isDim(e)
       }}
       onPointerUp={(e) => {
-        if (!isDim(e)) pressOnCardRef.current = true
+        if (!isDim(e)) tapOnDimRef.current = false
       }}
       onClick={(e) => {
-        const onCard = pressOnCardRef.current
-        pressOnCardRef.current = false
-        if (isDim(e) && !onCard) onDismiss()
+        const tap = tapOnDimRef.current
+        tapOnDimRef.current = false
+        if (isDim(e) && tap) onDismiss()
       }}
     >
       {top && <div data-status-bar-dim className="status-bar-dim" />}

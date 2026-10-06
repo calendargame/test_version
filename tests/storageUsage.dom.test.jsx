@@ -15,7 +15,7 @@
 // storage-full notice.
 import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { screen, cleanup, within, act, render } from '@testing-library/react'
+import { screen, cleanup, within, act, render, fireEvent } from '@testing-library/react'
 import {
   useStorageUsage,
   readStorageUsage,
@@ -116,6 +116,24 @@ const scratchWrites = (writes) => writes.mock.calls.filter(([key]) => key === SC
 function Clock({ runs, live = false }) {
   usePlayerBusy(live ? 'live' : runs ? 'clock' : null)
   return null
+}
+// One event of a finger's press, as a phone sends it (jsdom's own pointer events carry no pointer,
+// and it has no layout to say what is under the finger: `under` is that, for lib/pointerGestures).
+const finger = (type, el, under = null) => {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 })
+  Object.defineProperties(e, {
+    pointerId: { value: 1 },
+    isPrimary: { value: true },
+    pointerType: { value: 'touch' },
+  })
+  document.elementFromPoint = () => under
+  try {
+    act(() => {
+      el.dispatchEvent(e)
+    })
+  } finally {
+    delete document.elementFromPoint
+  }
 }
 // "The player has just become free" is said from a microtask: let it be said.
 const settled = () => act(async () => {})
@@ -1076,6 +1094,36 @@ describe('on the mounted app, while a date is being typed into Lookup', () => {
     await act(async () => box.blur())
     expect(popup()).not.toBeNull()
   })
+
+  // The top bar's lists act as the finger goes down too: the list opens, the keyboard leaves the
+  // box, the player is free — and the popup is drawn under a finger that has not come up yet.
+  it('the tap on a top-bar list that frees the player cannot close the popup either', async () => {
+    fill()
+    mountApp()
+    pressKey('Escape')
+    act(() => {
+      empty()
+      refreshStorageUsage()
+    })
+    pressKey('L')
+    const box = document.querySelector('input[type="text"]')
+    act(() => box.focus())
+    act(() => {
+      fill()
+      refreshStorageUsage()
+    })
+    expect(popup()).toBeNull()
+    const modeButton = screen.getByRole('button', { name: /^Mode,/ })
+    finger('pointerdown', modeButton)
+    await settled()
+    expect(popup()).not.toBeNull()
+    const scrim = popup().closest('[data-settings-modal]')
+    finger('pointerup', modeButton, scrim)
+    act(() => fireEvent.click(scrim))
+    expect(popup()).not.toBeNull()
+    tap(scrim)
+    expect(popup()).toBeNull()
+  })
 })
 
 describe('on the mounted app, with a timed question on screen', () => {
@@ -1122,6 +1170,30 @@ describe('on the mounted app, with a timed question on screen', () => {
     expect(popup()).toBeNull()
     openSettings()
     expect(popup()).not.toBeNull()
+  })
+
+  // On a phone the gear acts as the finger goes DOWN, so the waiting popup is drawn under a finger
+  // that is still on the glass — and the rest of that tap, the click included, is sent to what is
+  // under the finger by then: the popup's dim. It used to be read as a tap outside: the popup was
+  // gone some twenty milliseconds after it opened, with "already warned" written down.
+  it('the tap that opens ⚙ cannot close the popup it brought up; a tap on the dim afterwards does', () => {
+    mountApp()
+    act(() => {
+      fill()
+      refreshStorageUsage()
+    })
+    finger('pointerdown', gear()) // the finger lands: ⚙ opens, and the popup with it
+    const scrim = popup().closest('[data-settings-modal]')
+    finger('pointerup', gear(), scrim) // a finger's own events stay on what it landed on…
+    act(() => {
+      fireEvent.mouseDown(scrim) // …and the ones the browser adds after it go to what is there now
+      fireEvent.mouseUp(scrim)
+      fireEvent.click(scrim)
+    })
+    expect(popup()).not.toBeNull()
+    expect(localStorage.getItem(WARNED_KEY)).toBe('1')
+    tap(scrim) // a press that goes down on the dim, and comes up there
+    expect(popup()).toBeNull()
   })
 
   it('with timing hidden nothing is being timed, and it opens at once', () => {

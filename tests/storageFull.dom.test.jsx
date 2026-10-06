@@ -82,11 +82,34 @@ describe('storage full — play goes on, and the player is told', () => {
     expect(notice().textContent).toMatch(/everything that couldn.t be saved is saved by itself/)
     // Dismissed the way every info popup here is: a tap on the scrim.
     act(() => {
+      fireEvent.pointerDown(notice().closest('[data-settings-modal]'))
       fireEvent.click(notice().closest('[data-settings-modal]'))
     })
     expect(notice()).toBeNull()
     answerCorrect() // still refused — but the player already knows; no nagging on every answer
     expect(statValue('Score')).toBe('2/2')
+    expect(notice()).toBeNull()
+  })
+
+  // The notice opens the moment a save is refused, and a save can be refused under a finger that is
+  // still down (a control that acts as the press lands). The rest of that tap then arrives on the
+  // notice's dim, with no press ever having gone down there — and it is not a tap on the dim.
+  it('the press that brought the notice up cannot close it; a tap on the dim afterwards does', () => {
+    mountApp()
+    fillStorageFor(progressKey)
+    answerCorrect()
+    const scrim = notice().closest('[data-settings-modal]')
+    act(() => {
+      fireEvent.mouseDown(scrim)
+      fireEvent.mouseUp(scrim)
+      fireEvent.click(scrim)
+    })
+    expect(notice()).not.toBeNull()
+    act(() => {
+      fireEvent.pointerDown(scrim)
+      fireEvent.pointerUp(scrim)
+      fireEvent.click(scrim)
+    })
     expect(notice()).toBeNull()
   })
 
@@ -96,6 +119,7 @@ describe('storage full — play goes on, and the player is told', () => {
     answerCorrect()
     answerCorrect()
     act(() => {
+      fireEvent.pointerDown(notice().closest('[data-settings-modal]'))
       fireEvent.click(notice().closest('[data-settings-modal]'))
     })
     expect(

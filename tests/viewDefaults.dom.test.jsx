@@ -223,7 +223,10 @@ describe('The defaults manager', () => {
     expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull()
     // Dismissing discards: reopening seeds fresh from the saved defaults, back at rest. (The scrim
     // tap, one of the three routes that carry what Cancel used to.)
-    act(() => fireEvent.click(dialog.closest('[data-settings-modal]')))
+    act(() => {
+      fireEvent.pointerDown(dialog.closest('[data-settings-modal]'))
+      fireEvent.click(dialog.closest('[data-settings-modal]'))
+    })
     expect(savedManager()).toBeNull()
     openManager()
     const dialog2 = managerDialog()
@@ -347,7 +350,10 @@ describe('The defaults manager', () => {
     readout(saveDialog, 'Blitz Round Timer')
     readout(saveDialog, 'Blitz Question Timer')
     expect(within(saveDialog).queryByRole('button', { name: 'Edit MoX Run Length' })).toBeNull()
-    act(() => fireEvent.click(saveDialog.closest('[data-settings-modal]'))) // dismissed; there is no Cancel
+    act(() => {
+      fireEvent.pointerDown(saveDialog.closest('[data-settings-modal]'))
+      fireEvent.click(saveDialog.closest('[data-settings-modal]'))
+    }) // dismissed; there is no Cancel
     // …and the manager: identical structure, except the AoX readout replaces the box.
     openManager()
     const manageDialog = managerDialog('Default settings')
@@ -375,7 +381,10 @@ describe('The defaults manager', () => {
     expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
     // The confirm is the card's ONLY button, so backing out is a dismiss — the scrim tap here.
     expect(within(dialog).getAllByRole('button')).toHaveLength(1)
-    act(() => fireEvent.click(dialog.closest('[data-settings-modal]')))
+    act(() => {
+      fireEvent.pointerDown(dialog.closest('[data-settings-modal]'))
+      fireEvent.click(dialog.closest('[data-settings-modal]'))
+    })
     expect(screen.queryByText('Clear your saved defaults?')).toBeNull()
     expect(useUserDefaults.getState().saved).not.toBeNull() // dismissing keeps it
     expect(btn('Reset Settings')).toBeInTheDocument() // the settings panel survived

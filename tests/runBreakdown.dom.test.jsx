@@ -271,6 +271,7 @@ describe('the run breakdown — MoX', () => {
 
     tapStat('Score')
     act(() => {
+      fireEvent.pointerDown(screen.getByRole('presentation'))
       fireEvent.click(screen.getByRole('presentation'))
     })
     expect(screen.queryByRole('dialog', { name: 'Mean Breakdown' })).toBeNull()

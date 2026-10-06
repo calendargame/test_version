@@ -100,7 +100,8 @@ describe('ConfirmModal', () => {
     fireEvent.click(screen.getByRole('dialog')) // the card — must NOT cancel
     expect(onCancel).not.toHaveBeenCalled()
     const scrim = document.querySelector('[data-settings-modal]')
-    fireEvent.click(scrim) // target === currentTarget → cancel
+    fireEvent.pointerDown(scrim)
+    fireEvent.click(scrim) // down and up on the dim → cancel
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
@@ -141,6 +142,7 @@ describe('ConfirmModal', () => {
   it('Escape and a scrim tap both still cancel with no Cancel button on the card', () => {
     const { onCancel, onConfirm } = mount()
     act(() => fireEvent.keyDown(document.body, { key: 'Escape' }))
+    fireEvent.pointerDown(document.querySelector('[data-settings-modal]'))
     fireEvent.click(document.querySelector('[data-settings-modal]'))
     expect(onCancel).toHaveBeenCalledTimes(2)
     expect(onConfirm).not.toHaveBeenCalled()
