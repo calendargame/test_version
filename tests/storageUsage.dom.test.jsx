@@ -312,7 +312,9 @@ describe('the count is kept by the storage door, and is right the moment a chang
       // take the root row's), a deeper amber on the two light ones.
       const row = (selector) =>
         css.split(/\r?\n/).find((line) => line.startsWith(`${selector}{--bg1:`))
-      expect(row(':root')).toContain('--storage-warn:rgba(251,191,36,.95)')
+      expect(row(':root')).toContain(
+        '--storage-amber:rgba(251,191,36,.95);--storage-warn:var(--storage-amber)',
+      )
       for (const theme of ['light', 'parchment'])
         expect(row(`[data-theme="${theme}"]`)).toContain('--storage-warn:rgba(180,83,9,.95)')
       for (const theme of ['dusk', 'midnight', 'nebula'])
@@ -322,6 +324,13 @@ describe('the count is kept by the storage door, and is right the moment a chang
         '[data-update-dot][data-reason="storage"]{background:var(--storage-warn)}',
       )
       expect(css).toContain('.storage-warn{color:var(--storage-warn)}')
+      // On the OPEN gear — filled with the brand purple in every theme — the light themes' deeper
+      // amber is too weak to see, and this dot stays lit while the menu is open: there it is the
+      // dark themes' bright amber whatever the theme. A more specific selector, so it wins.
+      expect((css.match(/--storage-amber:/g) ?? []).length).toBe(1)
+      expect(css).toContain(
+        '.btn-solid>[data-update-dot][data-reason="storage"]{background:var(--storage-amber)}',
+      )
       // The amber rule comes AFTER the light themes' blue one. The two selectors weigh the same,
       // so the later one wins — placed before it, a light theme's storage dot would stay blue.
       const blueLight = css.indexOf('[data-theme="light"] [data-update-dot],')

@@ -168,7 +168,7 @@
    did wherever nothing was behind it, and everything drawn ON a card — .panel's tint, the trays,
    the hover and selected fills, all of them see-through tints laid over this — comes out the same
    colour it always did. Keep it solid: a value with alpha here brings the ghosting back. */
-:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:#1a0f2b;--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev-c:0 0 0;--shadow-elev-a:.5;--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent);--nbtn-bg:oklch(37% .013 285.805);--storage-warn:rgba(251,191,36,.95)}
+:root{--bg1:#0b0714;--bg2:#0b0714;--card-bg:#1a0f2b;--card-bd:rgba(120,53,175,.45);--panel-bg:rgba(88,28,135,.25);--panel-bd:rgba(120,53,175,.45);--thin-bd:rgba(120,53,175,.35);--sbtn-bg:rgba(88,28,135,.32);--sbtn-bd:rgba(120,53,175,.52);--sbtn-hov:rgba(88,28,135,.48);--stgl-bg:rgba(88,28,135,.24);--stgl-hov:rgba(88,28,135,.4);--bar-bg:rgba(120,53,175,.25);--bar-bd:rgba(120,53,175,.45);--body-color:#f5f3ff;--sec-color:rgba(237,233,254,.8);--mut-color:rgba(216,180,254,.7);--fnt-color:rgba(196,181,254,.6);--tc:#0b0714;--shadow-elev-c:0 0 0;--shadow-elev-a:.5;--drag-ring:rgba(196,181,253,.55);--tx-50:oklch(97.7% .014 308.299);--tx-100:oklch(94.6% .033 307.174);--tx-100-90:color-mix(in oklab,oklch(94.6% .033 307.174) 90%,transparent);--tx-100-80:color-mix(in oklab,oklch(94.6% .033 307.174) 80%,transparent);--tx-200-80:color-mix(in oklab,oklch(90.2% .063 306.703) 80%,transparent);--tx-200-70:color-mix(in oklab,oklch(90.2% .063 306.703) 70%,transparent);--tx-300-70:color-mix(in oklab,oklch(82.7% .119 306.383) 70%,transparent);--tx-300-60:color-mix(in oklab,oklch(82.7% .119 306.383) 60%,transparent);--tx-w90:color-mix(in oklab,#fff 90%,transparent);--acc:oklch(71.4% .203 305.504);--bg-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--bd-500-40:color-mix(in oklab,oklch(62.7% .265 303.9) 40%,transparent);--bd-500-20:color-mix(in oklab,oklch(62.7% .265 303.9) 20%,transparent);--hist-sel:color-mix(in oklab,oklch(62.7% .265 303.9) 35%,transparent);--hist-hov:color-mix(in oklab,oklch(62.7% .265 303.9) 15%,transparent);--nbtn-bg:oklch(37% .013 285.805);--storage-amber:rgba(251,191,36,.95);--storage-warn:var(--storage-amber)}
 [data-theme="dusk"]{--bg1:#0d1117;--bg2:#0d1117;--tc:#0d1117;--card-bg:#0d1117;--card-bd:rgba(99,102,241,.4);--panel-bg:rgba(28,38,68,.35);--panel-bd:rgba(99,102,241,.4);--thin-bd:rgba(99,102,241,.3);--sbtn-bg:rgba(38,48,88,.38);--sbtn-bd:rgba(99,102,241,.5);--sbtn-hov:rgba(38,48,88,.55);--stgl-bg:rgba(28,38,68,.28);--stgl-hov:rgba(28,38,68,.45);--bar-bg:rgba(99,102,241,.2);--bar-bd:rgba(99,102,241,.4);--drag-ring:rgba(129,140,248,.55)}
 [data-theme="midnight"]{--bg1:#000;--bg2:#000;--tc:#000;--card-bg:#04000b;--card-bd:rgba(139,92,246,.5);--panel-bg:rgba(45,0,90,.28);--panel-bd:rgba(139,92,246,.5);--thin-bd:rgba(139,92,246,.38);--sbtn-bg:rgba(55,0,110,.35);--sbtn-bd:rgba(139,92,246,.55);--sbtn-hov:rgba(55,0,110,.5);--stgl-bg:rgba(45,0,90,.25);--stgl-hov:rgba(45,0,90,.42);--bar-bg:rgba(139,92,246,.2);--bar-bd:rgba(139,92,246,.45);--shadow-elev-c:139 92 246;--shadow-elev-a:.18;--drag-ring:rgba(167,139,250,.55)}
 [data-theme="nebula"]{--bg1:#0b0714;--bg2:#0b0714;--tc:#0b0714}
@@ -344,14 +344,21 @@ input,textarea{user-select:text;-webkit-user-select:text}
    guide's fixed doc-fade strips further down. Tokenized in round 8 so no fade site can
    carry a hardcoded twin that drifts from the rest. It is shared with the settings popover, the
    changelog and the Lookup scrollers, so it can never be retuned to serve one screen alone. */
-:root{--fade-h:24px}
-.fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h));mask-image:linear-gradient(to bottom,transparent,black var(--fade-h))}
-.fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-h)),transparent)}
+/* ★ --fade-reach: HOW FAR IN FROM THE REGION'S OWN EDGE ITS CONTENT'S EDGE IS — 0 for every scroller
+   but one. A region may be made to reach PAST its rows (the Presets popup's list does, by one card
+   gap each way, so that a row held at its first or last slot keeps its shadow: the region is what
+   clips). The fade belongs to where the ROWS stop, not to where the clip box does: so a fading edge
+   is fully hidden for the reach and feathers from there — rows scrolling by never show in the gap —
+   while an edge with nothing past it carries no mask at all, and the gap there is free for the
+   shadow. With the reach at 0 these are the plain edge fades they always were. */
+:root{--fade-h:24px;--fade-reach:0px}
+.fade-scroll-top{-webkit-mask-image:linear-gradient(to bottom,transparent var(--fade-reach),black calc(var(--fade-reach) + var(--fade-h)));mask-image:linear-gradient(to bottom,transparent var(--fade-reach),black calc(var(--fade-reach) + var(--fade-h)))}
+.fade-scroll-bottom{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-reach) - var(--fade-h)),transparent calc(100% - var(--fade-reach)));mask-image:linear-gradient(to bottom,black calc(100% - var(--fade-reach) - var(--fade-h)),transparent calc(100% - var(--fade-reach)))}
 /* When a container has BOTH top and bottom fades, the two mask-images must be
    combined into a single rule so neither overrides the other (CSS doesn't stack
    mask-image declarations from separate classes). The combined gradient fades
    both edges at once. */
-.fade-scroll-both{-webkit-mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent);mask-image:linear-gradient(to bottom,transparent,black var(--fade-h),black calc(100% - var(--fade-h)),transparent)}
+.fade-scroll-both{-webkit-mask-image:linear-gradient(to bottom,transparent var(--fade-reach),black calc(var(--fade-reach) + var(--fade-h)),black calc(100% - var(--fade-reach) - var(--fade-h)),transparent calc(100% - var(--fade-reach)));mask-image:linear-gradient(to bottom,transparent var(--fade-reach),black calc(var(--fade-reach) + var(--fade-h)),black calc(100% - var(--fade-reach) - var(--fade-h)),transparent calc(100% - var(--fade-reach)))}
 /* The guide's two edge fades — ⚠ KEPT, AND DELIBERATELY NOT THE MASKS ABOVE. Read this before
    "harmonising" them, because folding the guide onto .fade-scroll-* would compile, would leave
    every shipped test name passing, and would silently revert round 10's progressive edges on the
@@ -943,7 +950,7 @@ button:focus,select:focus{outline:none}
    in the menu (.storage-warn, below): both read --storage-warn, one value per theme row at the top
    of this file, so the dot and the line it leads to are visibly the same message. With both reasons live the dot is amber
    (components/UpdateDot says why). Both colours are the same in the three dark themes and deeper
-   in the two light ones.
+   in the two light ones — but see the filled-host rule below the amber one.
 
    TWO MOUNTINGS, ONE DOT. Round 6 had only the corner badge below and reused it on the Changelog
    TEXT link, which reserves no room for a corner badge — so the dot sat on the word. The call site
@@ -956,6 +963,12 @@ button:focus,select:focus{outline:none}
 [data-update-dot]{width:.43em;height:.43em;border-radius:9999px;background:rgba(125,211,252,.95)}
 [data-theme="light"] [data-update-dot],[data-theme="parchment"] [data-update-dot]{background:rgba(2,132,199,.8)}
 [data-update-dot][data-reason="storage"]{background:var(--storage-warn)}
+/* …EXCEPT ON A FILLED HOST — the ⚙ gear while its menu is open (.btn-solid: the brand purple, the
+   same in every theme). The two light themes' deeper amber is chosen against a light page and all
+   but disappears into that purple; and this dot, unlike an update's, stays lit while the menu is
+   open. So on the fill it is the bright amber of the dark themes (--storage-amber, the :root row's),
+   whatever the theme. */
+.btn-solid>[data-update-dot][data-reason="storage"]{background:var(--storage-amber)}
 /* Unlit keeps its box and stops painting — that is what makes the inline slot permanent (lighting
    up must never move the link's text), and it costs the corner form nothing (it is out of flow). */
 [data-update-dot][data-lit="false"]{visibility:hidden}

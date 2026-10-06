@@ -1053,7 +1053,7 @@ describe('index.css — the feather token and the reading line it is NOT derived
       expect(body).toContain('var(--fade-h)')
       expect(body).not.toContain('24px')
     }
-    expect(css).toContain(':root{--fade-h:24px}') // the single home of the value
+    expect(css).toContain(':root{--fade-h:24px;--fade-reach:0px}') // the single home of the value
   })
 
   it('has ONE docking line — the bar’s underside — and no second token for where a section rests', () => {
