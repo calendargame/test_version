@@ -1106,6 +1106,13 @@ describe('on the mounted app, with a timed question on screen', () => {
     expect(popup()).not.toBeNull()
   })
 
+  it('a device already past the line when the app opens: it still waits for the question', () => {
+    fill()
+    mountApp()
+    expect(gearLit()).toBe(true)
+    expect(popup()).toBeNull()
+  })
+
   it('opening ⚙ is the moment too', () => {
     mountApp()
     act(() => {

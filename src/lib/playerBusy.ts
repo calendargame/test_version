@@ -30,7 +30,7 @@ type Report = 'live' | 'clock'
 const reports = new Map<symbol, Report>()
 const waiting = new Set<() => void>()
 
-/** Is a Blitz round, a MoX run or a Flash under way on the page being shown? */
+/** Is a Flash, a MoX run or a Blitz round under way on the page being shown? */
 export const isRoundLive = (): boolean => [...reports.values()].includes('live')
 
 export const isPlayerBusy = (): boolean => reports.size > 0 || opensKeyboard(document.activeElement)

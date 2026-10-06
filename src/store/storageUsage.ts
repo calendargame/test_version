@@ -66,7 +66,7 @@ import { captureError } from '../observability/sentry.js'
 //   • AS THE APP STARTS, before its first screen exists (src/main.tsx's entry calls it ahead of the
 //     first render — the Loading screen is what is showing). No question has been drawn, so no solve
 //     clock can be running, and the "Storage used" line is right the first time it is seen;
-//   • WHEN THE PLAYER OPENS ⚙, OR THE BREAKDOWN POPUP — with no round, run or flash under way
+//   • WHEN THE PLAYER OPENS ⚙, OR THE BREAKDOWN POPUP — with no flash, run or round under way
 //     (lib/playerBusy's isRoundLive; a casual question just waits behind the menu). That is where a
 //     limit that has since been shown wrong is put right without waiting for the next start.
 // And never while a save is being held: the device is full then, and what a measurement would find
@@ -75,7 +75,7 @@ import { captureError } from '../observability/sentry.js'
 // ⚙ line shows a dash, and there is no warning.
 //
 // ★ THE POPUP OPENS BY ITSELF ONCE PER UPWARD CROSSING — and never while the player is busy
-// (lib/playerBusy: a round, run or flash under way, a timed question waiting, or a text box in use).
+// (lib/playerBusy: a flash, run or round under way, a timed question waiting, or a text box in use).
 // The line's colour and the gear's dot change the moment usage crosses (they are read straight off
 // the count); the popup waits for the next moment the player is free — or for the player to open ⚙,
 // which is stepping away from a casual question by choice (a round, a run or a flash still has to

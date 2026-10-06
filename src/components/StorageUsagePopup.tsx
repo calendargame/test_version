@@ -109,7 +109,7 @@ export default function StorageUsagePopup() {
             <p>
               How much room this device gives couldn&apos;t be measured, so there are no percentages
               to show. The app tries again each time it starts, and each time you open ⚙ with no
-              round, run or flash under way.
+              flash, run or round under way.
             </p>
           )}
           <p className="font-semibold text-(--tx-100-90)">What is using it</p>

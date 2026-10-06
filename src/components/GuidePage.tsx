@@ -2979,7 +2979,7 @@ export default function GuidePage({
           is on screen — so the line shows a percentage from the first moment you can see it. If the
           figure later proves wrong (the device refuses a save, or holds more than the measurement
           said it could), the app measures again the next time it starts, or the next time you open
-          ⚙ or this breakdown with no round, run or flash under way. If a device can&apos;t be
+          ⚙ or this breakdown with no flash, run or round under way. If a device can&apos;t be
           measured at all there is no percentage to give: the line shows a dash, and the
           breakdown&apos;s title reads &quot;not measured yet&quot; and lists what is saved with no
           figures beside it.
@@ -2989,9 +2989,9 @@ export default function GuidePage({
           once (an update&apos;s dot is light blue; with both, it is amber), and that same breakdown
           opens by itself — once each time the number climbs to 80%, so if you make room and it
           later fills up again, you are told again. It never opens while you are in the middle of
-          something: a Blitz round, a MoX run or a Flash under way, a question you are being timed
+          something: a Flash, a MoX run or a Blitz round under way, a question you are being timed
           on (also while you browse back from it to an earlier one), or a box you are typing in. It
-          waits for the next moment you are free — or until you open ⚙, unless a round, run or flash
+          waits for the next moment you are free — or until you open ⚙, unless a flash, run or round
           is still running behind the menu. Tapping the amber line yourself counts as having been
           told; and if the device is already full, the &quot;isn&apos;t being saved&quot; notice
           speaks instead and the breakdown does not open on top of it. After that it stays out of
