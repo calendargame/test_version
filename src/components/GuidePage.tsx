@@ -862,7 +862,9 @@ export default function GuidePage({
           only when this list has actually gained something since you last saw it, so it never sends
           you to something you have already read; the gear's dot marks every update either way. The
           gear's dot is separate from the small violet bar that marks modified settings (see the
-          Save Defaults section), and the two can show at once.
+          Save Defaults section), and the two can show at once. The gear&apos;s dot has one other
+          colour: <b>amber</b> means this device is running short of room for the app (see Saved
+          Progress), not an update — and if both are true at once, it is amber.
         </p>
         <Subhead>The book and contact</Subhead>
         <p>
@@ -917,12 +919,13 @@ export default function GuidePage({
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
             release to switch (or just tap to open the menu and tap a mode, as before). Once it's
-            open, five things close it: choosing a mode, pressing anywhere outside it, Esc, Tab (the
-            same key that opens it — see Keyboard Input), and your device's Back button (described
-            below). Starting a scroll by touching the page outside the menu is one of those presses
-            outside, so that closes it — but a touch that lands on the menu itself is not, and
-            neither is the page moving on its own: it stays put under its button in the bar while
-            the page coasts to a stop behind it, and you can open it mid-glide.
+            open, five things close it: choosing a mode, pressing anywhere outside it, Esc, Tab
+            (with or without Shift — the same key that opens it; see Keyboard Input), and your
+            device's Back button (described below). Starting a scroll by touching the page outside
+            the menu is one of those presses outside, so that closes it — but a touch that lands on
+            the menu itself is not, and neither is the page moving on its own: it stays put under
+            its button in the bar while the page coasts to a stop behind it, and you can open it
+            mid-glide.
           </li>
           <li>
             So does the preset control on the other side of the bar, which is the same kind of list
@@ -1009,7 +1012,7 @@ export default function GuidePage({
           <li>
             <b>Begin</b> — timer modes only ({modeList('flash', 'aox', 'blitz')}). In Flash it
             flashes the next date, hiding it after the configured duration. In{' '}
-            {modeNames('aox', 'blitz')} it starts a round or run: the timer starts and the date is
+            {modeNames('aox', 'blitz')} it starts a run or round: the timer starts and the date is
             shown (MoX hides it between solves only when One-by-One is on, and a <b>Continue</b>{' '}
             button shows each one).
           </li>
@@ -1017,7 +1020,7 @@ export default function GuidePage({
             <b>Reset</b> — timer modes only. In Flash it stands in for Begin while a date is in
             play: it ends that question and clears your question history, keeping your stats. In
             MoX, it ends the current run; in Blitz, it ends the current round and unlocks settings.
-            Saved bests are preserved either way. Press Reset then Begin to start a fresh round/run.
+            Saved bests are preserved either way. Press Reset then Begin to start a fresh run/round.
           </li>
           <li>
             <b>Reset Stats</b> — casual modes only ({modeList('classic', 'deduction', 'flash')}).
@@ -1054,7 +1057,7 @@ export default function GuidePage({
             locked; no stat penalty. You can go back through everything you have played this visit
             in {modeNames('classic', 'deduction', 'flash')} (a reload keeps it, and each preset
             keeps its own while you are in another); in {modeNames('aox', 'blitz')}, through the
-            current round or run once it has ended.
+            current run or round once it has ended.
           </li>
           <li>
             Every history entry shows the correct answer in green; a wrong guess appears as dimmed
@@ -1091,7 +1094,7 @@ export default function GuidePage({
           Back/Forward. Once there is a date behind you, the one button always tells you which state
           that date is in: it reads <b>Override</b> when the date still counts the way you answered
           it, and <b>Undo</b> when you have already overridden it. It is dimmed only when there is
-          no date for it to mean yet — a mode just opened, or a round or run just begun, with
+          no date for it to mean yet — a mode just opened, or a run or round just begun, with
           nothing answered behind the date on screen — and, in the casual modes, by Save Stats (see
           the last bullet below). A dimmed button still shows the right word for its date.
         </p>
@@ -1151,8 +1154,8 @@ export default function GuidePage({
             What clears these dates is what clears the history itself. In every mode: a Reset (Reset
             Stats; the Reset button in {modeNames('flash', 'aox', 'blitz')}; or Begin in{' '}
             {modeNames('aox', 'blitz')}), a Full Reset, and closing the app. In{' '}
-            {modeNames('aox', 'blitz')}, also changing a setting the round or run depends on (it
-            resets when you close the ⚙ menu) and leaving the mode while a round or run is still
+            {modeNames('aox', 'blitz')}, also changing a setting the run or round depends on (it
+            resets when you close the ⚙ menu) and leaving the mode while a run or round is still
             going. In {modeNames('classic', 'deduction', 'flash')} the history belongs to this visit
             and to its preset: a reload keeps it, every date&apos;s Override state included;
             switching presets sets it aside and it is there when you switch back; and putting
@@ -1192,15 +1195,15 @@ export default function GuidePage({
             }}
           />
           <li>
-            In both run modes, if a round/run ended because you answered wrong, revealed, or showed
+            In both run modes, if a run/round ended because you answered wrong, revealed, or showed
             codes, crediting that date continues it — picking up where it left off instead of
             staying ended. Two things hold that back. With Allow Mistakes off, nothing else in the
-            round/run may still be wrong: if something is, the credit counts and the date stays on
-            screen, but the round/run stays ended. And a tap made while browsing back never restarts
-            a round or run under you — it comes back only on a tap made at the live date.
+            run/round may still be wrong: if something is, the credit counts and the date stays on
+            screen, but the run/round stays ended. And a tap made while browsing back never restarts
+            a run or round under you — it comes back only on a tap made at the live date.
           </li>
           <li>
-            Because the button works both ways, a tap can also end a round or run that is still
+            Because the button works both ways, a tap can also end a run or round that is still
             going (a flip to wrong with Allow Mistakes off) and then put it back. In Blitz the clock
             tells you which happened. A round that ended because its date was answered, revealed or
             show-coded has that answer on screen, so its clock stops while it waits; crediting that
@@ -1338,7 +1341,7 @@ export default function GuidePage({
             Switching re-reads every mode screen from the copy of your stats that is now live, so an
             MoX run or a Blitz round still in progress is ended by it. (This guide and the Lookup
             page are not any one preset&apos;s, and stay exactly as they are.) What a preset had on
-            its screens otherwise waits for you: a round or run that has already <i>ended</i>, and
+            its screens otherwise waits for you: a run or round that has already <i>ended</i>, and
             the dates you can browse back through in {modeNames('classic', 'deduction', 'flash')},
             are still there when you switch back, until you press Reset or close the app.
           </li>
@@ -1403,13 +1406,13 @@ export default function GuidePage({
             at its launch value too (the Deduction type, Flash speed, the MoX run length,
             One-by-One, both Blitz timers, Blitz&apos;s Per Round / Per Question choice, Allow
             Mistakes in MoX and in Blitz, and which stats are shown or hidden); no stats and no
-            all-time bests; no saved defaults of its own; and nothing on its screens, whether a
-            round or run still going or a finished one waiting — the ✕ deletes it on the spot. That
-            is the state a brand-new preset is in, and the state <b>Clear Saved Defaults</b>{' '}
-            followed by <b>Full Reset</b> would put one back into. Anything else at all — even a MoX
-            run or Blitz round you have only just begun — and the question appears as described
-            here. Having <b>Amnesic</b> on Stats Only or Full does not count as holding something:
-            there is nothing being kept for it to be about.
+            all-time bests; no saved defaults of its own; and nothing on its screens, whether a run
+            or round still going or a finished one waiting — the ✕ deletes it on the spot. That is
+            the state a brand-new preset is in, and the state <b>Clear Saved Defaults</b> followed
+            by <b>Full Reset</b> would put one back into. Anything else at all — even a MoX run or
+            Blitz round you have only just begun — and the question appears as described here.
+            Having <b>Amnesic</b> on Stats Only or Full does not count as holding something: there
+            is nothing being kept for it to be about.
           </li>
           <li>
             Deleting a preset removes <i>everything</i> it holds — its stats and all-time bests, its
@@ -1488,8 +1491,8 @@ export default function GuidePage({
             scores (or an Override).
           </li>
           <li>
-            In {modeNames('aox', 'blitz')}, a small ★ next to a best means the round or run on
-            screen set it. It stays for as long as that round or run is on screen — including after
+            In {modeNames('aox', 'blitz')}, a small ★ next to a best means the run or round on
+            screen set it. It stays for as long as that run or round is on screen — including after
             a preset switch or a reload — and goes when you press Reset or start another. If an
             Override takes the best away again, the ★ goes with it.
           </li>
@@ -1667,7 +1670,7 @@ export default function GuidePage({
           three boxes stop toggling — what you are looking at is the result, not a control. A tap on
           the ended strip does something else instead: it opens the breakdown of that run or round,
           solve by solve (see above). Your hide setting is not forgotten, only set aside; it applies
-          again the moment the next round or run starts — or the moment a tap of Override or Undo
+          again the moment the next run or round starts — or the moment a tap of Override or Undo
           puts the ended one back into play.
         </p>
       </GuideSection>
@@ -1785,7 +1788,7 @@ export default function GuidePage({
               </div>
               <div className="flex items-center gap-2">
                 <Kbd>Tab</Kbd>
-                <span>Mode selector (toggle)</span>
+                <span>Mode selector (toggle) — on the page; see the notes</span>
               </div>
             </div>
           </div>
@@ -1812,26 +1815,44 @@ export default function GuidePage({
             modifier (Ctrl/Cmd/Alt/Shift) is held.
           </li>
           <li>
-            The answer keys, the Game Actions and the Lookup keys above are ignored while the ⚙ menu
-            or a popup is open, too — whatever is behind one is out of reach until you close it, so
+            The answer keys, the Game Actions and the Lookup keys above are ignored while the ⚙
+            menu, a popup or a list (the mode selector, the preset list, <b>Open in</b>) is open,
+            too — whatever is behind one is out of the keyboard&apos;s reach until you close it, so
             an answer, a New, a Back, an Override or an Undo can't be pressed through it, and on
             Lookup the arrows, <Kbd>Backspace</Kbd> and <Kbd>Delete</Kbd> leave the page behind it
-            alone. (Lookup&apos;s arrows also stand aside while a list is open and using them.) The
+            alone. That goes for a button you had just pressed on the page as well: opening the ⚙
+            menu or a popup takes the keyboard off it, so <Kbd>Enter</Kbd> and <Kbd>Space</Kbd>{' '}
+            can&apos;t press it again from behind, and closing gives the keyboard back to it. The
             mode letters and <Kbd>H</Kbd> still work: they leave the screen, closing the ⚙ menu and
-            taking any popup that belongs to the screen with it. <Kbd>G</Kbd> still closes the ⚙
-            menu together with any of its popups, but does nothing while a game screen&apos;s own
-            popup (such as a Reset Stats question or a breakdown) is open. The two popups those keys
-            can&apos;t take with them are the ones that belong to no screen — the &quot;Your
-            progress isn&apos;t being saved&quot; notice and the <b>Storage used</b> breakdown:
-            while one of them is up the mode letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing
-            either, until you close it. <Kbd>Tab</Kbd> stays inside the popup rather than opening
-            the mode selector (see Accessibility).
+            taking any popup that belongs to the screen with it (a list that was open stays open
+            until you close it). <Kbd>G</Kbd> still closes the ⚙ menu together with any of its
+            popups, but does nothing while a game screen&apos;s own popup (such as a Reset Stats
+            question or a breakdown) is open. The two popups those keys can&apos;t take with them
+            are the ones that belong to no screen — the &quot;Your progress isn&apos;t being
+            saved&quot; notice and the <b>Storage used</b> breakdown: while one of them is up the
+            mode letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing either, until you close it.
           </li>
           <li>
-            <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use{' '}
-            <Kbd>Esc</Kbd> or <Kbd>Enter</Kbd> to leave an input first if you'd rather; the next
-            note says what each of those does). Tab plus any modifier (Ctrl+Tab, Ctrl+Shift+Tab,
-            etc.) passes through to the browser.
+            <Kbd>Tab</Kbd> means three things, by what is open. <b>On the page</b> it opens the mode
+            selector — even from an input (use <Kbd>Esc</Kbd> or <Kbd>Enter</Kbd> to leave an input
+            first if you'd rather; a later note says what each of those does).{' '}
+            <b>With the ⚙ menu or a popup open</b> it walks that menu&apos;s or popup&apos;s own
+            controls one at a time, and <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> walks them backwards; both
+            wrap round at the ends, and neither steps out to the page behind.{' '}
+            <b>With a list open</b>, <Kbd>Tab</Kbd> or <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> closes the
+            list and leaves the keyboard on its button. Tab plus any other modifier (Ctrl+Tab,
+            Ctrl+Shift+Tab, etc.) passes through to the browser.
+          </li>
+          <li>
+            Every list opens from the keyboard once the keyboard is on its button: <Kbd>Enter</Kbd>{' '}
+            or <Kbd>Space</Kbd> opens it, and inside the ⚙ menu <Kbd>↑</Kbd> and <Kbd>↓</Kbd> do too
+            (on the open page those two are Lookup&apos;s keys, so there they are left alone).
+            Getting the keyboard onto each button: the <b>mode selector</b> — <Kbd>Tab</Kbd> on the
+            page opens it outright. The <b>preset list</b> — <Kbd>Tab</Kbd>, then <Kbd>Tab</Kbd>{' '}
+            again (which closes the mode list and leaves the keyboard on its button), then{' '}
+            <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> steps back to the preset button beside it.{' '}
+            <b>Open in</b> — <Kbd>G</Kbd>, then <Kbd>Tab</Kbd>: it is the first control in the ⚙
+            menu. What the keys do once a list is open is under Accessibility.
           </li>
           <li>
             In every box you can type into — the Year Range boxes, the MoX run length, every time
@@ -1840,7 +1861,9 @@ export default function GuidePage({
             <Kbd>Esc</Kbd> throws the typing away and leaves the box. Whatever the box sits inside
             stays open — a second <Kbd>Esc</Kbd> closes that. What <Kbd>Esc</Kbd> puts back is the
             value the setting is really on: for a Year Range box that&apos;s the stored year, for
-            the others the value the box held when you started typing.
+            the others the value the box held when you started typing. A time readout you typed into
+            takes the keyboard back when either key closes its box, so the next <Kbd>Tab</Kbd>{' '}
+            carries on from there rather than from the top.
           </li>
           <li>
             On the Lookup screen, &quot;keeps what you typed&quot; means it runs the lookup:{' '}
@@ -1850,20 +1873,21 @@ export default function GuidePage({
           </li>
           <li>Locked or already-pressed buttons are skipped, just like a click would be.</li>
           <li>
-            Inside the ⚙ menu, once you've clicked one option of a setting, the arrow keys move
-            along that setting's options and choose each one as you land on it (<Kbd>Home</Kbd> and{' '}
-            <Kbd>End</Kbd> jump to its first and last, and the ends wrap around). What counts as one
-            setting is the choice, not the row: Date Format is a single five-way choice, so the
-            arrows carry straight from the Written row into the Numeric one — and Theme does the
-            same across Dark and Light whenever Use System Settings is off, since that's when the
-            five themes are one pick. A locked setting ignores the keys. No key reaches past the
-            open menu, so these never step the date behind it — and inside the menu <Kbd>Tab</Kbd>,{' '}
-            <Kbd>Esc</Kbd> and typing in its boxes work as they do everywhere.
+            Inside the ⚙ menu, once the keyboard is on a setting — <Kbd>Tab</Kbd> to it, or click
+            one of its options — the arrow keys move along that setting's options and choose each
+            one as you land on it (<Kbd>Home</Kbd> and <Kbd>End</Kbd> jump to its first and last,
+            and the ends wrap around). What counts as one setting is the choice, not the row: Date
+            Format is a single five-way choice, so the arrows carry straight from the Written row
+            into the Numeric one — and Theme does the same across Dark and Light whenever Use System
+            Settings is off, since that's when the five themes are one pick. A locked setting
+            ignores the keys. No key reaches past the open menu, so these never step the date behind
+            it — and inside the menu <Kbd>Esc</Kbd> and typing in its boxes work as they do
+            everywhere.
           </li>
           <li>
             Reset Stats (<Kbd>S</Kbd>) only applies to the casual modes (
             {modeList('classic', 'deduction', 'flash')}); pressing it in MoX, Blitz, or Lookup is a
-            no-op, since those modes have no separate Reset Stats button (their round/run Reset
+            no-op, since those modes have no separate Reset Stats button (their run/round Reset
             clears in-round/in-run stats; persistent bests update only when set).
           </li>
         </UL>
@@ -1881,15 +1905,16 @@ export default function GuidePage({
           the fix, and tests/topBar.dom pins both); the bar's two lists = CustomSelect's
           COMPOSED trigger name (the caller's label plus the selected option's own text, which is
           what carries PresetSwitcher's sr-only "<name>, amnesic" phrases into the bar), plus that
-          component's open-state key handler for "the same keys do the same things"; its GAP line = the same
-          handler's closed branch ("NO key opens the dropdown from the trigger") together with
-          main.tsx's global Tab binding, which resolves modeSelectRef and nothing else — so a
-          keyboard genuinely cannot open the preset list, and that is a thing the code does not do
-          rather than a thing not yet written about; the named groups = PillGroup's role/aria-label (every
+          component's key handler for "the same keys do the same things" — open (the arrows, Home /
+          End, Enter, Tab and Shift+Tab) and closed (Enter or Space opens; ↑ / ↓ too while the page
+          is covered); its GAP line = main.tsx's global Tab binding, which resolves modeSelectRef
+          and nothing else, so on the page the keyboard reaches the preset button only by the
+          browser's own Shift+Tab from the mode button; the named groups = PillGroup's role/aria-label (every
           picker passes a `label`; the Theme block's name follows Use System Settings, which is why
           the wording is "the setting you're changing" and not a fixed list); the four switches +
           both year boxes = their aria-labels in components/SettingsPanel; the gear = its computed
-          aria-label in main.tsx; the dots = WeekdayAnswer's per-dot aria-label; the stats strip's
+          aria-label in main.tsx (three parts: modified, update, storage almost full) and the
+          Storage used line's two sr-only spans in components/SettingsPanel; the dots = WeekdayAnswer's per-dot aria-label; the stats strip's
           words = the sr-only spans StatPanel renders — "Off" beside an `off` cell's value,
           "Stats are not being saved" at the top of the strip when `dimmed` (round 16; both
           pinned in tests/statBoxSignals.dom), and "These stats are for this session only" there
@@ -1900,15 +1925,18 @@ export default function GuidePage({
           blank had one, and the section may not claim coverage it only gives to some of them. If
           either span goes, the bullet goes with it; the guide's Known-gaps list below is where a
           purely-visual signal belongs instead; the popups =
-          components/Popup, the shell every popup is drawn in (focus in on open and back out on
-          close, the one dim) with the shared trapModalTab, and components/overlayStack for the
-          one-layer-at-a-time rule; the panel NOT taking focus = the absence of any focus call for
-          settingsOpen; the accordions =
+          components/Popup, the shell every popup is drawn in (the one dim, and what it tells the
+          stack about where its keyboard may be), and components/overlayStack for the
+          one-layer-at-a-time rule and for "THE KEYBOARD'S REACH" — the one rule that puts the
+          keyboard in a popup, the ⚙ menu or a list as it opens, walks Tab inside it, and hands the
+          keyboard back; the count of ⚙ popups = every <Popup> the panel can open, plus
+          components/StorageUsagePopup, which the panel's Storage used line opens and App mounts;
+          the ⚙ menu holding the keyboard = the `reach` src/main.tsx registers for it; the accordions =
           aria-expanded/aria-controls here and in MethodBreakdown; the mode list = CustomSelect's
           open-state key handler; the motion paragraph = a full grep of --motion-scale, which now
           has SIX consumers — index.css's .expander rule, this file's own inline transitionDuration
-          + scroll glide, the three `transition:background-color` surface fades, and .boot-d's
-          bootPulse — so those are the only things the paragraph may claim, and index.css's own
+          + scroll glide (and, on that same read, a closing header's shadow hand-back), the three
+          `transition:background-color` surface fades, and .boot-d's bootPulse — so those are the only things the paragraph may claim, and index.css's own
           words for the rest are "Functional motion — the .bar countdown and the color flashes — is
           deliberately NOT scaled". ⚠ THE PARAGRAPH IS NOW A COMPLETE ACCOUNT, WHICH IT WAS NOT
           BEFORE, and that is exactly what makes it fragile: round 15 had to add a sentence naming
@@ -1923,8 +1951,9 @@ export default function GuidePage({
           code does NOT do, checked one at a time: the keyboard's focus ring is drawn only inside
           a .focus-scope — the ⚙ menu's card and the popup scrim (index.css, "THE KEYBOARD FOCUS
           RING") — so everywhere else button:focus{outline:none} still stands and nothing is drawn,
-          and plain Tab is still bound to the mode selector while the ⚙ menu is open (main.tsx's
-          key handler bails only for a popup), so Tab does not walk the menu;
+          the top bar's two list buttons included; on the open page plain Tab is bound to the mode
+          selector (main.tsx's key handler), so no key puts the keyboard on the preset button
+          directly;
           index.html
           sets user-scalable=no on purpose; the < and > history buttons carry only their glyph and
           the mode-screen range inputs carry no aria-label (the DefaultsCard copies do); and the
@@ -1981,8 +2010,11 @@ export default function GuidePage({
             Year.
           </li>
           <li>
-            The ⚙ button says what&apos;s behind it: that a setting has been changed, and that an
-            update is waiting, whenever either is true.
+            The ⚙ button says what&apos;s behind it: that a setting has been changed, that an update
+            is waiting, and that storage is almost full, whenever any of them is true. Inside the
+            menu the <b>Storage used</b> line says the same of itself — it adds &quot;almost
+            full&quot; while it is in its warning colour — and reads &quot;not measured yet&quot;
+            while it shows a dash.
           </li>
           <li>
             The two lists in the top bar say what they are set to, not just what they are: the
@@ -2028,15 +2060,18 @@ export default function GuidePage({
         <Subhead>Panels and popups</Subhead>
         <UL>
           <li>
-            The seven ⚙ popups — Save Defaults, the saved-defaults list, the three confirmations
-            (Reset Settings, Full Reset, and clearing your saved defaults), the Changelog, and
-            Manage Presets — are proper dialogs. Opening one puts the keyboard inside it,{' '}
+            The ⚙ menu opens eight popups — Save Defaults, the saved-defaults list, the three
+            confirmations (Reset Settings, Full Reset, and clearing your saved defaults), the
+            Changelog, Manage Presets, and the Storage used breakdown — and every one, like every
+            other popup in the app, is a proper dialog. Opening one puts the keyboard inside it,{' '}
             <Kbd>Tab</Kbd> and <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> cycle that popup&apos;s own controls
             and wrap around at the ends rather than wandering into the menu beneath, and{' '}
-            <Kbd>Esc</Kbd> closes it. The Changelog is the one with no controls to cycle — it is
-            read-only, closed by tapping outside, <Kbd>Esc</Kbd>, or Back — so there the keyboard
-            simply stays on the dialog. The saved-defaults list is not read-only: its rows can be
-            edited in place (see <b>Save Defaults</b>), and <Kbd>Tab</Kbd> cycles them.
+            <Kbd>Esc</Kbd> closes it. The Changelog and the Storage used breakdown are the two with
+            no controls to cycle — they are read-only, closed by tapping outside, <Kbd>Esc</Kbd>, or
+            Back — so there the keyboard simply stays on the dialog. The saved-defaults list is not
+            read-only: its rows can be edited in place (see <b>Save Defaults</b>), and{' '}
+            <Kbd>Tab</Kbd> cycles them. (The Storage used breakdown is the one of the eight that
+            belongs to the app rather than to the menu — Keyboard Input says what that changes.)
           </li>
           <li>
             Manage Presets asks its delete question — when there is one to ask; an untouched preset
@@ -2051,17 +2086,26 @@ export default function GuidePage({
           <li>
             In the ⚙ menu and in every popup, the control the keyboard is on is outlined: a solid
             ring just inside its edge — white on a filled button, round the handle on a slider, and
-            in an open list on the option the arrow keys have reached. It is drawn only while you
-            are using the keyboard. A tap or a click never draws it, on anything; the first key you
-            press afterwards does. It is not the dashed outline Amnesic puts round numbers that
-            won&apos;t be kept — that one is dashed and fainter, marks numbers rather than a
-            control, and has nothing to do with the keyboard.
+            round the outside of a time readout, which is no bigger than its digits. It is drawn
+            only while you are using the keyboard. A tap or a click never draws it, on anything; the
+            first key you press afterwards does — unless you are typing in a box, which shows its
+            own caret, and where only <Kbd>Tab</Kbd> counts. A control that is greyed out and marked
+            unavailable can still be reached, and its ring is <i>dotted</i> rather than solid: the
+            keyboard is there, and pressing will do nothing. Nothing inside an open list is
+            outlined, in the top bar or in the menu: the soft grey box on an option is where the
+            keyboard is, and the ring stays on the list&apos;s button (for <b>Open in</b> — the two
+            lists in the top bar have none, like the rest of the bar). None of this is the dashed
+            outline Amnesic puts round numbers that won&apos;t be kept — that one is dashed and
+            fainter, marks numbers rather than a control, and has nothing to do with the keyboard.
           </li>
           <li>
-            The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button, and it
-            doesn&apos;t take the keyboard when it opens. <Kbd>Esc</Kbd> closes it, unless
-            you&apos;re typing in one of its boxes, in which case the first <Kbd>Esc</Kbd> belongs
-            to the box.
+            The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button — but it
+            holds the keyboard like one while it is open. Opening it puts the keyboard on the menu
+            (or leaves it where it was, if it was already in the top bar: on the ⚙ button after a
+            click, or on one of the two lists); <Kbd>Tab</Kbd> and <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd>{' '}
+            walk its controls and wrap at the ends; and closing it gives the keyboard back to
+            whatever on the page had it. <Kbd>Esc</Kbd> closes it, unless you&apos;re typing in one
+            of its boxes, in which case the first <Kbd>Esc</Kbd> belongs to the box.
           </li>
           <li>
             Each section header in this guide, and the Show Codes button, states whether it&apos;s
@@ -2070,15 +2114,19 @@ export default function GuidePage({
           <li>
             The mode selector is a list of modes. Once it&apos;s open, ↑ and ↓ move through it,{' '}
             <Kbd>Home</Kbd> and <Kbd>End</Kbd> jump to the ends, <Kbd>Enter</Kbd> chooses, and{' '}
-            <Kbd>Esc</Kbd> or <Kbd>Tab</Kbd> closes it. While it&apos;s closed, <Kbd>Tab</Kbd> is
-            the only key that opens it.
+            <Kbd>Esc</Kbd>, <Kbd>Tab</Kbd> or <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> closes it and leaves
+            the keyboard on its button. While it&apos;s closed, <Kbd>Tab</Kbd> opens it from
+            anywhere on the page, and <Kbd>Enter</Kbd> or <Kbd>Space</Kbd> opens it when the
+            keyboard is on its button.
           </li>
           <li>
-            The preset control is the same kind of list, and once it&apos;s open the same keys do
-            the same things. So is <b>Open in</b> in the ⚙ menu, and there <Kbd>Esc</Kbd> closes
-            just the list — the ⚙ menu stays open until a second <Kbd>Esc</Kbd>. Opening any of
-            these lists puts the keyboard on its button, however you opened it, so the keys work
-            straight away.
+            The preset control is the same kind of list, and the same keys do the same things —
+            opening it included, once the keyboard is on its button. So is <b>Open in</b> in the ⚙
+            menu, where ↑ and ↓ open it as well, and where <Kbd>Esc</Kbd> closes just the list — the
+            ⚙ menu stays open until a second <Kbd>Esc</Kbd>. Opening any of these lists puts the
+            keyboard on its button, however you opened it, so the keys work straight away; and while
+            one is open, nothing behind it takes a key. (Keyboard Input above says how the keyboard
+            gets onto each button.)
           </li>
           <li>
             Whatever is open closes one layer at a time, the one in front first. With a list open
@@ -2087,7 +2135,8 @@ export default function GuidePage({
             outside each close only the one in front — do it again for the one behind it. However
             many popups are open the screen is dimmed once, behind the popup in front, and a popup
             waiting underneath is dimmed with the page. Closing a popup hands the keyboard back to
-            where it was: the control that opened it, or the popup underneath.
+            where it was: the control that opened it, or the popup underneath. Closing the ⚙ menu
+            does the same for the page.
           </li>
         </UL>
         <Subhead>Motion</Subhead>
@@ -2105,19 +2154,15 @@ export default function GuidePage({
           <li>
             Outside the ⚙ menu and the popups, nothing draws a focus ring: on the game screens,
             Lookup, this guide and the top bar there&apos;s no outline showing which button the
-            keyboard is on.
+            keyboard is on. That includes the two lists in the top bar — the keyboard can be on the
+            preset or the mode button, and open it, with nothing drawn to say so.
           </li>
           <li>
-            <Kbd>Tab</Kbd> does not walk the ⚙ menu. It opens the mode selector from anywhere in the
-            app, the open menu included, so the keyboard only gets onto a setting there once
-            you&apos;ve clicked or tapped one — its keys work from then on, and the outline appears
-            with the first one you press. Inside a popup <Kbd>Tab</Kbd> does walk every control.
-          </li>
-          <li>
-            The preset list at the top, and the <b>Open in</b> list in the ⚙ menu, can only be
-            opened by tapping or clicking them. <Kbd>Tab</Kbd> opens the mode selector from anywhere
-            in the app, and no key opens either of these — not even with the control itself
-            selected. Once one is open, its arrow keys, <Kbd>Enter</Kbd> and <Kbd>Esc</Kbd> work.
+            On the page, <Kbd>Tab</Kbd> is the mode selector&apos;s and does not walk from control
+            to control, so there is no one key for the preset list: the keyboard gets onto its
+            button by stepping back from the mode button (Keyboard Input has the steps). Everything
+            else that opens has a key of its own or is reached by <Kbd>Tab</Kbd> inside the ⚙ menu
+            or a popup.
           </li>
           <li>
             Pinch-to-zoom is switched off deliberately, to keep the app feeling like an app rather
@@ -2194,23 +2239,26 @@ export default function GuidePage({
           <b>View Saved Defaults</b> and <b>Clear Saved Defaults</b> links — both always there;
           Clear dims and locks until you&apos;ve saved your own defaults, the same way the three
           buttons above it do. Those two sit in the gaps between the three buttons above rather than
-          under them. Below the block: your Contact email, then a last line with the Last Updated
-          timestamp at the left edge, the <b>Changelog</b> link at the right edge, and{' '}
-          <b>Check for updates</b> midway between the two.
+          under them. Below the block: your Contact email; then <b>Storage used</b> on a line of its
+          own — how much of this device&apos;s room for the app is in use, as a percentage (a dash
+          until the app has measured the device), and a tap on it opens the breakdown (see Saved
+          Progress); then a last line with the Last Updated timestamp at the left edge, the{' '}
+          <b>Changelog</b> link at the right edge, and <b>Check for updates</b> midway between the
+          two.
         </p>
         <p>
           Each of those three buttons greys out whenever pressing it would do nothing — there is
           nothing to save, nothing to reset, or nothing left to clear. A greyed one really is
           inactive: it does nothing to a tap, a keypress, or a screen reader's press. The keyboard
           and a screen reader can still land on it, and it's marked unavailable rather than left
-          looking like an ordinary button; on a computer the pointer shows the not-allowed cursor
-          over it. (See Accessibility.)
+          looking like an ordinary button: the keyboard's ring on it is dotted instead of solid, and
+          on a computer the pointer shows the not-allowed cursor over it. (See Accessibility.)
         </p>
         <p className="text-(--tx-300-70) text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so
           changing several at once regenerates the date just once (and never restarts your solve
           timer mid-adjustment). The sections below cover each setting and exactly when a change
-          regenerates a date or resets a round/run. A flash running in Flash goes with its date: if
+          regenerates a date or resets a run/round. A flash running in Flash goes with its date: if
           closing the menu regenerates the date, the flash ends and Begin starts a new one; if the
           date stays (you had already answered it wrong), the flash carries on.
         </p>
@@ -2267,7 +2315,7 @@ export default function GuidePage({
           </li>
           <li>
             In MoX runs and Blitz rounds — active or just ended — a format change resets the
-            round/run when you close the ⚙ menu, so the round on screen always matches your
+            run/round when you close the ⚙ menu, so the round on screen always matches your
             settings.
           </li>
         </UL>
@@ -2426,7 +2474,7 @@ export default function GuidePage({
             only the unanswered live date waiting at the front is replaced.
           </li>
           <li>
-            In MoX runs and Blitz rounds (active or just ended), a range change resets the round/run
+            In MoX runs and Blitz rounds (active or just ended), a range change resets the run/round
             when you close the ⚙ menu.
           </li>
         </UL>
@@ -2467,7 +2515,7 @@ export default function GuidePage({
           regenerates the displayed date so the new setting takes effect when you close the ⚙ menu.
           If you've already wrong-guessed, revealed, or shown codes on the current date, the change
           is deferred and applies to the next date. In MoX runs and Blitz rounds (active or just
-          ended), a chance change resets the round/run when you close the ⚙ menu.
+          ended), a chance change resets the run/round when you close the ⚙ menu.
         </p>
         <Subhead>Locking</Subhead>
         <UL>
@@ -2540,7 +2588,7 @@ export default function GuidePage({
           </li>
           <li>
             In MoX runs and Blitz rounds (active or just ended), a Julian toggle resets the
-            round/run when you close the ⚙ menu.
+            run/round when you close the ⚙ menu.
           </li>
           <li>
             In Lookup the setting changes no answer at all: a date on or before October 4, 1582 is
@@ -2597,7 +2645,7 @@ export default function GuidePage({
           </li>
           <li>
             In the run modes ({modeList('aox', 'blitz')}), Override works the same whether Save
-            Stats is on or off, so a misclick can never throw away a whole round or run even in
+            Stats is on or off, so a misclick can never throw away a whole run or round even in
             practice mode.
           </li>
         </UL>
@@ -2623,8 +2671,8 @@ export default function GuidePage({
           </li>
         </UL>
         <p>
-          That decision is made once, the first time the round or run ends, and nothing changes it
-          afterward until you press Reset or Begin. A round or run that first ended with Save Stats
+          That decision is made once, the first time the run or round ends, and nothing changes it
+          afterward until you press Reset or Begin. A run or round that first ended with Save Stats
           off is never recorded — not by turning Save Stats back on while it is still on screen, and
           not by an Override on it, even one that puts it back in play so that it ends a second
           time. One that first ended with Save Stats on stays recorded: if an Override then changes
@@ -2703,7 +2751,7 @@ export default function GuidePage({
           </li>
           <li>
             <b>On Full only</b> — all-time bests: MoX mean and median, Blitz score and streak, and
-            Per Question sudden-death score. And any finished round or run on screen — the
+            Per Question sudden-death score. And any finished run or round on screen — the
             guest&apos;s, that is. Your own is set aside and is back when you leave Full, except one
             whose setup was changed in the meantime (see <b>Changing it</b>).
           </li>
@@ -2768,16 +2816,16 @@ export default function GuidePage({
           Best set on Stats Only.
         </p>
         <p>
-          Any change clears the five mode screens, including an MoX run or a Blitz round in progress
+          Any change clears the five mode screens, including a MoX run or a Blitz round in progress
           — the same discard switching preset makes, and for the same reason: every mode screen has
           to be re-read from whichever copy of your numbers is now live. (This guide and the Lookup
-          page hold no stats, so they stay as they are.) A round or run that had already{' '}
+          page hold no stats, so they stay as they are.) A run or round that had already{' '}
           <i>ended</i> belongs to the Bests it was played for, and only ever comes back with them.
-          Off and Stats Only share your saved Bests, so a finished round or run stays on screen when
+          Off and Stats Only share your saved Bests, so a finished run or round stays on screen when
           you move between those two. Going to Full puts it aside, and it is back on screen, exactly
           as you left it, when you leave Full — unless a setting it was played under was changed
           while it was set aside, in which case it is not brought back (any Best it had set is
-          kept). A round or run finished on Full is discarded with the rest of that session when you
+          kept). A run or round finished on Full is discarded with the rest of that session when you
           leave Full, and never touches your saved Bests.
         </p>
         <Subhead>Two things it deliberately is not</Subhead>
@@ -2867,25 +2915,41 @@ export default function GuidePage({
           A device gives the app a fixed amount of room for all of this, and the ⚙ menu always shows
           how much of it is in use: <b>Storage used</b>, at the foot of the menu. Tap it to see what
           is using the room — each mode&apos;s solve times, the Lookup history, each preset&apos;s
-          other data — and what you can clear to get some back: <b>Reset Stats</b> in a mode,{' '}
-          <b>Clear History</b> in Lookup, or deleting a preset you no longer use. How much room a
-          device gives is something the app has to measure, which it does once, a moment after it
-          first opens there and while you are not in the middle of a timed question; until then the
-          line shows a dash instead of a percentage. When the number passes 80% the line turns a
-          warning colour and the ⚙ button gains a dot at once, and that same breakdown opens by
-          itself, once — never over a question you are being timed on: it waits until you have
-          answered it, or until you open ⚙. After that it stays out of your way, but the colour and
-          the dot stay until the number is back under 80%.
+          other data. The list is largest first; anything holding 1% or more is named, and so are
+          the largest few however little they hold, with whatever is left gathered into one last
+          line, &quot;Everything else&quot;. Under it is what you can clear to get some room back:{' '}
+          <b>Clear History</b> in Lookup, deleting a preset you no longer use, and{' '}
+          <b>Reset Stats</b> in a mode — that last one only while the preset&apos;s Amnesic is{' '}
+          <b>Off</b>. On Stats Only or Full, Reset Stats clears that session&apos;s numbers and
+          leaves the saved solve times where they are, so it makes no room; the popup says so there
+          instead of offering it, and says what does (set Amnesic to Off first, then Reset Stats).
+        </p>
+        <p>
+          How much room a device gives is something the app has to measure, which it does once, a
+          moment after it first opens there and while you are not in the middle of a timed question.
+          Until then there is no percentage to give: the line shows a dash, and the breakdown&apos;s
+          title reads &quot;not measured yet&quot; and lists what is saved with no figures beside
+          it.
+        </p>
+        <p>
+          When the number climbs past 80% the line turns amber and the ⚙ button gains an amber dot
+          at once (an update&apos;s dot is light blue; with both, it is amber), and that same
+          breakdown opens by itself — once for each time the number climbs past 80%, so if you make
+          room and it later fills up again, you are told again. It never opens over a question you
+          are being timed on: it waits until you have answered it, or until you open ⚙. After that
+          it stays out of your way, but the colour and the dot stay until the number is back under
+          80%.
         </p>
         <p>
           If this device ever runs out of room for the app&apos;s saved data, a popup tells you so.
           You can keep playing — nothing already saved is lost, and your newest answers and changes
           are held exactly where they belong, so switching presets and back, or changing Amnesic and
           changing it back, still shows them. But they are only held until you close or reload the
-          app. Deleting a preset you no longer use, or using Reset Stats in a mode whose history you
-          don&apos;t need, makes room, and everything that couldn&apos;t be saved is then saved by
-          itself. While anything is waiting like that, <b>Check for updates</b> won&apos;t reload
-          the app, because a reload would lose it.
+          app. Deleting a preset you no longer use makes room, and so does Reset Stats in a mode
+          whose history you don&apos;t need — while that preset&apos;s Amnesic is Off; on Stats Only
+          or Full the popup names <b>Clear History</b> instead, for the reason above. Everything
+          that couldn&apos;t be saved is then saved by itself. While anything is waiting like that,{' '}
+          <b>Check for updates</b> won&apos;t reload the app, because a reload would lose it.
         </p>
         <p>
           <b>Lookup history</b> — the dates you&apos;ve looked up — is saved on this device too, the
@@ -2899,9 +2963,9 @@ export default function GuidePage({
         <Subhead>Kept for the visit only (cleared when you fully close the app)</Subhead>
         <p>
           A reload — reloading the page, or the app updating itself — is not a close: each
-          preset&apos;s page, any ended round or run, your Back / Forward history in{' '}
+          preset&apos;s page, any ended run or round, your Back / Forward history in{' '}
           {modeNames('classic', 'deduction', 'flash')}, what you had on the Lookup page, and your
-          place in this guide are all still there afterward. A round or run still in progress is
+          place in this guide are all still there afterward. A run or round still in progress is
           not; a reload stops it, just as a preset switch does — and a Flash date that was still
           showing goes back to Begin, as it does when you leave the mode.
         </p>
@@ -2914,11 +2978,11 @@ export default function GuidePage({
             <i>into</i> is the <b>Open in</b> setting (⚙ &rarr; Global).
           </li>
           <li>
-            <b>A timed round or run that has ended</b> but not yet been Reset. It is kept through a
+            <b>A timed run or round that has ended</b> but not yet been Reset. It is kept through a
             reload and as you switch presets and return, the same as the page above; a fresh close
             of the app or a manual Reset clears it, and so does a change to any setting it was
             played under while it was set aside (a guest changing the setup while the preset is on
-            Amnesic: Full, say). A round or run still <i>in progress</i> is not kept: a reload, a
+            Amnesic: Full, say). A run or round still <i>in progress</i> is not kept: a reload, a
             preset switch, a change of Amnesic, or leaving the mode ends it. Either way, only a Best
             it already recorded persists.
           </li>
@@ -3118,7 +3182,7 @@ export default function GuidePage({
           <b>Amnesic</b> restore above actually changes the value, in which case whatever that
           change discards or sets aside (see the paragraph above) is gone the moment you tap, not
           held back until anything closes. Restoring one of the four capturable mode-screen values
-          while an MoX run or a Blitz round is going resets that round or run when you close the
+          while a MoX run or a Blitz round is going resets that run or round when you close the
           menu, exactly as an ordinary ⚙ panel change does — but an <b>Amnesic</b> change is not a
           menu value reconciling on close, it changes which numbers the preset is showing outright,
           so it (and the run or round it can take with it) lands immediately on the tap itself,
@@ -3132,7 +3196,7 @@ export default function GuidePage({
         <UL>
           <li>
             Wipes all stats, all-time bests ({modeNames('aox', 'blitz')}), your{' '}
-            <b>Lookup history</b>, and every round and run — the ones in progress and the finished
+            <b>Lookup history</b>, and every run and round — the ones in progress and the finished
             ones still on screen. Your stats and all-time bests are saved on this device, so Full
             Reset clears that saved copy permanently. That is true in a preset with <b>Amnesic</b>{' '}
             on Stats Only or Full as well: it clears both the session you are in and the saved stats
