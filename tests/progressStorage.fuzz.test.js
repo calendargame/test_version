@@ -85,8 +85,12 @@ function world(seed, { seals, older, deletes, stale = false }) {
   const expected = new Map() // main key → the state that last landed there (null: removed)
   // `${key}:${silo}` whose correct answers and saved times may honestly disagree: an answer was
   // given there with timing hidden — or a v2.26.0 page took a credit back from a silo it had
-  // trimmed to 1,000 times before any newer build recorded the trim (that build's old defect: the
-  // trim is then no longer recognisable, exactly as in v2.27.3).
+  // trimmed to 1,000 times. That save is spelled exactly like a real mismatch (999 times beside
+  // 1,000 correct answers is also 999 timed answers and one untimed), that build writes nothing
+  // that tells them apart, and it asks "Enable and Reset Stats?" of it itself — so no reader can
+  // recognise the trim, and store/progressStorage's baselineTrimmedTimes says why it does not
+  // guess. The exemption is exactly that act: a take-back, by that build, from a silo holding more
+  // correct answers than times.
   const untimed = new Set()
   const trimmed = new Set() // `${key}:${silo}` a v2.26.0 page has trimmed
   const oursLast = new Set() // main keys whose last landed save was a page of this line's

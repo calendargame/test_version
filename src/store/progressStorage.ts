@@ -71,6 +71,11 @@ import { isRecord } from './json.js'
 // ⚠ THIS CONSTANT AND ITS BRANCH (`sealNewSilos ||` in the save below, and the parameter that
 // carries it) ARE DELETED IN THAT RELEASE — sealing is then simply what a silo past the threshold
 // does. Until then the tests run the save both ways.
+// ⚠ THAT RELEASE HAS A SECOND REMOVAL, for the same reason (no build older than this one is left
+// to share a device with): engine/parkedEngine's `withCalendars`, which gives a calendar to the
+// judged cards a build up to v2.27.3 parked without one. A parked card lives only as long as its
+// browsing session, so once every copy of the app stamps its own cards there is nothing left for
+// it to complete. The two go together; each names the other.
 export const SEAL_NEW_SILOS = false
 
 /** Times per chunk. Fixed for ever: a chunk's position is its index × this. */
@@ -165,6 +170,17 @@ const keysUnder = (area: Storage, prefix: string): string[] => {
 // ⚠ ONE THING IT CANNOT KNOW: whether some of that gap was answers given while timing was hidden
 // (the popup's real case). In a trimmed save those are indistinguishable from discarded times, so
 // they are folded into the baseline — the only alternative is the false popup this exists to end.
+// ⚠ AND ONE SAVE IT CANNOT RECOGNISE, weighed and left: a silo such a build trimmed and then TOOK A
+// CREDIT BACK from (an Override), before any newer build had loaded it. It then holds 999 times
+// beside 1,000 or more correct answers — and that is, to the character, also how 999 timed answers
+// and one given with timing hidden are saved, which is the real mismatch the "Enable and Reset
+// Stats?" question exists for. That build writes no field that tells the two apart (a take-back
+// lowers the times and the correct answers together, so the gap a trim made simply stays), and it
+// asks the same question of the same save itself. Calling every such save "trimmed" would silence
+// the question where it is true, for every player who ever hid their timing — the commoner case by
+// far, since timing starts hidden. So it is read as the mismatch it is spelled as: one unneeded
+// question, in a state only that build can make and already shows it for.
+// (tests/progressStorage.fuzz names this exemption where it makes it.)
 const LEGACY_TIMES_CAP = 1000
 // The saved-shape version in which the cap went — the stamp of the FIRST build that keeps every
 // solve time. ⚠ A fact about history, not "the store's current version" (store/progress' `version`,
