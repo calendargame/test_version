@@ -288,8 +288,12 @@ describe('the count is kept by the storage door, and is right the moment a chang
 
     it('on the mounted app: the line, its colour and the gear dot are right at once', () => {
       useProgress.getState().setModeStats('classic', long(6500))
-      // (Above the remembered limit, as this group's device is, the limit reads as wrong and
-      // opening ⚙ would measure it afresh — against the test runner's own, far larger, allowance.)
+      // ⚠ THE LIMIT IS NOT THE 40,000 THIS GROUP REMEMBERS ONCE ⚙ HAS OPENED. The device holds more
+      // than that, so the remembered limit reads as wrong and opening ⚙ measures it afresh. A
+      // measurement here would find the test runner's own, far larger, allowance — so this device
+      // takes nothing more (its scratch key is refused), and its limit is measured as exactly what
+      // it holds at that moment. That is the figure the line is a percentage of, however much the
+      // app's own markers (the changelog's seen-stamp among them) happen to weigh in this build.
       vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
         if (key === SCRATCH_KEY) throw quotaError()
         return realSetItem.call(this, key, value)
@@ -298,11 +302,14 @@ describe('the count is kept by the storage door, and is right the moment a chang
       pressKey('Escape') // the popup the crossing opened
       expect(gearLit()).toBe(true)
       expect(gearReason()).toBe('storage')
+      const held = everything()
+      expect(held).toBeGreaterThan(40_000)
       openSettings()
+      expect(usage().limit).toBe(held)
       expect(line().className).toContain('storage-warn')
       act(() => useProgress.getState().setModeStats('classic', long(0)))
       expect(line().className).not.toContain('storage-warn')
-      expect(line().textContent).toBe(`Storage used: ${usagePercent(storageUsed(), 40_000)}%`)
+      expect(line().textContent).toBe(`Storage used: ${usagePercent(everything(), held)}%`)
       expect(storageUsed()).toBe(everything()) // the boot's own markers included
       expect(gearLit()).toBe(false)
     })
