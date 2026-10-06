@@ -1570,7 +1570,9 @@ export function SettingsPanel({
             </a>
           </div>
           {/* HOW FULL THE DEVICE'S ROOM FOR THE APP IS (store/storageUsage) — always shown, and a
-              tap opens the breakdown (components/StorageUsagePopup, App's). On a row of its own:
+              tap opens the breakdown (components/StorageUsagePopup, App's). A dash until the
+              device's limit has been measured — there is no honest percentage before that. On a
+              row of its own:
               the metadata row below is already full at a phone's width. From the warning line up
               it wears the warning colour (index.css's .storage-warn), with the words for it for a
               screen reader — colour alone says nothing to one. */}
@@ -1580,7 +1582,15 @@ export function SettingsPanel({
               onClick={openStorageUsage}
               className={`select-none rounded-md px-1 -mx-1 underline ${storageWarning ? 'storage-warn' : ''}`}
             >
-              Storage used: {storagePercent}%
+              Storage used:{' '}
+              {storagePercent === null ? (
+                <>
+                  <span aria-hidden="true">—</span>
+                  <span className="sr-only">not measured yet</span>
+                </>
+              ) : (
+                `${storagePercent}%`
+              )}
               {storageWarning && <span className="sr-only">, almost full</span>}
             </button>
           </div>

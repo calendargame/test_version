@@ -10,8 +10,12 @@ import type { StateStorage } from 'zustand/middleware'
 // runs in a mode screen's effect, so a full device did not "stop saving quietly", it put the player
 // on the error card on their next answer.
 //
-// ★ WHAT HAPPENS INSTEAD — the whole mechanism. Every saved value of every persisted store is read,
-// written and removed through the three functions below, and a write the device refuses is caught
+// ★ WHAT HAPPENS INSTEAD — the whole mechanism. THIS FILE IS THE DOOR TO localStorage: every saved
+// value of every persisted store, and every marker a store file keeps beside them, is read, written
+// and removed through the functions below. (Two leaf modules write a few characters of their own —
+// src/changelog's update dots and seen-stamp, lib/buildStamp's build stamp: both must stay free of
+// imports, and neither holds anything a player made. tests/storageDoor pins that list, so nothing
+// else in src/ can start writing around the door.) A write the device refuses is caught
 // and HELD IN MEMORY UNDER THE EXACT PLACE IT WAS FOR: this storage area, this key. From then on:
 //   • a READ of that place returns the held value — it is what that place would hold if it had fit.
 //     So anything that re-reads saved data inside this page (a preset switch and the switch back, an
@@ -80,6 +84,37 @@ export const showStorageNotice = (): void => useStorageHealth.setState({ noticeO
 // The refused saves: per storage area, the latest value each key was refused.
 const held = new Map<Storage, Map<string, string>>()
 
+// ── What is ON THE DEVICE, reported as it changes ─────────────────────────────────────────────
+// Because every write goes through this file, it can say exactly what each one did — which is how
+// store/storageUsage keeps "how full is the device" right at the moment something is saved or
+// removed, without reading everything back. The watcher is told AFTER the change is on the device:
+// (storage, key, the text now there — null for a key that is gone). A refused write changes nothing
+// and reports nothing. `key` null means "this area changed in a way nobody listed" (another tab
+// cleared it): count again.
+export type StorageWatcher = (storage: Storage, key: string | null, value: string | null) => void
+let watcher: StorageWatcher | null = null
+/** Be told of every change to what is on the device. One watcher (store/storageUsage); returns the undo. */
+export function watchStorage(next: StorageWatcher): () => void {
+  watcher = next
+  return () => {
+    if (watcher === next) watcher = null
+  }
+}
+
+// ── The scratch key ───────────────────────────────────────────────────────────────────────────
+// measureRoom (below) finds how much more a storage area will take by writing this one key and
+// removing it again. It is not saved data and nothing may ever treat it as such:
+//   • it is written and removed RAW, never through writeItem — so it is never held, and the watcher
+//     above never hears of it;
+//   • a `storage` event for it (another tab measuring) is dropped before anyone is told — it is not
+//     "another tab changed your data";
+//   • ★ IT MAY NEVER BE THE REASON A SAVE IS REFUSED. It is on the device only for the moment
+//     between a write and the remove on the very next line — but another tab's copy of the device
+//     can show it for a moment longer, and a crash in that moment would leave it behind. So a save
+//     the device refuses while this key exists removes the key and tries once more (tryWriteItem).
+// Every reader that walks the device's keys skips it by name.
+export const SCRATCH_KEY = 'cg-storage-probe'
+
 const settle = (): void => {
   const unsaved = held.size > 0
   const state = useStorageHealth.getState()
@@ -116,13 +151,71 @@ const retryHeld = (): void => {
  * a sealed chunk of solve times (store/progressStorage), which stays in the main save until it fits.
  */
 export function tryWriteItem(storage: Storage, key: string, value: string): boolean {
-  try {
-    storage.setItem(key, value)
-  } catch (e) {
-    if (!isQuotaError(e)) throw e
-    return false
+  for (let cleared = false; ; cleared = true) {
+    try {
+      storage.setItem(key, value)
+      break
+    } catch (e) {
+      if (!isQuotaError(e)) throw e
+      // Refused — and if a measurement's scratch key is in the way, it goes and the save is tried
+      // once more (see SCRATCH_KEY).
+      if (cleared || storage.getItem(SCRATCH_KEY) === null) return false
+      storage.removeItem(SCRATCH_KEY)
+    }
   }
+  watcher?.(storage, key, value)
   return true
+}
+
+/**
+ * How many MORE characters `storage` will take right now (a key's name counts with its text) — up
+ * to `most`, and to within `within` characters. Found the only way a browser allows: by trying. It
+ * writes the ONE scratch key and removes it again on the next line, every time, so the device is
+ * never left holding anything (SCRATCH_KEY says what protects a save from it meanwhile).
+ *
+ * ★ THE COST IS BOUNDED BY THE ORDER OF THE TRIES. A try that fits costs a write of that size; one
+ * that does not fit costs almost nothing (the browser refuses it before storing anything). So:
+ *   1. `guesses` first — the sizes the caller expects to be exactly right (the documented allowances
+ *      less what is already used). A right guess is confirmed by one write that fits and one, a
+ *      character longer, that does not: the exact answer in two tries.
+ *   2. then `most` itself — a device that takes even that is not searched any further;
+ *   3. then halving what is left, until the answer is known to within `within`.
+ * The answer is always a size that was SEEN to fit (or 0), never an estimate above one.
+ */
+export function measureRoom(
+  storage: Storage,
+  most: number,
+  guesses: readonly number[],
+  within: number,
+): number {
+  const fits = (size: number): boolean => {
+    try {
+      storage.setItem(SCRATCH_KEY, 'x'.repeat(size - SCRATCH_KEY.length))
+      return true
+    } catch (e) {
+      if (!isQuotaError(e)) throw e
+      return false
+    } finally {
+      storage.removeItem(SCRATCH_KEY)
+    }
+  }
+  storage.removeItem(SCRATCH_KEY) // one a crash left, or another tab's passing through
+  // The smallest thing that can be tried is the key with no text at all.
+  if (most < SCRATCH_KEY.length || !fits(SCRATCH_KEY.length)) return 0
+  let fitting = SCRATCH_KEY.length // the largest size seen to fit
+  let refused = most + 1 // the smallest size refused — or, to begin with, simply not to be tried
+  const tryAt = (size: number): void => {
+    if (size <= fitting || size >= refused) return
+    if (fits(size)) fitting = size
+    else refused = size
+  }
+  for (const guess of guesses) {
+    tryAt(guess)
+    tryAt(guess + 1)
+  }
+  if (refused - fitting > within) tryAt(most)
+  while (refused - fitting > within) tryAt(Math.floor((fitting + refused) / 2))
+  return fitting
 }
 
 /**
@@ -153,6 +246,7 @@ export function readItem(storage: Storage, key: string): string | null {
 export function removeItem(storage: Storage, key: string): void {
   release(storage, key)
   storage.removeItem(key)
+  watcher?.(storage, key, null)
   settle()
 }
 
@@ -175,9 +269,12 @@ export function placeChangedElsewhere(storage: Storage, key: string | null): voi
 }
 // The browser's own report of it: a `storage` event, which fires in every OTHER same-origin page when
 // one changes localStorage (never in the page that made the change).
+// ⚠ Not for a measurement's scratch key (SCRATCH_KEY): that is no change to anyone's data.
 if (typeof window !== 'undefined')
   window.addEventListener('storage', (e) => {
-    if (e.storageArea) placeChangedElsewhere(e.storageArea, e.key)
+    if (!e.storageArea || e.key === SCRATCH_KEY) return
+    placeChangedElsewhere(e.storageArea, e.key)
+    watcher?.(e.storageArea, e.key, e.newValue)
   })
 
 /**

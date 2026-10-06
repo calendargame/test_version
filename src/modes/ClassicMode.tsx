@@ -88,6 +88,7 @@ function ClassicMode({
     useJulian,
     saveStats,
     timingOff,
+    inPlay: () => visible,
     getInitialStats: () => useProgress.getState().stats.classic,
     getInitialState: () =>
       restoredEngine(parked, {

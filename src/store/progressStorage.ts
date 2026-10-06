@@ -449,7 +449,7 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
     b.landed = writeItem(b.area, mainKey, b.text)
     if (!b.landed || b.doomed.size === 0) return
     for (const [key, silo] of b.doomed)
-      if (!stillSpells(b, key, saved.get(silo) ?? [])) b.area.removeItem(key)
+      if (!stillSpells(b, key, saved.get(silo) ?? [])) removeItem(b.area, key)
     b.doomed.clear()
     storageSpaceFreed()
   }
@@ -464,7 +464,7 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
  */
 export function removeProgressCopy(copy: ProgressCopy): void {
   removeItem(copy.area, mainKeyOf(copy.presetId))
-  for (const key of keysUnder(copy.area, familyOf(copy.presetId))) copy.area.removeItem(key)
+  for (const key of keysUnder(copy.area, familyOf(copy.presetId))) removeItem(copy.area, key)
 }
 
 /** Does this preset have chunk keys in this area? (store/presetControl, allocating a preset id.) */
@@ -485,7 +485,7 @@ export function sweepAbandonedTimes(area: Storage, exists: (presetId: number) =>
     if (!abandoned.has(presetId))
       abandoned.set(presetId, !exists(presetId) && readItem(area, mainKeyOf(presetId)) === null)
     if (!abandoned.get(presetId)) continue
-    area.removeItem(key)
+    removeItem(area, key)
     freed = true
   }
   if (freed) storageSpaceFreed()

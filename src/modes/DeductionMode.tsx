@@ -183,6 +183,7 @@ function DeductionMode({
   })
   const dayEng = useGameEngine({
     label: 'dedDay',
+    inPlay: () => visible && dedType === 'day',
     genDate: genDay,
     minY,
     maxY,
@@ -198,6 +199,7 @@ function DeductionMode({
   })
   const monthEng = useGameEngine({
     label: 'dedMonth',
+    inPlay: () => visible && dedType === 'month',
     genDate: genMonth,
     minY,
     maxY,
@@ -213,6 +215,7 @@ function DeductionMode({
   })
   const yearEng = useGameEngine({
     label: 'dedYear',
+    inPlay: () => visible && dedType === 'year',
     genDate: genYear,
     minY,
     maxY,

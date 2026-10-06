@@ -111,6 +111,8 @@ function FlashMode({
     useJulian,
     saveStats,
     timingOff,
+    // From the flash beginning (a fresh date, a fresh clock) — not while the screen idles on its dash.
+    inPlay: () => visible && flashPhase !== 'dash',
     getInitialStats: () => useProgress.getState().stats.flash,
     getInitialState: () =>
       restoredEngine(parked, {

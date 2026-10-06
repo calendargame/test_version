@@ -30,7 +30,7 @@ import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
 import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
 import StorageUsagePopup from './components/StorageUsagePopup.jsx'
-import { useStorageUsage, watchStorageUsage, refreshStorageUsage } from './store/storageUsage.js'
+import { useStorageUsage, watchStorageUsage, announceStorageWarning } from './store/storageUsage.js'
 import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, watchScrollEdges, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
@@ -1384,8 +1384,6 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // is not a stored flag: it is the reading itself, so opening ⚙ does not clear it (that clears
       // only the update flag, below) and it goes out by itself the moment usage drops back under.
       const storageWarning=useStorageUsage(s=>s.warning);
-      // The reading is kept current from here on (one now; the rest are argued in the store).
-      useEffect(()=>watchStorageUsage(),[]);
       const changelogDot=useSyncExternalStore(subscribeUpdateDot,readChangelogDot);
       // THE ONE WAY TO OPEN SETTINGS, and the only place the gear's update dot is retired.
       // ★ WHY THIS IS A CALLBACK AND NOT AN EFFECT. The retirement used to be
@@ -1434,7 +1432,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       const toggleSettings=useCallback(()=>{
         const opening=!settingsOpen;
         if(opening&&gearDot)clearUpdateDot(GEAR_DOT_KEY); // notifies → the dot re-reads false
-        if(opening)refreshStorageUsage(); // the panel's "Storage used" line shows the device as it is now
+        if(opening)announceStorageWarning(true); // a storage warning still waiting for a moment off the clock: opening ⚙ is one
         setSettingsOpen(opening);
       },[settingsOpen,gearDot]);
       useEffect(()=>{
@@ -1482,6 +1480,10 @@ import BlitzMode from './modes/BlitzMode.jsx'
         else{engageOnCss=engage;window.addEventListener('app-css-ready',engage,{once:true});}
         return()=>{cancelled=true;if(holdId!==undefined)window.clearTimeout(holdId);if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
       },[]);
+      // The device is counted from here on (store/storageUsage: once now, then every save and removal
+      // moves the count). ⚠ AFTER the effect above, on purpose: its build stamp and changelog marker
+      // are written around the storage door, and the first count has to include them.
+      useEffect(()=>watchStorageUsage(isPopupOpen),[]);
       // The update paths' #boot handoff (paired with updateEngagedRef above — the auto-update flow
       // and the build-change flash): remove the splash only AFTER the Updating overlay has
       // COMMITTED — effects run post-commit, so by now the overlay is in the DOM and there is never

@@ -12,7 +12,8 @@
 //                (store/sessionAmnesic — the session's own record on a reload, the saved defaults on
 //                a fresh open), then the four per-preset stores and the two Lookup lists. And
 //                everything a page holds only in memory is gone: the saves a full device refused
-//                (store/storageHealth).
+//                (store/storageHealth), and its count of how full the device is (store/storageUsage
+//                — the device taken as measured already, as the harness takes it for every test).
 //   closeApp() — the browser ending the session: sessionStorage is emptied, which is all a close is
 //                (nothing in the app detects one). The browsing-session marker goes with it, so the
 //                loadPage() that follows is a fresh open.
@@ -31,9 +32,11 @@ import { useProgress } from '../../src/store/progress.js'
 import { useUserDefaults } from '../../src/store/userDefaults.js'
 import { useLookupHistory, useLookupSession } from '../../src/store/lookupHistory.js'
 import { forgetStorageHealth } from '../../src/store/storageHealth.js'
+import { forgetStorageUsage } from '../../src/store/storageUsage.js'
 
 export function loadPage() {
   forgetStorageHealth()
+  forgetStorageUsage()
   usePresets.persist.rehydrate()
   reopenSessionAmnesic()
   for (const store of [useSettings, useModePrefs, useProgress, useUserDefaults])

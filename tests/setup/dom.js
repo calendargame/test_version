@@ -34,6 +34,7 @@ import { discardLookupScreen } from '../../src/store/sessionLookup.js'
 import { forgetBrowsingSession } from '../../src/store/browsingSession.js'
 import { forgetSessionAmnesic } from '../../src/store/sessionAmnesic.js'
 import { forgetStorageHealth } from '../../src/store/storageHealth.js'
+import { forgetStorageUsage } from '../../src/store/storageUsage.js'
 import { useUserDefaults } from '../../src/store/userDefaults.js'
 import { usePresets, makePresetRegistryDefaults } from '../../src/store/presets.js'
 
@@ -163,6 +164,12 @@ beforeEach(() => {
   // refused, held for their destinations, and whether the notice is up. A test that fills the device would
   // otherwise leave the next one mid-episode — a notice that never opens, or one already open.
   forgetStorageHealth()
+  // …and so is what the page knows about HOW FULL the device is (store/storageUsage): its running
+  // count, the limit it measured, a warning it has shown. Forgotten the same way — and the device is
+  // taken to have been measured already, so an ordinary test is not a device waiting to be measured
+  // (a mounted app would otherwise write megabytes of scratch two seconds into any test that runs
+  // that long). tests/storageUsage.dom starts from "never measured" where that is the subject.
+  forgetStorageUsage()
   // The SAVED PERSONAL DEFAULTS snapshot (store/userDefaults) is the last singleton of this shape,
   // and it was the one this net was missing — found by a shuffled run (round 22's fixer), where a
   // file that saves a snapshot left it standing for whatever file ran next in the same worker.

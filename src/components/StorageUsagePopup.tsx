@@ -51,10 +51,13 @@ export default function StorageUsagePopup() {
   if (!open) return null
   // Each owner's share of the WHOLE allowance, so the shares add up to the headline. Anything under
   // one percent is gathered into the last line rather than listed as a column of "<1%".
-  const share = (chars: number) => (chars / limit) * 100
+  // ⚠ Until the device's limit has been measured (store/storageUsage) there is no whole to take a
+  // share of: every owner is listed, with no figure beside it, and the headline shows a dash.
+  const share = (chars: number) => (limit === null ? 100 : (chars / limit) * 100)
   const listed = rows.filter((row) => row.kind !== 'other' && share(row.chars) >= 1)
   const rest = rows.filter((row) => !listed.includes(row)).reduce((sum, row) => sum + row.chars, 0)
-  const shown = (chars: number) => (share(chars) < 1 ? '<1%' : `${Math.round(share(chars))}%`)
+  const shown = (chars: number) =>
+    limit === null ? '' : share(chars) < 1 ? '<1%' : `${Math.round(share(chars))}%`
   return (
     <Popup id="storage-usage" onDismiss={close} appWide>
       <div
@@ -66,7 +69,7 @@ export default function StorageUsagePopup() {
         className={MODAL_PLAIN_CARD_CLASS}
       >
         <div id="storage-usage-title" className="text-sm font-semibold text-(--tx-50)">
-          Storage used: {percent}%
+          Storage used: {percent === null ? '—' : `${percent}%`}
         </div>
         <div className="text-xs text-(--tx-200-80) space-y-2">
           <p>

@@ -32,6 +32,7 @@ import {
 import type { GameState, Question, Stats } from './gameReducer.js'
 import { checkGameInvariants } from './invariants.js'
 import { solveTimeFromMs } from './stats.js'
+import { useSolveClock } from '../lib/solveClock.js'
 import { captureError } from '../observability/sentry.js'
 
 // genDate produces the next question for the active year range (the parent bakes in the
@@ -43,6 +44,11 @@ export interface UseGameEngineOptions {
   useJulian: boolean
   saveStats: boolean
   timingOff: boolean
+  // Is this engine's live question ON SCREEN AND IN PLAY — its mode the page being shown, and (where
+  // the mode has a start and an end) its round, run or flash under way with the date revealed? The
+  // mode's half of "is a solve clock running" (lib/solveClock); the engine supplies the rest below.
+  // Asked of the state, because a mode may need the engine's own question counter to answer.
+  inPlay: (state: GameState) => boolean
   // A short mode label ('classic', 'flash', …) attached to any tripwire report so it says WHICH mode
   // hit an impossible state. Optional — the stats/history context is reported either way.
   label?: string
@@ -71,6 +77,7 @@ export function useGameEngine({
   useJulian,
   saveStats,
   timingOff,
+  inPlay,
   label,
   getInitialStats,
   getInitialState,
@@ -104,6 +111,16 @@ export function useGameEngine({
   const restartTimer = () => {
     tStartRef.current = performance.now()
   }
+  // ★ IS THE CLOCK ABOVE ONE THE PLAYER IS BEING TIMED ON RIGHT NOW? (lib/solveClock — the one
+  // definition, reported from here for every mode.) Only while the question is in play, nothing has
+  // judged it yet (the card carries no calendar stamp: its first answer, Reveal or Show Codes is
+  // still to come, and that is the moment a time is taken), and that time would be recorded.
+  useSolveClock(
+    inPlay(state) &&
+      !timingOff &&
+      effectiveSaveStats(state, saveStats) &&
+      state.card.jul === undefined,
+  )
 
   // Tripwire: after every state change, verify the engine's invariants (see engine/invariants.ts).
   // A violation = an IMPOSSIBLE state that didn't crash (an impossible score, a desynced history, a

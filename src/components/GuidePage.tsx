@@ -2736,10 +2736,14 @@ export default function GuidePage({
           how much of it is in use: <b>Storage used</b>, at the foot of the menu. Tap it to see what
           is using the room — each mode&apos;s solve times, the Lookup history, each preset&apos;s
           other data — and what you can clear to get some back: <b>Reset Stats</b> in a mode,{' '}
-          <b>Clear History</b> in Lookup, or deleting a preset you no longer use. The first time it
-          passes 80% that same breakdown opens by itself, once. After that it stays out of your way,
-          but the line stays in a warning colour and the ⚙ button keeps its dot until the number is
-          back under 80%.
+          <b>Clear History</b> in Lookup, or deleting a preset you no longer use. How much room a
+          device gives is something the app has to measure, which it does once, a moment after it
+          first opens there and while you are not in the middle of a timed question; until then the
+          line shows a dash instead of a percentage. When the number passes 80% the line turns a
+          warning colour and the ⚙ button gains a dot at once, and that same breakdown opens by
+          itself, once — never over a question you are being timed on: it waits until you have
+          answered it, or until you open ⚙. After that it stays out of your way, but the colour and
+          the dot stay until the number is back under 80%.
         </p>
         <p>
           If this device ever runs out of room for the app&apos;s saved data, a popup tells you so.
