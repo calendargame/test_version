@@ -284,7 +284,9 @@ export const resolveActiveId = (
  */
 export function readStoredRegistry(): PresetRegistryValues | null {
   try {
-    const raw = window.localStorage.getItem(PRESET_REGISTRY_KEY)
+    // Through the storage door: a registry save the device refused is held there, and it is what
+    // this place would hold had it fit — a preset this page has just made is in it.
+    const raw = readItem(window.localStorage, PRESET_REGISTRY_KEY)
     if (raw === null) return null
     const envelope: unknown = JSON.parse(raw)
     if (!envelope || typeof envelope !== 'object') return null

@@ -1,5 +1,5 @@
 import type { PersistStorage, StorageValue } from 'zustand/middleware'
-import { usePresets } from './presets.js'
+import { usePresets, readStoredRegistry, FIRST_PRESET_ID } from './presets.js'
 import { useSessionAmnesic, amnesicModeOf } from './sessionAmnesic.js'
 import { readItem, writeItem } from './storageHealth.js'
 import { createProgressCodec, removeProgressCopy, mainKeyOf } from './progressStorage.js'
@@ -7,6 +7,8 @@ import { captureError } from '../observability/sentry.js'
 import { isRecord, sameJson } from './json.js'
 import type { AmnesicMode } from './amnesicMode.js'
 import type { ProgressValues } from './progress.js'
+import { betterBlitzBest, betterSuddenBest } from '../engine/blitzBest.js'
+import { betterAoxBest } from '../engine/aoxBest.js'
 
 // store/amnesic.ts — AMNESIC PRESETS: a preset whose stats (and, on Full, whose bests) are never
 // written down.
@@ -102,14 +104,39 @@ const KIND: Record<ProgressKey, 'stat' | 'best'> = {
   aoxBest: 'best',
 }
 const ALL_KEYS = Object.keys(KIND) as ProgressKey[]
+
+// ★ THE BETTER OF TWO RECORDS OF ONE BEST MAP, for the one place that can be holding two (writeKept,
+// below: this page's record and the one another tab has saved since). Each map's own ordering, which
+// is its MODE's — the comparison that decides a new best on its screen (engine/blitzBest,
+// engine/aoxBest), not a second one written here. `theirs` is what is on the device and keeps
+// whatever `mine` does not strictly beat; and it stands as it is when either of the two is not a
+// record of that map's shape — saved data is untrusted, and nothing is compared that cannot be read.
+const num = (v: unknown): v is number => typeof v === 'number'
+const time = (v: unknown): v is number | null => v === null || num(v)
+const comparing =
+  <T>(shaped: (rec: Record<string, unknown>) => boolean, better: (a: T, b: T) => T) =>
+  (theirs: unknown, mine: unknown): unknown =>
+    isRecord(theirs) && isRecord(mine) && shaped(theirs) && shaped(mine)
+      ? better(theirs as T, mine as T)
+      : theirs
+const scoreAndStreak = comparing((r) => num(r.score) && num(r.streak), betterBlitzBest)
+const BETTER: Record<Exclude<ProgressKey, 'stats'>, (theirs: unknown, mine: unknown) => unknown> = {
+  blitzBest: scoreAndStreak,
+  suddenAmBest: scoreAndStreak,
+  suddenBest: comparing((r) => num(r.score), betterSuddenBest),
+  aoxBest: comparing((r) => time(r.avg) && time(r.med), betterAoxBest),
+}
 export const AMNESIC_CLEARS: Record<Exclude<AmnesicMode, 'off'>, readonly ProgressKey[]> = {
   stats: ALL_KEYS.filter((key) => KIND[key] === 'stat'),
   full: ALL_KEYS,
 }
 // What stays in the permanent copy while a preset is on that value — every key the list above does
 // not name. Nothing under Full; the four Best maps under Stats Only.
-const keptKeys = (mode: Exclude<AmnesicMode, 'off'>): readonly ProgressKey[] =>
-  ALL_KEYS.filter((key) => !AMNESIC_CLEARS[mode].includes(key))
+const keptKeys = (mode: Exclude<AmnesicMode, 'off'>): readonly Exclude<ProgressKey, 'stats'>[] =>
+  ALL_KEYS.filter(
+    (key): key is Exclude<ProgressKey, 'stats'> =>
+      key !== 'stats' && !AMNESIC_CLEARS[mode].includes(key),
+  )
 
 // ── Reading the value ─────────────────────────────────────────────────────────────────────────
 
@@ -384,22 +411,32 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
   // on Off saves the WHOLE copy, from the Best maps it loaded, on every answer. For each record:
   //   • one this page has JUST changed (it differs from what the page held at its last save) is
   //     written — the newest save wins, as it does everywhere;
-  //   • one this page changed EARLIER is put back if the copy has gone back to what it held when
-  //     this page loaded — i.e. a save that never knew of the change undid it. (That is the Best a
-  //     Stats Only session sets and another tab's next answer used to erase for good.) If the copy
-  //     holds anything else there, somebody saved a record of their own after this page did, and
-  //     theirs stands;
+  //   • one this page set EARLIER, where the copy now holds a different record for the same set-up,
+  //     is the BETTER of the two (BETTER, above) — whoever wrote the other and whenever. So a save
+  //     that never knew of this page's Best and put the older record back does not cost it, and
+  //     neither does a worse record another tab earned afterwards; a better one of theirs stands;
+  //   • one this page set earlier that the copy NO LONGER HOLDS AT ALL is not put back, and this
+  //     page stops claiming it. A record that is gone was reset — in another tab, by a Full Reset
+  //     there, by the preset being deleted there — and bringing it back would undo something the
+  //     player did on purpose. ⚠ The cost, accepted: a save that never knew of a set-up's FIRST Best
+  //     (there was no record before it) also leaves no record, and cannot be told from a reset by
+  //     anything the copy holds — so that Best is kept only until this page is closed, unless it is
+  //     beaten again here;
+  //   • one this page TOOK AWAY earlier is taken away again if the copy has gone back to exactly
+  //     what it held when this page loaded — a save that never knew of the removal;
   //   • every other record is the copy's own, passed through.
-  // ⚠ THREE WAYS IT WRITES NOTHING:
+  // ⚠ FOUR WAYS IT WRITES NOTHING:
   //   • the store's kept maps did not start as this copy's (`handed`) — a new best must never replace
   //     records this page has not read;
   //   • the permanent copy cannot be read — it is left exactly as it is, as the load left it, and the
   //     bests of this session last only as long as the page (reported, not hidden);
   //   • the copy already says what the rules above come to. Most saves are a stat moving with the
-  //     copy untouched since this page last looked, and those cost one comparison of its text.
+  //     copy untouched since this page last looked, and those cost one comparison of its text;
+  //   • the preset is no longer in the registry on the device: another tab deleted it, and a write
+  //     — even of a Best set this minute — would bring its key back with nothing to own it.
   const writeKept = (
     presetId: number,
-    keys: readonly ProgressKey[],
+    keys: readonly Exclude<ProgressKey, 'stats'>[],
     state: Record<string, unknown>,
     version: number | undefined,
   ) => {
@@ -428,16 +465,26 @@ export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
       handed.maps[key] = state[key]
       const out = { ...theirs }
       for (const [id, value] of mine) {
-        const fresh = !sameJson(value, was[id]) // …in this very save
-        if (!fresh && !sameJson(theirs[id], base[id])) continue // somebody else's later record
-        if (sameJson(theirs[id], value)) continue
-        if (value === undefined) delete out[id]
-        else out[id] = value
+        let next = value
+        if (sameJson(value, was[id])) {
+          // Changed earlier, not in this very save.
+          if (theirs[id] === undefined) {
+            mine.delete(id) // gone from the copy: reset there, and no longer this page's to assert
+            continue
+          }
+          if (value !== undefined) next = BETTER[key](theirs[id], value)
+          else if (!sameJson(theirs[id], base[id])) continue // a record set since the removal
+        }
+        if (sameJson(theirs[id], next)) continue
+        if (next === undefined) delete out[id]
+        else out[id] = next
         changed = true
       }
       kept[key] = out
     }
     if (!changed) return
+    const listed = readStoredRegistry()?.presets.some((preset) => preset.id === presetId)
+    if (!(listed ?? presetId === FIRST_PRESET_ID)) return
     handed.text = JSON.stringify(
       parked ? { ...parked, state: { ...parked.state, ...kept } } : { state: kept, version },
     )

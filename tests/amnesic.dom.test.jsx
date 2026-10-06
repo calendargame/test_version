@@ -673,21 +673,32 @@ describe('Stats Only: the stats are the session’s, the Bests are the permanent
 // what is on the device.
 // ★ THE PERMANENT COPY HAS OTHER WRITERS. Another tab on Off (the live site beside the staging
 // one: two tabs of one origin) saves the WHOLE copy on every answer, from the Best maps it loaded.
-// A Best this page saved on Stats Only must survive that — it used to be erased for good, because
-// this page only wrote its Best maps when they changed in memory.
-describe('Stats Only: a Best survives another tab saving the permanent copy', () => {
+// What this page does about a record of its own that the copy no longer agrees with:
+//   • the copy holds a DIFFERENT record for that set-up → the better of the two is kept, by the
+//     mode's own ordering, whoever saved last;
+//   • the copy holds NO record there → it was reset (there, by a Full Reset there, by the preset
+//     being deleted there), and it is not brought back.
+describe('Stats Only: this page’s Bests and another tab’s saves of the permanent copy', () => {
   const KEY = 'cg-progress-v1'
   const REC = (score) => ({ score, streak: score, scoreRoundId: score, streakRoundId: score })
-  const onDevice = () => JSON.parse(localStorage.getItem(KEY)).state
+  const onDevice = (key = KEY) => JSON.parse(localStorage.getItem(key)).state
   const answer = (n) =>
     useProgress.getState().setModeStats('classic', { ...ZERO.stats.classic, played: n, good: n })
+  // What another tab's save looks like from here: the text is on the device, and the browser says so.
+  const otherTab = (key, text) => {
+    if (text === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, text)
+    window.dispatchEvent(
+      new StorageEvent('storage', { key, newValue: text, storageArea: localStorage }),
+    )
+  }
   // The other tab saves: the copy AS IT LOADED IT (`loaded`), with one more answer of its own and
   // whatever it did to the Bests.
   const otherTabSaves = (loaded, bests = {}) => {
     const copy = JSON.parse(loaded)
     copy.state.stats.classic.played += 1
     copy.state.blitzBest = { ...copy.state.blitzBest, ...bests }
-    localStorage.setItem(KEY, JSON.stringify(copy))
+    otherTab(KEY, JSON.stringify(copy))
     return copy.state.stats
   }
   let loaded
@@ -697,30 +708,129 @@ describe('Stats Only: a Best survives another tab saving the permanent copy', ()
     useProgress.getState().setBlitzBest({ old: REC(4) })
     loaded = parked() // …what both tabs loaded
     setAmnesic('stats')
-    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(9) })) // this page's new Best
-    expect(Object.keys(onDevice().blitzBest)).toEqual(['old', 'mine'])
+    // This page's Bests: one for a set-up that had none, and a better one where a record stood.
+    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(9), old: REC(8) }))
+    expect(onDevice().blitzBest).toEqual({ old: REC(8), mine: REC(9) })
   })
 
-  it('a save that never knew of it puts the copy back — and this page’s next answer restores the Best', () => {
+  it('a save that never knew of a better record puts the older one back — and this page’s next answer keeps the better', () => {
     const theirStats = otherTabSaves(loaded)
-    expect(Object.keys(onDevice().blitzBest)).toEqual(['old']) // erased…
+    expect(onDevice().blitzBest.old).toEqual(REC(4)) // put back…
     answer(1) // …until this page next saves anything at all
-    expect(onDevice().blitzBest).toEqual({ old: REC(4), mine: REC(9) })
+    expect(onDevice().blitzBest.old).toEqual(REC(8))
     expect(onDevice().stats).toEqual(theirStats) // the other tab's answer is untouched
   })
 
   it('the other tab’s own new Best is kept beside it', () => {
     otherTabSaves(loaded, { theirs: REC(6) })
     answer(1)
-    expect(onDevice().blitzBest).toEqual({ old: REC(4), theirs: REC(6), mine: REC(9) })
+    expect(onDevice().blitzBest).toMatchObject({ old: REC(8), theirs: REC(6) })
   })
 
-  it('a record the other tab saved LATER for the same set-up stands — until this page beats it again', () => {
-    otherTabSaves(loaded, { mine: REC(11) })
+  // "Theirs stands" used to be the rule whenever the copy held anything but what this page loaded:
+  // a worse record saved later replaced this page's better one for good at its next reload.
+  it('a WORSE record the other tab saved later does not replace this page’s — the better is kept', () => {
+    otherTabSaves(loaded, { old: REC(6) })
     answer(1)
-    expect(onDevice().blitzBest.mine).toEqual(REC(11)) // theirs was the later save
-    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(12) }))
-    expect(onDevice().blitzBest.mine).toEqual(REC(12)) // and now this page's is
+    expect(onDevice().blitzBest.old).toEqual(REC(8))
+  })
+
+  it('…field by field: each of the two records keeps what it is better at', () => {
+    otherTabSaves(loaded, { old: { score: 12, streak: 5, scoreRoundId: 77, streakRoundId: 77 } })
+    answer(1)
+    expect(onDevice().blitzBest.old).toEqual({
+      score: 12,
+      scoreRoundId: 77,
+      streak: 8,
+      streakRoundId: 8,
+    })
+  })
+
+  it('a BETTER record the other tab saved stands — until this page beats it again', () => {
+    otherTabSaves(loaded, { old: REC(11) })
+    answer(1)
+    expect(onDevice().blitzBest.old).toEqual(REC(11))
+    useProgress.getState().setBlitzBest((b) => ({ ...b, old: REC(12) }))
+    expect(onDevice().blitzBest.old).toEqual(REC(12)) // and now this page's is
+  })
+
+  it('each Best map by its own ordering: a MoX record is better when it is FASTER', () => {
+    const RUN = (t, id) => ({
+      avg: t,
+      avgMed: t,
+      avgRoundId: id,
+      med: t,
+      medAvg: t,
+      medRoundId: id,
+    })
+    useProgress.getState().setAoxBest({ k: RUN(3.5, 1) })
+    const mine = localStorage.getItem(KEY)
+    const slower = JSON.parse(mine)
+    slower.state.aoxBest.k = RUN(4.25, 2)
+    otherTab(KEY, JSON.stringify(slower))
+    answer(1)
+    expect(onDevice().aoxBest.k).toEqual(RUN(3.5, 1))
+    const quicker = JSON.parse(mine)
+    quicker.state.aoxBest.k = RUN(2.75, 3)
+    otherTab(KEY, JSON.stringify(quicker))
+    answer(2)
+    expect(onDevice().aoxBest.k).toEqual(RUN(2.75, 3))
+  })
+
+  it('a record the copy cannot be read as is left exactly as it is', () => {
+    otherTabSaves(loaded, { old: 'not a record' })
+    answer(1)
+    expect(onDevice().blitzBest.old).toBe('not a record')
+  })
+
+  // ── A record that is GONE was reset: it is not brought back ─────────────────────────────────
+  it('a Best another tab RESET is not brought back by this page’s next answer', () => {
+    const theirs = JSON.parse(localStorage.getItem(KEY)) // it loaded the copy with this page's Bests
+    delete theirs.state.blitzBest.mine
+    otherTab(KEY, JSON.stringify(theirs)) // …and the player reset that one there
+    answer(1)
+    expect(Object.keys(onDevice().blitzBest)).toEqual(['old'])
+    // …nor does it come back over a lower record earned there afterwards.
+    theirs.state.blitzBest.mine = REC(2)
+    otherTab(KEY, JSON.stringify(theirs))
+    answer(2)
+    expect(onDevice().blitzBest.mine).toEqual(REC(2))
+  })
+
+  it('…until this page sets a new one, which is saved like any other', () => {
+    const theirs = JSON.parse(localStorage.getItem(KEY))
+    delete theirs.state.blitzBest.mine
+    otherTab(KEY, JSON.stringify(theirs))
+    answer(1)
+    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(10) }))
+    expect(onDevice().blitzBest.mine).toEqual(REC(10))
+  })
+
+  it('a Full Reset in another tab is not undone: the main key is not created again', () => {
+    otherTab(KEY, null)
+    answer(1)
+    answer(2)
+    expect(localStorage.getItem(KEY)).toBeNull()
+  })
+
+  it('a preset another tab DELETED gets no key back — not even for a Best set this minute', () => {
+    setAmnesic('off')
+    const two = createPreset('two')
+    switchPreset(two.id)
+    const KEY2 = `${KEY}~p${two.id}`
+    setAmnesic('stats')
+    useProgress.getState().setBlitzBest({ mine: REC(9) })
+    expect(onDevice(KEY2).blitzBest).toEqual({ mine: REC(9) })
+    // The other tab deletes the preset: its keys go, and the registry no longer lists it.
+    const registry = JSON.parse(localStorage.getItem('cg-presets-v1'))
+    registry.state.presets = registry.state.presets.filter((preset) => preset.id !== two.id)
+    registry.state.activeId = 1
+    otherTab(KEY2, null)
+    otherTab('cg-presets-v1', JSON.stringify(registry))
+    answer(1)
+    expect(localStorage.getItem(KEY2)).toBeNull()
+    useProgress.getState().setBlitzBest((b) => ({ ...b, mine: REC(10), fresh: REC(3) }))
+    expect(localStorage.getItem(KEY2)).toBeNull()
   })
 
   it('a Best this page took back stays taken back', () => {

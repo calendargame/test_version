@@ -90,19 +90,35 @@ export function reconcileAoxBest(
   med: number,
   rid: number | null,
 ): AoxBest {
-  const avgCentis = roundCentis(avg)
-  const medCentis = roundCentis(med)
-  const curAvgCentis = cur.avg == null ? null : roundCentis(cur.avg)
-  const curMedCentis = cur.med == null ? null : roundCentis(cur.med)
-  const avgImp = curAvgCentis == null || avgCentis < curAvgCentis
-  const medImp = curMedCentis == null || medCentis < curMedCentis
+  const mean = roundCentis(avg) / 100
+  const median = roundCentis(med) / 100
+  return betterAoxBest(cur, {
+    avg: mean,
+    avgMed: median,
+    avgRoundId: rid,
+    med: median,
+    medAvg: mean,
+    medRoundId: rid,
+  })
+}
+// ★ WHICH OF TWO RECORDS IS THE BETTER — the one comparison, metric by metric, at display precision
+// (the two ★ notes above): `b` takes a metric from `a` only by being STRICTLY faster on it, and takes
+// that metric's companion stat and holder with it; a metric it merely ties — or does not have — stays
+// with `a`. A run completing is this comparison (above: the run's own mean and median, as a record,
+// against the one that stood), and so is anything else holding two records for one set-up that must
+// keep the better — store/amnesic, when two tabs have each saved one.
+const faster = (a: number | null, b: number | null): boolean =>
+  b != null && (a == null || roundCentis(b) < roundCentis(a))
+export function betterAoxBest(a: AoxBest, b: AoxBest): AoxBest {
+  const avgImp = faster(a.avg, b.avg)
+  const medImp = faster(a.med, b.med)
   return {
-    avg: avgImp ? avgCentis / 100 : cur.avg,
-    avgMed: avgImp ? medCentis / 100 : cur.avgMed,
-    avgRoundId: avgImp ? rid : cur.avgRoundId,
-    med: medImp ? medCentis / 100 : cur.med,
-    medAvg: medImp ? avgCentis / 100 : cur.medAvg,
-    medRoundId: medImp ? rid : cur.medRoundId,
+    avg: avgImp ? b.avg : a.avg,
+    avgMed: avgImp ? b.avgMed : a.avgMed,
+    avgRoundId: avgImp ? b.avgRoundId : a.avgRoundId,
+    med: medImp ? b.med : a.med,
+    medAvg: medImp ? b.medAvg : a.medAvg,
+    medRoundId: medImp ? b.medRoundId : a.medRoundId,
   }
 }
 

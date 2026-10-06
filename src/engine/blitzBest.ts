@@ -42,6 +42,25 @@ export interface SuddenBest {
   roundId: number | null
 }
 
+// ★ WHICH OF TWO RECORDS IS THE BETTER — the one comparison, field by field: `b` takes a field from
+// `a` only by STRICTLY beating it, and takes the holder with it; a field it merely ties stays with
+// `a`, the one that got there first. A round ending is this comparison (below: the round's result
+// against the record before it), and so is anything else that has two records for one set-up and
+// must keep the better — store/amnesic, when two tabs have each saved one.
+export function betterBlitzBest(a: BlitzBest, b: BlitzBest): BlitzBest {
+  const scoreWins = b.score > a.score
+  const streakWins = b.streak > a.streak
+  return {
+    score: scoreWins ? b.score : a.score,
+    scoreRoundId: (scoreWins ? b.scoreRoundId : a.scoreRoundId) ?? null,
+    streak: streakWins ? b.streak : a.streak,
+    streakRoundId: (streakWins ? b.streakRoundId : a.streakRoundId) ?? null,
+  }
+}
+// …and for the sudden-death record, which is one field.
+export const betterSuddenBest = (a: SuddenBest, b: SuddenBest): SuddenBest =>
+  b.score > a.score ? b : a
+
 // Per-round (Blitz) — and per-question + Allow Mistakes — Best record after this round reached `good`
 // (with engine best-streak `engBest`), tagged `roundId`, rebuilt from `pre` (the record before the
 // round). Strict improvement: a round that only TIES a field leaves it with the round that got there
@@ -52,27 +71,22 @@ export function reconcileBlitzBest(
   engBest: number,
   roundId: number | null,
 ): BlitzBest | undefined {
-  const preScore = pre?.score ?? 0
-  const preStreak = pre?.streak ?? 0
-  const scoreWins = good > preScore
-  const streakWins = engBest > preStreak
-  if (!pre && !scoreWins && !streakWins) return undefined
-  return {
-    score: scoreWins ? good : preScore,
-    scoreRoundId: scoreWins ? roundId : (pre?.scoreRoundId ?? null),
-    streak: streakWins ? engBest : preStreak,
-    streakRoundId: streakWins ? roundId : (pre?.streakRoundId ?? null),
-  }
+  if (!pre && good <= 0 && engBest <= 0) return undefined
+  return betterBlitzBest(pre ?? { score: 0, streak: 0, scoreRoundId: null, streakRoundId: null }, {
+    score: good,
+    streak: engBest,
+    scoreRoundId: roundId,
+    streakRoundId: roundId,
+  })
 }
-
 // Per-question sudden-death Best record — score only; the same rebuild.
 export function reconcileSuddenBest(
   pre: SuddenBest | undefined,
   good: number,
   roundId: number | null,
 ): SuddenBest | undefined {
-  if (good > (pre?.score ?? 0)) return { score: good, roundId }
-  return pre
+  const round = { score: good, roundId }
+  return pre ? betterSuddenBest(pre, round) : good > 0 ? round : undefined
 }
 
 // ── THE RECORD AS IT STANDS WITHOUT THIS ROUND — what every reconcile is rebuilt from ───────────────
