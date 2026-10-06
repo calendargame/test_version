@@ -65,7 +65,11 @@
 //     light its shadow — for the length of the glide that is bringing the section down to meet it,
 //     going out as the glide lands. That is a section being OPENED looking pinned, which is the one
 //     thing these headers must never do. While the glide is in flight the header casts nothing
-//     (dockShades' `arriving`); the bar's share follows the header's place as always.
+//     (dockShades' `arriving`). And the BAR's share, which the header's place puts at nothing the
+//     moment the stick has it on the line — out in ONE frame, on a page that was scrolled and
+//     showing it in full — is taken down over the glide instead (arrivingBarYield): from what the
+//     bar was keeping at the tap to what the header's place says, on the glide's own clock, so the
+//     bar's shadow is gone as the section lands under its header and not before.
 //
 //   RELEASING — a section is closed, or swapped for another, from its docked header. The moment it
 //     is no longer the open section nothing is docked, and by position alone the bar is owed its
@@ -124,6 +128,18 @@ export function dockShades(g: HeaderDockGeometry, rampPx: number, arriving = fal
     header: 0,
     barYield: Number.isFinite(offset) ? edgeShade(offset, DOCK_LINE_BAND_PX, rampPx) : 1,
   }
+}
+
+/**
+ * The share of its shadow the bar keeps while an opening section is still gliding to the line
+ * (ARRIVING, above), `progress` of the way through the glide (0 at the tap, 1 as it lands — the
+ * caller eases it on the glide's own curve). `from` is the share the bar was keeping at the tap,
+ * `place` the share the header's place allows it now. It falls from the one to the other and is
+ * never under `place`: a bar that was keeping LESS than the place allows simply follows the place.
+ */
+export function arrivingBarYield(from: number, place: number, progress: number): number {
+  const p = Math.min(1, Math.max(0, progress))
+  return place + Math.max(0, from - place) * (1 - p)
 }
 
 /**

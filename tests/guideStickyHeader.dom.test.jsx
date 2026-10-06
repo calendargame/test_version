@@ -409,7 +409,6 @@ describe('a section opened with its header above the line shows no shadow while 
     expect(header(container, 'stats').getAttribute('aria-expanded')).toBe('true')
     expect(frames.pending()).toBeGreaterThan(0) // a glide really is in flight
     expect(shade(container, 'stats')).toBe('0.000')
-    expect(barKeeps()).toBe(0) // docked: the bar's shadow is the header's to carry, and it carries none yet
     act(() => frames.at(0))
     for (const [t, depth] of [
       [0.25, 22],
@@ -425,6 +424,38 @@ describe('a section opened with its header above the line shows no shadow while 
     act(() => frames.at(FOLD_MS))
     expect(shade(container, 'stats')).toBe('0.000') // landed: nothing under it
     expect(frames.pending()).toBe(0)
+  })
+
+  // ★ THE BAR'S HALF. The stick has the header on the line in the frame of the tap, where by place
+  // alone the bar keeps nothing — so the bar's shadow, in full on a scrolled page, went out in ONE
+  // frame while the section took a third of a second to arrive. It rides the glide now.
+  it('the bar gives its shadow up over the glide, never in one frame', () => {
+    openAboveTheLine()
+    expect(barKeeps()).toBe(1) // the frame of the tap: exactly what was on screen before it
+    act(() => frames.at(0)) // the glide's first frame — its clock starts here
+    expect(barKeeps()).toBe(1)
+    let last = 1
+    let largestStep = 0
+    for (let i = 1; i <= 20; i++) {
+      act(() => frames.at((FOLD_MS * i) / 20))
+      const now = barKeeps()
+      expect(now).toBeLessThanOrEqual(last) // every frame gives a little more up, never any back
+      largestStep = Math.max(largestStep, last - now)
+      last = now
+    }
+    expect(last).toBe(0) // landed: docked, and the bar keeps none
+    expect(largestStep).toBeLessThan(0.25)
+    expect(frames.pending()).toBe(0)
+  })
+
+  it('…and a reader who takes the page over mid-glide ends it: the bar keeps what its place says', () => {
+    openAboveTheLine()
+    act(() => frames.at(0))
+    act(() => frames.at(FOLD_MS * 0.2))
+    expect(barKeeps()).toBeGreaterThan(0)
+    expect(barKeeps()).toBeLessThan(1)
+    act(() => window.dispatchEvent(new Event('wheel')))
+    expect(barKeeps()).toBe(0) // the header is docked — and wears the shadow itself now
   })
 
   it('once the glide has landed the header answers to its place again', () => {

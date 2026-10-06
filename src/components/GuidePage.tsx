@@ -27,6 +27,7 @@ import { observeScrollExtent, readShadeRampPx, writeShade } from './scrollRegion
 import {
   dockShades,
   releaseShades,
+  arrivingBarYield,
   NO_DOCK,
   type DockShades,
   type HeaderDockGeometry,
@@ -126,8 +127,9 @@ function headerPinDepth(id: string): number {
 // clamp). Any real user scroll input (touchstart/wheel) cancels the writer instantly —
 // the user always wins — and the returned cancel function serves mid-flight re-toggles,
 // leaving the guide for another mode, the app being backgrounded, and unmount (see
-// scrollWriterRef below). `onEnd` is told when the glide is over, however it ended — landed,
-// taken over by the reader, or cancelled — exactly once.
+// scrollWriterRef below). `onStep` is told how far along its curve the glide is (0…1) on every
+// frame it writes; `onEnd` is told when the glide is over, however it ended — landed, taken over by
+// the reader, or cancelled — exactly once.
 // ⚠ THE CANCEL LISTENERS STAY ON `window`, deliberately, now that the scrolled thing is
 // not the window. They are not scroll listeners — they are "the reader touched the page"
 // listeners, and a touch or a wheel anywhere on the screen means the same thing whether or
@@ -139,6 +141,7 @@ function startScrollWriter(
   from: number,
   to: number,
   durationMs: number,
+  onStep: (eased: number) => void,
   onEnd: () => void,
 ): () => void {
   let raf = 0
@@ -157,7 +160,9 @@ function startScrollWriter(
   const step = (now: number) => {
     if (start === null) start = now
     const p = durationMs <= 0 ? 1 : Math.min(1, (now - start) / durationMs)
-    el.scrollTop = from + (to - from) * accordionEase(p)
+    const eased = accordionEase(p)
+    el.scrollTop = from + (to - from) * eased
+    onStep(eased)
     if (p < 1) raf = requestAnimationFrame(step)
     else cancel()
   }
@@ -501,9 +506,10 @@ export default function GuidePage({
     },
     [paintBarShare],
   )
-  // The section an opening glide is still carrying to the line (lib/guideDock's "ARRIVING"), and
-  // the tracker's own evaluate, so the glide's end can have the header looked at again.
-  const arrivingRef = useRef<string | null>(null)
+  // The section an opening glide is still carrying to the line (lib/guideDock's "ARRIVING") —
+  // with the share of its shadow the bar was keeping at the tap, and how far along the glide is —
+  // and the tracker's own evaluate, so the glide's end can have the header looked at again.
+  const arrivingRef = useRef<{ id: string; from: number; progress: number } | null>(null)
   const trackerRef = useRef<(() => void) | null>(null)
   // ⚠ A LAYOUT EFFECT, and that is the whole of the guard's correctness since round 13. React runs
   // layout effects child-first and passive effects in a LATER task, so a passive version of this
@@ -592,10 +598,13 @@ export default function GuidePage({
       // stylesheet is served) leaves the bar's shadow alone — lib/guideDock's own rule.
       const lineY = scroller.getBoundingClientRect().top + readBarHeight(scrollerStyle)
       const geometry = headerDockGeometry(open, lineY)
-      const shades = geometry ? dockShades(geometry, rampPx, arrivingRef.current === open) : NO_DOCK
+      const arriving = arrivingRef.current?.id === open ? arrivingRef.current : null
+      const shades = geometry ? dockShades(geometry, rampPx, arriving !== null) : NO_DOCK
       openShadesRef.current = shades
       writeShade(header, shades.header)
-      share.tracked = shades.barYield
+      share.tracked = arriving
+        ? arrivingBarYield(arriving.from, shades.barYield, arriving.progress)
+        : shades.barYield
       paintBarShare()
     }
     trackerRef.current = evaluate
@@ -752,15 +761,35 @@ export default function GuidePage({
         openingH,
       })
       if (target === null) return
-      // While the glide carries an OPENING section to the line its header casts nothing (lib/
-      // guideDock's "ARRIVING"); when the glide is over — landed, or taken over by the reader — the
-      // header is looked at again as it stands.
-      if (opens) arrivingRef.current = id
-      scrollWriterRef.current = startScrollWriter(scroller, scrollY, target, scaledMs, () => {
-        if (arrivingRef.current !== id) return
-        arrivingRef.current = null
-        trackerRef.current?.()
-      })
+      // While the glide carries an OPENING section to the line its header casts nothing, and the
+      // bar gives its own shadow up over the glide rather than in the frame of the tap (lib/
+      // guideDock's "ARRIVING"): each frame the glide writes moves the bar's share on, from what it
+      // was keeping at the tap toward what the tracker last read off the header's place. When the
+      // glide is over — landed, or taken over by the reader — the header is looked at again as it
+      // stands.
+      if (opens) arrivingRef.current = { id, from: sharedBefore, progress: 0 }
+      scrollWriterRef.current = startScrollWriter(
+        scroller,
+        scrollY,
+        target,
+        scaledMs,
+        (eased) => {
+          const arriving = arrivingRef.current
+          if (arriving?.id !== id) return
+          arriving.progress = eased
+          barShareRef.current.tracked = arrivingBarYield(
+            arriving.from,
+            openShadesRef.current.barYield,
+            eased,
+          )
+          paintBarShare()
+        },
+        () => {
+          if (arrivingRef.current?.id !== id) return
+          arrivingRef.current = null
+          trackerRef.current?.()
+        },
+      )
     },
     [open, cancelScrollWriter, endRelease, paintBarShare, scrollerRef],
   )

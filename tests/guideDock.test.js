@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import {
   dockShades,
   releaseShades,
+  arrivingBarYield,
   NO_DOCK,
   DOCK_SETTLE_PX,
   DOCK_LINE_BAND_PX,
@@ -217,5 +218,37 @@ describe('RELEASING — a closed header hands its shadows back in step', () => {
   it('progress outside 0…1 is held at the ends', () => {
     expect(releaseShades(docked, -1)).toEqual(docked)
     expect(releaseShades(docked, 2)).toEqual(NO_DOCK)
+  })
+})
+
+// A section opened with its header above the line is on the line in the frame of the tap, where the
+// bar keeps nothing by place alone: the bar's share rides the glide down instead of dropping.
+describe('arrivingBarYield — the bar gives its shadow up over an opening glide', () => {
+  it('starts at what the bar was keeping and lands on what the header`s place allows', () => {
+    expect(arrivingBarYield(1, 0, 0)).toBe(1)
+    expect(arrivingBarYield(1, 0, 1)).toBe(0)
+    expect(arrivingBarYield(0.6, 0.2, 0)).toBeCloseTo(0.6, 12)
+    expect(arrivingBarYield(0.6, 0.2, 1)).toBeCloseTo(0.2, 12)
+    expect(arrivingBarYield(1, 0, 0.25)).toBeCloseTo(0.75, 12)
+  })
+
+  it('only ever falls, in step with the glide, and never below the place', () => {
+    let prev = arrivingBarYield(1, 0.1, 0)
+    for (let i = 1; i <= 100; i++) {
+      const now = arrivingBarYield(1, 0.1, i / 100)
+      expect(now).toBeLessThanOrEqual(prev)
+      expect(prev - now).toBeLessThanOrEqual(0.009 + 1e-12)
+      expect(now).toBeGreaterThanOrEqual(0.1)
+      prev = now
+    }
+  })
+
+  it('a bar that was keeping LESS than its place allows simply follows the place', () => {
+    for (const p of [0, 0.5, 1]) expect(arrivingBarYield(0.2, 0.9, p)).toBe(0.9)
+  })
+
+  it('a progress outside 0…1 is held to it', () => {
+    expect(arrivingBarYield(1, 0, -1)).toBe(1)
+    expect(arrivingBarYield(1, 0, 2)).toBe(0)
   })
 })
