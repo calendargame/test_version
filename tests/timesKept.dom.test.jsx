@@ -23,6 +23,7 @@ import { useProgress, makeProgressDefaults } from '../src/store/progress.js'
 import { seedSaved, rehydrate, storageKeyFor } from './helpers/persistence.js'
 import { createPreset, switchPreset } from '../src/store/presetControl.js'
 import { readDate, correctDayName, statValue } from './helpers/modeScreen.jsx'
+import { seedSealed } from './helpers/progressWorld.js'
 
 function mountApp() {
   const root = document.createElement('div')
@@ -171,5 +172,52 @@ describe('every solve time is kept — the popup and the numbers a player sees',
     switchPreset(p2.id)
     expect(useProgress.getState().stats.dedDay).toEqual({ ...stats, timesLost: 300 })
     expect(JSON.parse(localStorage.getItem(key)).version).toBe(5)
+  })
+
+  // ── A SEALED save (store/progressStorage): the older times live in chunk keys ──
+  // The player must not be able to tell: the same numbers on screen as the same times saved whole,
+  // no false popup — and an answer now writes a small main key, not the whole history.
+  it('a sealed save shows the very numbers the same times show saved whole', async () => {
+    const stats = { played: 5200, good: 5000, streak: 5, best: 50, times: [600, ...times(4999)] }
+    const whole = { ...makeProgressDefaults() }
+    whole.stats = { ...whole.stats, classic: stats }
+    const shown = () => ({
+      mean: statValue('Mean'),
+      median: statValue('Median'),
+      last: statValue('Last'),
+    })
+
+    classicSave(stats, 5)
+    await rehydrate(useProgress)
+    mountApp()
+    const plain = shown()
+    unmountApp()
+
+    localStorage.clear()
+    seedSealed({ put: (k, v) => localStorage.setItem(k, v) }, whole)
+    expect(
+      JSON.parse(localStorage.getItem('cg-progress-v1')).state.stats.classic.times,
+    ).toHaveLength(250)
+    await rehydrate(useProgress)
+    mountApp()
+    expect(shown()).toEqual(plain)
+    expect(useProgress.getState().stats.classic.times).toHaveLength(5000)
+    tapStat('Last')
+    tapStat('Last')
+    expect(enableReset()).toBeNull()
+
+    answerCorrect()
+    expect(useProgress.getState().stats.classic.times).toHaveLength(5001)
+    const main = localStorage.getItem('cg-progress-v1')
+    expect(main.length).toBeLessThan(6000) // the whole array was ~30,000 characters
+    const saved = JSON.parse(main).state.stats.classic
+    expect(saved.times).toHaveLength(251)
+    expect(saved.sealed.n).toBe(4750)
+    expect(saved.timesLost).toBe(4750)
+
+    // …and a reload brings back every one of them.
+    unmountApp()
+    await rehydrate(useProgress)
+    expect(useProgress.getState().stats.classic.times).toHaveLength(5001)
   })
 })

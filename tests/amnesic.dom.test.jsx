@@ -27,7 +27,7 @@
 // session one — at the same moment, and tests/helpers/persistence's observation-based resolver can
 // only ever answer for wherever the store is pointed right now. It composes them by CALLING the
 // real presetKey, so it pins nothing about spelling; that is tests/presets.dom's job.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, cleanup, act } from '@testing-library/react'
 import { usePresets, presetKey, PRESET_STORE_KEYS } from '../src/store/presets.js'
 import {
@@ -35,7 +35,9 @@ import {
   isAmnesic,
   activeDataId,
   discardSessionStats,
+  discardParkedStats,
 } from '../src/store/amnesic.js'
+import { seedSealed } from './helpers/progressWorld.js'
 import {
   createPreset,
   switchPreset,
@@ -684,4 +686,95 @@ describe('cold-open reseed of Amnesic (round 21)', () => {
 // next file in this worker. resetAppState does this for every case, and this is the statement of it.
 afterEach(() => {
   for (const preset of usePresets.getState().presets) discardSessionStats(preset.id)
+})
+
+// ── THE PERMANENT COPY'S SEALED SOLVE-TIME CHUNKS ARE OUT OF REACH TOO ────────────────────────
+//
+// A long history of solve times is kept in chunk keys beside the main one (store/progressStorage),
+// under the SAME names in either storage area. So the invariant has a second half: while a preset is
+// Amnesic, nothing reads, lists or deletes a chunk of its PERMANENT copy — the session works on the
+// session area and on nothing else. Asserted on the calls themselves (a spy on the storage area) and
+// on the bytes (every permanent key, chunks included, is unchanged).
+describe('an amnesic preset cannot reach its permanent solve-time chunks', () => {
+  const FAMILY = 'cg-times-v1'
+  const long = (n) => ({
+    played: n,
+    good: n,
+    streak: 3,
+    best: 40,
+    times: Array.from({ length: n }, (_, i) => 2 + (i % 977) / 100),
+  })
+  const seedPermanent = () => {
+    const state = { ...makeProgressDefaults() }
+    state.stats = { ...state.stats, classic: long(3000) }
+    seedSealed({ put: (k, v) => localStorage.setItem(k, v) }, state)
+    relaunch()
+  }
+  // The permanent stats, whole: the main key and every chunk key.
+  const permanentBytes = () =>
+    JSON.stringify(
+      Object.entries({ ...localStorage })
+        .filter(([k]) => k.startsWith('cg-progress-v1') || k.startsWith(FAMILY))
+        .sort(),
+    )
+  // Every call that touches a permanent chunk, and every listing of the permanent area's keys.
+  const watchPermanent = () => {
+    const seen = []
+    const isLocal = (area) => area === window.localStorage
+    for (const method of ['getItem', 'setItem', 'removeItem']) {
+      const real = Storage.prototype[method]
+      vi.spyOn(Storage.prototype, method).mockImplementation(function (key, ...rest) {
+        if (isLocal(this) && String(key).startsWith(FAMILY)) seen.push(`${method} ${key}`)
+        return real.call(this, key, ...rest)
+      })
+    }
+    const realKey = Storage.prototype.key
+    vi.spyOn(Storage.prototype, 'key').mockImplementation(function (i) {
+      if (isLocal(this)) seen.push(`key ${i}`)
+      return realKey.call(this, i)
+    })
+    return seen
+  }
+  beforeEach(() => resetAppState())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('the sealed save loads whole — every time, read through the real store', () => {
+    seedPermanent()
+    expect(useProgress.getState().stats.classic.times).toHaveLength(3000)
+    expect('timesLost' in useProgress.getState().stats.classic).toBe(false)
+    expect('sealed' in useProgress.getState().stats.classic).toBe(false)
+  })
+
+  it('★ while Amnesic is on: no read, no listing, no delete of a permanent chunk — and not a byte moves', () => {
+    seedPermanent()
+    const untouched = permanentBytes()
+    const seen = watchPermanent()
+
+    setAmnesic(true)
+    expect(useProgress.getState().stats.classic.times).toHaveLength(0) // the session starts at zero
+    useProgress.getState().setModeStats('classic', long(1500)) // a guest with a long session
+    useProgress.getState().setModeStats('classic', long(1501))
+    relaunch() // a reload: the session copy is read back
+    expect(useProgress.getState().stats.classic.times).toHaveLength(1501)
+    useProgress.getState().setModeStats('classic', makeProgressDefaults().stats.classic) // Reset Stats
+    useProgress.getState().resetProgress()
+    recordEverything(5)
+    relaunch()
+
+    expect(seen).toEqual([])
+    expect(permanentBytes()).toBe(untouched)
+
+    // Off again: the session is thrown away, the saved times come back, every one.
+    setAmnesic(false)
+    expect(useProgress.getState().stats.classic.times).toHaveLength(3000)
+    expect(JSON.stringify({ ...sessionStorage })).not.toContain(FAMILY)
+  })
+
+  it('Full Reset’s wipe of the parked stats takes their chunks with it — the one deliberate exception', () => {
+    seedPermanent()
+    setAmnesic(true)
+    discardParkedStats(1)
+    expect(Object.keys(localStorage).filter((k) => k.startsWith(FAMILY))).toEqual([])
+    expect(parked()).toBeNull()
+  })
 })
