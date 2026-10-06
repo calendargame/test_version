@@ -30,6 +30,12 @@
 //     that were killed to get there. What that means for whoever changes the number: raising it is
 //     now a REQUIRED step of a deploy rather than a remembered one, a skipped number costs nothing,
 //     and nobody should ever create or delete a `v*` tag by hand.
+//   • ⚠ package-lock.json CARRIES npm's OWN COPY OF THE NUMBER, in two places near its top, and
+//     since round 24 the same guard (and tests/versionLedger.test.js) refuses a version the two
+//     files disagree about — the copy had sat five versions behind. So raising the number is two
+//     files: after editing package.json run `npm install --package-lock-only` (it rewrites that
+//     copy and nothing else), or change the two lines by hand. Never `npm version`, which also
+//     creates a `v*` tag.
 //   • ★ CLAUDE ASSIGNS THE VERSION EACH DEPLOY, NOT THE OWNER. It is derived from what the deploy
 //     contains, which is a judgement about the code, so it is the builder's call and part of the
 //     deploy ritual — not a number the owner has to remember to hand over.

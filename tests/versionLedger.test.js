@@ -15,12 +15,15 @@
 // literals. No git process, no fixture repo, no temp directory. The wiring that feeds it lives in
 // scripts/checkVersionLedger.mjs and is the part that cannot be subtly wrong.
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   GIT_TAG_ARGS,
   parseVersion,
   compareVersions,
   checkVersionLedger,
   describeVersionLedgerFailure,
+  checkLockfileVersion,
+  describeLockfileMismatch,
 } from '../scripts/versionLedger.mjs'
 
 describe('parseVersion — strict, because a guess here is a duplicate later', () => {
@@ -259,5 +262,85 @@ describe('describeVersionLedgerFailure — the words a red deploy prints at 2am'
     const passing = checkVersionLedger({ version: '2.20.0', tags: ['v2.19.0'] })
     expect(passing.ok).toBe(true)
     expect(() => describeVersionLedgerFailure(passing)).toThrow(/PASSING/)
+  })
+})
+
+// ── The lockfile's copy of the version (round 24) ────────────────────────────────────────────────
+// package-lock.json keeps npm's own mirror of package.json's version in two places. A bump made by
+// editing package.json alone leaves it behind — it sat at 2.22.1 through five versions — so the two
+// are held together: here, against the real files (the local gate and CI's test step), and at the
+// deploy's first step (scripts/checkVersionLedger.mjs).
+describe('checkLockfileVersion — package-lock.json names the same version as package.json', () => {
+  const lockWith = (top, root) => ({ version: top, packages: { '': { version: root } } })
+
+  it('★ THE REPOSITORY, RIGHT NOW: both copies in package-lock.json equal package.json’s', () => {
+    const read = (name) => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'))
+    const r = checkLockfileVersion({
+      version: read('package.json').version,
+      lock: read('package-lock.json'),
+    })
+    // If this fails after a version bump: run `npm install --package-lock-only`, or change the two
+    // "version" lines at the top of package-lock.json. The failure text below says the same.
+    expect(r.ok, r.ok ? '' : describeLockfileMismatch(r)).toBe(true)
+  })
+
+  it('passes when both copies match', () => {
+    expect(checkLockfileVersion({ version: '2.28.0', lock: lockWith('2.28.0', '2.28.0') })).toEqual(
+      { ok: true, version: '2.28.0', found: ['2.28.0', '2.28.0'] },
+    )
+  })
+
+  it('REFUSES when either copy is behind — each one alone, and both', () => {
+    for (const lock of [
+      lockWith('2.22.1', '2.28.0'),
+      lockWith('2.28.0', '2.22.1'),
+      lockWith('2.22.1', '2.22.1'),
+    ])
+      expect(checkLockfileVersion({ version: '2.28.0', lock }).ok).toBe(false)
+  })
+
+  it('FAILS CLOSED on a lockfile with a copy missing, or one that is not a lockfile at all', () => {
+    for (const lock of [
+      { packages: { '': { version: '2.28.0' } } }, // no top-level copy
+      { version: '2.28.0', packages: { '': {} } }, // no root-package copy
+      { version: '2.28.0' },
+      {},
+      null,
+      undefined,
+      'package-lock',
+    ])
+      expect(checkLockfileVersion({ version: '2.28.0', lock }).ok, JSON.stringify(lock)).toBe(false)
+  })
+
+  it('compares the exact text — "v2.28.0" and " 2.28.0" are not 2.28.0', () => {
+    expect(
+      checkLockfileVersion({ version: '2.28.0', lock: lockWith('v2.28.0', '2.28.0') }).ok,
+    ).toBe(false)
+    expect(
+      checkLockfileVersion({ version: '2.28.0', lock: lockWith('2.28.0', ' 2.28.0') }).ok,
+    ).toBe(false)
+  })
+
+  it('the failure names both numbers, the file to open, and the one command — and warns off npm version', () => {
+    const text = describeLockfileMismatch(
+      checkLockfileVersion({ version: '2.28.0', lock: lockWith('2.22.1', '2.22.1') }),
+    )
+    expect(text).toContain('package.json says this app is version 2.28.0')
+    expect(text).toContain('package-lock.json says 2.22.1 and 2.22.1')
+    expect(text).toContain('npm install --package-lock-only')
+    expect(text).toContain('to "2.28.0"')
+    expect(text).toContain('Do NOT use  npm version')
+    // A missing copy reads as "nothing", not as "undefined".
+    expect(
+      describeLockfileMismatch(checkLockfileVersion({ version: '2.28.0', lock: {} })),
+    ).toContain('package-lock.json says nothing and nothing')
+  })
+
+  it('REFUSES to describe a PASSING result', () => {
+    expect(() =>
+      describeLockfileMismatch(
+        checkLockfileVersion({ version: '2.28.0', lock: lockWith('2.28.0', '2.28.0') }),
+      ),
+    ).toThrow(/PASSING/)
   })
 })

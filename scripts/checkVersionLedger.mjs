@@ -26,7 +26,13 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { GIT_TAG_ARGS, checkVersionLedger, describeVersionLedgerFailure } from './versionLedger.mjs'
+import {
+  GIT_TAG_ARGS,
+  checkLockfileVersion,
+  checkVersionLedger,
+  describeLockfileMismatch,
+  describeVersionLedgerFailure,
+} from './versionLedger.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -48,6 +54,29 @@ try {
 // A git that cannot answer is not an empty ledger — it is an unknown one, and the difference decides
 // whether a duplicate ships. So this rethrows rather than degrading to `[]`, which would land in the
 // pass-by-default hole the empty-ledger branch exists to close.
+// The lockfile's copy of the version must be the same one (versionLedger.mjs says why). Checked
+// here, before the ledger and before `npm ci`, so a bump that reached only package.json costs two
+// seconds. An unreadable lockfile is a failure, not a pass: it is in the repository and `npm ci`,
+// the very next step, cannot run without it.
+let lock
+try {
+  lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'))
+} catch (err) {
+  console.error(
+    `app-version: could not read package-lock.json — ${err.message}
+` +
+      `  It carries npm's copy of the app's version, which has to match package.json's, and the
+` +
+      `  dependency install that follows cannot run without it. Nothing has been built or published.`,
+  )
+  process.exit(1)
+}
+const lockfile = checkLockfileVersion({ version, lock })
+if (!lockfile.ok) {
+  console.error(describeLockfileMismatch(lockfile))
+  process.exit(1)
+}
+
 let tags
 try {
   tags = execFileSync('git', GIT_TAG_ARGS, { cwd: ROOT, encoding: 'utf8' }).split('\n')

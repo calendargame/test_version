@@ -240,3 +240,67 @@ export const describeVersionLedgerFailure = (r) => {
     tail(r.highest)
   )
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// THE LOCKFILE'S COPY OF THE VERSION (round 24). package.json's "version" is the one that counts —
+// the build injects it and the tags record it — but package-lock.json carries npm's own mirror of
+// it in TWO places (its top-level "version" and the root package's, `packages[""].version`), and a
+// bump made by editing package.json alone leaves that mirror behind. It sat at 2.22.1 for five
+// versions: harmless to the build (`npm ci` checks the dependencies against each other, not this
+// number), and a wrong answer to anyone or anything that read the app's version off the lockfile.
+//
+// WHY A CHECK, AND NOT "STOP CARRYING IT THERE". Deleting the two lines is the smaller diff and
+// does not last: npm writes them back from package.json on the very next `npm install`, so the
+// lockfile would silently grow a version again the first time a dependency changed — and from then
+// on it would go stale exactly as before. The mirror is npm's, so the durable answer is to hold it
+// to what it mirrors. Every npm command that touches it already agrees with this check; only a
+// hand edit of package.json can part them, and that is the edit this catches.
+//
+// WHERE IT RUNS. Twice, on purpose: in tests/versionLedger.test.js against the two real files, so
+// the local gate and CI's test step both stop a bump that reached only one of them; and from
+// scripts/checkVersionLedger.mjs as part of the deploy's first step, before `npm ci`, so it costs
+// two seconds there rather than a full gate. Pure like the rest of this module: it is handed the
+// two parsed files' data and reads nothing itself.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Does package-lock.json name the same app version as package.json, in both places it keeps one?
+ * A missing copy is a mismatch too — the file npm writes always has both, so one that is absent
+ * means the lockfile is not the one this check thinks it is reading.
+ *
+ * @param {{version: string, lock: unknown}} input package.json's version, and package-lock.json
+ *   parsed.
+ * @returns {{ok: boolean, version: string, found: unknown[]}} `found` is what the lockfile says, in
+ *   file order: [its top-level "version", `packages[""].version`].
+ */
+export const checkLockfileVersion = ({ version, lock }) => {
+  const found = [lock?.version, lock?.packages?.['']?.version]
+  return { ok: found.every((v) => v === version), version: String(version ?? ''), found }
+}
+
+/**
+ * The failure message for a lockfile that names another version — written, like the one above, for a
+ * reader who is not a programmer and is looking at a red deploy.
+ *
+ * @param {ReturnType<typeof checkLockfileVersion>} r
+ * @returns {string}
+ */
+export const describeLockfileMismatch = (r) => {
+  if (r.ok)
+    throw new Error(
+      `versionLedger: describeLockfileMismatch was called on a PASSING result (${r.version}). ` +
+        `There is nothing to describe; the caller should not have reached this.`,
+    )
+  const says = r.found.map((v) => (typeof v === 'string' ? v : 'nothing')).join(' and ')
+  return (
+    `${FAIL}: package.json says this app is version ${r.version}, but package-lock.json says ${says}.\n` +
+    `  package.json is the one that counts — it is the number the site shows. package-lock.json\n` +
+    `  keeps npm's own copy of it in two places near its top, and raising the version by editing\n` +
+    `  package.json alone leaves that copy behind.\n` +
+    `\n  Fix (either one), then commit BOTH files and push again:\n` +
+    `      • run   npm install --package-lock-only   — it rewrites the copy and nothing else; or\n` +
+    `      • open package-lock.json and change the two "version" lines near the top (the third\n` +
+    `        line of the file, and the one just under  "": {  ) to "${r.version}".\n` +
+    `\n  ⚠ Do NOT use  npm version  for this: it also creates a v-tag, and the deploy owns those.`
+  )
+}

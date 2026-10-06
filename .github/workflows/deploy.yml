@@ -84,6 +84,8 @@ jobs:
       # at the bottom of this job. All the reasoning lives in scripts/versionLedger.mjs; the short
       # version is that a deploy does not need a new commit (a re-publish of the same commit is a
       # genuinely different artifact), so nothing derived from the COMMIT can enforce this rule.
+      # It also refuses a version that package-lock.json's own copy disagrees with (a bump that
+      # reached package.json alone) — the same script, the same two seconds.
       #
       # FIRST, and deliberately even before `npm ci`: it needs nothing but node and git, so a version
       # that cannot ship costs about two seconds instead of a dependency install and a three-minute
