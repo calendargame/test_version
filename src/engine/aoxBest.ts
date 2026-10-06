@@ -127,3 +127,32 @@ export function reconcileAoxStanding(
   if (good < n || avg == null || med == null) return preRun
   return reconcileAoxBest(preRun ?? emptyAoxBest(), avg, med, rid)
 }
+
+// ── THE RECORD AS IT STANDS WITHOUT THIS RUN — what every reconcile is rebuilt from ─────────────────
+// engine/blitzBest's blitzBestWithoutRound argues it in full, and it is the same rule here: the
+// floor is not the snapshot taken at Begin (`preRun`) but the record AS IT STANDS (`cur`, read from
+// the store at the moment of the write) with this run's own metrics taken back out. A metric this
+// run holds — it carries this run's id, and ids never repeat — goes back to what it was before the
+// run, companion stat and holder with it; a metric anyone else holds is left exactly as it is. So a
+// better Best saved by another tab, or by another run under the same records while this one was
+// parked, is never rebuilt over by a run restored after it; and with one writer the result is
+// exactly `preRun`. `undefined` when nothing is left.
+export function aoxBestWithoutRun(
+  preRun: AoxBest | undefined,
+  cur: AoxBest | undefined,
+  runId: number | null,
+): AoxBest | undefined {
+  if (!cur) return undefined
+  const avgMine = runId !== null && cur.avgRoundId === runId
+  const medMine = runId !== null && cur.medRoundId === runId
+  const from = preRun ?? emptyAoxBest()
+  const rec: AoxBest = {
+    avg: avgMine ? from.avg : cur.avg,
+    avgMed: avgMine ? from.avgMed : cur.avgMed,
+    avgRoundId: avgMine ? from.avgRoundId : cur.avgRoundId,
+    med: medMine ? from.med : cur.med,
+    medAvg: medMine ? from.medAvg : cur.medAvg,
+    medRoundId: medMine ? from.medRoundId : cur.medRoundId,
+  }
+  return rec.avg === null && rec.med === null ? undefined : rec
+}

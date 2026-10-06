@@ -702,3 +702,81 @@ describe('a rotate pause in a toggle-ended round survives the park', () => {
     expect(readout()).toBe('56s')
   })
 })
+
+// ── A restored round does not write over a better Best somebody else saved (round 24) ─────────────
+// A round's Best is rebuilt on every reconcile from "the record before the round". That was a
+// snapshot taken at Begin and parked with the round — right while the round is the record's only
+// writer, and wrong the moment it is not: the same preset is played in another tab while this round
+// sits ended, that tab saves a better Best, and this tab reloads. The saved record it loads is the
+// other tab's, and the restored round — whose Best effect runs at mount — used to write its own
+// older result straight over it.
+// The reload is modelled the way a reload is: the screen goes away with its round parked, the store
+// comes back holding what is on disk — here, the other tab's record — and the screen mounts again.
+describe('a restored ended round keeps a better Best that another tab saved', () => {
+  beforeEach(() => resetAppState())
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+  const reload = (loadTheirRecord) => {
+    cleanup()
+    document.getElementById('root')?.remove()
+    act(loadTheirRecord)
+    mountApp()
+  }
+  const THEIR_ROUND = 987654321
+
+  it('Blitz: the mount keeps it, an Override that resumes the round keeps it, and ending again keeps it', () => {
+    mountApp()
+    pinReadable()
+    switchToBlitz()
+    finishBlitzRound(2) // 2/3, ended by a Reveal: Best 2, held by this round
+    const key = Object.keys(useProgress.getState().blitzBest)[0]
+    const best = () => useProgress.getState().blitzBest[key]
+    expect(best().score).toBe(2)
+    const theirs = { score: 9, scoreRoundId: THEIR_ROUND, streak: 9, streakRoundId: THEIR_ROUND }
+    reload(() => useProgress.getState().setBlitzBest((map) => ({ ...map, [key]: theirs })))
+    expect(ctrl('Reset')).toBeInTheDocument() // the ended round is back on screen…
+    expect(statValue('Score')).toBe('2/3')
+    expect(best()).toEqual(theirs) // …and it did not write its 2 over their 9
+    tap(ctrl('Override')) // credits the revealed date and puts the round back in play
+    expect(best()).toEqual(theirs) // the revert takes back this round's part: none of it is here
+    tap(ctrl('Reveal')) // the round ends again, on 3/4
+    expect(statValue('Score')).toBe('3/4')
+    expect(best()).toEqual(theirs)
+  })
+
+  it('MoX: a slower restored run keeps their Best Mean and Best Median', () => {
+    const setN = (n) => act(() => useModePrefs.getState().setAoxN(String(n)))
+    mountApp()
+    pinReadable()
+    switchToMox()
+    setN(2)
+    tap(ctrl('Begin'))
+    tap(screen.getByRole('button', { name: correctName(readDate()) }))
+    tap(screen.getByRole('button', { name: correctName(readDate()) })) // done: a Best is recorded
+    const key = Object.keys(useProgress.getState().aoxBest)[0]
+    const best = () => useProgress.getState().aoxBest[key]
+    expect(best().avg).not.toBeNull()
+    // Their run was faster than anything a click can be: nothing this run does should displace it.
+    const theirs = {
+      avg: 0,
+      avgMed: 0,
+      avgRoundId: THEIR_ROUND,
+      med: 0,
+      medAvg: 0,
+      medRoundId: THEIR_ROUND,
+    }
+    reload(() => useProgress.getState().setAoxBest((map) => ({ ...map, [key]: theirs })))
+    expect(ctrl('Reset')).toBeInTheDocument()
+    expect(statValue('Score')).toBe('2/2')
+    expect(best()).toEqual(theirs)
+    // (By the O key: two pointer presses back to back are one press to the button's own guard.)
+    press('o') // Override: retract the completing solve…
+    expect(statValue('Score')).toBe('1/2')
+    expect(best()).toEqual(theirs)
+    press('o') // …and Undo: the run completes again
+    expect(statValue('Score')).toBe('2/2')
+    expect(best()).toEqual(theirs)
+  })
+})

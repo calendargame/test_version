@@ -26,7 +26,12 @@ import { NewBestStar } from '../components/primitives.jsx'
 import { MethodBreakdownSection } from '../components/MethodBreakdown.jsx'
 import { calcAvg, calcLast, calcMed } from '../engine/stats.js'
 import { buildRunBreakdown } from '../engine/runBreakdown.js'
-import { reconcileBlitzBest, reconcileSuddenBest } from '../engine/blitzBest.js'
+import {
+  reconcileBlitzBest,
+  reconcileSuddenBest,
+  blitzBestWithoutRound,
+  suddenBestWithoutRound,
+} from '../engine/blitzBest.js'
 import { fileBest } from '../engine/bestMap.js'
 import { newRoundId, isNewBest } from '../engine/roundId.js'
 import { useModePrefs } from '../store/modePrefs.js'
@@ -55,6 +60,45 @@ interface PrevRoundBest {
   blitz?: BlitzBest
   sudden?: SuddenBest
   suddenAm?: BlitzBest
+}
+
+// ★ THE PRE-ROUND RECORDS, BROUGHT UP TO DATE — what every write to a Best starts from. The
+// snapshot taken at Begin is right only while this round is the record's one writer, and it is not
+// always: the same preset can be played in another tab while this round sits ended, and a reload
+// then loads that tab's record under a round still holding its old snapshot. So the active
+// sub-mode's pre-round record is re-read as THE SAVED RECORD LESS THIS ROUND (engine/blitzBest's
+// …WithoutRound argues the rule): a field this round holds is what it was before the round, and
+// every other field is whoever holds it now. With one writer that is the snapshot, unchanged.
+// ★ AND THE CALLER REPLACES ITS SNAPSHOT WITH THE RESULT, so what was learned is kept: if this round
+// then takes a field from that other round and an Undo gives it back, it goes back to THAT round's
+// record — the one saved record cannot hold both, so the snapshot is the only place the other one
+// survives. (BlitzMode's park effect is declared after its Best effect and re-parks on every change
+// the Best effect reacts to, so the parked snapshot is always the current one.)
+function roundFloor(
+  snap: PrevRoundBest,
+  saved: {
+    blitzBest: Record<string, BlitzBest>
+    suddenAmBest: Record<string, BlitzBest>
+    suddenBest: Record<string, SuddenBest>
+  },
+  perQ: boolean,
+  allowMistakes: boolean,
+  roundId: number | null,
+): PrevRoundBest {
+  if (!perQ)
+    return {
+      ...snap,
+      blitz: blitzBestWithoutRound(snap.blitz, saved.blitzBest[snap.blitzBk], roundId),
+    }
+  if (allowMistakes)
+    return {
+      ...snap,
+      suddenAm: blitzBestWithoutRound(snap.suddenAm, saved.suddenAmBest[snap.suddenBk], roundId),
+    }
+  return {
+    ...snap,
+    sudden: suddenBestWithoutRound(snap.sudden, saved.suddenBest[snap.suddenBk], roundId),
+  }
 }
 
 // Round 21 — the shape BlitzMode parks in store/sessionRound for an ENDED round. It round-trips
@@ -566,10 +610,17 @@ function BlitzMode({
   // a 'toggle' end passes the stamp CHARGED for the gap, in both sub-modes, because its live
   // card never left the screen and no fresh date was drawn.
   const resumeRound = (remain: number) => {
-    const snap = prevRoundBestRef.current
     // Only a round that COUNTS (recordedRef) ever saved anything to take back: a practice round
-    // writes no Best, in either direction.
+    // writes no Best, in either direction. What is taken back is THIS round's part of the record,
+    // and nothing anyone else has put there since (roundFloor).
     if (recordedRef.current) {
+      const snap = (prevRoundBestRef.current = roundFloor(
+        prevRoundBestRef.current,
+        useProgress.getState(),
+        perQ,
+        allowMistakes,
+        roundId,
+      ))
       if (!perQ) setBlitzBest((prev) => fileBest(prev, snap.blitzBk, snap.blitz))
       else if (allowMistakes)
         setSuddenAmBest((prev) => fileBest(prev, snap.suddenBk, snap.suddenAm))
@@ -749,7 +800,11 @@ function BlitzMode({
   // its stats. Each run REBUILDS the round's record from the pre-round one (engine/blitzBest): a
   // field this round beats is tagged with this round; every other field is the pre-round value with
   // its own holder — so an Override that raises a Best and its Undo that lowers it again land exactly
-  // where the record stood, ★ included (the ★ is read off the ids; nothing else to restore). Three-way
+  // where the record stood, ★ included (the ★ is read off the ids; nothing else to restore).
+  // ★ "THE PRE-ROUND RECORD" IS THE RECORD AS IT STANDS IN THE STORE, LESS THIS ROUND (roundFloor) —
+  // never the snapshot taken at Begin alone. A round restored after a reload used to rebuild from
+  // the snapshot it was parked with, and so wrote its own result over a better Best another tab had
+  // saved in between; read through the store, somebody else's record stands. Three-way
   // by sub-mode (safe on live prefs — the toggles are idle-locked): per-round → blitzBest; per-Q +
   // Allow Mistakes → suddenAmBest, the SAME BlitzBest shape + reconcile; per-Q sudden death →
   // suddenBest (score only).
@@ -765,7 +820,13 @@ function BlitzMode({
     if (!timerDone) return
     if (recordedRef.current === null) recordedRef.current = saveStats
     if (!recordedRef.current) return
-    const pre = prevRoundBestRef.current
+    const pre = (prevRoundBestRef.current = roundFloor(
+      prevRoundBestRef.current,
+      useProgress.getState(),
+      perQ,
+      allowMistakes,
+      roundId,
+    ))
     if (!perQ)
       setBlitzBest((prev) =>
         fileBest(prev, pre.blitzBk, reconcileBlitzBest(pre.blitz, S.good, S.best, roundId)),

@@ -74,3 +74,55 @@ export function reconcileSuddenBest(
   if (good > (pre?.score ?? 0)) return { score: good, roundId }
   return pre
 }
+
+// ── THE RECORD AS IT STANDS WITHOUT THIS ROUND — what every reconcile is rebuilt from ───────────────
+// "Rebuild from the pre-round record" (above) rests on one claim: only THIS round can have moved
+// the record since `pre` was taken. That is true of one screen in one tab, and it is false the
+// moment the record has another writer — and it has two:
+//   • ANOTHER TAB. A round ends here and is parked; the same preset is played in a second tab, which
+//     saves a better Best; this tab is then reloaded. The saved record it loads is the other tab's —
+//     and the restored round, rebuilding from the floor it parked with, wrote its own older result
+//     straight over it.
+//   • ANOTHER ROUND UNDER THE SAME RECORDS, while this one was parked (the Off and Stats Only values
+//     of one preset share their Bests).
+// So the floor is not the snapshot: it is the record AS IT STANDS (`cur`, read from the store at the
+// moment of the write) with this round's own contribution taken back out. Field by field — a field
+// this round holds (it carries this round's id, and ids never repeat: engine/roundId) goes back to
+// what it was before the round (`pre`); every other field is whoever holds it now, which is the
+// pre-round holder when nobody else has written, and the newcomer when somebody has.
+// ★ WITH ONE WRITER THIS IS EXACTLY `pre` — the fields the round does not hold are the pre-round
+// ones, untouched — so nothing changes for a round played and overridden in one tab; the fuzz in
+// tests/engine/blitzBest holds that equality over random rounds. `undefined` when nothing is left
+// (no record before the round, and nothing in the record that is not this round's).
+// ⚠ What it cannot see is a write this tab's store never loaded: two tabs both open and both
+// playing, neither reloaded, still save whole maps over each other (the store keeps no cross-tab
+// merge). This closes the restore door; that one is the store's.
+const mine = (holder: number | null, roundId: number | null): boolean =>
+  roundId !== null && holder === roundId
+
+export function blitzBestWithoutRound(
+  pre: BlitzBest | undefined,
+  cur: BlitzBest | undefined,
+  roundId: number | null,
+): BlitzBest | undefined {
+  if (!cur) return undefined
+  const scoreMine = mine(cur.scoreRoundId, roundId)
+  const streakMine = mine(cur.streakRoundId, roundId)
+  const rec: BlitzBest = {
+    score: scoreMine ? (pre?.score ?? 0) : cur.score,
+    scoreRoundId: scoreMine ? (pre?.scoreRoundId ?? null) : cur.scoreRoundId,
+    streak: streakMine ? (pre?.streak ?? 0) : cur.streak,
+    streakRoundId: streakMine ? (pre?.streakRoundId ?? null) : cur.streakRoundId,
+  }
+  return rec.score === 0 && rec.streak === 0 ? undefined : rec
+}
+
+// The same for the sudden-death record, which is one field.
+export function suddenBestWithoutRound(
+  pre: SuddenBest | undefined,
+  cur: SuddenBest | undefined,
+  roundId: number | null,
+): SuddenBest | undefined {
+  if (!cur) return undefined
+  return mine(cur.roundId, roundId) ? pre : cur
+}

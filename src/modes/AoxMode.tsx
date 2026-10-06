@@ -41,7 +41,7 @@ import { NewBestStar } from '../components/primitives.jsx'
 import { MethodBreakdownSection } from '../components/MethodBreakdown.jsx'
 import { calcAvg, calcLast, calcMed } from '../engine/stats.js'
 import { buildRunBreakdown } from '../engine/runBreakdown.js'
-import { reconcileAoxStanding, emptyAoxBest } from '../engine/aoxBest.js'
+import { reconcileAoxStanding, aoxBestWithoutRun, emptyAoxBest } from '../engine/aoxBest.js'
 import { fileBest } from '../engine/bestMap.js'
 import { newRoundId, isNewBest } from '../engine/roundId.js'
 import { useModePrefs } from '../store/modePrefs.js'
@@ -338,7 +338,23 @@ function AoxMode({
       recordedRef.current = saveStats
     }
     if (!recordedRef.current) return // a practice run writes no Best
-    const next = reconcileAoxStanding(preRunBestRef.current, S.good, runN, S.times, runId)
+    // ★ THE FLOOR IS THE RECORD AS IT STANDS IN THE STORE, LESS THIS RUN (engine/aoxBest's
+    // aoxBestWithoutRun) — never the snapshot taken at Begin alone. That snapshot is right only
+    // while this run is the record's one writer, and the same preset can be played in another tab
+    // while this run sits ended: a run restored after a reload used to rebuild from the floor it was
+    // parked with, and so wrote its own result over a better Best that tab had saved in between.
+    // With one writer the floor is the snapshot, unchanged.
+    // ★ AND THE SNAPSHOT IS REPLACED BY IT, so what was learned is kept: if this run then takes a
+    // metric from that other run and an Undo gives it back, it goes back to THAT run's record — the
+    // one saved record cannot hold both. (The park effect below re-parks on every change this effect
+    // reacts to, so the parked snapshot is always the current one.)
+    const floor = aoxBestWithoutRun(
+      preRunBestRef.current,
+      useProgress.getState().aoxBest[run.bestKey],
+      runId,
+    )
+    preRunBestRef.current = floor
+    const next = reconcileAoxStanding(floor, S.good, runN, S.times, runId)
     // No ★ bookkeeping here: the ★ is read off the record's run ids, so a write that improves a metric
     // lights it and a write that restores the floor puts it out, with nothing to keep in step.
     setBests((p) => fileBest(p, run.bestKey, next))
