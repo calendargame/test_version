@@ -39,7 +39,13 @@ import { useProgress, makeProgressDefaults } from '../src/store/progress.js'
 import { useModePrefs } from '../src/store/modePrefs.js'
 import { useSettings } from '../src/store/settings.js'
 import { useLookupHistory } from '../src/store/lookupHistory.js'
-import { createPreset, switchPreset, deletePreset } from '../src/store/presetControl.js'
+import {
+  createPreset,
+  switchPreset,
+  deletePreset,
+  setPresetAmnesic,
+} from '../src/store/presetControl.js'
+import { resetStatsFreesRoom } from '../src/store/amnesic.js'
 import { useSolveClock } from '../src/lib/solveClock.js'
 import { GEAR_DOT_KEY, markUpdateDot, readUpdateDot } from '../src/changelog.js'
 import { seedSealed, chunkId } from './helpers/progressWorld.js'
@@ -293,6 +299,54 @@ describe('the count is kept by the storage door, and is right the moment a chang
     expect(storageUsed()).toBe(everything())
   })
 })
+
+// What the popup and the storage-full notice may truthfully recommend (store/amnesic's
+// resetStatsFreesRoom, and the two remedies that hold under every value).
+describe.each(['off', 'stats', 'full'])(
+  'what makes room while the preset is on Amnesic: %s',
+  (mode) => {
+    const manyLookups = Array.from({ length: 900 }, (_, i) => ({
+      id: `e${i}`,
+      y: 1000 + i,
+      m: 3,
+      d: 4,
+    }))
+    beforeEach(() => {
+      freshPage(100_000)
+      useProgress.getState().setModeStats('classic', long(6500)) // saved, on Off
+      useLookupHistory.getState().setHistory(manyLookups)
+      if (mode !== 'off') setPresetAmnesic(1, mode)
+      watch()
+    })
+
+    it(`Reset Stats ${mode === 'off' ? 'frees the mode’s solve times' : 'clears the session’s copy and frees nothing'}`, () => {
+      expect(resetStatsFreesRoom(mode)).toBe(mode === 'off')
+      const saved = localStorage.getItem('cg-progress-v1')
+      const before = storageUsed()
+      useProgress.getState().setModeStats('classic', long(3)) // play, on whichever copy is live
+      useProgress.getState().setModeStats('classic', long(0)) // Reset Stats
+      if (mode === 'off') expect(before - storageUsed()).toBeGreaterThan(40_000)
+      else {
+        expect(storageUsed()).toBe(before)
+        expect(localStorage.getItem('cg-progress-v1')).toBe(saved)
+      }
+    })
+
+    it('Clear History frees the Lookup history', () => {
+      const before = storageUsed()
+      useLookupHistory.getState().setHistory([])
+      expect(before - storageUsed()).toBeGreaterThan(30_000)
+    })
+
+    it('deleting a preset frees everything it holds — the one you are on included', () => {
+      createPreset('spare')
+      const before = storageUsed()
+      deletePreset(1)
+      expect(before - storageUsed()).toBeGreaterThan(40_000)
+      expect(localStorage.getItem('cg-progress-v1')).toBeNull()
+    })
+  },
+)
 
 // ── The limit ─────────────────────────────────────────────────────────────────────────────────
 

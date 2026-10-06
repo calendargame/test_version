@@ -130,6 +130,17 @@ export const useActiveAmnesicMode = (): AmnesicMode => {
 export const keepsLookups = (mode: AmnesicMode): boolean => mode !== 'full'
 
 /**
+ * Does RESET STATS, on a mode's own screen, give room back ON THE DEVICE while its preset is on this
+ * value? Only under Off. Under Stats Only and Full the stats on screen are the session's copy, so
+ * that is what the button clears — the saved solve times parked behind it are not touched, and they
+ * are what is taking the room. (What the storage popup and the storage-full notice have to know
+ * before they recommend it; store/storageUsage's tests pin it beside the two remedies that work
+ * under every value — Clear History, which empties the saved Lookup list whatever the value, and
+ * deleting a preset, which removes everything it holds.)
+ */
+export const resetStatsFreesRoom = (mode: AmnesicMode): boolean => mode === 'off'
+
+/**
  * ★★ THE IDENTITY OF THE DATA THE APP IS READING — which preset, and which copy of that preset's
  * STATS the screens are holding. src/main.tsx remounts the five always-mounted mode screens whenever
  * THIS changes, and that is the whole of the remount rule.
