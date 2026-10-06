@@ -169,21 +169,30 @@ export function checkGameInvariants(state: GameState, useJulian: boolean): strin
   let misplaced = false
   const rec: string[] = []
   let parkedLive: EntryMeta | undefined
+  let calendarsPassed = true
   forEachCard(state, (e, place, idx) => {
     // The walk runs forwardStack from its end, so the last isLive it meets is the lowest-indexed.
     if (place === 'forwardStack' && e.isLive) parkedLive = e
     // The calendar tripwires read nothing but the card itself, and a history entry is never changed
-    // in place — so one that has passed them is not asked again (calendarChecked, below). The card on
-    // screen is rebuilt from the state's own fields on every walk, and is always asked. (The question
-    // a card asks: the card on screen asks `state.date`; a history entry IS its question.)
+    // in place — so one that passed them where it stands is not asked again (passedStack /
+    // passedForward, below). The card on screen is rebuilt from the state's own fields on every walk,
+    // and is always asked. (The question a card asks: the card on screen asks `state.date`; a history
+    // entry IS its question.)
     if (place === 'on-screen card') checkCalendar(rec, e, state.date, place, idx)
-    else if (!calendarChecked.has(e) && checkCalendar(rec, e, e as StackEntry, place, idx))
-      calendarChecked.add(e)
+    else if (
+      (place === 'stack' ? passedStack : passedForward)[idx] !== e &&
+      !checkCalendar(rec, e, e as StackEntry, place, idx)
+    )
+      calendarsPassed = false
     const t = visitCard(rec, e, place, idx)
     if (t == null) return
     if (pool && base != null && pool[base + named] !== t) misplaced = true
     named++
   })
+  if (calendarsPassed) {
+    passedStack = state.stack
+    passedForward = state.forwardStack
+  }
   // ── The card ledger ──
   // played == historyBase + (cards behind the viewed one) + (the live card, if it was counted).
   // The middle term is `stack.length + backDepth`, not just the stack: browsing back POPS entries
@@ -256,11 +265,25 @@ const isMarked = (btns: Btns | undefined): boolean => {
 // card of a thousand-card history after every state change tripled the cost of the whole check (and
 // took the fuzz survey's deep-history profile past its limit). But these three read only the card —
 // its question, its grid, its record — and the reducer never changes a history entry in place: a
-// card that is toggled, browsed to or restored is a NEW object. So an entry that has passed is
-// remembered here by identity and not asked again; a new or replaced one is asked the first time
-// the walk meets it; and a parked blob, whose entries have all just come out of JSON, is checked in
-// full at the restore door. Returns whether the card passed.
-const calendarChecked = new WeakSet<object>()
+// card that is toggled, browsed to or restored is a NEW object. So an entry that has passed is not
+// asked again while it stays where it is; a new or replaced one is asked the first time the walk
+// meets it; and a parked blob, whose entries have all just come out of JSON, is checked in full at
+// the restore door. checkCalendar returns whether the card passed.
+// WHAT IS REMEMBERED: the two history arrays of the last state whose every card passed. An entry is
+// skipped when the SAME OBJECT sat at the SAME INDEX of the same array then — one pointer comparison
+// per card. That is the whole memory, and it is enough: history only ever changes at an array's end
+// (a card played, browsed past, browsed back to) or by one entry being replaced where it stands (a
+// toggle), so everything else in the array is still where it was. A walk that finds a fault leaves
+// the memory alone, so the fault is reported again on every walk until it is gone. Whenever the
+// arrays are not the last ones seen — another mode's engine, the oldest cards forgotten (every
+// index shifts), a restore — the cards are simply asked again; it can only ever ask MORE.
+// ⚠ NOT A WeakSet OF CHECKED CARDS, which is what this was first. Looking a card up in one was
+// cheap; ADDING to it was not — play makes a new entry object every time a card moves, and each one
+// went into a weak collection the garbage collector then has to trace. In the app that is nothing.
+// In the fuzz survey, which makes about half a million entries per profile, it was a third of
+// everything the calendar tripwires added to the deep-history run.
+let passedStack: readonly EntryMeta[] = []
+let passedForward: readonly EntryMeta[] = []
 function checkCalendar(
   rec: string[],
   e: EntryMeta,

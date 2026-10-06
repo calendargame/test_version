@@ -326,6 +326,58 @@ describe('the tripwires (engine/invariants)', () => {
       'stack[0]: its grid marks an answer that is not the answer in its calendar',
     )
   })
+  // ★ WHAT THE WALK REMEMBERS MUST NEVER HIDE A FAULT. A history card that passed is not asked again
+  // while the same object stays at the same place (engine/invariants: it remembers the arrays of the
+  // last state that passed in full). Three ways that memory could go wrong, each held shut:
+  describe('the memory of which history cards passed', () => {
+    const played = () => {
+      let s = initEngine(hastings(true))
+      for (let i = 0; i < 3; i++) s = answer(s, J, true, hastings(true))
+      return s // three judged cards behind the one on screen
+    }
+    const FAULT = 'its grid marks an answer that is not the answer in its calendar'
+    const wrongGreen = (e) => ({ ...e, btns: { [G]: 'correct' } }) // a NEW object, as a toggle makes
+
+    it('a card REPLACED where it stands is asked, though its neighbours and its array’s length are the same', () => {
+      const s = played()
+      healthy(s) // the walk now remembers s.stack
+      for (const i of [0, 1, 2]) {
+        const stack = s.stack.map((e, k) => (k === i ? wrongGreen(e) : e))
+        expect(join(checkGameInvariants({ ...s, stack }, true))).toContain(`stack[${i}]: ${FAULT}`)
+      }
+    })
+
+    it('a fault is reported on EVERY walk, not only the first that meets it', () => {
+      const s = played()
+      healthy(s)
+      const bad = { ...s, stack: [s.stack[0], wrongGreen(s.stack[1]), s.stack[2]] }
+      for (let n = 0; n < 3; n++)
+        expect(join(checkGameInvariants(bad, true))).toContain(`stack[1]: ${FAULT}`)
+      // …and a healthy state checked in between does not launder it either.
+      healthy(s)
+      expect(join(checkGameInvariants(bad, true))).toContain(`stack[1]: ${FAULT}`)
+    })
+
+    it('after the oldest card is forgotten — every index shifts — a bad card among the rest is found', () => {
+      const s = played()
+      healthy(s)
+      const shifted = [wrongGreen(s.stack[1]), s.stack[2]]
+      expect(
+        join(checkGameInvariants({ ...s, stack: shifted, historyBase: s.historyBase + 1 }, true)),
+      ).toContain(`stack[0]: ${FAULT}`)
+    })
+
+    it('the cards parked ahead of a browsed one are remembered and asked the same way', () => {
+      const s = back(back(played()))
+      healthy(s)
+      const i = s.forwardStack.findIndex((e) => !e.isLive)
+      const forwardStack = s.forwardStack.map((e, k) => (k === i ? wrongGreen(e) : e))
+      const bad = { ...s, forwardStack }
+      for (let n = 0; n < 2; n++)
+        expect(join(checkGameInvariants(bad, true))).toContain(`forwardStack[${i}]: ${FAULT}`)
+    })
+  })
+
   it('10 — a puzzle stamped with a calendar it was not built in', () => {
     const p = { type: 'day', y: 1066, m: 10, d: 14, w: J, options: [13, 14], _jul: true }
     const s = answer(initEngine(p), 0, true)

@@ -108,6 +108,7 @@ export const refAnswer = (q, jul) =>
 const freshLive = (q) => ({
   q, //            the question as displayed (kept for the push, and for its answer)
   jul: undefined, // its calendar — taken at the first judgement, never again (undefined = unjudged)
+  answer: undefined, // the model's own answer in that calendar — worked out once (modelAnswer)
   ssFrozen: null, // the frozen effective Save-Stats (null = untouched; true = scored)
   // ── how it was ANSWERED (never touched by an Override) ──
   aCredited: false, // a clean first-try correct that counted
@@ -171,6 +172,7 @@ const advance = (m, next) => {
     m.history.push({
       q: l.q,
       jul: l.jul,
+      answer: l.answer,
       aCredited: l.aCredited,
       aTime: l.aTime,
       wrongTime: l.wrongTime,
@@ -349,13 +351,20 @@ export function applyRefModel(m, kind, action, ctx) {
   }
 }
 
+// A judged question's answer, by the model's own arithmetic — worked out ONCE per question and kept
+// on the model's record of it. Neither thing it is made from can change afterwards: a question's
+// calendar is taken once (judge), and only a question nothing has judged is ever swapped (REGEN).
+// compareRefModel asks for it for every question in the history after every action, and working a
+// weekday out afresh each time was a third of a whole reference-model profile's run time.
+const modelAnswer = (q) => (q.answer ??= refAnswer(q.q, q.jul))
+
 // One question's calendar, model against reducer: the calendar the reducer stamped on its card, and
 // every answer that card's grid marks (its green, or the mark an Override leaves on the answer),
 // against the model's own answer in the model's own calendar.
 const compareCalendar = (v, where, q, card) => {
   if (q.jul !== card.jul) v.push(`REF calendar: model ${q.jul}, reducer ${card.jul} (${where})`)
   if (q.jul === undefined) return
-  const answer = refAnswer(q.q, q.jul)
+  const answer = modelAnswer(q)
   for (const k in card.btns)
     if ((card.btns[k] === 'correct' || card.btns[k] === 'override-wrong') && Number(k) !== answer)
       v.push(`REF answer: model ${answer}, the reducer's grid marks ${k} (${where})`)
