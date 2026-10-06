@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 //
-// WHILE THE ⚙ MENU IS OPEN, NO KEY ACTS ON THE PAGE BEHIND IT (round 24).
+// WHILE THE ⚙ MENU OR A DROPDOWN LIST IS OPEN, THE KEYBOARD CANNOT REACH THE PAGE BEHIND IT
+// (round 24).
 //
-// One rule, asked of the app's stack of open things (components/overlayStack's isPageCovered), for
-// every key that acts on the page: the answer keys 0–9 and the Game Actions N / R / O / C / S / ← / →
-// (src/main.tsx's handler), and Lookup's own ↑ / ↓ / Backspace / Delete (components/LookupCard's).
-// Until this round only a POPUP stood in their way; under the ⚙ menu every one of them still acted
-// on the page.
+// One rule, asked of the app's stack of open things (components/overlayStack's "THE KEYBOARD'S
+// REACH"), in two halves:
+//   • every key that acts on the page stands aside (isPageCovered): the answer keys 0–9 and the
+//     Game Actions N / R / O / C / S / ← / → (src/main.tsx's handler), and Lookup's own ↑ / ↓ /
+//     Backspace / Delete (components/LookupCard's). Until this round only a POPUP stood in their
+//     way; under the ⚙ menu — and under an open list — every one of them still acted on the page;
+//   • focus cannot be on the page: the menu takes the keyboard as it opens, Tab and Shift+Tab walk
+//     its own controls, and closing it hands the keyboard back. A page button that kept focus used
+//     to take Enter and Space behind the open menu, and Shift+Tab walked out into the page.
 //
 // ★ EVERY KEY IS PROVED TWICE — that it DOES act with the menu closed, and that it does NOT with the
 // menu open. The first half is not decoration: until the harness gave the app's key handler the one
@@ -15,7 +20,7 @@
 //
 // What the menu deliberately does NOT block is pinned here too: the mode letters, H and G (they
 // close the menu or leave the page — documented, and standing on tests in settingsPanel.defaults),
-// the arrow keys along a setting's own options, Tab, Escape, and typing in the menu's boxes.
+// the arrow keys along a setting's own options, Escape, and typing in the menu's boxes.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { screen, cleanup, fireEvent, act } from '@testing-library/react'
 import {
@@ -31,6 +36,9 @@ import {
   yearInput,
   focusYear,
   modeMenuOpen,
+  tapModeMenu,
+  closeSettings,
+  panelEl,
   currentMode,
 } from './helpers/settingsPanel.jsx'
 import { readDate, statValue } from './helpers/modeScreen.jsx'
@@ -189,10 +197,10 @@ describe('what the ⚙ menu does NOT block', () => {
     expect(sameDate(readDate(), live)).toBe(true) // the date behind never stepped
     expect(sameDate(readDate(), first)).toBe(false)
   })
-  it('Tab still opens the mode selector, and Escape closes one layer at a time', () => {
+  it('a list in the bar still opens over the menu, and Escape closes one layer at a time', () => {
     mountApp()
     openSettings('key')
-    pressKey('Tab')
+    tapModeMenu()
     expect(modeMenuOpen()).toBe(true)
     pressKey('Escape')
     expect(modeMenuOpen()).toBe(false)
@@ -209,6 +217,126 @@ describe('what the ⚙ menu does NOT block', () => {
     expect(press).toBe(true) // not prevented: the key is the box's
     expect(sameDate(readDate(), live)).toBe(true)
     expect(statValue('Score')).toBe('0/0')
+  })
+})
+
+// ── THE KEYBOARD ITSELF STAYS IN THE MENU ───────────────────────────────────────────────────────
+// jsdom moves no focus for a Tab, so what can be proved here is everything the app does itself:
+// where the keyboard is put when the menu opens, the steps the rule takes at the two ends of the
+// menu (and refuses to leave to the browser), and where the keyboard goes when the menu closes.
+// The steps in between are the browser's own and are walked for real in the round's browser checks.
+describe('the keyboard stays in the ⚙ menu while it is open', () => {
+  const pageButton = (key) =>
+    [...document.querySelectorAll(`button[data-key="${key}"]`)].find((b) => b.offsetParent !== null)
+  const tabOn = (el, init = {}) => {
+    let delivered = true
+    act(() => {
+      delivered = fireEvent.keyDown(el, { key: 'Tab', ...init })
+    })
+    return { taken: !delivered }
+  }
+  const stops = () =>
+    [...panelEl().querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(
+      (el) => el.tabIndex >= 0 && !el.disabled && el.offsetParent !== null,
+    )
+
+  it('a page button that had the keyboard loses it when the menu opens — Enter and Space cannot reach it', () => {
+    mountApp()
+    const newButton = pageButton('N')
+    act(() => newButton.focus()) // what a click on New leaves behind
+    openSettings('key')
+    // The menu's card holds the keyboard: a key pressed now is sent to the card, not to New.
+    expect(document.activeElement).toBe(panelEl())
+    expect(document.activeElement).not.toBe(newButton)
+    // …and closing the menu hands it back, so the page behaves as it did before the menu opened.
+    closeSettings('key')
+    expect(document.activeElement).toBe(newButton)
+  })
+
+  it('focus cannot be moved onto the page behind the menu', () => {
+    mountApp()
+    openSettings('key')
+    act(() => pageButton('N').focus())
+    expect(document.activeElement).toBe(panelEl())
+    expect(panelEl().contains(document.activeElement)).toBe(true)
+  })
+
+  it('Tab does not open the mode selector: it goes to the menu`s first control, and wraps at the last', () => {
+    mountApp()
+    openSettings('key')
+    const all = stops()
+    expect(all.length).toBeGreaterThan(5)
+    // From the gear (where a mouse press leaves the keyboard): not one of the menu's controls, so
+    // the rule itself takes the step, to the first of them.
+    const gear = screen.getByRole('button', { name: /^Settings/ })
+    act(() => gear.focus())
+    expect(document.activeElement).toBe(gear) // the gear is in the top bar: within reach
+    expect(tabOn(gear).taken).toBe(true)
+    expect(document.activeElement).toBe(all[0])
+    expect(modeMenuOpen()).toBe(false)
+    // Off the last control, forward: wraps to the first.
+    act(() => all[all.length - 1].focus())
+    expect(tabOn(document.activeElement).taken).toBe(true)
+    expect(document.activeElement).toBe(all[0])
+    // In the middle the browser's own step is left alone.
+    act(() => all[2].focus())
+    expect(tabOn(document.activeElement).taken).toBe(false)
+    expect(modeMenuOpen()).toBe(false)
+  })
+
+  it('Shift+Tab off the first control wraps to the last — it never walks out into the page', () => {
+    mountApp()
+    openSettings('key')
+    const all = stops()
+    act(() => all[0].focus())
+    expect(tabOn(document.activeElement, { shiftKey: true }).taken).toBe(true)
+    expect(document.activeElement).toBe(all[all.length - 1])
+    // …and from the card itself, where the keyboard is when the menu was opened with G.
+    act(() => panelEl().focus())
+    expect(tabOn(document.activeElement, { shiftKey: true }).taken).toBe(true)
+    expect(document.activeElement).toBe(all[all.length - 1])
+  })
+
+  it('with the menu closed, Tab is the mode selector`s again', () => {
+    mountApp()
+    openSettings('key')
+    closeSettings('key')
+    pressKey('Tab')
+    expect(modeMenuOpen()).toBe(true)
+  })
+})
+
+describe('an open dropdown list blocks the page`s keys like the menu does', () => {
+  it('0–9, N, R, C and ← do nothing behind the open mode list; its own keys still work', () => {
+    mountApp()
+    pressKey(correctKey())
+    expect(statValue('Score')).toBe('1/1')
+    const live = readDate()
+    pressKey('Tab') // the page's way to open the mode list
+    expect(modeMenuOpen()).toBe(true)
+    const trigger = document.activeElement
+    for (const k of [correctKey(), wrongKey(), 'n', 'r', 'ArrowLeft', 'ArrowRight'])
+      act(() => void fireEvent.keyDown(trigger, { key: k }))
+    expect(sameDate(readDate(), live)).toBe(true)
+    expect(statValue('Score')).toBe('1/1')
+    expect(modeMenuOpen()).toBe(true)
+    // The list's own keys: ↓ moves its cursor, Enter chooses — and the page is the new mode's.
+    act(() => void fireEvent.keyDown(trigger, { key: 'End' }))
+    act(() => void fireEvent.keyDown(trigger, { key: 'Enter' }))
+    expect(modeMenuOpen()).toBe(false)
+    expect(currentMode()).toBe('How to Play')
+  })
+
+  it('…and once the list is closed the same keys act again', () => {
+    mountApp()
+    const before = readDate()
+    pressKey('Tab')
+    act(() => void fireEvent.keyDown(document.activeElement, { key: 'n' }))
+    expect(sameDate(readDate(), before)).toBe(true)
+    pressKey('Escape')
+    expect(modeMenuOpen()).toBe(false)
+    pressKey('n')
+    expect(sameDate(readDate(), before)).toBe(false)
   })
 })
 

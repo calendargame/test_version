@@ -403,7 +403,7 @@ const CLOSE_ROUTES = {
   // pairing is the point: the pick must register AND close the panel, rather than the panel
   // slamming shut on the press that opened the menu and swallowing the choice.
   modeMenu: ({ mode = 'Flash' } = {}) => {
-    openModeMenu()
+    tapModeMenu()
     tap(screen.getByRole('option', { name: mode }))
   },
   // Full Reset — the footer button then its confirmation popup, which closes the panel as one of
@@ -1354,9 +1354,13 @@ export function tabInModal(key, { shift = false } = {}) {
 // the card and asserted "focus is still inside the modal" would therefore assert
 // `card.contains(card)`, and would pass with the trap deleted. Seating the keyboard on a real END
 // of the cycle is the only way to make the wrap observable here.
-export const modalTabStops = (key) => [
-  ...modalScrim(key).querySelectorAll('button,input,[tabindex="0"]'),
-]
+// The same definition the app's own rule uses (components/overlayStack's tabStops): a control with
+// a tab stop that is neither disabled nor in a hidden branch. Counting every <button> would count
+// the options of a setting that share one stop.
+export const modalTabStops = (key) =>
+  [...modalScrim(key).querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(
+    (el) => el.tabIndex >= 0 && !el.disabled && el.offsetParent !== null,
+  )
 
 // Put the keyboard on one END of that cycle, so the next Tab is a wrap rather than a no-op.
 export function focusModalEdge(key, edge) {
@@ -1390,6 +1394,10 @@ export const changelogEntryDates = () =>
 // Tab is the app-wide route to it (main.tsx's global handler focuses and clicks the trigger), so
 // that is the gesture; the dropdown's open panel publishes role="listbox".
 export const openModeMenu = () => pressKey('Tab')
+// …ON THE PAGE. While the ⚙ menu or a popup covers the page, Tab is that layer's own key (it walks
+// the layer's controls — components/overlayStack's "THE KEYBOARD'S REACH"), so over an open panel
+// the bar's menu is opened the way a finger opens it: a press on its button.
+export const tapModeMenu = () => tap(screen.getByRole('button', { name: /^Mode,/ }))
 export const modeMenuOpen = () => screen.queryByRole('listbox') !== null
 export const pickMode = (label) => tap(screen.getByRole('option', { name: label }))
 

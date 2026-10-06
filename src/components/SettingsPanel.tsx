@@ -726,9 +726,9 @@ export function SettingsPanel({
   // why the id moved onto a span), and it is still one row: a one-line "Shows the last ten days
   // with updates." notice once sat below the scroller, and the owner removed it on the rule that this popup answers WHAT CHANGED, while how the app
   // keeps its history is documentation — so the ten-day cap is explained in How to Play (the
-  // Updates section) and nowhere else. Don't re-add it here. With zero focusable controls the
-  // shared trapModalTab pins focus on the dialog card (its degenerate branch) rather than letting
-  // Tab walk out to the panel beneath.
+  // Updates section) and nowhere else. Don't re-add it here. With zero focusable controls Tab
+  // keeps the keyboard on the dialog card (the no-control case of components/overlayStack's Tab
+  // rule) rather than letting it walk out to the panel beneath.
   const storagePercent = useStorageUsage((u) => u.percent)
   const storageWarning = useStorageUsage((u) => u.warning)
   const openStorageUsage = useStorageUsage((u) => u.openPopup)
@@ -865,10 +865,18 @@ export function SettingsPanel({
           px-4 scrollbar lane inside the scroller, edge fades) every other scroll region now
           shares.
           focus-scope: the keyboard's ring is drawn on whichever control in here has it (index.css,
-          "THE KEYBOARD FOCUS RING") — the same scope every popup's scrim is. */}
+          "THE KEYBOARD FOCUS RING") — the same scope every popup's scrim is.
+          tabIndex −1 + its name: the card is what HOLDS the keyboard when the menu opens and the
+          keyboard is not already in the top bar (components/overlayStack's "THE KEYBOARD'S REACH";
+          src/main.tsx hands it over as the menu's `hold`) — so the first Tab lands on the first
+          control and a key pressed before that acts on nothing. It is not in the Tab order itself
+          and, like a popup's dialog, it draws no ring. */}
       <div
         ref={cardRef}
         id="settings-popover"
+        role="group"
+        aria-label="Settings menu"
+        tabIndex={-1}
         data-drag-dismiss
         style={MODAL_CARD_SHADOW}
         className="focus-scope absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl card py-4 space-y-4 flex flex-col max-h-[calc(100dvh_-_var(--bar-h)_-_0.5rem_-_1rem_-_env(safe-area-inset-bottom))]"

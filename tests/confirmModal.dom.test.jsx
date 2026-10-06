@@ -67,7 +67,7 @@ describe('ConfirmModal', () => {
   // ★ ONE BUTTON ON THE CARD. The Cancel button is gone app-wide (the owner: "you can just tap
   // outside or press esc so it's just a noise button") — so this asserts the COUNT, not merely the
   // absence of a caption. A card that grew any second control would fail here, which is the claim
-  // the trap case below then rests on (trapModalTab's one-control branch).
+  // the trap case below then rests on (the one-control case of the stack's Tab rule).
   it('carries exactly ONE button — the confirm — and no Cancel', () => {
     const { onConfirm } = mount({ confirmLabel: 'Reset' })
     const dialog = screen.getByRole('dialog')

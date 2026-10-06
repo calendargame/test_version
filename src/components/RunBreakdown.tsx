@@ -212,9 +212,9 @@ export default function RunBreakdown({
         </ul>
         {/* NO dismiss button: the scrim tap, Escape and Android Back all already dismiss, and the
             owner wanted the row back. The card is title + summary + solve list only. With zero
-            focusable controls the popup's Tab trap keeps focus pinned on this card (tabIndex={-1},
-            focused on open) rather than letting Tab walk out to the screen under the scrim — see
-            trapModalTab's degenerate branch. */}
+            focusable controls Tab keeps the keyboard on this card (tabIndex={-1}, focused on open)
+            rather than letting it walk out to the screen under the scrim — the no-control case of
+            components/overlayStack's Tab rule ("THE KEYBOARD'S REACH"). */}
       </div>
     </Popup>
   )

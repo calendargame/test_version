@@ -1492,19 +1492,24 @@ import BlitzMode from './modes/BlitzMode.jsx'
       useEffect(()=>{if(updating)dismissBootSplash();},[updating]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
-        // ★★ WHAT AN OPEN POPUP OR ⚙ MENU BLOCKS, AND WHAT IT DELIBERATELY DOES NOT — the whole
-        // rule, in one place, because it is exactly one line different for each half and the
-        // difference is the point. Either one is open ⇒ the page behind it is OUT OF REACH
+        // ★★ WHAT AN OPEN POPUP, ⚙ MENU OR DROPDOWN LIST BLOCKS, AND WHAT IT DELIBERATELY DOES NOT —
+        // the whole rule, in one place, because it is exactly one line different for each half and
+        // the difference is the point. Any of them is open ⇒ the page behind it is OUT OF REACH
         // (components/overlayStack's isPageCovered — the one rule, which Lookup's own keys ask too),
-        // so the two categories that REACH INTO that page bail: Category 1's answer grid and
-        // Category 2's [data-key] DOM walk both find a live button behind what is open and CLICK it.
+        // so everything here that REACHES INTO that page bails: Tab's "open the mode selector",
+        // Category 1's answer grid and Category 2's [data-key] DOM walk, which both find a live
+        // button behind what is open and CLICK it. (These are window-wide shortcuts, so the other
+        // half of the stack's rule — keeping focus off the page — cannot stop them; that half is
+        // what stops Enter and Space pressing a page button that still had the keyboard.)
         // That is not theoretical — it shipped: Blitz with Allow Mistakes off, answer wrong, tap the
         // stat strip to open the round breakdown, press O, and the walk clicked Override behind the
         // scrim, resumed the finished round and reverted its provisional Best. The run breakdown is
         // what made it reachable, being the first modal to sit over a LIVE GAME SCREEN rather than
         // over the settings panel; the bail used to live in the Tab branch alone. And for a long time
         // it covered popups only: under the ⚙ MENU a digit still answered the date behind it, N drew
-        // a new one and ← stepped the history, with the menu in the way of seeing any of it.
+        // a new one and ← stepped the history, with the menu in the way of seeing any of it — and
+        // under an open LIST the same keys still did, while the list's own arrows were moving its
+        // cursor.
         // ⚠ CATEGORY 3 STAYS LIVE, and that is a DECISION with two tests standing on it, not an
         // oversight. The mode letters, H and G do not operate the page underneath — they REPLACE
         // what is on screen, and every modal goes with it: the four ⚙ popups are children of the
@@ -1527,16 +1532,16 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // turned out to belong to one of the two gated categories. A control INSIDE the menu or a
         // popup keeps its own keys (the arrows along a setting's options, Tab, Escape, typing):
         // those are handled on the control, not here.
-        // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
-        // Shift+Tab, Alt+Tab all pass through to the browser. Works universally, including
-        // when an input is focused (Esc/Enter already blur inputs, so the standard "leave
-        // this input" role of Tab is unneeded). focus() before click() so the dropdown's
-        // arrow-nav handler (handleTriggerKeyDown on the trigger) sees subsequent keys.
+        // Tab: open the mode selector dropdown — ON THE PAGE. Plain Tab only — Ctrl+Tab,
+        // Ctrl+Shift+Tab, Shift+Tab, Alt+Tab all pass through to the browser. Works from anywhere
+        // on the page, including when an input is focused (Esc/Enter already blur inputs, so the
+        // standard "leave this input" role of Tab is unneeded). focus() before click() so the
+        // dropdown's arrow-nav handler (handleTriggerKeyDown on the trigger) sees subsequent keys.
         if(e.key==='Tab'){
           if(e.ctrlKey||e.metaKey||e.altKey||e.shiftKey)return;
-          // An open modal owns Tab while it is up (its scrim's focus trap) — opening the mode
-          // dropdown behind an aria-modal dialog would break the modal contract.
-          if(isPopupOpen())return;
+          // While something covers the page, Tab is that layer's: it walks a popup's or the ⚙
+          // menu's own controls (the stack's rule), and closes an open list (the list's own key).
+          if(isPageCovered())return;
           if(modeSelectRef.current){
             const trigger=modeSelectRef.current.querySelector('button');
             if(trigger){e.preventDefault();trigger.focus();trigger.click();}
@@ -1919,7 +1924,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
           if(ae&&ae.tagName==='INPUT'&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(ae))ae.blur();
           setSettingsOpen(false);
         }};
-      useLayer(settingsOpen, ()=>setSettingsOpen(false), 'settings', pressOutsideSettings, true); // true: the menu covers the page — no key acts behind it
+      // ITS REACH — where the keyboard may be while the menu is the top thing covering the page
+      // (overlayStack's "THE KEYBOARD'S REACH"): anywhere in the TOP BAR (the card, the gear that
+      // closes it, and the two lists beside the gear, which the paragraph above keeps usable over
+      // the open menu), held on the card, with Tab walking the card's controls. The page under the
+      // bar is what is out of reach.
+      useLayer(settingsOpen, ()=>setSettingsOpen(false), 'settings', pressOutsideSettings, {parts:()=>[htpStickyBarRef.current],hold:()=>settingsPopoverRef.current,walk:()=>settingsPopoverRef.current});
       // Close-on-drag-activate: the pointer controller dispatches a bubbling "drag-dismiss"
       // CustomEvent from a drag-clicked member of a data-drag-dismiss menu (lib/pointerGestures) — the
       // settings popover card is the only such menu. Closing here is exactly a normal close, so the

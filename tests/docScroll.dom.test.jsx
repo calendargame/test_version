@@ -325,14 +325,14 @@ describe('the scroll container is the guide’s keyboard target', () => {
 
   it('is focusable only programmatically — the tab order and the modal traps are untouched', () => {
     // tabIndex −1, not 0, is the whole safety of this. The app binds Tab globally to the mode
-    // selector and the four settings modals trap it across `button,input`; a container that joined
-    // either set would be a keyboard dead end wearing no label. −1 keeps it reachable by .focus()
+    // selector and every popup and the ⚙ menu walk it across their tab stops; a container that
+    // joined either set would be a keyboard dead end wearing no label. −1 keeps it reachable by .focus()
     // and by nothing else, which is the standard skip-target shape.
     const { container } = mountApp()
     const el = scrollContainer(container)
     expect(el.getAttribute('tabindex')).toBe('-1')
     expect(el.tabIndex).toBe(-1)
-    expect(el.matches('button,input')).toBe(false) // trapModalTab's enumeration
+    expect(el.matches('button,input')).toBe(false) // not a control Tab walks (overlayStack)
     expect(
       [...container.querySelectorAll('[tabindex]')].filter((n) => n.tabIndex >= 0),
     ).not.toContain(el)

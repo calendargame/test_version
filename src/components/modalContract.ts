@@ -1,5 +1,3 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-
 // ─────────────────────────────────────────────────────────────────────────
 // components/modalContract — what it takes to be a POPUP in this app, in one place.
 //
@@ -17,13 +15,14 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 //   2. FOCUS — the top popup holds the keyboard from the moment it opens, so a screen reader
 //      announces a modal and Tab starts inside it; closing it hands focus back to where it was.
 //   3. ESCAPE, ANDROID BACK AND A TAP ON THE SCRIM each dismiss the TOP popup and nothing under it.
-//      Escape and Back are components/overlayStack's, the app's one stack of open things.
-//   4. THE TAB TRAP — trapModalTab below, on the scrim, so Tab cycles the popup's own controls and
-//      wraps at the ends instead of walking into the page underneath.
+//   4. TAB CYCLES the popup's own controls and wraps at the ends instead of walking into the page
+//      underneath. A popup with NO control — the run breakdown, the Changelog and the storage-full
+//      notice are text only — keeps the keyboard on its dialog card.
 //   5. ONE DIM — only the top popup's scrim darkens the page, however many are open.
-// What an open popup blocks beyond that — the keyboard shortcuts that reach into the page under
-// the scrim, and which ones are deliberately left live — is src/main.tsx's keydown handler's to
-// say, and it asks the stack.
+// Terms 2, 3 (Escape, Back) and 4 are not a popup's own: they are components/overlayStack's, the
+// app's one stack of open things, and the keyboard half ("THE KEYBOARD'S REACH" there) is the same
+// rule for a popup, the ⚙ menu and a dropdown list. What an open popup leaves live — the mode
+// letters, H and G — is src/main.tsx's keydown handler's to say, and it asks the stack.
 // ─────────────────────────────────────────────────────────────────────────
 
 // The scrim: full-screen, above everything, centring its card. components/Popup is its only user.
@@ -45,42 +44,3 @@ export const MODAL_PLAIN_CARD_CLASS = 'card rounded-2xl p-4 w-full max-w-[20rem]
 // The card's elevation. An inline style rather than a class because that is how the popups have
 // always spelled it; sharing the literal is the point.
 export const MODAL_CARD_SHADOW = { boxShadow: '0 0 8px rgba(0,0,0,0.12)' } as const
-
-// Term 4 — the focus trap. Goes on the SCRIM's onKeyDown, so it sees every Tab inside the popup.
-// Plain Tab / Shift+Tab traverse natively in the middle and WRAP at the ends; focus never escapes to
-// the page under the scrim. Two degenerate cases, both handled:
-//   • ONE control — first === last, so Tab wraps in place.
-//   • ZERO controls — the run breakdown, the Changelog popup and the storage-full notice are cards
-//     whose only content is text. There is nothing to cycle, so the press is consumed and focus is
-//     pinned on the dialog card itself (it is tabIndex={-1} and was focused on open) rather than
-//     allowed to walk out to the page under the scrim.
-// "Controls" are everything Tab can land on: buttons, inputs, and an element made a tab stop by
-// hand (the preset manager's reorder grip is a div with tabIndex={0}).
-// stopPropagation keeps the press from the app-wide Tab shortcut (which would open the mode selector
-// behind the popup); that shortcut's own handler also bails while a popup is open, for presses that
-// start outside this tree.
-export const trapModalTab = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-  if (e.key !== 'Tab') return
-  e.stopPropagation()
-  const f = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button,input,[tabindex="0"]'))
-  if (f.length === 0) {
-    const card = e.currentTarget.querySelector<HTMLElement>('[role="dialog"]')
-    if (card) {
-      e.preventDefault()
-      card.focus()
-    }
-    return
-  }
-  const first = f[0],
-    last = f[f.length - 1],
-    ae = document.activeElement
-  if (e.shiftKey) {
-    if (ae === first || !e.currentTarget.contains(ae)) {
-      e.preventDefault()
-      last.focus()
-    }
-  } else if (ae === last || !e.currentTarget.contains(ae)) {
-    e.preventDefault()
-    first.focus()
-  }
-}

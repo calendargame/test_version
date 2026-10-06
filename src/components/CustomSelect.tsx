@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { useLayer } from './overlayStack.js'
+import { isPageCovered, useLayer } from './overlayStack.js'
 import {
   SCROLLER_CORE_CLASS,
   holdScrollRegion,
@@ -22,7 +22,7 @@ import {
 // Renders a trigger button; when open, the option list is PORTALED to #root so
 // it escapes any clipping/overflow ancestor (e.g. the scrollable Settings
 // popover) and floats over the page, positioned FIXED against the viewport.
-// Full listbox keyboard support (↑/↓/Home/End/Enter/Esc/Tab) and a
+// Full listbox keyboard support (Enter/Space to open; ↑/↓/Home/End/Enter/Esc/Tab once open) and a
 // press-outside-to-close handler that correctly treats taps inside the portaled
 // panel (and on native scrollbars) as "inside".
 //
@@ -30,6 +30,15 @@ import {
 // where Escape, Android Back and a press outside are decided: each closes the TOP layer only. So
 // with the ⚙ panel's "Open in" list open, one Escape or one tap outside closes the list and leaves
 // the panel, and a second closes the panel.
+// …AND IT COVERS THE PAGE while it is open (the stack's "THE KEYBOARD'S REACH"): the keyboard stays
+// on the trigger, which drives the list, and no page key acts behind it — the game's keys and
+// Lookup's used to, while this list's own arrows were moving its cursor.
+//
+// NOTHING IN THE LIST WEARS A FOCUS RING, in the top bar or in the ⚙ menu. The keyboard's cursor
+// in an open list is the soft grey box on the option it has reached — the same box a mouse resting
+// on an option gets — and that is the whole of it: the frosted lists look exactly as they always
+// have. The ring (index.css, "THE KEYBOARD FOCUS RING") is drawn where the real focus is, which is
+// the trigger, and only for a trigger inside a ring scope ("Open in").
 //
 // ⚠ CALLER CONTRACT (round 11; widened by round 23) — THE TRIGGER MUST NOT MOVE WHILE THE
 // PANEL IS OPEN. The panel is position:fixed and is measured from the trigger's viewport rect on
@@ -212,16 +221,6 @@ export default function CustomSelect({
   // highlighted (e.g. mouse-only interaction). Reset to selected option's index on open so
   // ↑/↓ start from the current value, not the top.
   const [activeIdx, setActiveIdx] = useState(-1)
-  // Did the KEYBOARD put the cursor where it is? The grey box is the same for a mouse resting on an
-  // option and for an arrow key landing on it; the keyboard's focus ring is not — it is drawn on the
-  // option only for a cursor the keys moved (index.css, "THE KEYBOARD FOCUS RING": the open list is
-  // driven from the trigger, which keeps the real focus, so the option cannot take the ring by
-  // being focused and is marked instead).
-  const [cursorByKey, setCursorByKey] = useState(false)
-  const moveCursorByKey = (next: (i: number) => number) => {
-    setCursorByKey(true)
-    setActiveIdx(next)
-  }
   const localRef = useRef<HTMLDivElement>(null)
   const ref = wrapperRef || localRef
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -368,7 +367,7 @@ export default function CustomSelect({
         // First arrow (from the no-cursor -1 state) steps ONE option from the selected one — Down lands
         // just below the ✓, Up just above (owner's call 2026-06-06; previously the first arrow landed on
         // the selected option itself). Clamped at the ends; subsequent arrows keep moving.
-        moveCursorByKey((i) =>
+        setActiveIdx((i) =>
           i < 0
             ? selectedIdx >= 0
               ? Math.min(options.length - 1, selectedIdx + 1)
@@ -377,22 +376,25 @@ export default function CustomSelect({
         )
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        moveCursorByKey((i) =>
+        setActiveIdx((i) =>
           i < 0 ? (selectedIdx >= 0 ? Math.max(0, selectedIdx - 1) : 0) : Math.max(0, i - 1),
         )
       } else if (e.key === 'Home') {
         e.preventDefault()
-        moveCursorByKey(() => 0)
+        setActiveIdx(0)
       } else if (e.key === 'End') {
         e.preventDefault()
-        moveCursorByKey(() => options.length - 1)
+        setActiveIdx(options.length - 1)
       } else if (e.key === 'Enter') {
         e.preventDefault()
         selectAt(activeIdx >= 0 ? activeIdx : selectedIdx)
       } else if (e.key === ' ') {
-        // Space is inert on the trigger (owner's call 2026-06-06) — see the closed-state note below.
+        // Space does nothing in an OPEN list (owner's call 2026-06-06): Enter chooses.
         e.preventDefault()
-      } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Tab — and Shift+Tab, which used to walk the keyboard off the trigger and into whatever
+        // came before it, the page included, with the list still open — closes the list and leaves
+        // the keyboard on its button.
         e.preventDefault()
         e.stopPropagation()
         setOpen(false)
@@ -400,18 +402,23 @@ export default function CustomSelect({
       }
       return
     }
-    // Closed: NO key opens the dropdown from the trigger — only the global Tab shortcut, or a mouse
-    // click, opens it (owner's call 2026-06-06). The Tab shortcut leaves the trigger focused, and the
-    // owner doesn't want a focused-but-invisible trigger to spring open on Enter/Space/arrows. Swallow
-    // Enter + Space so the browser's default button activation can't open it either; arrows are simply
-    // left alone. They used to fall through to scrolling the page, which was true only while the guide
-    // scrolled the DOCUMENT — a focused trigger's nearest scrollable ancestor was the document itself.
-    // Round 13 made #appScroll the one scroller and it is this bar's SIBLING, not its ancestor, so an
-    // arrow press here now scrolls nothing. Not swallowed even so: preventDefault would claim a key
-    // this control has no use for, and the app's own keydown handler already owns ←/→ (the date
-    // stepper). (Once open, ↑/↓ navigate, Enter selects, Esc/Tab close — branch above.)
-    if (e.key === 'Enter' || e.key === ' ') {
+    // CLOSED, with the keyboard on the trigger: ENTER OR SPACE OPENS THE LIST, like any list button
+    // (the owner's ruling, 2026-10-06, which replaces his 2026-06-06 one that no key should). Until
+    // then the mode selector was the only list a keyboard could open at all, through the app's Tab
+    // shortcut; the preset list and the ⚙ menu's "Open in" needed a pointer.
+    // ↑ AND ↓ OPEN IT TOO — WHILE THE PAGE IS COVERED, which for a closed list means inside the ⚙
+    // menu ("Open in", and the two top-bar lists while the menu is open). On the open page those two
+    // keys are Lookup's (they walk its history from anywhere, and the keyboard is LEFT on a top-bar
+    // trigger by choosing Lookup from the list), so there they are left alone, exactly as before;
+    // isPageCovered is the stack's one answer to "do the page's keys count right now".
+    // preventDefault on the opening key, so the browser does not also click the button it is on.
+    const opens =
+      e.key === 'Enter' ||
+      e.key === ' ' ||
+      ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && isPageCovered())
+    if (opens && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
+      handleToggle()
     }
   }
   // ★ THE OPEN LIST'S ENTRY IN THE APP'S STACK (components/overlayStack). listboxId is a stable
@@ -440,7 +447,14 @@ export default function CustomSelect({
     }
     setOpen(false)
   }
-  useLayer(open, closeAndFocus, listboxId, pressOutside)
+  //   • THE KEYBOARD stays on the trigger while the list is open, and the page behind is out of
+  //     its reach (the `reach` below). Tab is this list's own key — it closes it, in the key handler
+  //     above — so there is nothing for the stack to walk.
+  useLayer(open, closeAndFocus, listboxId, pressOutside, {
+    parts: () => [ref.current, panelRef.current],
+    hold: () => triggerRef.current,
+    walk: () => null,
+  })
   // While open: what RE-MEASURES the panel — and that is now this effect's whole job. Nothing here
   // dismisses (see the dismiss-rule note on the component), and NO SCROLL OF ANY KIND IS SUBSCRIBED
   // TO, which is the point twice over: dismissal is gone, and re-measuring per scroll event through
@@ -689,13 +703,10 @@ export default function CustomSelect({
                   id={optionId(i)}
                   role="option"
                   aria-selected={opt.value === value}
-                  data-kbd-cursor={(i === activeIdx && cursorByKey) || undefined}
                   key={opt.value}
                   type="button"
                   onPointerEnter={(e) => {
-                    if (e.pointerType !== 'mouse') return
-                    setCursorByKey(false)
-                    setActiveIdx(i)
+                    if (e.pointerType === 'mouse') setActiveIdx(i)
                   }}
                   onClick={() => {
                     onChange(opt.value)

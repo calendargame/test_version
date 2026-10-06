@@ -131,7 +131,7 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
 describe('the rule in index.css that draws it', () => {
   it('rings what has focus inside a scope, only while the keyboard is in use', () => {
     const rule = new RegExp(
-      `:root\\[${KEYBOARD_ATTR}\\] \\.focus-scope :focus:not\\(([^)]*)\\),\\[data-kbd-cursor\\]\\{([^}]*)\\}`,
+      `(?:^|\\})\\s*:root\\[${KEYBOARD_ATTR}\\] \\.focus-scope :focus:not\\(([^)]*)\\)\\{([^}]*)\\}`,
     ).exec(cssCode)
     expect(rule).not.toBeNull()
     // A real, solid, 2px line in a named colour — and INSIDE the control's edge by default, so no
@@ -139,9 +139,26 @@ describe('the rule in index.css that draws it', () => {
     expect(rule[2]).toBe(
       'outline:2px solid var(--kbd-ring,var(--tx-50));outline-offset:var(--kbd-ring-offset,-2px)',
     )
-    // The three things in a scope that take focus and are not ringed themselves.
-    expect(rule[1].split(',').sort()).toEqual(
-      ['[aria-activedescendant]', '[role="dialog"]', '[type="range"]'].sort(),
+    // The two things in a scope that take focus and are not ringed themselves.
+    expect(rule[1].split(',').sort()).toEqual(['[role="dialog"]', '[type="range"]'].sort())
+  })
+
+  it('EVERY selector that draws a ring starts at a scope and at the keyboard mark', () => {
+    // The rule above once had a second, unscoped half — `,[data-kbd-cursor]` — and it ringed the
+    // arrow-reached option of the frosted lists in the TOP BAR, outside every scope. A rule is as
+    // wide as its widest selector, so each comma-separated one is checked on its own.
+    const rings = [...cssCode.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, , body]) =>
+      /outline:2px solid var\(--kbd-ring/.test(body),
+    )
+    expect(rings.length).toBe(1)
+    for (const selector of rings[0][1].split(/,(?![^(]*\))/))
+      expect(selector.trim().startsWith(`:root[${KEYBOARD_ATTR}] .focus-scope `)).toBe(true)
+    expect(cssCode).not.toContain('data-kbd-cursor')
+  })
+
+  it('a control marked unavailable takes a DOTTED ring, not the solid one', () => {
+    expect(cssCode).toContain(
+      `:root[${KEYBOARD_ATTR}] .focus-scope [aria-disabled="true"]:focus{outline-style:dotted}`,
     )
   })
 
@@ -157,8 +174,10 @@ describe('the rule in index.css that draws it', () => {
   })
 
   it('inside a scope the browser draws nothing of its own, for a press or for a key', () => {
+    // …the scope ITSELF included: the ⚙ menu's card is a scope and holds the keyboard when the
+    // menu opens.
     expect(cssCode).toContain(
-      '.focus-scope :focus{outline:2px solid transparent;outline-offset:-2px}',
+      '.focus-scope:focus,.focus-scope :focus{outline:2px solid transparent;outline-offset:-2px}',
     )
   })
 
@@ -169,10 +188,11 @@ describe('the rule in index.css that draws it', () => {
       )
   })
 
-  it('is white and further in on a filled control, dark on a frosted list, outside the readout', () => {
+  it('is white and further in on a filled control, and outside the readout — the drag ring too', () => {
     expect(cssCode).toContain('.btn-solid,.ring-on-fill{--kbd-ring:#fff;--kbd-ring-offset:-4px}')
-    expect(cssCode).toContain('[role="listbox"]{--kbd-ring:#1a1a1a}')
     expect(cssCode).toContain('.ring-outside{--kbd-ring:var(--tx-50);--kbd-ring-offset:2px}')
+    // The press-drag ring is inset everywhere else; on the readout that ran it through the digits.
+    expect(cssCode).toContain('.ring-outside.drag-target{outline-offset:2px}')
   })
 
   // A Tailwind utility outranks the whole `components` layer the ring lives in, so one outline
@@ -230,10 +250,9 @@ describe('the scopes: the ⚙ menu and every popup', () => {
     expect(byKeyboard()).toBe(false)
   })
 
-  // The open list is driven from its button, which keeps the real focus — so the option the arrow
-  // keys are on cannot be ringed by being focused. It is marked instead, and only for a cursor the
-  // KEYS moved: the same grey box under a resting mouse is not the keyboard.
-  it('a list`s option is marked for the ring when the arrow keys put the cursor on it', () => {
+  // The open list is driven from its button, which keeps the real focus — so the BUTTON is what the
+  // ring is on, list open or shut, and nothing in the list is marked for one (tests/customselect).
+  it('the ⚙ menu`s list button keeps the keyboard while its list is open', () => {
     mountApp()
     openSettings()
     const trigger = within(document.getElementById('settings-popover')).getByRole('button', {
@@ -242,21 +261,14 @@ describe('the scopes: the ⚙ menu and every popup', () => {
     act(() => {
       fireEvent.click(trigger)
     })
-    const options = () => screen.getAllByRole('option')
-    const marked = () => options().map((o) => o.hasAttribute('data-kbd-cursor'))
-    expect(marked()).toEqual([false, false])
     key('ArrowDown', trigger)
-    expect(marked()).toEqual([false, true])
-    // …and the button stands down while an option has the cursor (the rule's third exclusion).
-    expect(trigger.getAttribute('aria-activedescendant')).toBe(options()[1].id)
-    key('Home', trigger)
-    expect(marked()).toEqual([true, false])
-    // A mouse coming to rest on an option takes the cursor, and the cursor is no longer the keys'.
-    act(() => {
-      fireEvent.pointerEnter(options()[1], { pointerType: 'mouse' })
-    })
-    expect(marked()).toEqual([false, false])
-    key('End', trigger)
-    expect(marked()).toEqual([false, true])
+    const options = screen.getAllByRole('option')
+    expect(document.activeElement).toBe(trigger)
+    expect(trigger.closest('.focus-scope')).not.toBeNull() // it is in a scope: the ring is drawn
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(options[1].id)
+    for (const option of options) {
+      expect(option.hasAttribute('data-kbd-cursor')).toBe(false)
+      expect(option.closest('.focus-scope')).toBeNull() // …and the list is in none
+    }
   })
 })

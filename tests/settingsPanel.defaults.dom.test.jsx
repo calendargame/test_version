@@ -901,13 +901,13 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
   it('each modal takes the keyboard on open and cycles it at both ends, without opening the mode menu behind it', () => {
     // ⚠ THE TRAVERSAL HAS TO START ON AN END OF THE CYCLE, and getting that wrong is how this case
     // first shipped saying nothing at all. jsdom implements no native tab navigation, and the
-    // scrim's trap only acts at the two ENDS or on a press from outside its tree — so a Tab pressed
-    // with the keyboard still on the CARD moves nothing and fires no branch, and a loop asserting
-    // "focus is still inside the modal" afterwards reduces to `card.contains(card)`. It passed with
-    // trapModalTab deleted. Seating the keyboard on the last control and asserting the WRAP is the
-    // form that fails the moment the trap is dropped or its containment check is re-scoped — which
-    // matters here specifically, because all four modals move with the panel and a rewrite that
-    // mis-scopes the scrim's onKeyDown ships a dialog a keyboard user can Tab straight out of.
+    // Tab rule (components/overlayStack) leaves a step in the MIDDLE to the browser — so a forward
+    // Tab pressed with the keyboard still on the CARD moves nothing and fires no branch, and a loop
+    // asserting "focus is still inside the modal" afterwards reduces to `card.contains(card)`. It
+    // passed with the trap deleted. Seating the keyboard on the last control and asserting the WRAP
+    // is the form that fails the moment the rule is dropped or its containment check is re-scoped
+    // — which matters here specifically, because all four modals move with the panel and a rewrite
+    // that mis-scopes the walk ships a dialog a keyboard user can Tab straight out of.
     divergeCapturable()
     mountApp()
     openSettings()

@@ -75,6 +75,7 @@ import {
   modalScrim,
   anyModalOpen,
   openModeMenu,
+  tapModeMenu,
   modeMenuOpen,
   pickMode,
   lastUpdatedText,
@@ -224,7 +225,7 @@ describe('the settings panel — opening and closing by every route (group 1)', 
     openSettings()
     // Two gestures, and the pairing is the point: opening the bar's menu from an open panel must
     // not slam the panel shut on the press that opened the menu and swallow the choice.
-    openModeMenu()
+    tapModeMenu()
     expect(modeMenuOpen()).toBe(true)
     expect(isSettingsOpen()).toBe(true)
     pickMode('Flash')
@@ -686,9 +687,14 @@ describe('the settings panel — the markers that carry its behaviour (group 13)
       closeModal(key, 'dismiss')
     }
     expect(guarded).toEqual(MODAL_KEYS.map((key) => `${key}: menu false, modal true`))
-    // The control: with no modal up, that same Tab DOES open the menu — so the guard above is a
-    // guard and not a dead gesture.
+    // With the modals gone the ⚙ menu still covers the page, and there Tab walks the menu's own
+    // controls rather than opening the list in the bar (tests/keysUnderMenu owns that)…
     expect(anyModalOpen()).toBe(false)
+    openModeMenu()
+    expect(modeMenuOpen()).toBe(false)
+    // …and the control: on the open page that same Tab DOES open it — so the guard above is a
+    // guard and not a dead gesture.
+    closeSettings('escape')
     openModeMenu()
     expect(modeMenuOpen()).toBe(true)
   })

@@ -84,10 +84,25 @@ describe('the four gaps the Accessibility section admits to — each fails when 
     // still blanket-suppressed, every ring rule names a scope, and the only two scopes in the app
     // are the ⚙ menu's card and the popup scrim. Give the game screens or the top bar a ring and
     // one of these goes red; rewrite the sentence in the same change.
+    // ⚠ EVERY SELECTOR OF EVERY RULE THAT DRAWS A RING, not the first one of the first. This used
+    // to find a ring rule by its `:focus` and read only the text before it — so a rule whose SECOND
+    // selector had no :focus and no scope ("…,[data-kbd-cursor]") passed, and that selector ringed
+    // the options of the frosted lists in the top bar while this sentence said nothing there was
+    // ringed. A ring is found by what it draws (a solid 2px outline in a ring colour), and each
+    // comma-separated selector of its rule has to sit inside a scope.
     expect(cssCode).toContain('button:focus,select:focus{outline:none}')
-    const ringRules = [...cssCode.matchAll(/([^{}]*):focus[^{}]*\{[^}]*outline:2px solid var\(/g)]
+    const ringRules = [...cssCode.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, , body]) =>
+      /outline:2px solid var\(--kbd-ring/.test(body),
+    )
     expect(ringRules.length).toBe(1)
-    expect(ringRules[0][1]).toContain('.focus-scope')
+    const selectors = ringRules[0][1].split(/,(?![^(]*\))/).map((s) => s.trim())
+    expect(selectors.length).toBeGreaterThan(0)
+    for (const selector of selectors)
+      expect(selector).toMatch(/^:root\[data-keyboard\] \.focus-scope /)
+    // …and nothing the stylesheet rings is a mark a list could put on its options.
+    expect(cssCode).not.toMatch(
+      /\[role="(listbox|option)"\][^{}]*\{[^}]*outline:2px solid (?!transparent)/,
+    )
     const scoped = ['src/components', 'src/modes', 'src']
       .flatMap((dir) =>
         readdirSync(join(dirname(fileURLToPath(import.meta.url)), '..', dir))

@@ -12,8 +12,9 @@ import { dismissKeyboard, opensKeyboard } from '../lib/textEntry.js'
 //   • ESCAPE closes the top LAYER — one press, one layer, newest first.
 //   • A PRESS OUTSIDE closes the top layer only, never the one under it as well.
 //   • THE DIM is painted by the top popup alone, so two popups never darken the page twice.
-//   • THE KEYBOARD'S PAGE SHORTCUTS stand aside while a popup or the ⚙ menu is open: no key acts
-//     on the page behind one (isPageCovered).
+//   • THE KEYBOARD STAYS IN WHAT IS OPEN. While a popup, the ⚙ menu or a dropdown list is open the
+//     page behind it is out of the keyboard's reach — no key acts on it and focus cannot be on it
+//     ("THE KEYBOARD'S REACH", below, and isPageCovered).
 //   • OPENING anything takes the soft keyboard down (dismissKeyboard, in pushOverlay).
 // There used to be one registry (Back) and three rules that each kept their own idea of what was
 // open — a document Escape listener per popup, a press-outside listener per layer, a scrim per
@@ -59,6 +60,20 @@ import { dismissKeyboard, opensKeyboard } from '../lib/textEntry.js'
 // TAB keep the old behavior byte-identical.
 
 type Press = (e: PointerEvent) => void
+// Where the keyboard may be while an entry is the top one covering the page. Three live readers
+// (they are asked when a key or a focus change arrives, never at render):
+export type Reach = {
+  // Every element the keyboard may be INSIDE. A popup: its scrim. The ⚙ menu: the whole top bar —
+  // its card, its gear, and the two lists beside the gear, which stay usable over it. A dropdown
+  // list: its button and its list.
+  parts: () => (Element | null)[]
+  // Where the keyboard is PUT when it has to be put somewhere inside: the popup's dialog, the
+  // menu's card, the list's button.
+  hold: () => HTMLElement | null
+  // The element whose controls Tab WALKS, wrapping at the ends — the popup's scrim, the menu's
+  // card. null where Tab is the layer's own key: an open list closes on it.
+  walk: () => HTMLElement | null
+}
 type Entry = {
   id: string
   close: () => void
@@ -66,9 +81,13 @@ type Entry = {
   escape: boolean
   // A popup: it sits behind a scrim that owns every press, and it is what the dim follows.
   modal: boolean
-  // It COVERS THE PAGE — every popup, and the ⚙ menu: while it is open the page behind it is out
-  // of the keyboard's reach (isPageCovered). A dropdown list and a page state do not.
-  coversPage: boolean
+  // It COVERS THE PAGE — every popup, the ⚙ menu and every dropdown list: this is where the
+  // keyboard may be while it is the newest such thing open ("THE KEYBOARD'S REACH", below). null for
+  // what does not cover it: a page state, and a layer that is only another view of a popup's card.
+  reach: Reach | null
+  // What had the keyboard when this opened, to be given it back when this closes. Covering entries
+  // only; never a text box (opening anything takes the keyboard off one first).
+  returnTo: HTMLElement | null
   // A popup that belongs to the APP rather than to a screen or to the ⚙ panel (the storage-full
   // notice): nothing that changes the screen takes it away. See isAppWidePopupOpen.
   appWide: boolean
@@ -136,19 +155,56 @@ const topPopupId = (): string | null => topWhere((entry) => entry.modal)?.id ?? 
 // answers differ for a popup and for the ⚙ menu); the hook is for rendering.
 export const isPopupOpen = () => topPopupId() !== null
 export const usePopupOpen = () => useSyncExternalStore(subscribe, isPopupOpen)
-// ★ IS THE PAGE COVERED — by a popup, or by the ⚙ menu? THE ONE RULE FOR EVERY KEY THAT ACTS ON THE
-// PAGE: while this is true the page behind is out of reach, so none of them does anything — the
-// answer keys (0–9), the Game Actions (N, R, O, C, S, ← and →: src/main.tsx's handler) and Lookup's
-// own ↑ / ↓ / Backspace / Delete (components/LookupCard's). It is asked here, of the stack, because
-// the stack is the only thing that knows what is open; each of those two handlers asks this one
-// question and keeps no gate of its own.
-// It used to be true for a popup only. Under the ⚙ MENU every one of those keys still acted on the
-// page: a digit answered the date behind the menu, N drew a new one, ← stepped the history, and on
-// Lookup an arrow moved the selection and Backspace emptied the card — all behind a menu the player
-// was reading. (What an open layer does NOT block is argued where the keys are handled: the mode
-// letters, H and G replace or close what is open rather than reach behind it, and a control inside
-// the menu still gets its own keys — the arrows along a setting's options, Tab, Escape, typing.)
-export const isPageCovered = () => stack.some((entry) => entry.coversPage)
+// ── THE KEYBOARD'S REACH ───────────────────────────────────────────────────────────────────────
+// ★ ONE RULE: WHILE ANYTHING COVERS THE PAGE — a popup, the ⚙ menu, an open dropdown list — THE
+// KEYBOARD BELONGS TO THE NEWEST SUCH THING, AND THE PAGE BEHIND IT CANNOT BE REACHED BY IT. The
+// stack is the only thing that knows what is open, so the whole rule is kept here, in four parts
+// that all read the same fact (the top entry with a `reach`):
+//   1. THE PAGE'S OWN KEYS DO NOTHING (isPageCovered). They are window-wide shortcuts, not keys
+//      sent to a focused control — the answer keys (0–9), the Game Actions (N, R, O, C, S, ← and
+//      →) and Tab's "open the mode selector" in src/main.tsx's handler, and Lookup's ↑ / ↓ /
+//      Backspace / Delete in components/LookupCard's — so keeping focus off the page (parts 2–4)
+//      cannot stop them, and each of those handlers asks this one question instead.
+//   2. FOCUS IS TAKEN OFF THE PAGE WHEN THE LAYER OPENS, and given back when it closes
+//      (pushOverlay, handBack). Without this a button on the page that had the keyboard kept it:
+//      press New, open ⚙ with G, and Space or Enter pressed New again behind the menu.
+//   3. FOCUS THAT ARRIVES OUTSIDE COMES STRAIGHT BACK (the focusin listener below) — a screen
+//      behind focusing itself, a script, a browser walking Tab somewhere this did not expect.
+//   4. TAB AND SHIFT+TAB WALK THE LAYER'S OWN CONTROLS AND WRAP AT THE ENDS (the keydown listener
+//      below), so neither can walk out into the page.
+// WHY NOT THE `inert` ATTRIBUTE on what is covered, which gives 2–4 for nothing: it also takes the
+// POINTER and the SCROLL away from whatever wears it, and under the ⚙ menu and a list those belong
+// to the page still — a tap outside closes the menu AND lands on what was tapped, and the page
+// scrolls under an open list (components/CustomSelect's dismiss rule, an owner's decision). Only a
+// popup's scrim already blocks both, and a rule that is one thing under a popup and another under a
+// menu is two rules. So this is the keyboard's rule and it touches nothing else.
+// WHAT IT DELIBERATELY LEAVES ALONE is argued where the keys are handled (src/main.tsx): the mode
+// letters, H and G replace or close what is open rather than reach behind it. And a control inside
+// the layer keeps its own keys — the arrows along a setting's options, Escape, typing.
+const topCover = (): Entry | undefined => topWhere((entry) => entry.reach !== null)
+export const isPageCovered = () => topCover() !== undefined
+const within = (reach: Reach, el: Element | null) =>
+  el !== null && reach.parts().some((part) => part !== null && part.contains(el))
+const focusOn = (el: HTMLElement | null) => el?.focus({ preventScroll: true })
+// Where focus is, when it is on something: null for nothing, <body>, or an element already removed.
+const focused = (): HTMLElement | null => {
+  const active = document.activeElement
+  return active instanceof HTMLElement && active !== document.body && active.isConnected
+    ? active
+    : null
+}
+// Every control Tab can land on inside `walk`, in the order Tab reaches them. "On screen" is asked
+// the way src/main.tsx's key handler asks it (offsetParent): a control in a display:none branch is
+// not a stop. A control marked aria-disabled IS one — it is announced as unavailable, which a
+// keyboard or screen-reader user can only hear by landing on it.
+const TAB_STOPS = 'button,input,select,textarea,a[href],[tabindex]'
+const tabStops = (walk: HTMLElement) =>
+  Array.from(walk.querySelectorAll<HTMLElement>(TAB_STOPS)).filter(
+    (el) =>
+      el.tabIndex >= 0 &&
+      !(el as HTMLButtonElement | HTMLInputElement).disabled &&
+      el.offsetParent !== null,
+  )
 // Is THIS the top popup, as the stack stands this instant? For a popup's own event handlers, which
 // can run between the stack changing and React re-rendering the popups to match (components/Popup's
 // focus rule); rendering reads the same answer through usePopupLayer.
@@ -190,8 +246,8 @@ if (typeof window !== 'undefined') {
     }
     // A real Back press: close the top-most overlay. The browser already popped its history entry,
     // and popping it from the stack HERE means the overlay's effect-cleanup popOverlay() finds it
-    // gone and does NOT step back again (which would over-pop). See useRegistration's cleanup
-    // below.
+    // gone and does NOT step back again (which would over-pop) — it still hands the keyboard back.
+    // See useRegistration's cleanup below.
     const top = stack.pop()
     if (top) {
       notify()
@@ -301,16 +357,59 @@ if (typeof window !== 'undefined') {
     (e) => topWhere((entry) => entry.modal || entry.press !== null)?.press?.(e),
     true,
   )
+  // THE KEYBOARD'S REACH, part 4 — TAB. Capture, like Escape, so no control inside can switch it
+  // off; and it stops nothing, so whatever else listens for Tab (lib/keyboardFocus) still hears it.
+  // In the middle of the layer's controls the browser's own step is left to happen: it is right,
+  // and it is the only thing that knows the order a screen reader shares. This acts at the edges —
+  // the step that would leave — and when the keyboard is not on one of the controls at all (on the
+  // card, on the gear, on nothing), where the first Tab goes to the first control and the first
+  // Shift+Tab to the last. A layer with NO control (the Changelog, the run breakdown, the
+  // storage-full notice — text only) keeps the keyboard on what it holds.
+  // Ctrl/Alt/⌘ + Tab are the browser's and the system's.
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return
+      const reach = topCover()?.reach
+      const walk = reach?.walk()
+      if (!reach || !walk) return
+      const stops = tabStops(walk)
+      const active = focused()
+      // Is there a control further on in the direction of travel? (A control INSIDE the focused
+      // element counts as after it and never as before it.)
+      const further =
+        active !== null &&
+        walk.contains(active) &&
+        stops.some((stop) => {
+          if (stop === active) return false
+          const where = active.compareDocumentPosition(stop)
+          return e.shiftKey
+            ? (where & Node.DOCUMENT_POSITION_PRECEDING) !== 0 && !stop.contains(active)
+            : (where & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        })
+      if (further) return
+      e.preventDefault()
+      focusOn(stops.length ? stops[e.shiftKey ? stops.length - 1 : 0] : reach.hold())
+    },
+    true,
+  )
+  // THE KEYBOARD'S REACH, part 3 — focus that lands outside the top covering layer comes back to
+  // it. The stack is read as the event arrives, so a layer that has just opened or closed is
+  // already (or no longer) the one asked.
+  document.addEventListener('focusin', (e) => {
+    const reach = topCover()?.reach
+    if (reach && e.target instanceof Element && !within(reach, e.target)) focusOn(reach.hold())
+  })
 }
 
-function pushOverlay(opened: Omit<Entry, 'depth'>) {
-  if (typeof window === 'undefined' || stack.some((e) => e.id === opened.id)) return
+function pushOverlay(opened: Omit<Entry, 'depth' | 'returnTo'>): Entry | null {
+  if (typeof window === 'undefined' || stack.some((e) => e.id === opened.id)) return null
   // Its history entry: a new one, one deeper than where we stand — or, for the first overlay to
   // open on a page that loaded onto a previous load's marker entry, that entry taken over at the
   // depth it already has (see onLoadedOverlayEntry). The iOS installed app writes no history, so an
   // overlay there owns the entry it opened on.
   const takeOver = onLoadedOverlayEntry || IOS_STANDALONE
-  const entry: Entry = { ...opened, depth: takeOver ? entryDepth : entryDepth + 1 }
+  const entry: Entry = { ...opened, returnTo: null, depth: takeOver ? entryDepth : entryDepth + 1 }
   stack.push(entry)
   notify()
   // ★ OPENING AN OVERLAY TAKES THE KEYBOARD DOWN (round 18). The owner's rule, verbatim: "when the
@@ -337,12 +436,47 @@ function pushOverlay(opened: Omit<Entry, 'depth'>) {
   // readout) normalize-commit; the Lookup date box has no onBlur at all, so its text is simply left
   // standing. Either way opening something is not a discard — Escape is the discard, everywhere.
   dismissKeyboard()
-  if (IOS_STANDALONE) return
+  // THE KEYBOARD'S REACH, part 2 — a layer that covers the page TAKES THE KEYBOARD AS IT OPENS,
+  // unless the keyboard is already inside it (a list's button, focused by the press that opened
+  // it; the gear). What had it is remembered, to be given it back when this closes (handBack).
+  // After the line above, on purpose: what is remembered is then never a text box, so closing a
+  // layer can never put the soft keyboard back up.
+  if (entry.reach) {
+    entry.returnTo = focused()
+    if (!within(entry.reach, entry.returnTo)) focusOn(entry.reach.hold())
+  }
+  if (IOS_STANDALONE) return entry
   const marker = { cgOverlay: entry.id, cgDepth: entry.depth }
   if (takeOver) window.history.replaceState(marker, '')
   else window.history.pushState(marker, '')
   entryDepth = entry.depth
   onLoadedOverlayEntry = false
+  return entry
+}
+
+// THE KEYBOARD'S REACH, part 2, the other half — a covering layer that has closed GIVES THE
+// KEYBOARD BACK. Run when the layer's own component lets go of it (useRegistration's cleanup), which
+// every way of closing reaches — its own controls, Escape, a press outside, Back, the screen behind
+// it being replaced — and by which time React has removed what it drew.
+//   • Only when the keyboard was left with the layer: still on something inside it, or on nothing
+//     because what held it has just been removed. Focus already somewhere else — the press that
+//     closed a menu has focused what it pressed — is left where it is.
+//   • To what had it when the layer opened — the control that opened a popup, the button on the
+//     page that was last pressed — if that is still there, and within reach of whatever still
+//     covers the page. Not when that was part of the layer itself (a list's own button, the gear):
+//     the layer handed nothing over, so there is nothing to hand back, and a tap outside a list
+//     must not pull the keyboard back onto its button.
+//   • Otherwise to the layer now on top, if there is one: a popup that was waiting under the one
+//     just closed takes the keyboard again.
+function handBack(closed: Entry) {
+  if (!closed.reach) return
+  const active = focused()
+  if (active && !within(closed.reach, active)) return
+  const reach = topCover()?.reach
+  const from = closed.returnTo
+  const back = from?.isConnected && !within(closed.reach, from) ? from : null
+  if (back && (!reach || within(reach, back))) focusOn(back)
+  else if (reach && !within(reach, active)) focusOn(reach.hold())
 }
 
 // ⚠⚠ OVERLAYS THAT CLOSE TOGETHER UNWIND TOGETHER — ONE TRAVERSAL, ONE IGNORED popstate. This once
@@ -373,12 +507,14 @@ const settleQueuedCloses = () => {
   settle()
 }
 
-function popOverlay(id: string) {
-  if (typeof window === 'undefined') return
-  const i = stack.findIndex((e) => e.id === id)
+function popOverlay(entry: Entry) {
+  const i = stack.indexOf(entry)
+  if (i !== -1) {
+    stack.splice(i, 1)
+    notify()
+  }
+  handBack(entry)
   if (i === -1) return // already removed by a real Back press → nothing to undo (avoids over-popping)
-  stack.splice(i, 1)
-  notify()
   if (IOS_STANDALONE) return // no entry was pushed for this overlay → no history to unwind
   if (settleQueued) return
   settleQueued = true
@@ -387,7 +523,7 @@ function popOverlay(id: string) {
 
 // Register `id` as open while `isOpen` is true. `id` must be stable + unique per INSTANCE across
 // the whole app — use useId() for repeated components (dropdowns).
-// `close` and `press` are read through refs, so a caller's inline arrow never re-registers.
+// `close`, `press` and `reach` are read through refs, so a caller's inline arrow never re-registers.
 //
 // ⚠ LAYOUT EFFECTS, NOT PASSIVE ONES. Which scrim paints the dim is read off the stack, so the
 // stack has to be right before the frame that shows the change is painted: registered a frame late,
@@ -399,7 +535,7 @@ function useRegistration(
   id: string,
   escape: boolean,
   modal: boolean,
-  coversPage: boolean,
+  reach: Reach | null,
   press: Press | null,
   appWide = false,
 ) {
@@ -407,52 +543,63 @@ function useRegistration(
   // react-hooks/refs rule). The registered closures read them lazily, when the gesture arrives.
   const closeRef = useRef(close)
   const pressRef = useRef(press)
+  const reachRef = useRef(reach)
   useLayoutEffect(() => {
     closeRef.current = close
     pressRef.current = press
+    reachRef.current = reach
   })
   const pressed = press !== null
+  const covers = reach !== null
   useLayoutEffect(() => {
     if (!isOpen) return
-    pushOverlay({
+    const entry = pushOverlay({
       id,
       close: () => closeRef.current(),
       escape,
       modal,
-      coversPage,
+      reach: covers
+        ? {
+            parts: () => reachRef.current?.parts() ?? [],
+            hold: () => reachRef.current?.hold() ?? null,
+            walk: () => reachRef.current?.walk() ?? null,
+          }
+        : null,
       appWide,
       press: pressed ? (e) => pressRef.current?.(e) : null,
     })
-    return () => popOverlay(id)
-  }, [isOpen, id, escape, modal, coversPage, pressed, appWide])
+    if (!entry) return
+    return () => popOverlay(entry)
+  }, [isOpen, id, escape, modal, covers, pressed, appWide])
 }
 
 // A PAGE STATE (Show Codes, How-to-Play): Back closes it, and nothing else here does.
 export function useBackButton(isOpen: boolean, close: () => void, id: string) {
-  useRegistration(isOpen, close, id, false, false, false, null)
+  useRegistration(isOpen, close, id, false, false, null, null)
 }
 
 // A LAYER with no scrim (⚙ Settings, a dropdown list, the preset manager's delete question): Back
 // and Escape close it. `onPress` is told about every press on the page while this is the top
 // layer, and decides for itself what counts as outside; a layer that is a view of a popup's own
 // card passes none, and the press is its popup's scrim's to answer.
-// `coversPage`: the ⚙ menu alone says true — it is the one scrim-less layer the player reads rather
-// than picks from, so the page behind it takes no key while it is open (isPageCovered). A dropdown
-// list handles the keys it uses itself and leaves the rest as they were.
+// `reach`: where the keyboard may be while this layer is the top one covering the page ("THE
+// KEYBOARD'S REACH", above) — the ⚙ menu and every dropdown list pass one. The delete question
+// passes none: it is its popup's own card, and the popup's reach already holds the keyboard there.
 export function useLayer(
   isOpen: boolean,
   close: () => void,
   id: string,
   onPress?: Press,
-  coversPage = false,
+  reach?: Reach,
 ) {
-  useRegistration(isOpen, close, id, true, false, coversPage, onPress ?? null)
+  useRegistration(isOpen, close, id, true, false, reach ?? null, onPress ?? null)
 }
 
 // A POPUP, open for as long as its component is mounted (components/Popup, the only caller).
 // Returns whether it is the TOP popup — the one that paints the dim and holds the keyboard.
 // `appWide`: it belongs to no screen and no panel (isAppWidePopupOpen argues what that changes).
-export function usePopupLayer(close: () => void, id: string, appWide: boolean) {
-  useRegistration(true, close, id, true, true, true, null, appWide)
+// `reach`: its scrim, and the dialog in it — every popup covers the page.
+export function usePopupLayer(close: () => void, id: string, appWide: boolean, reach: Reach) {
+  useRegistration(true, close, id, true, true, reach, null, appWide)
   return useSyncExternalStore(subscribe, () => isTopPopup(id))
 }

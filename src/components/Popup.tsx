@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { MODAL_DIM_CLASS, MODAL_SCRIM_CLASS, trapModalTab } from './modalContract.js'
+import { MODAL_DIM_CLASS, MODAL_SCRIM_CLASS } from './modalContract.js'
 import { isTopPopup, usePopupLayer } from './overlayStack.js'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -31,19 +31,19 @@ import { isTopPopup, usePopupLayer } from './overlayStack.js'
 //     thing — is the ★★ note above App's theme effect in src/main.tsx. Here it is only two rules:
 //     the TOP popup draws it (so there is exactly one, at any depth), and a tap on it is a tap on
 //     the dim.
-//   • FOCUS, BOTH WAYS. The top popup holds the keyboard: its dialog is focused when it opens, and
-//     again whenever the popup above it closes without handing focus back inside it. On close,
-//     focus returns to whatever held it when this popup opened — a control in the popup or the ⚙
-//     panel underneath, or the button on the page that opened it — when that is still there to take
-//     it. (A text box never is: opening anything blurs it first, overlayStack's keyboard rule, so
-//     closing a popup can never put the soft keyboard back up.)
-//   • …AND IT KEEPS THE KEYBOARD WHILE IT IS ON TOP. Focus that lands anywhere outside the top
-//     popup — Tab pressed with nothing focused, which the browser walks into the page behind the
-//     dim; a screen behind it focusing itself — is brought straight back to the dialog. So is focus
-//     that leaves for NOWHERE, which is what <body> holding it means: a text box in the card that
+//   • WHERE THE KEYBOARD MAY BE while this is the top popup: inside this scrim, held on its dialog,
+//     with Tab walking the scrim's controls. That is all this shell SAYS (the `reach` it registers
+//     with); components/overlayStack's "THE KEYBOARD'S REACH" is the one rule that acts on it, the
+//     same for a popup, the ⚙ menu and a dropdown list — the dialog takes the keyboard as the popup
+//     opens, focus that lands outside comes back, Tab and Shift+Tab wrap, and closing hands the
+//     keyboard back to whatever had it (a control in the popup or the ⚙ menu underneath, the
+//     button on the page that opened it).
+//   • …AND FOCUS THAT LEAVES FOR NOWHERE COMES BACK TO THE DIALOG — the one part that is a
+//     popup's alone. <body> holding focus is what "nowhere" means: a text box in the card that
 //     blurs itself when Enter commits it, a press on the dim that is not a tap (a right-click, one
-//     let go over the card), a control removed while it had the keyboard.
-//   • THE TAB TRAP, on the scrim (modalContract's trapModalTab).
+//     let go over the card), a control removed while it had the keyboard. Under the ⚙ menu or a
+//     list that state is harmless — no key acts from there and the next Tab starts the walk — but
+//     a popup is announced as a modal dialog, and a screen reader left on <body> is outside it.
 //   • THE KEYBOARD'S RING. The scrim is a .focus-scope (modalContract's MODAL_SCRIM_CLASS; index.css,
 //     "THE KEYBOARD FOCUS RING"), so every control in every popup shows where the keyboard is, and
 //     none of them has to ask.
@@ -70,7 +70,12 @@ export default function Popup({
   children: ReactNode
 }) {
   const scrimRef = useRef<HTMLDivElement | null>(null)
-  const top = usePopupLayer(onDismiss, id, appWide)
+  const dialog = () => scrimRef.current?.querySelector<HTMLElement>('[role="dialog"]') ?? null
+  const top = usePopupLayer(onDismiss, id, appWide, {
+    parts: () => [scrimRef.current],
+    hold: dialog,
+    walk: () => scrimRef.current,
+  })
   // Was EITHER END of the press now in progress on the CARD? The click that ends a press is reported
   // on the nearest element containing both ends of it — so a press that began on the card and was
   // released over the dim, and one that began on the dim and was released over the card, both arrive
@@ -88,18 +93,10 @@ export default function Popup({
   const isDim = (e: { target: EventTarget; currentTarget: EventTarget }) =>
     e.target === e.currentTarget ||
     (e.target instanceof Element && e.target.hasAttribute('data-status-bar-dim'))
-  // ★ KEEP THE KEYBOARD WHILE ON TOP: focus arriving anywhere outside this popup comes back to its
-  // dialog. The stack is asked at the moment of the event, not the `top` this render saw: when a
-  // second popup opens over this one, it takes focus before React has re-rendered this one as "no
-  // longer on top", and a rule read off the render would pull the keyboard back down from it.
-  // ⚠ DECLARED BEFORE the hand-back effect below, and the order is load-bearing: cleanups run in
-  // declaration order, so on close this listener is gone before focus is handed back to the opener
-  // — which is outside the popup, and would otherwise be pulled straight back into a card that is
-  // about to be removed.
-  // ★ …AND FOCUS THAT GOES NOWHERE COMES BACK TOO. No `focusin` reports that — nothing was focused
-  // — so the listener above never hears of it, and the keyboard is left on <body> behind the scrim:
-  // outside the Tab trap, with nothing on screen to say where it is. Two things can send it there,
-  // and each has its own signal:
+  // ★ FOCUS THAT GOES NOWHERE COMES BACK TO THE DIALOG. No `focusin` reports that — nothing was
+  // focused — so the stack's own rule never hears of it, and the keyboard is left on <body> behind
+  // the scrim, with nothing on screen to say where it is. Two things can send it there, and each
+  // has its own signal:
   //   • SOMETHING LET GO OF IT — a text box blurring itself, a press on something that cannot hold
   //     focus. That is a `focusout` with no element taking over.
   //   • THE CONTROL THAT HAD IT WAS REMOVED — a tap-to-type readout closing on Escape. Some engines
@@ -113,15 +110,13 @@ export default function Popup({
   //   • ON SOMETHING — a text box, a reorder grip that focused itself, a readout's input focused
   //     as it appeared, a box that kept the keyboard while the WINDOW lost focus — and this stands
   //     aside. It only ever acts when nothing holds focus, so it cannot fight a control for it.
-  //   • ON NOTHING, with this popup on top — and the dialog takes it.
+  //   • ON NOTHING, with this popup on top — and the dialog takes it. (The stack is asked at that
+  //     moment, not the `top` this render saw: a second popup opening over this one takes focus
+  //     before React has re-rendered this one as "no longer on top".)
   useLayoutEffect(() => {
     const scrim = scrimRef.current
     if (!scrim) return
     const toDialog = () => scrim.querySelector<HTMLElement>('[role="dialog"]')?.focus()
-    const keep = (e: FocusEvent) => {
-      if (!isTopPopup(id) || !(e.target instanceof Node) || scrim.contains(e.target)) return
-      toDialog()
-    }
     let look = 0
     const lookWhenSettled = () => {
       window.clearTimeout(look)
@@ -133,32 +128,15 @@ export default function Popup({
     const letGo = (e: FocusEvent) => {
       if (e.relatedTarget === null) lookWhenSettled()
     }
-    document.addEventListener('focusin', keep)
     document.addEventListener('focusout', letGo)
     const removals = new MutationObserver(lookWhenSettled)
     removals.observe(scrim, { childList: true, subtree: true })
     return () => {
-      document.removeEventListener('focusin', keep)
       document.removeEventListener('focusout', letGo)
       removals.disconnect()
       window.clearTimeout(look)
     }
   }, [id])
-  // Hand focus back on close. Declared after the stack entry on purpose: registering takes the
-  // keyboard down first, so what is remembered here is never a text box.
-  useLayoutEffect(() => {
-    const opener = document.activeElement
-    return () => {
-      if (opener instanceof HTMLElement && opener !== document.body && opener.isConnected)
-        opener.focus({ preventScroll: true })
-    }
-  }, [])
-  // Take focus whenever this becomes the top popup and does not already hold it.
-  useLayoutEffect(() => {
-    const scrim = scrimRef.current
-    if (!top || !scrim || scrim.contains(document.activeElement)) return
-    scrim.querySelector<HTMLElement>('[role="dialog"]')?.focus()
-  }, [top])
   return createPortal(
     <div
       ref={scrimRef}
@@ -176,7 +154,6 @@ export default function Popup({
         pressOnCardRef.current = false
         if (isDim(e) && !onCard) onDismiss()
       }}
-      onKeyDown={trapModalTab}
     >
       {top && <div data-status-bar-dim className="status-bar-dim" />}
       {children}

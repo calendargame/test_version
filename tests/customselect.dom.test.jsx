@@ -11,7 +11,9 @@
 // (Behavior updated 2026-06-06; the box-on-open suppression was 2026-06-01.)
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
+import { useRef } from 'react'
 import CustomSelect from '../src/components/CustomSelect.jsx'
+import { useLayer } from '../src/components/overlayStack.js'
 
 const OPTIONS = [
   { value: 'a', label: 'Alpha' },
@@ -77,19 +79,85 @@ describe('CustomSelect — active-cursor highlight', () => {
     expect(boxed[0].textContent).toContain('Gamma')
   })
 
-  it('the trigger does NOT open on Enter / Space / arrows (only Tab or a mouse click opens it)', () => {
+  // The owner's ruling of 2026-10-06, which replaced "no key opens it from the trigger": a list
+  // opens from the keyboard like any list button. Until then the preset list and the ⚙ menu's
+  // "Open in" could not be opened without a pointer at all.
+  it('Enter or Space on the closed trigger OPENS the list, and the browser`s own click is refused', () => {
     const root = document.createElement('div')
     root.id = 'root'
     document.body.appendChild(root)
     render(<CustomSelect value="b" onChange={() => {}} options={OPTIONS} ariaLabel="Test" />)
     const trigger = screen.getByRole('button', { name: /^Test,/ })
-    for (const key of ['Enter', ' ', 'ArrowDown', 'ArrowUp']) {
-      fireEvent.keyDown(trigger, { key })
-      expect(screen.queryAllByRole('option').length).toBe(0) // stays closed — no keyboard open from the trigger
-      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    for (const key of ['Enter', ' ']) {
+      const delivered = fireEvent.keyDown(trigger, { key })
+      expect(delivered).toBe(false) // preventDefault: the key must not ALSO click the button shut
+      expect(screen.queryAllByRole('option').length).toBe(3)
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      expect(options().filter(hasBox).length).toBe(0) // opening moves no cursor
+      fireEvent.keyDown(trigger, { key: 'Tab' }) // the list`s own way out
+      expect(screen.queryAllByRole('option').length).toBe(0)
     }
-    fireEvent.click(trigger) // a mouse click still opens it
-    expect(screen.queryAllByRole('option').length).toBe(3)
+    // A chord is not the key: Ctrl+Enter and friends are left to the browser.
+    fireEvent.keyDown(trigger, { key: 'Enter', ctrlKey: true })
+    expect(screen.queryAllByRole('option').length).toBe(0)
+  })
+
+  it('↑ and ↓ open it only while the page is covered — on the open page they are Lookup`s keys', () => {
+    const root = document.createElement('div')
+    root.id = 'root'
+    document.body.appendChild(root)
+    // Stands in for the ⚙ menu: a layer that covers the page, with the list`s trigger inside it.
+    function Cover({ children }) {
+      const box = useRef(null)
+      useLayer(true, () => {}, 'cover', undefined, {
+        parts: () => [box.current],
+        hold: () => box.current,
+        walk: () => box.current,
+      })
+      return (
+        <div ref={box} tabIndex={-1}>
+          {children}
+        </div>
+      )
+    }
+    const select = <CustomSelect value="b" onChange={() => {}} options={OPTIONS} ariaLabel="Test" />
+    const view = render(select)
+    const trigger = () => screen.getByRole('button', { name: /^Test,/ })
+    for (const key of ['ArrowDown', 'ArrowUp']) {
+      expect(fireEvent.keyDown(trigger(), { key })).toBe(true) // not claimed: the page`s to use
+      expect(screen.queryAllByRole('option').length).toBe(0)
+    }
+    view.rerender(<Cover>{select}</Cover>)
+    for (const key of ['ArrowDown', 'ArrowUp']) {
+      expect(fireEvent.keyDown(trigger(), { key })).toBe(false)
+      expect(screen.queryAllByRole('option').length).toBe(3)
+      fireEvent.keyDown(trigger(), { key: 'Tab' })
+      expect(screen.queryAllByRole('option').length).toBe(0)
+    }
+  })
+
+  it('Shift+Tab closes an open list like Tab does, and the keyboard stays on its button', () => {
+    // It used to be left to the browser, which walked focus off the trigger to whatever came
+    // before it — the page included — with the list still open.
+    const trigger = openWith('b')
+    const delivered = fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true })
+    expect(delivered).toBe(false)
+    expect(screen.queryAllByRole('option').length).toBe(0)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('NOTHING in an open list is marked for a focus ring, however the cursor got there', () => {
+    // The list`s cursor is its own grey box. An attribute the stylesheet ringed
+    // ([data-kbd-cursor]) once put a dark outline on the arrow-reached option of every frosted
+    // list in the app, the top bar`s included.
+    const trigger = openWith('a')
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(trigger, { key: 'End' })
+    for (const option of options()) {
+      expect(option.hasAttribute('data-kbd-cursor')).toBe(false)
+      expect(option.matches(':focus')).toBe(false) // the trigger keeps the real focus
+    }
+    expect(options().filter(hasBox).length).toBe(1)
   })
 
   it('a MOUSE hover highlights an option, a TOUCH pointer does not', () => {
