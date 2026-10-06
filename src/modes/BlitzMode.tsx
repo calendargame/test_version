@@ -335,7 +335,7 @@ function BlitzMode({
     useJulian,
     saveStats: true,
     timingOff: false,
-    inPlay: () => visible && active, // while a round is under way
+    play: visible && active ? 'live' : 'idle', // while a round is under way
     // Round 21 — seed the reducer from the parked ended round when there is one (a getter, read
     // once in the lazy init). `parkedRound` was keyed to the bests copy live at mount, so this only
     // ever restores the incoming copy's own round and cannot pull in the one just left.

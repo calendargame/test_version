@@ -88,7 +88,7 @@ function ClassicMode({
     useJulian,
     saveStats,
     timingOff,
-    inPlay: () => visible,
+    play: visible ? 'question' : 'idle',
     getInitialStats: () => useProgress.getState().stats.classic,
     getInitialState: () =>
       restoredEngine(parked, {

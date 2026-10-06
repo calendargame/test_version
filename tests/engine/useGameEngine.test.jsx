@@ -22,7 +22,7 @@ const opts = {
   useJulian: false,
   saveStats: true,
   timingOff: true,
-  inPlay: () => true,
+  play: 'question',
 }
 
 describe('useGameEngine', () => {

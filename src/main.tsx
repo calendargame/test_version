@@ -30,7 +30,7 @@ import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
 import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
 import StorageUsagePopup from './components/StorageUsagePopup.jsx'
-import { useStorageUsage, watchStorageUsage, announceStorageWarning } from './store/storageUsage.js'
+import { useStorageUsage, watchStorageUsage, announceStorageWarning, measureStorageLimit } from './store/storageUsage.js'
 import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, watchScrollEdges, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
@@ -1434,7 +1434,10 @@ import BlitzMode from './modes/BlitzMode.jsx'
       const toggleSettings=useCallback(()=>{
         const opening=!settingsOpen;
         if(opening&&gearDot)clearUpdateDot(GEAR_DOT_KEY); // notifies → the dot re-reads false
-        if(opening)announceStorageWarning(true); // a storage warning still waiting for a moment off the clock: opening ⚙ is one
+        // Opening ⚙ is the player stepping away by choice — the moment for two things store/storageUsage
+        // may be owing: a measurement of the device (so the line in the menu is right as it appears),
+        // then a storage warning still waiting to be shown.
+        if(opening){measureStorageLimit();announceStorageWarning(true);}
         setSettingsOpen(opening);
       },[settingsOpen,gearDot]);
       useEffect(()=>{
@@ -1485,7 +1488,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // The device is counted from here on (store/storageUsage: once now, then every save and removal
       // moves the count). ⚠ AFTER the effect above, on purpose: its build stamp and changelog marker
       // are written around the storage door, and the first count has to include them.
-      useEffect(()=>watchStorageUsage(isPopupOpen),[]);
+      useEffect(()=>watchStorageUsage(),[]);
       // The update paths' #boot handoff (paired with updateEngagedRef above — the auto-update flow
       // and the build-change flash): remove the splash only AFTER the Updating overlay has
       // COMMITTED — effects run post-commit, so by now the overlay is in the DOM and there is never
@@ -2671,8 +2674,16 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // real build #root is in the HTML before this module runs. (The eventual thin entry /
     // app-module split falls out naturally during the Step-6 cleanup; this is the minimal
     // touch needed to make App testable for the safety net.)
+    // ★ THE DEVICE'S STORAGE LIMIT IS MEASURED HERE, AHEAD OF THE FIRST RENDER (store/storageUsage
+    // argues when and why): no screen exists yet, so no question has been drawn and no solve clock
+    // can be running, and what is on screen is index.html's Loading splash. It runs only when a
+    // measurement is owed — a device's first open, or a limit since shown wrong — and costs every
+    // other open one pass over the saved keys.
     const rootEl = typeof document !== "undefined" ? document.getElementById("root") : null;
-    if (rootEl) createRoot(rootEl).render(<ErrorBoundary><App/></ErrorBoundary>);
+    if (rootEl) {
+      measureStorageLimit();
+      createRoot(rootEl).render(<ErrorBoundary><App/></ErrorBoundary>);
+    }
 
 
     // Real-user error reporting. DEPLOYED builds only. This flag is the BUILD-time half —

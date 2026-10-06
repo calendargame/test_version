@@ -169,7 +169,7 @@ describe('useGameEngine, in development and under test', () => {
     useJulian: false,
     saveStats: true,
     timingOff: false,
-    inPlay: () => true,
+    play: 'question',
   }
   it('the first state and every state after an action are frozen all the way down', () => {
     const { result } = renderHook(() => useGameEngine(opts))

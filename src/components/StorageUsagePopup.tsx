@@ -52,8 +52,8 @@ function rowLabel(row: UsageRow, presets: Preset[]): string {
 //     ones worth clearing, and there are never many (at most a hundred, in practice a handful);
 //   • and the LARGEST owners are listed whatever they hold, until the list is LISTED_AT_LEAST long.
 //     Without that, a device with little on it showed one line — "Everything saved <1%" — which
-//     says nothing about what is there; and before the limit is measured there is no percentage to
-//     sort anything out by at all.
+//     says nothing about what is there; and on a device that could not be measured there is no
+//     percentage to sort anything out by at all.
 //   • what is left over is one last line, "Everything else": the many small owners a player with
 //     several presets has (each preset × each mode), and the app's own few keys, which are nobody's
 //     to clear.
@@ -75,8 +75,8 @@ export default function StorageUsagePopup() {
   const amnesic = useActiveAmnesicMode()
   if (!open) return null
   // Each owner's share of the WHOLE allowance, so the shares add up to the headline.
-  // ⚠ Until the device's limit has been measured (store/storageUsage) there is no whole to take a
-  // share of: the owners are listed with no figure beside them, and the card says why.
+  // ⚠ On a device whose limit could not be measured (store/storageUsage) there is no whole to take
+  // a share of: the owners are listed with no figure beside them, and the card says why.
   const measured = limit !== null
   const share = (chars: number) => (measured ? (chars / limit) * 100 : 0)
   const owners: UsageRow[] = rows
@@ -107,9 +107,9 @@ export default function StorageUsagePopup() {
           </p>
           {!measured && (
             <p>
-              How much room this device gives hasn&apos;t been measured yet, so there are no
-              percentages to show. The app measures it by itself a moment after it opens, while no
-              question is being timed — look again shortly.
+              How much room this device gives couldn&apos;t be measured, so there are no percentages
+              to show. The app tries again each time it starts, and each time you open ⚙ with no
+              round, run or flash under way.
             </p>
           )}
           <p className="font-semibold text-(--tx-100-90)">What is using it</p>

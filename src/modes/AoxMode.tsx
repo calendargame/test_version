@@ -203,9 +203,8 @@ function AoxMode({
     useJulian,
     saveStats: true,
     timingOff: false,
-    // While a run is under way and its date is on screen — One-by-One hides the next date, and
-    // starts its clock, only at Continue (`revealedQ`).
-    inPlay: (s) => visible && runPhase === 'running' && (!oneByOne || revealedQ === s.questionId),
+    // While a run is under way — all of it, the wait for Continue between two One-by-One dates too.
+    play: visible && runPhase === 'running' ? 'live' : 'idle',
     // Round 21 — seed the reducer from the parked ended run when there is one (a getter, read
     // once in the lazy init). `parkedRun` was keyed to the bests copy live at mount, so this only ever
     // restores the incoming copy's own run.

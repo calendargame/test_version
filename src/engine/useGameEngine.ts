@@ -33,7 +33,7 @@ import type { GameAction, GameState, Question, Stats } from './gameReducer.js'
 import { deepFreeze } from './freeze.js'
 import { checkGameInvariants } from './invariants.js'
 import { solveTimeFromMs } from './stats.js'
-import { useSolveClock } from '../lib/solveClock.js'
+import { usePlayerBusy } from '../lib/playerBusy.js'
 import { captureError } from '../observability/sentry.js'
 
 // genDate produces the next question for the active year range (the parent bakes in the
@@ -45,11 +45,12 @@ export interface UseGameEngineOptions {
   useJulian: boolean
   saveStats: boolean
   timingOff: boolean
-  // Is this engine's live question ON SCREEN AND IN PLAY — its mode the page being shown, and (where
-  // the mode has a start and an end) its round, run or flash under way with the date revealed? The
-  // mode's half of "is a solve clock running" (lib/solveClock); the engine supplies the rest below.
-  // Asked of the state, because a mode may need the engine's own question counter to answer.
-  inPlay: (state: GameState) => boolean
+  // What this engine's question is to the player right now, as its SCREEN sees it — the mode's half
+  // of "is the player busy" (lib/playerBusy); the engine supplies the rest below.
+  //   'live'      a round, a run or a flash is under way on the page being shown (Blitz, MoX, Flash);
+  //   'question'  a casual question is on the page being shown (Classic, Deduction);
+  //   'idle'      neither: another page is the one shown, or nothing has been begun.
+  play: 'live' | 'question' | 'idle'
   // A short mode label ('classic', 'flash', …) attached to any tripwire report so it says WHICH mode
   // hit an impossible state. Optional — the stats/history context is reported either way.
   label?: string
@@ -93,7 +94,7 @@ export function useGameEngine({
   useJulian,
   saveStats,
   timingOff,
-  inPlay,
+  play,
   label,
   getInitialStats,
   getInitialState,
@@ -126,15 +127,22 @@ export function useGameEngine({
   const restartTimer = () => {
     tStartRef.current = performance.now()
   }
-  // ★ IS THE CLOCK ABOVE ONE THE PLAYER IS BEING TIMED ON RIGHT NOW? (lib/solveClock — the one
-  // definition, reported from here for every mode.) Only while the question is in play, nothing has
-  // judged it yet (the card carries no calendar stamp: its first answer, Reveal or Show Codes is
+  // ★ IS THE PLAYER BUSY WITH THIS QUESTION RIGHT NOW? (lib/playerBusy — the one definition,
+  // reported from here for every mode.) A round, run or flash under way always is. A casual question
+  // is while the clock above is one the player is being timed on: the WAITING question — the card on
+  // screen, or the one parked at the front of the forward stack while an older card is browsed — has
+  // not been judged yet (it carries no calendar stamp: its first answer, Reveal or Show Codes is
   // still to come, and that is the moment a time is taken), and that time would be recorded.
-  useSolveClock(
-    inPlay(state) &&
-      !timingOff &&
-      effectiveSaveStats(state, saveStats) &&
-      state.card.jul === undefined,
+  const waiting = state.backDepth === 0 ? state.card : state.forwardStack[0].meta
+  usePlayerBusy(
+    play === 'live'
+      ? 'live'
+      : play === 'question' &&
+          !timingOff &&
+          effectiveSaveStats(state, saveStats) &&
+          waiting.jul === undefined
+        ? 'clock'
+        : null,
   )
 
   // Tripwire: after every state change, verify the engine's invariants (see engine/invariants.ts).

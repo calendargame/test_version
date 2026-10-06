@@ -1578,8 +1578,8 @@ export function SettingsPanel({
             </a>
           </div>
           {/* HOW FULL THE DEVICE'S ROOM FOR THE APP IS (store/storageUsage) — always shown, and a
-              tap opens the breakdown (components/StorageUsagePopup, App's). A dash until the
-              device's limit has been measured — there is no honest percentage before that. On a
+              tap opens the breakdown (components/StorageUsagePopup, App's). A dash on a device
+              whose limit could not be measured — there is no honest percentage without one. On a
               row of its own:
               the metadata row below is already full at a phone's width. From the warning line up
               it wears the warning colour (index.css's .storage-warn), with the words for it for a

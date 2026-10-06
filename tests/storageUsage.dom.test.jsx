@@ -6,9 +6,11 @@
 // counts toward the size and not toward the number of times); the COUNT (kept by the storage door,
 // right the moment a save or a removal lands — after Reset Stats, Clear History and a preset delete
 // on a filled device — and never by re-reading); the LIMIT (measured once per device, with a quota
-// of several sizes; when it may run; what is shown before it has; what a refused save teaches); the
-// popup opening by itself ONCE per upward crossing of 80% — never over a timed question, not on a
-// reload, not while usage stays above, again after a drop and a rise; the warning that stays (the
+// of several sizes; when it is taken — as the app starts, and when ⚙ or the popup opens — and when
+// it may not be; what is shown on a device that cannot be measured; what a refused save teaches,
+// and that it teaches it once); the popup opening by itself ONCE per upward crossing of 80% — never
+// while the player is busy, not on a reload, not while usage stays above, again after a drop and a
+// rise; the warning that stays (the
 // line's colour, the gear's dot) and what does and does not clear it; and its place beside the
 // storage-full notice.
 import { readFileSync } from 'node:fs'
@@ -19,13 +21,13 @@ import {
   readStorageUsage,
   refreshStorageUsage,
   watchStorageUsage,
+  measureStorageLimit,
   announceStorageWarning,
   forgetStorageUsage,
   storageUsed,
   usagePercent,
   DOCUMENTED_LIMITS,
   MAX_STORAGE_LIMIT,
-  IDLE_MS,
   STORAGE_WARN_PERCENT,
 } from '../src/store/storageUsage.js'
 import {
@@ -47,7 +49,7 @@ import {
   setPresetAmnesic,
 } from '../src/store/presetControl.js'
 import { resetStatsFreesRoom } from '../src/store/amnesic.js'
-import { useSolveClock } from '../src/lib/solveClock.js'
+import { usePlayerBusy } from '../src/lib/playerBusy.js'
 import { GEAR_DOT_KEY, markUpdateDot, readUpdateDot } from '../src/changelog.js'
 import { seedSealed, chunkId } from './helpers/progressWorld.js'
 import { readDate, correctDayName } from './helpers/modeScreen.jsx'
@@ -94,6 +96,7 @@ const gearLit = () => gear().querySelector('[data-update-dot]').getAttribute('da
 // What the gear's dot is saying — which is its colour (components/UpdateDot; index.css).
 const gearReason = () => gear().querySelector('[data-update-dot]').getAttribute('data-reason')
 const quotaError = () => new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+const realSetItem = Storage.prototype.setItem
 // The device takes `limit` characters in all (keys and values), as a browser counts them.
 function deviceLimit(limit) {
   const real = Storage.prototype.setItem
@@ -108,16 +111,19 @@ function deviceLimit(limit) {
   })
 }
 const scratchWrites = (writes) => writes.mock.calls.filter(([key]) => key === SCRATCH_KEY)
-// A running solve clock, as a mode screen holding a timed, unanswered question reports one.
-function Clock({ runs }) {
-  useSolveClock(runs)
+// What a mode screen reports of its question (lib/playerBusy): a running solve clock — a timed,
+// unanswered casual question — or, with `live`, a round, run or flash under way.
+function Clock({ runs, live = false }) {
+  usePlayerBusy(live ? 'live' : runs ? 'clock' : null)
   return null
 }
+// "The player has just become free" is said from a microtask: let it be said.
+const settled = () => act(async () => {})
 
 let stop = () => {}
-const watch = (popupOpen = () => false) => {
+const watch = () => {
   stop()
-  stop = watchStorageUsage(popupOpen)
+  stop = watchStorageUsage()
 }
 
 beforeEach(() => {
@@ -264,6 +270,12 @@ describe('the count is kept by the storage door, and is right the moment a chang
 
     it('on the mounted app: the line, its colour and the gear dot are right at once', () => {
       useProgress.getState().setModeStats('classic', long(6500))
+      // (Above the remembered limit, as this group's device is, the limit reads as wrong and
+      // opening ⚙ would measure it afresh — against the test runner's own, far larger, allowance.)
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+        if (key === SCRATCH_KEY) throw quotaError()
+        return realSetItem.call(this, key, value)
+      })
       mountApp()
       pressKey('Escape') // the popup the crossing opened
       expect(gearLit()).toBe(true)
@@ -335,6 +347,22 @@ describe('the count is kept by the storage door, and is right the moment a chang
     localStorage.clear() // …and a clear there is counted again from nothing
     window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: localStorage }))
     expect(storageUsed()).toBe(0)
+  })
+
+  // The browser's report arrives after the fact, carrying the text the OTHER tab wrote. If this page
+  // has saved to the same place since, that text is the older one — and the count used to be moved
+  // by it.
+  it('a report that arrives after this page has saved there again is counted as what is there now', () => {
+    watch()
+    const KEY = 'cg-lookup-v1'
+    const theirs = 'x'.repeat(4000)
+    localStorage.setItem(KEY, theirs) // the other tab's save…
+    writeItem(localStorage, KEY, 'mine') // …then this page's, before the report of theirs arrives
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: KEY, newValue: theirs, storageArea: localStorage }),
+    )
+    expect(localStorage.getItem(KEY)).toBe('mine')
+    expect(storageUsed()).toBe(everything())
   })
 
   it('opening the popup counts the device afresh, so a marker written around the door is in it', () => {
@@ -481,9 +509,7 @@ describe('measuring how much more a device will take', () => {
 })
 
 describe('the limit', () => {
-  const runIdle = () => act(() => vi.advanceTimersByTime(IDLE_MS))
-
-  it('is not known until the device has been measured: no percentage, no warning', () => {
+  it('is not known on a device that has not been measured: no percentage, no warning', () => {
     freshPage(null)
     fill()
     refreshStorageUsage()
@@ -495,78 +521,78 @@ describe('the limit', () => {
   it.each([
     ['half of Chromium’s', SAFARI, true],
     ['a size nobody documents', 3_333_333, false],
-  ])('is measured once the page is idle — a device whose limit is %s', (_name, limit, exact) => {
-    vi.useFakeTimers()
-    freshPage(null)
-    useProgress.getState().setModeStats('classic', long(3000))
-    const writes = deviceLimit(limit)
-    watch()
-    expect(usage().percent).toBeNull()
-    runIdle()
-    if (exact) expect(usage().limit).toBe(limit)
-    else {
-      expect(usage().limit).toBeLessThanOrEqual(limit)
-      expect(usage().limit).toBeGreaterThan(limit - 4200)
-    }
-    expect(usage().percent).toBe(usagePercent(everything(), usage().limit))
-    expect(localStorage.getItem(SCRATCH_KEY)).toBeNull()
-    expect(localStorage.getItem(LIMIT_KEY)).toBe(String(usage().limit))
-    // …and it is not measured again: not at the next idle moment, not on the next page.
-    writes.mockClear()
-    runIdle()
-    runIdle()
-    freshPage(null)
-    watch()
-    runIdle()
-    expect(scratchWrites(writes)).toHaveLength(0)
-    expect(usage().limit).toBe(Number(localStorage.getItem(LIMIT_KEY)))
-  })
+  ])(
+    'is measured as the app starts, before anything is on screen — a device whose limit is %s',
+    (_name, limit, exact) => {
+      freshPage(null)
+      useProgress.getState().setModeStats('classic', long(3000))
+      const writes = deviceLimit(limit)
+      measureStorageLimit() // the entry's call, ahead of the first render
+      if (exact) expect(usage().limit).toBe(limit)
+      else {
+        expect(usage().limit).toBeLessThanOrEqual(limit)
+        expect(usage().limit).toBeGreaterThan(limit - 4200)
+      }
+      expect(usage().percent).toBe(usagePercent(everything(), usage().limit))
+      expect(localStorage.getItem(SCRATCH_KEY)).toBeNull()
+      expect(localStorage.getItem(LIMIT_KEY)).toBe(String(usage().limit))
+      // …and it is not measured again: not when ⚙ or the popup opens, not on the next page.
+      writes.mockClear()
+      measureStorageLimit()
+      usage().openPopup()
+      usage().closePopup()
+      freshPage(null)
+      measureStorageLimit()
+      watch()
+      expect(scratchWrites(writes)).toHaveLength(0)
+      expect(usage().limit).toBe(Number(localStorage.getItem(LIMIT_KEY)))
+    },
+  )
 
-  it('on a device that is already nearly full it reads the truth, and the warning starts', () => {
-    vi.useFakeTimers()
+  it('the measurement at the start opens nothing: there is no screen yet to open it over', () => {
     freshPage(null)
     fill(SAFARI - 20_000)
     deviceLimit(SAFARI)
-    watch()
-    runIdle()
+    measureStorageLimit()
     expect(usage().limit).toBe(SAFARI)
-    expect(usage()).toMatchObject({ percent: 99, warning: true, popupOpen: true })
+    expect(usage()).toMatchObject({ percent: 99, warning: true, popupOpen: false })
+    watch() // the app is on screen, and nobody is busy
+    expect(usage().popupOpen).toBe(true)
   })
 
-  it('waits: not while a solve clock runs, a popup is open, a save is held, or the page is hidden', () => {
-    vi.useFakeTimers()
+  // The device used to be measured from a poll that needed no solve clock running — and a casual
+  // mode with its timing shown always has one, so there it was never measured at all; and an open
+  // popup held the poll off, the Storage used popup included.
+  it('a timed question on screen does not stop ⚙, or the popup, from measuring', () => {
     freshPage(null)
     deviceLimit(SAFARI)
-    let popupOpen = false
-    watch(() => popupOpen)
-    const measured = () => usage().limit !== null
+    render(<Clock runs={true} />)
+    watch()
+    expect(usage().limit).toBeNull()
+    usage().openPopup() // "Storage used: —", tapped
+    expect(usage()).toMatchObject({ limit: SAFARI, popupOpen: true })
+    expect(usage().percent).toBe(usagePercent(everything(), SAFARI))
+  })
 
-    const { rerender } = render(<Clock runs={true} />)
-    runIdle()
-    expect(measured()).toBe(false)
-    rerender(<Clock runs={false} />)
-
-    popupOpen = true
-    runIdle()
-    expect(measured()).toBe(false)
-    popupOpen = false
-
-    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-    runIdle()
-    expect(measured()).toBe(false)
-    visibility.mockReturnValue('visible')
+  it('it is not taken while a round, run or flash is under way, or while a save is held', () => {
+    freshPage(null)
+    deviceLimit(SAFARI)
+    watch()
+    const { rerender } = render(<Clock live />)
+    measureStorageLimit()
+    expect(usage().limit).toBeNull()
+    rerender(<Clock />)
 
     act(() => useStorageHealth.setState({ unsaved: true }))
-    runIdle()
-    expect(measured()).toBe(false)
+    measureStorageLimit()
+    expect(usage().limit).toBeNull()
     act(() => useStorageHealth.setState({ unsaved: false }))
 
-    runIdle() // nothing in the way any more
+    measureStorageLimit() // nothing in the way any more
     expect(usage().limit).toBe(SAFARI)
   })
 
   it('a refused save teaches a limit at once, and it is measured properly when nothing is refused', () => {
-    vi.useFakeTimers()
     freshPage(null)
     const limit = 1_000_000
     fill(990_000)
@@ -578,46 +604,92 @@ describe('the limit', () => {
     expect(usage().limit).toBe(everything())
     expect(usage().percent).toBe(100)
     expect(localStorage.getItem(LIMIT_KEY)).toMatch(/^\d+\?$/)
-    runIdle()
+    measureStorageLimit()
     expect(usage().limit).toBe(everything()) // not measured while a save is held
     // …a later page, with nothing being refused, starts from what was learned, then measures.
     forgetStorageHealth()
     freshPage(null)
-    watch()
+    refreshStorageUsage()
     expect(usage().percent).toBe(100)
-    runIdle()
+    measureStorageLimit()
     expect(usage().limit).toBeLessThanOrEqual(limit)
     expect(usage().limit).toBeGreaterThan(limit - 4200)
     expect(usage().percent).toBe(99)
     expect(localStorage.getItem(LIMIT_KEY)).toBe(String(usage().limit))
   })
 
-  it('a refusal in sessionStorage teaches nothing about the device', () => {
+  // ★ THE WHOLE EPISODE: refuse, make room, land. The limit a refusal teaches used to be taught
+  // again on every change while the save was held — so the remedy the notice recommends, which
+  // empties the device, taught "the limit is the little that is left": 100% and the warning on a
+  // device that was 2% full, written down for every other tab and the next open to inherit.
+  it('the limit a refusal teaches is taught ONCE: making room while the save is held does not shrink it', () => {
+    const LIMIT = 60_000
+    const closeTo = (limit) => {
+      expect(limit).toBeLessThanOrEqual(LIMIT)
+      expect(limit).toBeGreaterThan(LIMIT - 4200)
+    }
+    freshPage(null)
+    deviceLimit(LIMIT)
+    measureStorageLimit()
+    watch()
+    closeTo(usage().limit)
+    expect(localStorage.getItem(LIMIT_KEY)).toBe(String(usage().limit))
+    let n = 1000
+    for (; !useStorageHealth.getState().unsaved; n += 200)
+      useProgress.getState().setModeStats('classic', long(n))
+    const taught = usage().limit
+    expect(taught).toBe(everything())
+    expect(taught).toBeGreaterThan(LIMIT * 0.9)
+    expect(usage().percent).toBe(100)
+    const marker = localStorage.getItem(LIMIT_KEY)
+    expect(marker).toMatch(/^\d+\?$/)
+
+    useProgress.getState().setModeStats('classic', long(0)) // Reset Stats: the held save now fits
+    expect(useStorageHealth.getState().unsaved).toBe(false)
+    expect(usage().limit).toBe(taught)
+    expect(localStorage.getItem(LIMIT_KEY)).toBe(marker)
+    expect(usage().percent).toBe(usagePercent(everything(), LIMIT))
+    expect(usage().percent).toBeLessThan(10)
+    expect(usage().warning).toBe(false)
+
+    measureStorageLimit() // the next time ⚙ opens: measured properly, and remembered as such
+    closeTo(usage().limit)
+    expect(localStorage.getItem(LIMIT_KEY)).toBe(String(usage().limit))
+  })
+
+  it('a device that fills while the SESSION’s area is already refusing still teaches its limit', () => {
     const real = Storage.prototype.setItem
+    let full = false
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
-      if (this === sessionStorage) throw quotaError()
+      if (this === sessionStorage || (full && key === 'cg-big')) throw quotaError()
       return real.call(this, key, value)
     })
     watch()
     writeItem(sessionStorage, 'cg-progress-v1', 'y')
-    expect(usage().limit).toBe(CHROMIUM)
+    expect(usage().limit).toBe(CHROMIUM) // a refusal in sessionStorage teaches nothing about the device
+    full = true
+    writeItem(localStorage, 'cg-big', 'y')
+    expect(usage().limit).toBe(everything())
+  })
+
+  it('a save refused before the count began is heard when it begins', () => {
+    deviceLimit(1000)
+    writeItem(localStorage, 'cg-big', 'y'.repeat(5000)) // one of the app's own, as it loaded
+    expect(useStorageHealth.getState().unsaved).toBe(true)
+    watch()
+    expect(usage()).toMatchObject({ limit: everything(), percent: 100 })
   })
 
   it('usage found above the remembered limit means the limit was wrong: it is measured again', () => {
-    vi.useFakeTimers()
     freshPage(2000) // a limit remembered from some earlier, smaller allowance
     fill(100_000)
     deviceLimit(SAFARI)
-    watch()
-    expect(usage().percent).toBe(100)
-    usage().closePopup()
-    runIdle()
+    measureStorageLimit() // the next start
     expect(usage().limit).toBe(SAFARI)
     expect(usage().warning).toBe(false)
   })
 
   it('a second tab is told the limit by the first one’s marker, and does not measure', () => {
-    vi.useFakeTimers()
     freshPage(null)
     const writes = deviceLimit(SAFARI)
     watch()
@@ -630,8 +702,27 @@ describe('the limit', () => {
       }),
     )
     expect(usage().limit).toBe(SAFARI)
-    runIdle()
+    measureStorageLimit()
     expect(scratchWrites(writes)).toHaveLength(0)
+  })
+
+  // With no limit there is no percentage — which used to read as "back under the line", so the
+  // marker was cleared and the popup shown a second time once the device had been measured.
+  it('an announced crossing stays announced while there is no reading', () => {
+    fill()
+    watch()
+    expect(usage().popupOpen).toBe(true)
+    usage().closePopup()
+    expect(localStorage.getItem(WARNED_KEY)).toBe('1')
+    stop()
+    localStorage.removeItem(LIMIT_KEY)
+    freshPage(null) // the next page, on a device whose remembered limit is gone
+    deviceLimit(CHROMIUM)
+    watch()
+    expect(usage().percent).toBeNull()
+    expect(localStorage.getItem(WARNED_KEY)).toBe('1')
+    measureStorageLimit()
+    expect(usage()).toMatchObject({ warning: true, popupOpen: false })
   })
 })
 
@@ -678,19 +769,20 @@ describe('a measurement is invisible to everything that keeps track of saved dat
   })
 
   it('a scratch key left by a crash is not counted at the next open, and goes at the measurement', () => {
-    vi.useFakeTimers()
     freshPage(null)
     localStorage.setItem(SCRATCH_KEY, 'x'.repeat(200_000))
     deviceLimit(SAFARI)
-    watch()
+    refreshStorageUsage()
     expect(storageUsed()).toBe(everything() - SCRATCH_KEY.length - 200_000)
-    act(() => vi.advanceTimersByTime(IDLE_MS))
+    measureStorageLimit()
     expect(localStorage.getItem(SCRATCH_KEY)).toBeNull()
     expect(usage().limit).toBe(SAFARI)
   })
 })
 
 describe('the popup opens by itself once per upward crossing of the line', () => {
+  beforeEach(() => watch()) // the app is on screen: only then is there anything to open it over
+
   it('opens on the crossing — and not again while usage stays above, nor on a reload', () => {
     refreshStorageUsage()
     expect(usage()).toMatchObject({ warning: false, popupOpen: false })
@@ -730,24 +822,23 @@ describe('the popup opens by itself once per upward crossing of the line', () =>
     expect(usage().popupOpen).toBe(false)
   })
 
-  it('tapping the line always opens it, warning or not — and above the line that IS the announcement', () => {
+  it('tapping the line always opens it, warning or not — and above the line that IS the announcement', async () => {
     usage().openPopup()
     expect(usage()).toMatchObject({ warning: false, popupOpen: true })
     usage().closePopup()
     const { rerender } = render(<Clock runs={true} />)
-    watch()
     fill()
     refreshStorageUsage()
     expect(usage()).toMatchObject({ warning: true, popupOpen: false }) // waiting for the clock
     usage().openPopup()
     usage().closePopup()
     rerender(<Clock runs={false} />) // the clock stops: nothing is left to announce
+    await settled()
     expect(usage().popupOpen).toBe(false)
   })
 
-  it('never over a timed question: it waits for the clock to stop — the line and the dot do not', () => {
+  it('never over a timed question: it waits for the clock to stop — the line and the dot do not', async () => {
     const { rerender } = render(<Clock runs={true} />)
-    watch()
     fill()
     refreshStorageUsage()
     expect(usage()).toMatchObject({ warning: true, popupOpen: false })
@@ -757,13 +848,60 @@ describe('the popup opens by itself once per upward crossing of the line', () =>
     watch()
     expect(usage()).toMatchObject({ warning: true, popupOpen: false })
     rerender(<Clock runs={false} />) // an answered card, an ended round, a page with no clock
+    await settled()
     expect(usage().popupOpen).toBe(true)
     expect(localStorage.getItem(WARNED_KEY)).toBe('1')
   })
 
+  // One screen's clock stops and the next one's starts inside a single commit (a mode letter, a
+  // preset switch, a Deduction type change). "The last clock stopped" used to be said in the gap
+  // between the two, and the popup opened over the fresh question.
+  it('not in the gap between one timed screen and the next', async () => {
+    const Screens = ({ on }) => (
+      <>
+        <Clock runs={on === 'classic'} />
+        <Clock runs={on === 'deduction'} />
+      </>
+    )
+    const { rerender } = render(<Screens on="classic" />)
+    fill()
+    refreshStorageUsage()
+    rerender(<Screens on="deduction" />) // the earlier sibling stops, the later one starts
+    await settled()
+    expect(usage().popupOpen).toBe(false)
+    rerender(<Screens on="classic" />) // …and the other way round
+    await settled()
+    expect(usage().popupOpen).toBe(false)
+    rerender(<Screens on="lookup" />)
+    await settled()
+    expect(usage().popupOpen).toBe(true)
+  })
+
+  it('not while a text box has the keyboard: it waits for the box to be left', async () => {
+    const box = document.createElement('input')
+    const next = document.createElement('input')
+    const button = document.createElement('button')
+    document.body.append(box, next, button)
+    try {
+      box.focus()
+      fill()
+      refreshStorageUsage()
+      expect(usage()).toMatchObject({ warning: true, popupOpen: false })
+      next.focus() // from one box straight into another: still typing
+      await settled()
+      expect(usage().popupOpen).toBe(false)
+      button.focus()
+      await settled()
+      expect(usage().popupOpen).toBe(true)
+    } finally {
+      box.remove()
+      next.remove()
+      button.remove()
+    }
+  })
+
   it('…or for the player to open ⚙, which is stepping away from the question by choice', () => {
     render(<Clock runs={true} />)
-    watch()
     fill()
     refreshStorageUsage()
     expect(usage().popupOpen).toBe(false)
@@ -771,14 +909,25 @@ describe('the popup opens by itself once per upward crossing of the line', () =>
     expect(usage().popupOpen).toBe(true)
   })
 
-  it('a device too full to take the "already warned" marker still warns only once per page', () => {
+  it('…but not from a round, a run or a flash: that keeps running behind the menu', async () => {
+    const { rerender } = render(<Clock live />)
+    fill()
+    refreshStorageUsage()
+    announceStorageWarning(true)
+    expect(usage().popupOpen).toBe(false)
+    rerender(<Clock />)
+    await settled()
+    expect(usage().popupOpen).toBe(true)
+  })
+
+  it('a device too full to take the "already warned" marker still warns only once per page', async () => {
     fill()
     const real = Storage.prototype.setItem
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
       if (key === WARNED_KEY) throw quotaError()
       return real.call(this, key, value)
     })
-    watch()
+    refreshStorageUsage()
     expect(usage().popupOpen).toBe(true)
     usage().closePopup()
     expect(localStorage.getItem(WARNED_KEY)).toBeNull()
@@ -787,6 +936,7 @@ describe('the popup opens by itself once per upward crossing of the line', () =>
     announceStorageWarning(true)
     const { rerender } = render(<Clock runs={true} />)
     rerender(<Clock runs={false} />)
+    await settled()
     useProgress.getState().setModeStats('classic', long(3))
     expect(usage()).toMatchObject({ warning: true, popupOpen: false })
   })
@@ -894,6 +1044,31 @@ describe('on the mounted app', () => {
   })
 })
 
+describe('on the mounted app, while a date is being typed into Lookup', () => {
+  // It used to open two seconds after the app did, with the keyboard in the box, and take it.
+  it('the popup waits for the box to be left', async () => {
+    fill()
+    mountApp()
+    pressKey('Escape') // the popup the crossing opened at once: nobody was busy
+    act(() => {
+      empty()
+      refreshStorageUsage()
+    })
+    pressKey('L')
+    const box = document.querySelector('input[type="text"]')
+    act(() => box.focus())
+    act(() => {
+      fill() // a new crossing, with the keyboard in the box
+      refreshStorageUsage()
+    })
+    expect(gearLit()).toBe(true)
+    expect(popup()).toBeNull()
+    expect(document.activeElement).toBe(box)
+    await act(async () => box.blur())
+    expect(popup()).not.toBeNull()
+  })
+})
+
 describe('on the mounted app, with a timed question on screen', () => {
   const answer = (name) => tap(screen.getByRole('button', { name }))
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -943,9 +1118,26 @@ describe('on the mounted app, with a timed question on screen', () => {
     expect(popup()).not.toBeNull()
   })
 
-  it('before the device has been measured the line shows a dash, and says why', () => {
+  // A casual mode with its timing shown always has a question on the clock — which is exactly where
+  // the device used never to be measured, and the line stayed on its dash.
+  it('a device not measured yet is measured as ⚙ opens: the line shows a number at once', () => {
+    freshPage(null)
+    deviceLimit(SAFARI)
+    mountApp()
+    expect(usage().percent).toBeNull()
+    openSettings()
+    expect(usage().limit).toBe(SAFARI)
+    expect(line().textContent).toBe(`Storage used: ${usagePercent(everything(), SAFARI)}%`)
+  })
+
+  it('on a device that cannot be measured the line shows a dash, and says why', () => {
     freshPage(null)
     useProgress.getState().setModeStats('classic', long(40))
+    // The measurement fails for a reason that is not "no room": there is nothing to learn from it.
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (key === SCRATCH_KEY) throw new DOMException('The operation is insecure.', 'SecurityError')
+      return realSetItem.call(this, key, value)
+    })
     mountApp()
     openSettings()
     // On screen: a dash, the app's sign for "no number to show". Read aloud: the reason.
@@ -960,8 +1152,8 @@ describe('on the mounted app, with a timed question on screen', () => {
     expect(card.querySelector('#storage-usage-title').textContent).toBe(
       'Storage used: not measured yet',
     )
-    expect(card.textContent).toMatch(/hasn.t been measured yet, so there are no percentages/)
-    expect(card.textContent).toMatch(/measures it by itself a moment after it opens/)
+    expect(card.textContent).toMatch(/couldn.t be measured, so there are no percentages/)
+    expect(card.textContent).toMatch(/tries again each time it starts, and each time you open ⚙/)
     // What is saved is still listed by name — with no figure beside anything.
     const rows = within(card)
       .getAllByRole('listitem')

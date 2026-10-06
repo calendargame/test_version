@@ -13,7 +13,7 @@ import {
 import type { StorageWatcher } from './storageHealth.js'
 import { LOOKUP_HISTORY_KEY } from './lookupHistory.js'
 import { isRecord } from './json.js'
-import { isSolveClockRunning, onSolveClocksStopped } from '../lib/solveClock.js'
+import { isPlayerBusy, isRoundLive, onPlayerFree } from '../lib/playerBusy.js'
 import { captureError } from '../observability/sentry.js'
 
 // store/storageUsage.ts — HOW FULL THE DEVICE'S ROOM FOR THIS APP IS, AND WHAT IS FILLING IT.
@@ -49,31 +49,42 @@ import { captureError } from '../observability/sentry.js'
 //
 // ★ THE LIMIT IS MEASURED, NOT ASSUMED. A browser has no way to ask how much localStorage a site may
 // use, and the browsers do not agree (Chromium allows 5,242,880 characters; Safari is documented at
-// half that). A percentage of an assumed figure would read "50%" on a device that is full. So, once
-// per device, the app finds out how many MORE characters the device will take
-// (store/storageHealth's measureRoom — it writes one scratch key and removes it again), and the
-// limit is what is used plus that. It is remembered (LIMIT_KEY) and never measured again unless it
-// is shown to be wrong:
+// half that). A percentage of an assumed figure would read "50%" on a device that is full. So the
+// app finds out how many MORE characters the device will take (store/storageHealth's measureRoom —
+// it writes one scratch key and removes it again), and the limit is what is used plus that. It is
+// remembered (LIMIT_KEY) and not measured again unless it is shown to be wrong:
 //   • a save the device REFUSES teaches a limit on the spot — what the device holds at that moment —
-//     marked as not yet measured, because it is short by up to the size of the refused save. It is
-//     measured properly once nothing is being refused any more;
-//   • usage found ABOVE the remembered limit means the limit was too low: measured again.
-// ⚠ WHEN IT MAY RUN. Measuring stops the page for a moment (tens of milliseconds where the first
-// guess is right), so it waits for a moment nobody can feel it and nothing can be disturbed: the
-// page visible, NO SOLVE CLOCK RUNNING (lib/solveClock), no popup open, no save being held. It looks
-// for that moment every IDLE_MS while a measurement is owed, and not at all otherwise.
-// ⚠ UNTIL IT HAS RUN there is no percentage, and none is shown: `percent` is null, the ⚙ line shows
-// a dash, and there is no warning. An honest blank, for the two seconds it usually lasts.
+//     marked as not yet measured, because it is short by up to the size of the refused save.
+//     ⚠ ONCE, AT THE REFUSAL THAT BEGINS THE EPISODE, and never again while it lasts. What the
+//     device holds goes on changing while a save is held, and the thing that most often changes it
+//     is the player making room: taught again then, the "limit" would be the little that is left
+//     after a Reset Stats, and the line would read 100% on a device that had just been emptied;
+//   • usage found ABOVE the remembered limit means the limit was too low.
+// ⚠ WHEN IT IS MEASURED (measureStorageLimit). Measuring stops the page for a moment — tens of
+// milliseconds where the first guess is right — so it is done where nobody can be in the middle of
+// anything:
+//   • AS THE APP STARTS, before its first screen exists (src/main.tsx's entry calls it ahead of the
+//     first render — the Loading screen is what is showing). No question has been drawn, so no solve
+//     clock can be running, and the "Storage used" line is right the first time it is seen;
+//   • WHEN THE PLAYER OPENS ⚙, OR THE BREAKDOWN POPUP — with no round, run or flash under way
+//     (lib/playerBusy's isRoundLive; a casual question just waits behind the menu). That is where a
+//     limit that has since been shown wrong is put right without waiting for the next start.
+// And never while a save is being held: the device is full then, and what a measurement would find
+// is the room the held save is about to take.
+// ⚠ A DEVICE THAT COULD NOT BE MEASURED has no percentage, and none is shown: `percent` is null, the
+// ⚙ line shows a dash, and there is no warning.
 //
-// ★ THE POPUP OPENS BY ITSELF ONCE PER UPWARD CROSSING — and never over a timed question. The line's
-// colour and the gear's dot change the moment usage crosses (they are read straight off the count);
-// the popup waits for the next moment no solve clock is running — an answered card, an ended round
-// or run, an idle screen — or for the player to open ⚙, which is the player stepping away from the
-// question by choice. "Already warned" is written down only when the popup has actually opened
-// (WARNED_KEY — on the device, so not on every open, not on a reload, not again while usage stays
-// above the line; and for this page as well, in case a full device cannot take even that marker).
-// A reading back under the line forgets it, so a later rise is a new crossing. Live and staging
-// share one copy of the data, and therefore this marker too: one warning per device.
+// ★ THE POPUP OPENS BY ITSELF ONCE PER UPWARD CROSSING — and never while the player is busy
+// (lib/playerBusy: a round, run or flash under way, a timed question waiting, or a text box in use).
+// The line's colour and the gear's dot change the moment usage crosses (they are read straight off
+// the count); the popup waits for the next moment the player is free — or for the player to open ⚙,
+// which is stepping away from a casual question by choice (a round, a run or a flash still has to
+// end first: it keeps running behind the menu). "Already warned" is written down only when the
+// popup has actually opened (WARNED_KEY — on the device, so not on every open, not on a reload, not
+// again while usage stays above the line; and for this page as well, in case a full device cannot
+// take even that marker). A reading back under the line forgets it, so a later rise is a new
+// crossing. Live and staging share one copy of the data, and therefore this marker too: one warning
+// per device.
 
 /** The percentage at which the warning starts. */
 export const STORAGE_WARN_PERCENT = 80
@@ -91,8 +102,6 @@ export const DOCUMENTED_LIMITS: readonly number[] = [5_242_880, 2_621_440]
 export const MAX_STORAGE_LIMIT = 10_485_760
 // How close the measurement gets when no guess is right: under a tenth of a percent of any limit.
 const MEASURE_WITHIN = 4096
-/** How often a measurement that is owed looks for a moment to run in. */
-export const IDLE_MS = 2000
 const LIMIT_KEY = 'cg-storage-limit-v1'
 const WARNED_KEY = 'cg-storage-warned-v1'
 
@@ -232,10 +241,9 @@ let known: { limit: number; firm: boolean } | null = null
 // own copy of WARNED_KEY, for a device that cannot take the marker.
 let warnedHere = false
 let settling = false
-let timer: ReturnType<typeof setTimeout> | null = null
-// Is a popup open? Asked of the app (src/main.tsx hands it in), so a store does not reach into the
-// screen's layers.
-let popupUp: () => boolean = () => false
+// The app is on screen and this page is keeping the count for it (watchStorageUsage). Only then can
+// the popup open by itself: the measurement at the app's start runs before there is a screen.
+let watching = false
 
 const parseLimit = (text: string | null): typeof known => {
   const limit = text === null ? NaN : parseInt(text, 10)
@@ -262,6 +270,7 @@ export const useStorageUsage = create<StorageUsageState>()((set, get) => ({
   popupOpen: false,
   openPopup: () => {
     refreshStorageUsage() // the popup shows the device as it is now, counted afresh
+    measureStorageLimit() // …against a limit that is right, if one is owed and may be taken now
     try {
       const area = window.localStorage
       // Opened by hand above the line: the player has now seen what the popup would have said.
@@ -274,8 +283,7 @@ export const useStorageUsage = create<StorageUsageState>()((set, get) => ({
   closePopup: () => set({ popupOpen: false }),
 }))
 
-// Turn the count into what is shown — the limit a refusal teaches, the percentage, the warning —
-// then see whether the popup or a measurement is due.
+// Turn the count into what is shown — the percentage, the warning — then see whether the popup is due.
 function settle(area: Storage): void {
   if (settling) return // a marker written below is counted by the door; this pass picks it up
   settling = true
@@ -283,19 +291,13 @@ function settle(area: Storage): void {
   let percent: number | null
   let warning: boolean
   try {
-    // ★ A save to THIS area is being held: the device is full at what it holds right now, and that
-    // is its limit until it can be measured. Remembered, so the next open starts from it —
-    // best-effort (a full device may refuse even that; it is then learned again at the next
-    // refusal).
-    if (isHolding(area) && used > 0 && known?.limit !== used) {
-      tryWriteItem(area, LIMIT_KEY, `${used}?`)
-      known = { limit: used, firm: false } // `used` AFTER the marker, if the device took it
-    }
     for (;;) {
       limit = known?.limit ?? null
       percent = limit === null ? null : usagePercent(used, limit)
       warning = percent !== null && percent >= STORAGE_WARN_PERCENT
-      if (warning || !warned(area)) break
+      // ⚠ With no limit there is no reading, and no reading is not "back under the line": a crossing
+      // already announced stays announced until a percentage says otherwise.
+      if (warning || percent === null || !warned(area)) break
       // Back under the line: the crossing is over, and a later rise is a new one.
       warnedHere = false
       removeItem(area, WARNED_KEY)
@@ -313,23 +315,35 @@ function settle(area: Storage): void {
       ...(shown.popupOpen ? { rows: readStorageUsage(area).rows } : null),
     })
   announceStorageWarning()
-  if (measureOwed() && timer === null) timer = setTimeout(measureWhenIdle, IDLE_MS)
+}
+
+// A save to `area` has just been refused, with nothing held for it before: the device is full at what
+// it holds right now, and that is its limit until it can be measured (the header says why this is
+// the one moment it is taught). Remembered, so the next open starts from it — best-effort: a full
+// device may refuse even that, and it is then learned again at the next episode.
+function learnFromRefusal(area: Storage): void {
+  if (!sizes || used === 0) return
+  tryWriteItem(area, LIMIT_KEY, `${used}?`)
+  known = { limit: used, firm: false } // `used` AFTER the marker, if the device took it
+  settle(area)
 }
 
 /**
  * Open the popup by itself, if a crossing has not been announced yet and this is a moment for it:
- * no solve clock running — or `steppedAway`, the player opening ⚙.
+ * the player is not busy — or, with `steppedAway` (the player opening ⚙), has no round, run or flash
+ * under way.
  * ⚠ It does not open while the device is REFUSING saves: the storage-full notice is the one that
  * speaks then (components/StorageFullNotice — it says more, and it says it now), and the crossing
  * counts as announced.
  */
 export function announceStorageWarning(steppedAway = false): void {
+  if (!watching) return
   try {
     const area = window.localStorage
     const shown = useStorageUsage.getState()
     if (!shown.warning || shown.popupOpen || warned(area)) return
     const noticeSpeaks = useStorageHealth.getState().unsaved
-    if (!noticeSpeaks && !steppedAway && isSolveClockRunning()) return
+    if (!noticeSpeaks && (steppedAway ? isRoundLive() : isPlayerBusy())) return
     markWarned(area)
     if (!noticeSpeaks)
       useStorageUsage.setState({ popupOpen: true, rows: readStorageUsage(area).rows })
@@ -338,22 +352,16 @@ export function announceStorageWarning(steppedAway = false): void {
   }
 }
 
-// Measure the device's limit, if one is owed and this is a moment for it (the header says which);
-// otherwise look again in IDLE_MS.
-function measureWhenIdle(): void {
-  timer = null
-  if (!sizes || !measureOwed()) return
+/**
+ * Measure the device's limit, if a measurement is owed and this is a moment one may be taken (the
+ * header says which moments its three callers are). Counts the device first if this page has not
+ * yet. Never throws.
+ */
+export function measureStorageLimit(): void {
+  if (!sizes) refreshStorageUsage()
   try {
     const area = window.localStorage
-    if (
-      document.visibilityState !== 'visible' ||
-      isSolveClockRunning() ||
-      popupUp() ||
-      useStorageHealth.getState().unsaved
-    ) {
-      timer = setTimeout(measureWhenIdle, IDLE_MS)
-      return
-    }
+    if (!sizes || !measureOwed() || useStorageHealth.getState().unsaved || isRoundLive()) return
     const room = measureRoom(
       area,
       MAX_STORAGE_LIMIT - used,
@@ -393,53 +401,61 @@ export function refreshStorageUsage(): void {
   }
 }
 
-// The door's report (store/storageHealth): (storage, key) now holds `value` — null: it is gone.
-const noted: StorageWatcher = (storage, key, value) => {
-  try {
-    const area = window.localStorage
-    if (storage !== area) return
-    if (key === null || !sizes) return refreshStorageUsage()
-    const chars = value === null ? 0 : key.length + value.length
-    used += chars - (sizes.get(key) ?? 0)
-    if (chars) sizes.set(key, chars)
-    else sizes.delete(key)
-    // Another tab measured, or learned from a refusal: its answer is this device's too.
-    if (key === LIMIT_KEY) known = parseLimit(value) ?? known
-    settle(area)
-  } catch (e) {
-    // The count must never be why a save fails: report it, and let the save stand.
-    captureError(e instanceof Error ? e : new Error(String(e)), { tripwire: 'storageUsage' })
-  }
+// The door's reports (store/storageHealth).
+const door: StorageWatcher = {
+  // (storage, key) now holds `value` — null: it is gone.
+  changed: (storage, key, value) => {
+    try {
+      const area = window.localStorage
+      if (storage !== area) return
+      if (key === null || !sizes) return refreshStorageUsage()
+      const chars = value === null ? 0 : key.length + value.length
+      used += chars - (sizes.get(key) ?? 0)
+      if (chars) sizes.set(key, chars)
+      else sizes.delete(key)
+      // Another tab measured, or learned from a refusal: its answer is this device's too.
+      if (key === LIMIT_KEY) known = parseLimit(value) ?? known
+      settle(area)
+    } catch (e) {
+      // The count must never be why a save fails: report it, and let the save stand.
+      captureError(e instanceof Error ? e : new Error(String(e)), { tripwire: 'storageUsage' })
+    }
+  },
+  refused: (storage) => {
+    try {
+      if (storage === window.localStorage) learnFromRefusal(storage)
+    } catch (e) {
+      captureError(e instanceof Error ? e : new Error(String(e)), { tripwire: 'storageUsage' })
+    }
+  },
 }
 
 /**
  * Start keeping the count for this page: the device is counted now, and from here on every save and
- * removal moves it. `isPopupOpen` is the app's answer to "is a popup up?" (a measurement waits for
- * none). Called once, by App's boot effect; returns the undo (tests).
+ * removal moves it. Called once, by App's boot effect; returns the undo (tests).
  */
-export function watchStorageUsage(isPopupOpen: () => boolean): () => void {
-  popupUp = isPopupOpen
-  const resettle = () => {
-    try {
-      if (sizes) settle(window.localStorage)
-    } catch {
-      /* localStorage refused */
-    }
-  }
+export function watchStorageUsage(): () => void {
+  watching = true
   const stops = [
-    watchStorage(noted),
+    watchStorage(door),
     // The moment a waiting popup may open.
-    onSolveClocksStopped(announceStorageWarning),
-    // A save refused (the limit it teaches), or the last held save landing.
+    onPlayerFree(announceStorageWarning),
+    // The last held save landing: the notice no longer speaks for a crossing still unannounced.
     useStorageHealth.subscribe((s, was) => {
-      if (s.unsaved !== was.unsaved) resettle()
+      if (s.unsaved !== was.unsaved) announceStorageWarning()
     }),
   ]
   refreshStorageUsage()
+  // A save refused before the count began (one of the app's own, as it loaded) started its episode
+  // unheard: the device is full now, and this is the first this page knows of it.
+  try {
+    if (isHolding(window.localStorage)) learnFromRefusal(window.localStorage)
+  } catch {
+    /* localStorage refused */
+  }
   return () => {
     stops.forEach((stop) => stop())
-    if (timer !== null) clearTimeout(timer)
-    timer = null
+    watching = false
   }
 }
 
@@ -455,8 +471,6 @@ export function forgetStorageUsage(limit: number | null = DOCUMENTED_LIMITS[0]):
   used = 0
   known = limit === null ? null : { limit, firm: true }
   warnedHere = false
-  if (timer !== null) clearTimeout(timer)
-  timer = null
   useStorageUsage.setState({
     limit: null,
     percent: null,

@@ -2241,7 +2241,7 @@ export default function GuidePage({
           buttons above it do. Those two sit in the gaps between the three buttons above rather than
           under them. Below the block: your Contact email; then <b>Storage used</b> on a line of its
           own — how much of this device&apos;s room for the app is in use, as a percentage (a dash
-          until the app has measured the device), and a tap on it opens the breakdown (see Saved
+          if the app could not measure the device), and a tap on it opens the breakdown (see Saved
           Progress); then a last line with the Last Updated timestamp at the left edge, the{' '}
           <b>Changelog</b> link at the right edge, and <b>Check for updates</b> midway between the
           two.
@@ -2926,20 +2926,28 @@ export default function GuidePage({
           instead of offering it, and says what does (set Amnesic to Off first, then Reset Stats).
         </p>
         <p>
-          How much room a device gives is something the app has to measure, which it does once, a
-          moment after it first opens there and while you are not in the middle of a timed question.
-          Until then there is no percentage to give: the line shows a dash, and the breakdown&apos;s
-          title reads &quot;not measured yet&quot; and lists what is saved with no figures beside
-          it.
+          How much room a device gives is something the app has to measure. It does that the first
+          time it opens on a device, as it starts — behind the Loading screen, before any question
+          is on screen — so the line shows a percentage from the first moment you can see it. If the
+          figure later proves wrong (the device refuses a save, or holds more than the measurement
+          said it could), the app measures again the next time it starts, or the next time you open
+          ⚙ or this breakdown with no round, run or flash under way. If a device can&apos;t be
+          measured at all there is no percentage to give: the line shows a dash, and the
+          breakdown&apos;s title reads &quot;not measured yet&quot; and lists what is saved with no
+          figures beside it.
         </p>
         <p>
-          When the number climbs past 80% the line turns amber and the ⚙ button gains an amber dot
-          at once (an update&apos;s dot is light blue; with both, it is amber), and that same
-          breakdown opens by itself — once for each time the number climbs past 80%, so if you make
-          room and it later fills up again, you are told again. It never opens over a question you
-          are being timed on: it waits until you have answered it, or until you open ⚙. After that
-          it stays out of your way, but the colour and the dot stay until the number is back under
-          80%.
+          When the number reaches 80% the line turns amber and the ⚙ button gains an amber dot at
+          once (an update&apos;s dot is light blue; with both, it is amber), and that same breakdown
+          opens by itself — once each time the number climbs to 80%, so if you make room and it
+          later fills up again, you are told again. It never opens while you are in the middle of
+          something: a Blitz round, a MoX run or a Flash under way, a question you are being timed
+          on (also while you browse back from it to an earlier one), or a box you are typing in. It
+          waits for the next moment you are free — or until you open ⚙, unless a round, run or flash
+          is still running behind the menu. Tapping the amber line yourself counts as having been
+          told; and if the device is already full, the &quot;isn&apos;t being saved&quot; notice
+          speaks instead and the breakdown does not open on top of it. After that it stays out of
+          your way, but the colour and the dot stay until the number is back under 80%.
         </p>
         <p>
           If this device ever runs out of room for the app&apos;s saved data, a popup tells you so.

@@ -89,9 +89,16 @@ const held = new Map<Storage, Map<string, string>>()
 // store/storageUsage keeps "how full is the device" right at the moment something is saved or
 // removed, without reading everything back. The watcher is told AFTER the change is on the device:
 // (storage, key, the text now there — null for a key that is gone). A refused write changes nothing
-// and reports nothing. `key` null means "this area changed in a way nobody listed" (another tab
-// cleared it): count again.
-export type StorageWatcher = (storage: Storage, key: string | null, value: string | null) => void
+// and reports nothing through `changed`. `key` null means "this area changed in a way nobody listed"
+// (another tab cleared it): count again.
+// `refused` is the other thing only the door can know: an area that was taking every save has just
+// refused one — the first of an episode for THAT area, said once, not again for each save refused
+// while it lasts. (useStorageHealth's `unsaved` cannot stand in for it: it is one flag for both
+// areas, so a device that fills while the session's area is already refusing would never move it.)
+export type StorageWatcher = {
+  changed: (storage: Storage, key: string | null, value: string | null) => void
+  refused: (storage: Storage) => void
+}
 let watcher: StorageWatcher | null = null
 /** Be told of every change to what is on the device. One watcher (store/storageUsage); returns the undo. */
 export function watchStorage(next: StorageWatcher): () => void {
@@ -163,7 +170,7 @@ export function tryWriteItem(storage: Storage, key: string, value: string): bool
       storage.removeItem(SCRATCH_KEY)
     }
   }
-  watcher?.(storage, key, value)
+  watcher?.changed(storage, key, value)
   return true
 }
 
@@ -224,8 +231,10 @@ export function measureRoom(
  */
 export function writeItem(storage: Storage, key: string, value: string): boolean {
   if (!tryWriteItem(storage, key, value)) {
+    const first = !held.has(storage)
     hold(storage, key, value)
     settle()
+    if (first) watcher?.refused(storage)
     return false
   }
   release(storage, key)
@@ -246,7 +255,7 @@ export function readItem(storage: Storage, key: string): string | null {
 export function removeItem(storage: Storage, key: string): void {
   release(storage, key)
   storage.removeItem(key)
-  watcher?.(storage, key, null)
+  watcher?.changed(storage, key, null)
   settle()
 }
 
@@ -279,11 +288,15 @@ export const changesElsewhere = (storage: Storage): number => elsewhere.get(stor
 // The browser's own report of it: a `storage` event, which fires in every OTHER same-origin page when
 // one changes localStorage (never in the page that made the change).
 // ⚠ Not for a measurement's scratch key (SCRATCH_KEY): that is no change to anyone's data.
+// ⚠ The watcher is told what the place holds NOW, read from the device — not the event's own
+// `newValue`. An event is delivered after the fact, and this page may have saved to the same place
+// since the other one did: the event's text would then be the OLDER of the two, and a count moved by
+// it would be wrong by the difference.
 if (typeof window !== 'undefined')
   window.addEventListener('storage', (e) => {
     if (!e.storageArea || e.key === SCRATCH_KEY) return
     placeChangedElsewhere(e.storageArea, e.key)
-    watcher?.(e.storageArea, e.key, e.newValue)
+    watcher?.changed(e.storageArea, e.key, e.key === null ? null : e.storageArea.getItem(e.key))
   })
 
 /**
