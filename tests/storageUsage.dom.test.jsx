@@ -11,6 +11,7 @@
 // reload, not while usage stays above, again after a drop and a rise; the warning that stays (the
 // line's colour, the gear's dot) and what does and does not clear it; and its place beside the
 // storage-full notice.
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, cleanup, within, act, render } from '@testing-library/react'
 import {
@@ -89,6 +90,8 @@ const unmountApp = () => {
 const popup = () => screen.queryByRole('dialog', { name: /^Storage used: (\d+%|—)$/ })
 const line = () => panel().getByRole('button', { name: /^Storage used: / })
 const gearLit = () => gear().querySelector('[data-update-dot]').getAttribute('data-lit') === 'true'
+// What the gear's dot is saying — which is its colour (components/UpdateDot; index.css).
+const gearReason = () => gear().querySelector('[data-update-dot]').getAttribute('data-reason')
 const quotaError = () => new DOMException('The quota has been exceeded.', 'QuotaExceededError')
 // The device takes `limit` characters in all (keys and values), as a browser counts them.
 function deviceLimit(limit) {
@@ -263,6 +266,7 @@ describe('the count is kept by the storage door, and is right the moment a chang
       mountApp()
       pressKey('Escape') // the popup the crossing opened
       expect(gearLit()).toBe(true)
+      expect(gearReason()).toBe('storage')
       openSettings()
       expect(line().className).toContain('storage-warn')
       act(() => useProgress.getState().setModeStats('classic', long(0)))
@@ -270,6 +274,42 @@ describe('the count is kept by the storage door, and is right the moment a chang
       expect(line().textContent).toBe(`Storage used: ${usagePercent(storageUsed(), 40_000)}%`)
       expect(storageUsed()).toBe(everything()) // the boot's own markers included
       expect(gearLit()).toBe(false)
+    })
+
+    // The gear's one dot has two reasons and was the update's blue for both. Its colour now says
+    // which: amber for the storage warning — the colour of the line it points at — and amber when
+    // both are true.
+    it('the gear dot is the storage warning`s colour while there is one, an update`s otherwise', () => {
+      mountApp()
+      act(() => markUpdateDot(GEAR_DOT_KEY)) // an update landed: the dot is lit, and it is news
+      expect(gearLit()).toBe(true)
+      expect(gearReason()).toBe('update')
+      act(() => useProgress.getState().setModeStats('classic', long(6500))) // …and now the warning too
+      pressKey('Escape')
+      expect(gearLit()).toBe(true)
+      expect(gearReason()).toBe('storage') // both are live: storage wins
+      act(() => useProgress.getState().setModeStats('classic', long(0)))
+      expect(gearLit()).toBe(true) // the update is still unseen
+      expect(gearReason()).toBe('update')
+    })
+
+    it('…and the stylesheet gives that reason the "Storage used" line`s own amber, in every theme', () => {
+      const css = readFileSync('src/index.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      // One pair of values, declared once, worn by the dot and by the line.
+      expect(css).toContain(':root{--storage-warn:rgba(251,191,36,.95)}')
+      expect(css).toContain(
+        '[data-theme="light"],[data-theme="parchment"]{--storage-warn:rgba(180,83,9,.95)}',
+      )
+      expect(css).toContain(
+        '[data-update-dot][data-reason="storage"]{background:var(--storage-warn)}',
+      )
+      expect(css).toContain('.storage-warn{color:var(--storage-warn)}')
+      // The amber rule comes AFTER the light themes' blue one. The two selectors weigh the same,
+      // so the later one wins — placed before it, a light theme's storage dot would stay blue.
+      const blueLight = css.indexOf('[data-theme="light"] [data-update-dot],')
+      const amber = css.indexOf('[data-update-dot][data-reason="storage"]{')
+      expect(blueLight).toBeGreaterThan(-1)
+      expect(amber).toBeGreaterThan(blueLight)
     })
   })
 

@@ -1383,6 +1383,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // (store/storageUsage's `warning`). It is the SAME dot, lit for either reason — but this reason
       // is not a stored flag: it is the reading itself, so opening ⚙ does not clear it (that clears
       // only the update flag, below) and it goes out by itself the moment usage drops back under.
+      // The dot's COLOUR says which reason it is — amber for storage, the update's blue otherwise,
+      // amber when both are true (components/UpdateDot argues the order).
       const storageWarning=useStorageUsage(s=>s.warning);
       const changelogDot=useSyncExternalStore(subscribeUpdateDot,readChangelogDot);
       // THE ONE WAY TO OPEN SETTINGS, and the only place the gear's update dot is retired.
@@ -2492,7 +2494,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
                     indicator's class may be counted on to be present. The marker is aria-hidden, so
                     the aria-label carries BOTH booleans in every combination — the only accessible
                     name this button has, its visible content being a bare glyph. */}
-                <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;toggleSettings();}} onClick={()=>toggleSettings()} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":"",storageWarning?"storage almost full":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot||storageWarning}/></button>
+                <button type="button" data-select-trigger aria-controls={settingsOpen?"settings-popover":undefined} onPointerDown={e=>{if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;toggleSettings();}} onClick={()=>toggleSettings()} className={`relative px-2.5 py-2 rounded-xl text-sm border ${settingsOpen?"btn-solid border-transparent":`panel text-(--tx-100-80) ${settingsModified?" gear-modified":""}`}`} aria-label={(()=>{const parts=[settingsModified?"modified":"",gearDot?"update":"",storageWarning?"storage almost full":""].filter(Boolean);return parts.length?`Settings (${parts.join(", ")})`:"Settings";})()}>⚙<UpdateDot placement="corner" lit={gearDot||storageWarning} reason={storageWarning?'storage':'update'}/></button>
               </div>
             </div>
             {/* ⚙ THE SETTINGS PANEL, at the slot its markup used to occupy inline. Three things

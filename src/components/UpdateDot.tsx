@@ -17,8 +17,16 @@
 // its visible content is a bare glyph), the Changelog link carries a visually-hidden text node.
 // Both are pinned in tests/changelog.dom.test.jsx.
 //
-// The paint — em sizing, the theme colours, and the corner form's per-axis precondition — lives in
-// src/index.css under [data-update-dot].
+// ★ THE GEAR'S DOT HAS A SECOND REASON, AND ITS COLOUR SAYS WHICH. The same corner badge is lit
+// while the device's room for the app is nearly used up (store/storageUsage's warning; src/main.tsx
+// passes it). That is a caution about STATE, not news, so it is AMBER — the colour of the "Storage
+// used" line it points at inside the menu — where an update is the light blue. When both are true
+// the dot is amber: the storage warning is the one that asks for something to be done, and the
+// update's own breadcrumb (the Changelog link's dot) is still there once the menu is open. The
+// caller states the reason; this component only publishes it for the stylesheet.
+//
+// The paint — em sizing, the two colours per theme, and the corner form's per-axis precondition —
+// lives in src/index.css under [data-update-dot].
 
 export type UpdateDotPlacement =
   // Absolutely positioned in the host's top-right inside corner. Icon buttons only: the host must
@@ -28,8 +36,26 @@ export type UpdateDotPlacement =
   // marker is lit, so lighting up moves nothing.
   | 'inline'
 
-export function UpdateDot({ placement, lit }: { placement: UpdateDotPlacement; lit: boolean }) {
+// What a lit dot is saying, which is its colour: news (an update landed), or the storage warning.
+export type UpdateDotReason = 'update' | 'storage'
+
+export function UpdateDot({
+  placement,
+  lit,
+  reason = 'update',
+}: {
+  placement: UpdateDotPlacement
+  lit: boolean
+  reason?: UpdateDotReason
+}) {
   // data-lit rather than conditional rendering: the inline slot has to occupy space in BOTH states
   // (see above), so one attribute drives the paint (index.css) and the tests alike.
-  return <span aria-hidden="true" data-update-dot={placement} data-lit={lit ? 'true' : 'false'} />
+  return (
+    <span
+      aria-hidden="true"
+      data-update-dot={placement}
+      data-lit={lit ? 'true' : 'false'}
+      data-reason={reason}
+    />
+  )
 }

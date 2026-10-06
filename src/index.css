@@ -527,7 +527,15 @@ input,textarea{user-select:text;-webkit-user-select:text}
    shifts — which makes the dashes the strip's frame rather than a second line inside one.
    .session-only-outset is for a host with no box of its own (the Best readouts are bare text): the
    frame is drawn AROUND it, in the gaps that are already there (12px above and below, the page's
-   16px gutter at the sides).
+   16px gutter at the sides). It takes a QUARTER of each gap and no more — 3px above and below, so
+   9px of clear space is left to the strip over it and to the row under it (MoX's run-length row
+   starts 12px down; at 6px the dashes sat almost on its boxes), and 4px at the sides.
+   ⚠ THOSE 4px ARE OUTSIDE THE PAGE COLUMN, AND THEY HAVE TO BE. Every card's edge is the column's
+   edge, and so is the first letter of a Best readout — it is bare text, flush with the column. A
+   frame on the column's edge would be drawn through that letter; clearing it means either moving
+   the text in (which the rule above forbids: with the frame or without, nothing moves) or drawing
+   the line just outside it. So the frame is the one dashed line on the page that is not a card's
+   own edge, kept as close to the column as the text allows.
    ⚠ NOT AN outline: the strip is sometimes one big <button>, and `button:focus{outline:none}`
    below would take an outline off it the moment it was tapped.
    COLOUR: the theme's own label tone, thinned — so it is right in all five themes with no table of
@@ -536,7 +544,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .session-only{position:relative}
 .session-only::after{content:"";position:absolute;inset:0;border:1.5px dashed color-mix(in oklab,var(--tx-200-80) 70%,transparent);border-radius:inherit;pointer-events:none}
 .panel.session-only{border-color:transparent}
-.session-only-outset::after{inset:-.375rem;border-radius:.75rem}
+.session-only-outset::after{inset:-.1875rem -.25rem;border-radius:.5rem}
 /* ★ THE .2s BACKGROUND FADE — the app's three interactive surfaces (these two + .btn-solid below)
    all carry it, and all three multiply by --motion-scale (round 16) so Reduce Motion makes the
    fade instant. It is DECORATIVE, checked rather than assumed, and the check is worth keeping:
@@ -929,6 +937,14 @@ button:focus,select:focus{outline:none}
    means "news", not state or danger. Deeper blue on the light themes (the .gear-modified pattern).
    The marker is a real element, components/UpdateDot, which is where the reuse rule is written.
 
+   ★ WHAT THE DOT'S COLOUR MEANS. BLUE = an update landed ([data-reason="update"], the default).
+   AMBER = the storage warning ([data-reason="storage"]): the device's room for the app is nearly
+   used up. Only the ⚙ gear's dot can be amber, and it is the exact amber of the "Storage used" line
+   in the menu (.storage-warn, below — one pair of values, declared once for both), so the dot and
+   the line it leads to are visibly the same message. With both reasons live the dot is amber
+   (components/UpdateDot says why). Both colours are the same in the three dark themes and deeper
+   in the two light ones.
+
    TWO MOUNTINGS, ONE DOT. Round 6 had only the corner badge below and reused it on the Changelog
    TEXT link, which reserves no room for a corner badge — so the dot sat on the word. The call site
    now names the form; these rules are only the paint.
@@ -939,6 +955,9 @@ button:focus,select:focus{outline:none}
    the same fraction of its own host's type everywhere. */
 [data-update-dot]{width:.43em;height:.43em;border-radius:9999px;background:rgba(125,211,252,.95)}
 [data-theme="light"] [data-update-dot],[data-theme="parchment"] [data-update-dot]{background:rgba(2,132,199,.8)}
+:root{--storage-warn:rgba(251,191,36,.95)}
+[data-theme="light"],[data-theme="parchment"]{--storage-warn:rgba(180,83,9,.95)}
+[data-update-dot][data-reason="storage"]{background:var(--storage-warn)}
 /* Unlit keeps its box and stops painting — that is what makes the inline slot permanent (lighting
    up must never move the link's text), and it costs the corner form nothing (it is out of flow). */
 [data-update-dot][data-lit="false"]{visibility:hidden}
@@ -956,9 +975,9 @@ button:focus,select:focus{outline:none}
 [data-update-dot="inline"]{display:inline-block;margin-inline-start:.3em}
 /* The ⚙ panel's "Storage used" line from the warning line up (store/storageUsage). Amber: a caution
    about STATE — unlike the update dot's blue, which means news. Deeper on the light themes (the
-   .gear-modified pattern). */
-.storage-warn{color:rgba(251,191,36,.95)}
-[data-theme="light"] .storage-warn,[data-theme="parchment"] .storage-warn{color:rgba(180,83,9,.95)}
+   .gear-modified pattern). --storage-warn is declared beside the gear's dot above, which wears the
+   same colour for the same reason. */
+.storage-warn{color:var(--storage-warn)}
 /* The boot Updating overlay — the full-screen "Updating…" screen (shown by Settings → Check for updates
    once its check has FOUND a newer build — round 11; never on a press with nothing to get —
    and by the auto-update-on-open boot check when a freshly-deployed version is waiting; the LOADING

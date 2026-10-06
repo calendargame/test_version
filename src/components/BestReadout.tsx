@@ -20,7 +20,8 @@ import { useActiveAmnesicMode } from '../store/amnesic.js'
 // ⚠ IT READS THE VALUE ITSELF rather than taking a prop, so no mode screen can show a session's
 // Bests unmarked by forgetting to pass one.
 // The outline is a pseudo-element drawn OUTSIDE the row's box (.session-only-outset), so the row is
-// the same size, in the same place, with or without it.
+// the same size, in the same place, with or without it. index.css says how far outside, and why it
+// cannot sit on the page column's edge the way a card's does.
 export default function BestReadout({ children }: { children: ReactNode }) {
   const sessionOnly = useActiveAmnesicMode() === 'full'
   return (
