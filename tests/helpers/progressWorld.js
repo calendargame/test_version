@@ -234,18 +234,18 @@ export { timeOf }
 export function newPage(createProgressCodec, disk, { seal = false, preset = 1, name = 'N' } = {}) {
   const area = disk.view(name)
   const codec = createProgressCodec(seal)
-  const copy = { area, presetId: preset }
   const page = {
     name,
-    preset,
     area,
-    copy,
+    // Which copy the page is on. A test may point it elsewhere (another preset, a session area) and
+    // load — as a preset switch or an Amnesic toggle does to the one codec the app has.
+    copy: { area, presetId: preset },
     state: blankState(),
     save() {
-      codec.save(copy, { state: page.state, version: 5 })
+      codec.save(page.copy, { state: page.state, version: 5 })
     },
     load() {
-      const saved = codec.load(copy)
+      const saved = codec.load(page.copy)
       page.state = saved ? { ...blankState(), ...saved.state } : blankState()
       if (saved && saved.version !== 5) page.save()
       return saved
@@ -308,13 +308,13 @@ const OLDER = {
 export function olderPage(build, disk, { preset = 1, name = build } = {}) {
   const rules = OLDER[build]
   const area = disk.view(name)
-  const key = mainKey(preset)
   const page = {
     build,
     name,
     preset,
     state: blankState(),
     save() {
+      const key = mainKey(page.preset)
       try {
         area.setItem(key, JSON.stringify({ state: page.state, version: rules.version }))
       } catch (e) {
@@ -322,7 +322,7 @@ export function olderPage(build, disk, { preset = 1, name = build } = {}) {
       }
     },
     load() {
-      const text = area.getItem(key)
+      const text = area.getItem(mainKey(page.preset))
       if (text === null) {
         page.state = blankState()
         return
@@ -346,7 +346,7 @@ export function olderPage(build, disk, { preset = 1, name = build } = {}) {
     },
     /** An older build's preset delete: the keys it knows, and no chunk. */
     deletePreset() {
-      area.removeItem(key)
+      area.removeItem(mainKey(page.preset))
     },
   }
   return page

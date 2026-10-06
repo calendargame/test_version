@@ -1,0 +1,381 @@
+// progressStorage.fuzz — ONE DEVICE, FOUR BUILDS, RANDOM INTERLEAVINGS, AGAINST A MODEL.
+//
+// Live and staging are one browser origin, so the saved progress is read and written by whatever is
+// open: two pages of this build line (each either this release, which never starts sealing, or the
+// next, which does), a v2.27.3 page and a v2.26.0 page (tests/helpers/progressWorld's models, held
+// to the real builds by tests/progressStorage.olderBuilds). Each step one of them does one thing —
+// loads, answers (timed, untimed, wrong, a long run), Overrides near the end or deep in the history,
+// resets a mode, Full Resets, deletes or switches preset, turns Amnesic on or off, reloads, dies
+// after the k-th write of a save — while the device is sometimes full.
+//
+// ★ THE ORACLE, after every step, for both presets:
+//   1. What the main key means, read by the layout's definition alone (progressWorld's `meaning`),
+//      is exactly what a fresh page of EITHER release loads.
+//   2. That is exactly the state of the page whose save last landed there — its own state for a
+//      page of this line, what its text meant when it landed for an older page.
+//   3. No chunk key was ever written twice with different text.
+//   4. Every stats invariant holds in every build's view of the save, and "correct answers and
+//      saved times disagree" is true in no view unless an answer really was given with timing hidden.
+//   5. A main key a page of this line saved names no chunk that is missing.
+// ★ THE ONE STRAND, counted rather than forbidden: an older page holding a sealed save writes after
+// a page of this line deleted chunks it names (a reset, or a clear-up after a complete plain copy
+// was saved over them). The counts come back, the times in those chunks do not, and they are counted
+// as lost — never doubled, never a false popup. It is allowed ONLY when chunks really were deleted
+// since that page loaded, and the last group below shows it cannot happen without two things: a page
+// of this line deleting, and an older page already holding the sealed save.
+import { describe, it, expect, beforeEach } from 'vitest'
+import { isDeepStrictEqual } from 'node:util'
+import { createProgressCodec, removeProgressCopy } from '../src/store/progressStorage.js'
+import { placeChangedElsewhere, forgetStorageHealth } from '../src/store/storageHealth.js'
+import { checkStatsInvariants } from '../src/engine/invariants.js'
+import {
+  Disk,
+  Crash,
+  blank,
+  blankState,
+  family,
+  mainKey,
+  meaning,
+  mulberry,
+  newPage,
+  olderPage,
+  play,
+  seedSealed,
+  siloOf,
+  timeOf,
+} from './helpers/progressWorld.js'
+
+// modes/modeHooks' timingMismatch, as each build spells it.
+const mismatch = (s) => s.good - (s.timesLost ?? 0) !== s.times.length
+const mismatchV226 = (s) => s.good !== s.times.length
+const PRESETS = [1, 12] // 12 on purpose: preset 1's chunk prefix must never match it
+const SILOS = ['classic', 'flash']
+
+function world(seed, { seals, older, deletes }) {
+  const rand = mulberry(seed)
+  const pick = (list) => list[Math.floor(rand() * list.length)]
+  const local = new Disk()
+  const expected = new Map() // main key → the state that last landed there (null: removed)
+  // `${key}:${silo}` whose correct answers and saved times may honestly disagree: an answer was
+  // given there with timing hidden — or a v2.26.0 page took a credit back from a silo it had
+  // trimmed to 1,000 times before any newer build recorded the trim (that build's old defect: the
+  // trim is then no longer recognisable, exactly as in v2.27.3).
+  const untimed = new Set()
+  const trimmed = new Set() // `${key}:${silo}` a v2.26.0 page has trimmed
+  const oursLast = new Set() // main keys whose last landed save was a page of this line's
+  let removals = 0 // chunk keys deleted so far
+  let strands = 0
+  const pages = []
+  const trace = [] // what each step did, for a failure's message
+
+  for (const preset of PRESETS) {
+    const state = {
+      ...blankState(),
+      stats: {
+        ...blankState().stats,
+        classic: siloOf(900 + Math.floor(rand() * 1900), rand),
+        flash: siloOf(Math.floor(rand() * 1300), rand),
+      },
+    }
+    if (rand() < 0.6) seedSealed(local, state, { preset })
+    else local.put(mainKey(preset), JSON.stringify({ state, version: 5 }))
+    expected.set(mainKey(preset), state)
+  }
+
+  const isOurs = (p) => p.build === undefined
+  local.onMain = (who, key, text) => {
+    const writer = pages.find((p) => p.name === who)
+    const preset = PRESETS.find((id) => mainKey(id) === key)
+    // A save made by a page of this line, directly, IS that page's state (the check after the step
+    // holds what the text means to it, to the letter).
+    if (writer && isOurs(writer) && writer.saving === key) {
+      expected.set(key, writer.state)
+      oursLast.add(key)
+    } else {
+      // An older page's save, or a held save landing later: what its text means as it lands.
+      const means = meaning(local, text, preset).state
+      expected.set(key, means)
+      if (writer && isOurs(writer)) oursLast.add(key)
+      else oursLast.delete(key)
+      if (writer?.shadow && !isDeepStrictEqual(means, writer.shadow)) {
+        // A v2.27.3 page: what it believes it holds, kept beside it, is what its save means —
+        // unless whole chunks it names came or went since it loaded. GONE is THE STRAND, and needs
+        // a deletion; BACK is another page having written the same times again under the same
+        // names. Either way: whole chunks, counted in `timesLost`, every count untouched.
+        const shadow = writer.shadow
+        let lost = false
+        for (const silo of Object.keys(shadow.stats)) {
+          const was = shadow.stats[silo]
+          const got = means.stats[silo]
+          const gone = was.times.length - got.times.length
+          expect(Math.abs(gone) % 250).toBe(0)
+          expect((got.timesLost ?? 0) - (was.timesLost ?? 0)).toBe(gone)
+          expect([got.played, got.good, got.streak, got.best]).toEqual([
+            was.played,
+            was.good,
+            was.streak,
+            was.best,
+          ])
+          if (gone > 0) lost = true
+        }
+        if (lost) {
+          expect(removals).toBeGreaterThan(writer.removalsAtLoad)
+          strands++
+        }
+        writer.shadow = means
+      }
+    }
+    // The browser tells every OTHER page that this key changed; store/storageHealth forgets what
+    // that page was holding for it.
+    for (const p of pages) if (p !== writer && isOurs(p)) placeChangedElsewhere(p.area, key)
+  }
+  let seen = 0
+  const countRemovals = () => {
+    for (; seen < local.log.length; seen++) {
+      const [op, key] = local.log[seen]
+      if (op === 'remove' && key.startsWith('cg-times-v1')) removals++
+    }
+  }
+
+  // ── The pages ──
+  const ours = (name, seal) => {
+    const p = newPage(createProgressCodec, local, { seal, preset: pick(PRESETS), name })
+    p.seal = seal
+    p.session = null
+    const save = p.save
+    p.save = () => {
+      p.saving = p.copy.area === p.area ? mainKey(p.copy.presetId) : null
+      try {
+        save()
+      } finally {
+        p.saving = null
+      }
+    }
+    p.load()
+    return p
+  }
+  const theirs = (build, name) => {
+    const p = olderPage(build, local, { preset: pick(PRESETS), name })
+    const load = p.load
+    p.load = () => {
+      p.shadow = null // nothing is believed while loading (a re-stamped save lands mid-load)
+      load()
+      p.removalsAtLoad = removals
+      if (build === 'v2.27.3')
+        p.shadow =
+          meaning(local, local.items.get(mainKey(p.preset)), p.preset)?.state ?? blankState()
+    }
+    p.load()
+    return p
+  }
+  seals.forEach((seal, i) => pages.push(ours(`N${i + 1}`, seal)))
+  older.forEach((build, i) => pages.push(theirs(build, `${build}#${i + 1}`)))
+
+  const presetOf = (p) => (isOurs(p) ? p.copy.presetId : p.preset)
+  const onLocal = (p) => !isOurs(p) || p.copy.area === p.area
+  // One change to one silo: the page's own state, and (v2.27.3) the shadow of what it believes.
+  const change = (p, silo, fn, shadowFn = fn) => {
+    if (p.shadow)
+      p.shadow = {
+        ...p.shadow,
+        stats: { ...p.shadow.stats, [silo]: shadowFn(p.shadow.stats[silo]) },
+      }
+    p.update(silo, fn)
+  }
+  const reload = (p) => {
+    // A reload (or a crash) is a new page: what the old one was holding in memory is gone.
+    placeChangedElsewhere(p.area, null)
+    p.shadow = null
+    const fresh = isOurs(p) ? ours(p.name, p.seal) : theirs(p.build, p.name)
+    pages[pages.indexOf(p)] = fresh
+  }
+
+  const step = () => {
+    const p = pick(pages)
+    const silo = pick(SILOS)
+    const key = mainKey(presetOf(p))
+    const held = p.state.stats[silo]
+    const roll = rand()
+    const crashing = isOurs(p) && onLocal(p) && rand() < 0.06
+    if (crashing) local.crashIn = 1 + Math.floor(rand() * 5)
+    trace.push(
+      `${p.name}${onLocal(p) ? '' : '(amnesic)'} p${presetOf(p)} ${silo} roll=${roll.toFixed(3)}` +
+        ` holds=${held.times.length}${crashing ? ` crashIn=${local.crashIn}` : ''}` +
+        `${local.limit === Infinity ? '' : ' FULL'}`,
+    )
+    try {
+      if (roll < 0.3) change(p, silo, play.timed(timeOf(rand)))
+      else if (roll < 0.36) {
+        // A long run: across chunk boundaries, and past v2.26.0's 1,000 cap.
+        for (let i = 0, n = 120 + Math.floor(rand() * 260); i < n; i++)
+          change(p, silo, play.timed(timeOf(rand)))
+      } else if (roll < 0.42) {
+        if (onLocal(p)) untimed.add(`${key}:${silo}`)
+        change(p, silo, play.untimed)
+      } else if (roll < 0.5) change(p, silo, play.wrong)
+      else if (roll < 0.6 && held.times.length > 0) {
+        // An Override near the end — the page's own end; for an older page that is the tail.
+        const i = held.times.length - 1 - Math.floor(rand() * Math.min(200, held.times.length))
+        const back = held.times.length - i
+        if (p.build === 'v2.26.0' && held.good > held.times.length) untimed.add(`${key}:${silo}`)
+        change(p, silo, play.takeBack(i), (s) => play.takeBack(s.times.length - back)(s))
+      } else if (roll < 0.66 && isOurs(p) && held.times.length > 600) {
+        change(p, silo, play.takeBack(Math.floor(rand() * (held.times.length - 500)))) // a deep one
+      } else if (roll < 0.7 && deletes) change(p, silo, blank)
+      else if (roll < 0.72 && deletes) {
+        if (p.shadow) p.shadow = blankState()
+        p.fullReset()
+      } else if (roll < 0.75 && deletes && onLocal(p)) {
+        // Delete the preset the page is on, and open the other one.
+        const gone = presetOf(p)
+        const other = PRESETS.find((id) => id !== gone)
+        if (isOurs(p)) removeProgressCopy({ area: p.area, presetId: gone })
+        else p.deletePreset()
+        for (const q of pages)
+          if (q !== p && isOurs(q)) placeChangedElsewhere(q.area, mainKey(gone))
+        if (isOurs(p)) p.copy = { area: p.area, presetId: other }
+        else p.preset = other
+        p.load()
+      } else if (roll < 0.8 && onLocal(p)) {
+        const other = PRESETS.find((id) => id !== presetOf(p))
+        if (isOurs(p)) p.copy = { area: p.area, presetId: other }
+        else p.preset = other
+        p.load()
+      } else if (roll < 0.85 && isOurs(p)) {
+        // Amnesic on (a session copy of its own, starting at zero) or off (it is thrown away).
+        if (onLocal(p)) {
+          p.session = new Disk()
+          p.copy = { area: p.session.view(p.name), presetId: presetOf(p) }
+        } else {
+          removeProgressCopy(p.copy)
+          expect(p.session.items.size).toBe(0)
+          p.copy = { area: p.area, presetId: presetOf(p) }
+        }
+        p.load()
+      } else if (roll < 0.93) reload(p)
+      else
+        local.limit = local.limit === Infinity ? local.used + Math.floor(rand() * 4000) : Infinity
+    } catch (e) {
+      if (!(e instanceof Crash)) throw e
+      reload(p)
+    }
+    local.crashIn = 0
+    countRemovals()
+    if (p.build === 'v2.26.0' && p.state.stats[silo].times.length === 1000)
+      trimmed.add(`${mainKey(p.preset)}:${silo}`)
+    for (const id of PRESETS) if (!local.items.has(mainKey(id))) expected.set(mainKey(id), null)
+  }
+
+  const check = () => {
+    expect(local.rewritten).toEqual([])
+    for (const preset of PRESETS) {
+      const key = mainKey(preset)
+      const text = local.items.get(key)
+      if (expected.get(key) === null) {
+        expect(text).toBeUndefined()
+        continue
+      }
+      const means = meaning(local, text, preset)
+      expect(means.state).toEqual(expected.get(key))
+      for (const seal of [false, true]) {
+        const loaded = createProgressCodec(seal).load({
+          area: local.view('check'),
+          presetId: preset,
+        })
+        expect(loaded.state).toEqual(means.state)
+      }
+      const raw = JSON.parse(text)
+      for (const silo of SILOS) {
+        const ours = means.state.stats[silo]
+        const stored = raw.state.stats[silo]
+        // v2.27.3 reads the stored silo as it is (after recording a pre-v5 trim); v2.26.0 likewise,
+        // and knows no `timesLost`.
+        const v2273 =
+          raw.version < 5 && stored.times.length === 1000 && stored.good > 1000
+            ? { ...stored, timesLost: stored.good - 1000 }
+            : stored
+        expect(checkStatsInvariants(ours, silo)).toEqual([])
+        expect(checkStatsInvariants(v2273, silo)).toEqual([])
+        const { timesLost: _unknown, ...v226 } = stored
+        expect(checkStatsInvariants(v226, silo)).toEqual([])
+        if (!untimed.has(`${key}:${silo}`)) {
+          expect(mismatch(ours)).toBe(false)
+          expect(mismatch(v2273)).toBe(false)
+          // v2.26.0's own check is exact only while nothing is sealed, lost or trimmed.
+          if (!stored.sealed && !stored.timesLost && !trimmed.has(`${key}:${silo}`))
+            expect(mismatchV226(v226)).toBe(false)
+        }
+        // Every chunk a main key names is there — unless an older page wrote it (the strand).
+        if (stored.sealed && oursLast.has(key))
+          stored.sealed.ids.forEach((id, j) =>
+            expect(local.items.has(`${family(preset)}${silo}:${j}.${id}`)).toBe(true),
+          )
+      }
+    }
+  }
+
+  return {
+    run(steps) {
+      try {
+        check()
+        for (let i = 0; i < steps; i++) {
+          step()
+          check()
+        }
+      } catch (e) {
+        e.message += `\nlast steps (of ${trace.length}):\n  ${trace.slice(-14).join('\n  ')}`
+        throw e
+      }
+      return { strands, removals, chunks: local.chunkKeys(1).length + local.chunkKeys(12).length }
+    },
+  }
+}
+
+beforeEach(() => forgetStorageHealth())
+
+// Short runs, many seeds: each test stays well inside the suite's limit on a loaded laptop.
+const STEPS = 110
+const seeds = (from, n) => Array.from({ length: n }, (_, i) => from + i)
+
+describe.each([
+  ['two pages of this release', [false, false]],
+  ['this release beside the next one (sealing on)', [false, true]],
+  ['two pages of the next release', [true, true]],
+])('%s, v2.27.3 and v2.26.0, everything allowed', (_label, seals) => {
+  it.each(seeds(seals[0] * 1000 + seals[1] * 100 + 1, 6))('seed %i', (seed) => {
+    const w = world(seed, { seals, older: ['v2.27.3', 'v2.26.0'], deletes: true })
+    w.run(STEPS)
+  })
+})
+
+describe('with ONE older page and no reset or delete, nothing is ever lost — no strand at all', () => {
+  it.each([
+    ...seeds(5001, 5).map((s) => [s, 'v2.27.3', [false, true]]),
+    ...seeds(6001, 5).map((s) => [s, 'v2.26.0', [true, true]]),
+    ...seeds(7001, 4).map((s) => [s, 'v2.27.3', [false, false]]),
+  ])('seed %i (%s)', (seed, build, seals) => {
+    const w = world(seed, { seals, older: [build], deletes: false })
+    expect(w.run(STEPS).strands).toBe(0)
+  })
+})
+
+describe('the fuzz reaches what it is for', () => {
+  it('seals, deletes and strands all really happen across the seeds', () => {
+    let strands = 0
+    let removals = 0
+    let chunks = 0
+    for (const seed of seeds(9001, 4)) {
+      const got = world(seed, {
+        seals: [true, true],
+        older: ['v2.27.3', 'v2.27.3'],
+        deletes: true,
+      }).run(STEPS)
+      strands += got.strands
+      removals += got.removals
+      chunks += got.chunks
+    }
+    expect(removals).toBeGreaterThan(0)
+    expect(chunks).toBeGreaterThan(0)
+    expect(strands).toBeGreaterThan(0)
+  })
+})
