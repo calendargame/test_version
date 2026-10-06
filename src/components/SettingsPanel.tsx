@@ -1584,7 +1584,7 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={openStorageUsage}
-              className={`select-none rounded-md px-1 -mx-1 underline${storageWarning ? ' storage-warn' : ''}`}
+              className={`select-none rounded-md px-1 -mx-1 underline ${storageWarning ? 'storage-warn' : ''}`}
             >
               Storage used: {storagePercent}%
               {storageWarning && <span className="sr-only">, almost full</span>}
