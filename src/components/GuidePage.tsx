@@ -948,13 +948,12 @@ export default function GuidePage({
           <li>
             The mode selector at the top works this way too — press it and drag down to a mode, then
             release to switch (or just tap to open the menu and tap a mode, as before). Once it's
-            open, five things close it: choosing a mode, pressing anywhere outside it, Esc, Tab
-            (with or without Shift — the same key that opens it; see Keyboard Input), and your
-            device's Back button (described below). Starting a scroll by touching the page outside
-            the menu is one of those presses outside, so that closes it — but a touch that lands on
-            the menu itself is not, and neither is the page moving on its own: it stays put under
-            its button in the bar while the page coasts to a stop behind it, and you can open it
-            mid-glide.
+            open, five things close it: choosing a mode, pressing anywhere outside it, Esc, Tab or
+            Shift+Tab (Tab is also the key that opens it; see Keyboard Input), and your device's
+            Back button (described below). Starting a scroll by touching the page outside the menu
+            is one of those presses outside, so that closes it — but a touch that lands on the menu
+            itself is not, and neither is the page moving on its own: it stays put under its button
+            in the bar while the page coasts to a stop behind it, and you can open it mid-glide.
           </li>
           <li>
             So does the preset control on the other side of the bar, which is the same kind of list
@@ -1060,7 +1059,10 @@ export default function GuidePage({
         <p>
           Clears your stats, all-time bests and question history for the current mode (Deduction
           only resets the current sub-type's), for the preset you are on. The other modes keep
-          theirs, and no other preset is touched. Details:
+          theirs, and no other preset is touched. While the preset&apos;s Amnesic is on Stats Only
+          or Full, the stats on screen are that session&apos;s, and those are all it clears: your
+          saved stats are set aside behind the session and stay exactly as they were — the popup
+          says so. Details:
         </p>
         <UL>
           <li>
@@ -1376,10 +1378,10 @@ export default function GuidePage({
           </li>
           <li>
             The list shows each name in full: it is at least as wide as the control it opens from,
-            wider when a name needs it, and stops only at the edge of the screen — the same in the ⚙
-            menu&apos;s <b>Open in</b> list. The control in the bar is where a name can be cut short
-            with an …, so the bar can never be pushed wider than the screen; that only happens to a
-            name made on a wider screen than the one you are holding.
+            wider when a name needs it, and stops a small margin short of the edge of the screen —
+            the same in the ⚙ menu&apos;s <b>Open in</b> list. The control in the bar is where a
+            name can be cut short with an …, so the bar can never be pushed wider than the screen;
+            that only happens to a name made on a wider screen than the one you are holding.
           </li>
         </UL>
         <Subhead>Making and managing them</Subhead>
@@ -1407,9 +1409,11 @@ export default function GuidePage({
           <li>
             <b>Order</b> — drag a row by its grip, the three small bars at its right-hand end, to
             move it; hold it near the top or bottom of the list and the list scrolls to bring the
-            rest to you. Or select the grip and press the up/down arrow keys — the list scrolls to
-            keep the row you are moving in view. That order is the order the top-left list shows
-            them in, and nothing else: moving a preset changes no stats and no settings.
+            rest to you. The whole row travels with your finger, but only its ✕ button and its name
+            box lift — each gets a shadow — and the other rows step aside as the one you hold passes
+            their halfway point. Or select the grip and press the up/down arrow keys — the list
+            scrolls to keep the row you are moving in view. That order is the order the top-left
+            list shows them in, and nothing else: moving a preset changes no stats and no settings.
           </li>
           <li>
             <b>Delete</b> — the ✕ at the left-hand end of each row, kept well away from the grip so
@@ -1445,8 +1449,8 @@ export default function GuidePage({
           </li>
           <li>
             Deleting a preset removes <i>everything</i> it holds — its stats and all-time bests, its
-            per-mode setup, every ⚙ setting it was on, its saved defaults, and any finished round or
-            run it was keeping. It cannot be undone, and no other preset is touched. Your Lookup
+            per-mode setup, every ⚙ setting it was on, its saved defaults, and any finished run or
+            round it was keeping. It cannot be undone, and no other preset is touched. Your Lookup
             history is untouched too, for the same reason switching presets does not change what
             Lookup shows: it was never any preset&apos;s to hold.
           </li>
@@ -1477,7 +1481,7 @@ export default function GuidePage({
           </li>
           <li>
             <b>Streak</b> — your current run of consecutive correct dates / your longest. In{' '}
-            {modeNames('aox', 'blitz')} the longest is this round's or run's; in{' '}
+            {modeNames('aox', 'blitz')} the longest is this run's or round's; in{' '}
             {modeNames('classic', 'deduction', 'flash')} it is kept with your other stats until you
             press Reset Stats.
           </li>
@@ -1871,8 +1875,11 @@ export default function GuidePage({
             wrap round at the ends, neither steps out to the page behind, and each step scrolls the
             control it lands on into view. <b>With a list open</b>, <Kbd>Tab</Kbd> or{' '}
             <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> closes the list and leaves the keyboard on its button.
-            Tab plus any other modifier (Ctrl+Tab, Ctrl+Shift+Tab, etc.) passes through to the
-            browser.
+            On the page, <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> is the browser&apos;s own step backwards,
+            and it is how the keyboard reaches the page&apos;s controls that have no key of their
+            own — a section of this guide, a stats box, a time readout, the strip of an ended run or
+            round (<Kbd>Enter</Kbd> or <Kbd>Space</Kbd> then presses what it is on). Tab plus any
+            other modifier (Ctrl+Tab, Ctrl+Shift+Tab, etc.) passes through to the browser.
           </li>
           <li>
             Every list opens from the keyboard once the keyboard is on its button: <Kbd>Enter</Kbd>{' '}
@@ -1919,7 +1926,7 @@ export default function GuidePage({
             Reset Stats (<Kbd>S</Kbd>) only applies to the casual modes (
             {modeList('classic', 'deduction', 'flash')}); pressing it in MoX, Blitz, or Lookup is a
             no-op, since those modes have no separate Reset Stats button (their run/round Reset
-            clears in-round/in-run stats; persistent bests update only when set).
+            clears in-run/in-round stats; persistent bests update only when set).
           </li>
         </UL>
       </GuideSection>
@@ -2802,6 +2809,11 @@ export default function GuidePage({
             On Stats Only, your Bests in {modeNames('aox', 'blitz')}, and any new one you set.
           </li>
           <li>
+            Your saved stats, through a <b>Reset Stats</b>: on Stats Only or Full that button clears
+            the session&apos;s numbers — the ones on screen — and leaves the saved ones set aside as
+            they were. (Full Reset is the one that clears those too.)
+          </li>
+          <li>
             The Amnesic value itself, for as long as the app stays open — a reload included. When
             the app is closed and opened again, each preset goes back to the value in its saved
             defaults (Off, if you have not saved any), so guest mode ends with the guest. The value
@@ -2948,16 +2960,18 @@ export default function GuidePage({
         <p>
           A device gives the app a fixed amount of room for all of this, and the ⚙ menu always shows
           how much of it is in use: <b>Storage used</b>, at the foot of the menu. Tap it to see what
-          is using the room — each mode&apos;s solve times, the Lookup history, each preset&apos;s
-          other data. The list is largest first; anything holding 1% or more is named, and so are
-          the largest few however little they hold — though never something with nothing in it, such
-          as a mode you have not played — with whatever is left gathered into one last line,
-          &quot;Everything else&quot;. Under it is what you can clear to get some room back:{' '}
-          <b>Clear History</b> in Lookup, deleting a preset you no longer use, and{' '}
-          <b>Reset Stats</b> in a mode — that last one only while the preset&apos;s Amnesic is{' '}
-          <b>Off</b>. On Stats Only or Full, Reset Stats clears that session&apos;s numbers and
-          leaves the saved solve times where they are, so it makes no room; the popup says so there
-          instead of offering it, and says what does (set Amnesic to Off first, then Reset Stats).
+          is using the room — the solve times of each mode that saves them (
+          {modeList('classic', 'deduction', 'flash')}; Deduction&apos;s three puzzle types
+          separately), the Lookup history, each preset&apos;s other data. The list is largest first;
+          anything holding 1% or more is named, and so are the largest few however little they hold
+          — though never something with nothing in it, such as a mode you have not played — with
+          whatever is left gathered into one last line, &quot;Everything else&quot;. Under it is
+          what you can clear to get some room back: <b>Clear History</b> in Lookup, deleting a
+          preset you no longer use, and <b>Reset Stats</b> in a mode — that last one only while the
+          preset&apos;s Amnesic is <b>Off</b>. On Stats Only or Full, Reset Stats clears that
+          session&apos;s numbers and leaves the saved solve times where they are, so it makes no
+          room; the popup says so there instead of offering it, and says what does (set Amnesic to
+          Off first, then Reset Stats).
         </p>
         <p>
           How much room a device gives is something the app has to measure. It does that the first
@@ -3010,7 +3024,10 @@ export default function GuidePage({
           {modeNames('classic', 'deduction', 'flash')}, what you had on the Lookup page, and your
           place in this guide are all still there afterward. A run or round still in progress is
           not; a reload stops it, just as a preset switch does — and a Flash date that was still
-          showing goes back to Begin, as it does when you leave the mode.
+          showing goes back to Begin, as it does when you leave the mode. Nor does anything that was
+          open over the page come back: the ⚙ menu, a popup and an open list are all closed after a
+          reload, and your device&apos;s Back then leaves the app, as it does from any page with
+          nothing open.
         </p>
         <UL>
           <li>
@@ -3018,7 +3035,9 @@ export default function GuidePage({
             preset is on the page you left it on. This lasts as long as the app stays open (a reload
             keeps it); a full close clears it, and the next open of each preset uses that
             preset&apos;s <b>Default Mode</b> (⚙ &rarr; Per-preset). Which preset the app opens{' '}
-            <i>into</i> is the <b>Open in</b> setting (⚙ &rarr; Global).
+            <i>into</i> is the <b>Open in</b> setting (⚙ &rarr; Global) — and which preset you are{' '}
+            <i>on</i> is kept per window: a reload stays on your preset even when another one is set
+            in Open in, and switching preset in a second window does not move this one.
           </li>
           <li>
             <b>A timed run or round that has ended</b> but not yet been Reset. It is kept through a
@@ -3474,8 +3493,8 @@ const MODE_SECTION_BODY: Record<PracticeModeId, ReactNode> = {
         ended — completed or failed — always shows its times. Best mean and best median are tracked
         independently — they can come from different runs. Beneath each best, the companion metric
         from the run that set it is also shown (e.g. the median from the run that set your best
-        mean). A <i>Same Round</i> or <i>Different Rounds</i> tag tells you whether your best mean
-        and best median came from the same exceptional run, or from two different strong ones.
+        mean). A <i>Same Run</i> or <i>Different Runs</i> tag tells you whether your best mean and
+        best median came from the same exceptional run, or from two different strong ones.
       </p>
       <p>
         Bests stay honest under Override: a finished run's record follows its corrected stats —

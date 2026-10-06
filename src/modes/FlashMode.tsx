@@ -8,6 +8,7 @@ import {
   useStatsHideToggles,
   engineFresh,
   useResetStatsConfirm,
+  useResetStatsBody,
   useMountedDataId,
   readParkedHistory,
   restoredEngine,
@@ -471,6 +472,7 @@ function FlashMode({
     closeConfirm: closeResetStats,
     confirmReset: confirmResetStats,
   } = useResetStatsConfirm(onResetStats, !engineFresh(state), visible)
+  const resetStatsBody = useResetStatsBody()
   const date = state.date
   const dateText =
     shouldShowTimerDate || inBack
@@ -495,7 +497,7 @@ function FlashMode({
         onCancel={closeResetStats}
         onConfirm={confirmResetStats}
         title="Reset Stats?"
-        body="Clears this mode's stats and all-time bests for the preset you are on. The other modes keep theirs, and no other preset is touched."
+        body={resetStatsBody}
         confirmLabel="Reset Stats"
         id="reset-stats-flash"
       />

@@ -873,7 +873,7 @@ export default function PresetManager({
         {pendingDelete.id === activeId && (
           <div className="text-xs text-(--tx-200-80)">
             You are on this preset, so deleting it opens <b>{successor.name}</b> and clears the
-            screen — a Blitz round or MoX run in progress included.
+            screen — a MoX run or Blitz round in progress included.
           </div>
         )}
         {/* ONE BUTTON, AND IT IS THE DESTRUCTIVE ONE — the way back to the list is every

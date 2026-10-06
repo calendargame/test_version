@@ -203,6 +203,14 @@ describe('AoX — characterization (batch 1: a clean Ao2 run)', () => {
     // Run done: a Best Mean is now recorded (a time, not —), and a solve time shows.
     expect(bestVal('Mean')).toMatch(/^\d+\.\d{2}s$/)
     expect(statValue('Mean')).toMatch(/^\d+\.\d{2}s$/)
+    // Both Bests came from this one run, and the tag says so in MoX's own word: a RUN (it read
+    // "Same Round", which is Blitz's).
+    const tags = [...document.querySelectorAll('*')].filter(
+      (e) => e.children.length === 0 && /^(Same|Different) (Runs?|Rounds?)$/.test(e.textContent),
+    )
+    expect(tags.filter((e) => e.offsetParent !== null).map((e) => e.textContent)).toEqual([
+      'Same Run',
+    ])
   })
 
   it('Reset returns to idle (Score 0/0, Begin shown) but keeps the recorded Best', () => {

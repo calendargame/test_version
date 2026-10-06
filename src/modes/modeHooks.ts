@@ -10,7 +10,7 @@ import { calcLast, calcAvg, calcMed } from '../engine/stats.js'
 import { fittedParkedText, restoreParkedText } from '../engine/parkedHistory.js'
 import type { ParkedScreen, RestoredHistory } from '../engine/parkedHistory.js'
 import { fmtAccuracyPct, truncTime, fmtTime } from '../lib/modeFormat.js'
-import { activeDataId, activeBestsId } from '../store/amnesic.js'
+import { activeDataId, activeBestsId, useActiveAmnesicMode } from '../store/amnesic.js'
 import { useProgress } from '../store/progress.js'
 import {
   SLOT_BUDGET,
@@ -221,6 +221,20 @@ export function useStatsHideToggles({
 // `S` keyboard shortcut routes through the same onClick via .click() (see the keyboard effect), so
 // it opens the popup identically. Leaving the mode drops a pending confirm (the popup portals to
 // #root, so a hidden mode's would otherwise sit over the visible one).
+// ★ WHAT THE "RESET STATS?" POPUP SAYS — true for the Amnesic value the preset is on. Under Off the
+// numbers on screen ARE the saved ones, and the button clears them for good. Under Stats Only and
+// Full they are the session's (store/amnesic), so that is all the button clears: the saved stats
+// are set aside behind the session and are exactly as they were when Amnesic goes back to Off. The
+// popup used to promise the first under all three. `subType`: Deduction, whose three puzzle types
+// each keep their own stats.
+export function useResetStatsBody(subType = false): string {
+  const amnesic = useActiveAmnesicMode()
+  const whose = subType ? 'sub-type' : 'mode'
+  const others = `The other modes${subType ? ' and sub-types' : ''} keep theirs, and no other preset is touched.`
+  return amnesic === 'off'
+    ? `Clears this ${whose}'s stats and all-time bests for the preset you are on. ${others}`
+    : `Clears this ${whose}'s stats for this session — the numbers on screen. This preset's Amnesic is on ${amnesic === 'stats' ? 'Stats Only' : 'Full'}, so its saved stats are set aside and are not touched: they are back, as they were, when Amnesic is set to Off. ${others}`
+}
 export function useResetStatsConfirm(resetFn: () => void, hasData: boolean, visible: boolean) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const closeConfirm = () => setConfirmOpen(false)

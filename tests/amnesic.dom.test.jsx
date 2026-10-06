@@ -1126,6 +1126,33 @@ describe('changing the Amnesic value with the app running', () => {
     expect(liveBests()).toEqual(bestsOf(9))
   })
 
+  // ★ …AND THE POPUP SAYS SO. It used to promise "clears this mode's stats and all-time bests for
+  // the preset you are on" under all three values — true only under Off.
+  it.each([
+    ['off', /^Clears this mode's stats and all-time bests for the preset you are on\./, null],
+    ['stats', /^Clears this mode's stats for this session — the numbers on screen\./, 'Stats Only'],
+    ['full', /^Clears this mode's stats for this session — the numbers on screen\./, 'Full'],
+  ])(
+    'the "Reset Stats?" popup is true for the value the preset is on: %s',
+    (mode, opens, label) => {
+      mountApp()
+      pinReadableQuestions()
+      setAmnesic(mode)
+      pressNew()
+      playCorrect(1)
+      tap(ctrl('Reset Stats'))
+      const text = screen.getByRole('dialog', { name: 'Reset Stats?' }).textContent
+      const body = text.replace(/^Reset Stats\?/, '').replace(/Reset Stats$/, '')
+      expect(body).toMatch(opens)
+      expect(body).toMatch(/The other modes keep theirs, and no other preset is touched\.$/)
+      if (label)
+        expect(body).toContain(
+          `This preset's Amnesic is on ${label}, so its saved stats are set aside and are not touched`,
+        )
+      else expect(body).not.toMatch(/Amnesic/)
+    },
+  )
+
   // RESET SETTINGS restores the saved Amnesic value — which is a change like any other.
   it('Reset Settings puts a preset on Stats Only back on its saved default, and the session is discarded', () => {
     mountApp()

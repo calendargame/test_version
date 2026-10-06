@@ -256,7 +256,7 @@ function AoxMode({
   // with it is a best this run set, which is the whole ★ rule (round 23). State, not a ref, because
   // the ★ renders from it. NEVER-REPEATING (engine/roundId's newRoundId), because the id is SAVED
   // inside the Best record: the per-screen counter that restarted at 1 made two different runs "the
-  // same run" to the Same Round tag. Restored from the parked run (round 21), so
+  // same run" to the Same Run tag. Restored from the parked run (round 21), so
   // `snap.runId === runId` still holds after a remount and the done/failed reconcile keeps
   // recognising THIS run — and its ★ comes back with it.
   const [runId, setRunId] = useState<number | null>(parkedRun?.currentRunId ?? null)
@@ -796,7 +796,7 @@ function AoxMode({
           </div>
           {bestData.avgRoundId != null && bestData.medRoundId != null && (
             <span className="shrink-0 ml-auto">
-              {bestData.avgRoundId === bestData.medRoundId ? 'Same Round' : 'Different Rounds'}
+              {bestData.avgRoundId === bestData.medRoundId ? 'Same Run' : 'Different Runs'}
             </span>
           )}
         </div>

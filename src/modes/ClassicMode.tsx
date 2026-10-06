@@ -8,6 +8,7 @@ import {
   useStatsHideToggles,
   engineFresh,
   useResetStatsConfirm,
+  useResetStatsBody,
   useMountedDataId,
   readParkedHistory,
   restoredEngine,
@@ -164,6 +165,7 @@ function ClassicMode({
     closeConfirm: closeResetStats,
     confirmReset: confirmResetStats,
   } = useResetStatsConfirm(eng.resetStats, !engineFresh(state), visible)
+  const resetStatsBody = useResetStatsBody()
   useEffect(() => {
     onFreshChange?.(classicIsFresh)
   }, [classicIsFresh, onFreshChange])
@@ -187,7 +189,7 @@ function ClassicMode({
         onCancel={closeResetStats}
         onConfirm={confirmResetStats}
         title="Reset Stats?"
-        body="Clears this mode's stats and all-time bests for the preset you are on. The other modes keep theirs, and no other preset is touched."
+        body={resetStatsBody}
         confirmLabel="Reset Stats"
         id="reset-stats-classic"
       />

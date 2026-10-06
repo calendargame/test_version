@@ -9,6 +9,7 @@ import {
   useChangeEffect,
   engineFresh,
   useResetStatsConfirm,
+  useResetStatsBody,
   useMountedDataId,
   readParkedHistory,
   restoredEngine,
@@ -404,6 +405,7 @@ function DeductionMode({
     closeConfirm: closeResetStats,
     confirmReset: confirmResetStats,
   } = useResetStatsConfirm(eng.resetStats, !engineFresh(state), visible)
+  const resetStatsBody = useResetStatsBody(true)
   useEffect(() => {
     onFreshChange?.(deductionIsFresh)
   }, [deductionIsFresh, onFreshChange])
@@ -476,7 +478,7 @@ function DeductionMode({
         onCancel={closeResetStats}
         onConfirm={confirmResetStats}
         title="Reset Stats?"
-        body="Clears this sub-type's stats and all-time bests for the preset you are on. The other modes and sub-types keep theirs, and no other preset is touched."
+        body={resetStatsBody}
         confirmLabel="Reset Stats"
         id="reset-stats-deduction"
       />
