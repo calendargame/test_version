@@ -8,9 +8,11 @@
 // shape check (the fields the invariant walk and the first render need before they can be asked) and
 // the engine's own invariants, run inside a catch.
 //
-// ⚠ There is no migration to test. The slots this build reads (`cg-round-v2`, `cg-history-v1`) have
-// only ever been written in today's engine shape; an older build's shape is refused like any other
-// blob that is not a healthy engine state.
+// ⚠ There is one thing an older build's blob is given at the door, and it is not tested here: the
+// slots this build reads (`cg-round-v2`, `cg-history-v1`) are also written by builds that stamp no
+// calendar on a judged card, and the door stamps those from the card's own grid (or refuses the
+// blob when the grid fits neither calendar). tests/engine/cardCalendar.test.js owns that. Any other
+// difference in shape is refused like every blob that is not a healthy engine state.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { restoreParkedEngine } from '../../src/engine/parkedEngine.js'
 import { captureError } from '../../src/observability/sentry.js'
