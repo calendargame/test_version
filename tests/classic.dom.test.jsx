@@ -13,7 +13,7 @@
 // the correct weekday with the SAME already-tested calendar functions the app uses, then
 // click accordingly. We pin a Gregorian-only year range (>=1583) and a fixed numeric-ymd
 // format so the displayed date is unambiguous and trivially parseable.
-import { describe, it, expect, beforeEach, afterEach, onTestFinished } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { App } from '../src/main.jsx'
 import { useSettings } from '../src/store/settings.js'
@@ -357,20 +357,9 @@ describe('Classic — Override ⇄ Undo', () => {
     }
   })
 
-  // App's [data-key] walk skips elements whose offsetParent is null — every element in jsdom's
-  // layout-free DOM (see the S-shortcut note in batch 4). So for this one test, offsetParent is
-  // given the one rule the walk relies on: null inside a display:none ancestor (the hidden mode
-  // screens), otherwise a parent. That lets the real keyboard handler find the visible O button.
+  // The real keyboard handler finds the visible O button through its [data-key] walk (the harness
+  // gives the walk the one layout fact it asks — tests/setup/dom.js).
   it('the O key follows the label', () => {
-    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetParent')
-    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
-      configurable: true,
-      get() {
-        for (let e = this; e; e = e.parentElement) if (e.style?.display === 'none') return null
-        return this.parentElement
-      },
-    })
-    onTestFinished(() => Object.defineProperty(HTMLElement.prototype, 'offsetParent', desc))
     mountApp()
     const q1 = pressNewAndRead()
     fireEvent.click(dayBtn(correctName(q1)))
@@ -946,11 +935,19 @@ describe('Classic — Reset Stats confirmation popup', () => {
     expect(screen.queryByRole('dialog', { name: 'Reset Stats?' })).toBeNull()
   })
 
-  // (The `S` shortcut routes through this same button's onClick — App's [data-key] DOM walk
-  // .click()s it — so it opens the identical popup. Not asserted here: the walk skips any element
-  // whose offsetParent is null, which is every element in jsdom's layout-free DOM. The one dom test
-  // that drives a game-loop letter — O, in "Classic — Override ⇄ Undo" — stubs offsetParent to do
-  // it; S rides the identical walk and stays a device check.)
+  // The `S` shortcut routes through this same button's onClick — App's [data-key] DOM walk
+  // .click()s it — so it opens the identical popup.
+  it('the S key opens the same popup, and does nothing more while it is up', () => {
+    mountApp()
+    const q = pressNewAndRead()
+    fireEvent.click(dayBtn(correctName(q)))
+    act(() => fireEvent.keyDown(window, { key: 's' }))
+    expect(resetStatsDialog()).toBeInTheDocument()
+    expect(statValue('Score')).toBe('1/1') // asked, not done
+    act(() => fireEvent.keyDown(window, { key: 's' })) // the page behind a popup is out of reach
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(statValue('Score')).toBe('1/1')
+  })
 
   // A2 (round 21): the popup now carries a real z-60 scrim, so G — which would open the ⚙ panel
   // UNDER it — is gated to a no-op while a non-panel modal is up. A mode letter is NOT gated: it

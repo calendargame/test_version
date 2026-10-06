@@ -15,8 +15,9 @@
 //                             scroll-state observers).
 //        - requestAnimationFrame / cancelAnimationFrame — the timer rAF loop + flash bar.
 //        - scrollTo         — BFCache scroll-reset effect + Full Reset.
+//        - offsetParent     — the one layout fact the app's KEYBOARD handler asks (see below).
 //
-// Every stub is INERT (no-op writes, false/empty reads). Characterization tests assert on
+// Every other stub is INERT (no-op writes, false/empty reads). Characterization tests assert on
 // game logic and rendered output, never on real layout geometry, so faithful measurement
 // isn't needed — only that these calls don't throw. All stubs are window-guarded so this
 // file is a no-op (beyond the matchers) under the Node-environment pure-logic tests.
@@ -77,6 +78,27 @@ if (typeof window !== 'undefined') {
   if (window.HTMLCanvasElement) {
     window.HTMLCanvasElement.prototype.getContext = () => null
   }
+  // ★ offsetParent — SO THE KEYBOARD SHORTCUTS CAN BE TESTED AT ALL. App's key handler finds the
+  // button a game key means by walking the page for the one that is ON SCREEN (src/main.tsx: the
+  // answer grid for 0–9, the [data-key] walk for N / R / O / C / S / ← / →), and "on screen" is
+  // `offsetParent !== null` — every mode screen stays mounted, hidden with display:none, so each
+  // key has five buttons and one of them showing. jsdom does no layout: offsetParent is null for
+  // EVERY element, so the handler skipped every button and no game key did anything in any test.
+  // A key test could only ever prove a press was ignored, and it "proved" that of every key.
+  // So the harness gives offsetParent the one rule the app relies on, for every DOM test: null for
+  // an element that is not in the document or sits inside a display:none subtree (inline — the
+  // suite loads no stylesheet, and the mode screens hide themselves inline — or the `hidden`
+  // attribute), its parent element otherwise. It is not the browser's real positioned ancestor,
+  // and nothing in the app asks for that: both readers only compare it with null.
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetParent', {
+    configurable: true,
+    get() {
+      if (!this.isConnected) return null
+      for (let el = this; el; el = el.parentElement)
+        if (el.hidden || el.style?.display === 'none') return null
+      return this.parentElement
+    },
+  })
 }
 
 // Saved progress (Stage D1) is a module singleton the app reads, so — like the settings store —

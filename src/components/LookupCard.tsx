@@ -8,7 +8,7 @@ import {
   useScrollEdgeState,
   useWindowedRows,
 } from './scrollRegion.js'
-import { isPopupOpen } from './overlayStack.js'
+import { isPageCovered } from './overlayStack.js'
 import type { FormatId } from '../lib/format.js'
 // The history entry's persisted shape lives with the store that versions and migrates it
 // (store/lookupHistory) — it is {id, y, m, d, isGap?} and nothing else. Everything shown on screen
@@ -507,18 +507,19 @@ export default function LookupCard({
   //   Backspace/Delete  — clear the Lookup input box (matches the Clear button).
   // When an input IS focused, all keys pass through unchanged so typing & native cursor
   // handling (including ↑/↓ jumping cursor to start/end on single-line inputs) work normally.
-  // ★ THEY ARE PAGE SHORTCUTS, AND THEY STAND ASIDE LIKE THE REST OF THEM (src/main.tsx's keyboard
-  // handler argues the rule for its own):
-  //   • A POPUP IS OPEN ⇒ the page behind it is inert. These keys used to act straight through one:
-  //     in Manage Presets, ↓ on a reorder grip moved the preset AND the Lookup selection behind the
-  //     dim (and selecting blurs whatever has the keyboard, so the grip lost it too), and
-  //     Backspace emptied the card under any popup.
+  // ★ THEY ARE PAGE SHORTCUTS, AND THEY STAND ASIDE LIKE THE REST OF THEM — one rule for these and
+  // for the game keys (components/overlayStack's isPageCovered; src/main.tsx's keyboard handler asks
+  // the same question for its own):
+  //   • A POPUP OR THE ⚙ MENU IS OPEN ⇒ the page behind it is out of reach. These keys used to act
+  //     straight through one: in Manage Presets, ↓ on a reorder grip moved the preset AND the Lookup
+  //     selection behind the dim (and selecting blurs whatever has the keyboard, so the grip lost it
+  //     too), Backspace emptied the card under any popup — and under the ⚙ menu all four still did.
   //   • A CONTROL ALREADY USED THE KEY ⇒ it is not also a shortcut. An open dropdown list walks its
   //     options with ↑/↓ and says so by preventing the key's default; this listener sits on the
   //     document, after every control's own handler, so it can see that and leave the press alone.
   React.useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isPopupOpen()) return
+      if (e.defaultPrevented || isPageCovered()) return
       const ae = document.activeElement as HTMLElement | null
       const inInput =
         ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)

@@ -135,12 +135,12 @@ export function PillGroup({
     const radios = [...el.querySelectorAll<HTMLElement>(RADIO)]
     const from = radios.indexOf(document.activeElement as HTMLElement)
     if (from === -1) return // the press didn't come from one of our radios — leave it alone
-    e.preventDefault() // the arrows would otherwise scroll the popover out from under the pills
-    // App's global handler maps ArrowLeft/ArrowRight to the game's history back/forward buttons
-    // (main.tsx, the [data-key] walk). A key this group owns must stop here, or moving between
-    // pills — or pressing an arrow inside a LOCKED group, which moves nothing at all — would also
-    // step the puzzle behind the panel.
-    e.stopPropagation()
+    // The arrows would otherwise scroll the popover out from under the pills. (They do NOT also
+    // step the game's history behind the panel, though App's global handler maps ← / → to its Back
+    // and Forward buttons: this group lives in the ⚙ menu, and while the menu is open no key acts
+    // on the page behind it — components/overlayStack's isPageCovered, the one rule. This handler
+    // used to stop the press itself, a second gate for the same thing.)
+    e.preventDefault()
     if (locked) return // inert: consumed, but nothing moves and nothing is chosen
     const n = radios.length
     // The modulo IS the wrap, in both directions (+ n keeps a backwards step off the front

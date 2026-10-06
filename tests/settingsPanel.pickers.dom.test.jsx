@@ -58,13 +58,14 @@
 // `>` -for- `>=` slip clears); and G2.9 sweeps all four lockable pickers and asserts the arrow is
 // preventDefault-ed, where settings.dom asks one picker and asserts only that it never reaches the
 // window.
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { cleanup, act } from '@testing-library/react'
 import { useSettings } from '../src/store/settings.js'
 import {
   mountApp,
   openSettings,
   closeSettings,
+  pressKey,
   isSettingsOpen,
   resetAppState,
   installSystemColorScheme,
@@ -295,31 +296,46 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
   })
 
   // G2.9 — the half of the lock a keyboard user meets. pointer-events-none stops pointers and
-  // nothing else, so a locked group has to SWALLOW the six keys it owns: App's global handler maps
-  // ArrowLeft/ArrowRight to the game's history buttons, and an arrow that escaped a locked picker
-  // would step the puzzle behind the open panel.
-  it('a locked picker swallows the arrows instead of letting them reach the page behind it', () => {
-    standUp()
+  // nothing else, so a locked group still has to SWALLOW the six keys it owns (an arrow would
+  // otherwise scroll the menu out from under the pills). And App's global handler maps ← / → to the
+  // game's history buttons — so the page behind the panel is given a history to step, and must not
+  // move: no key acts on the page while the ⚙ menu is open (components/overlayStack's isPageCovered,
+  // the one rule — tests/keysUnderMenu holds the whole of it).
+  it('a locked picker swallows the arrows, and they never step the puzzle behind the menu', () => {
+    mountApp()
+    // The puzzle on screen: Deduction's partial date, the one visible text with a blank in it.
+    const hidden = (el) => {
+      for (let n = el; n; n = n.parentElement) if (n.style?.display === 'none') return true
+      return false
+    }
+    const puzzle = () =>
+      [...document.querySelectorAll('div')]
+        .find((e) => e.children.length === 0 && e.textContent.includes('__') && !hidden(e))
+        .textContent.trim()
+    // One played puzzle behind the one on screen, so ← has somewhere to go…
+    pressKey('d')
+    pressKey('r')
+    pressKey('n')
+    openSettings()
     toggleSwitch('Random Format')
     toggleSwitch('Save Stats')
     commitRange(1900, 1900)
     goMode('deduction')
-    const reachedTheWindow = vi.fn()
-    window.addEventListener('keydown', reachedTheWindow)
-    try {
-      for (const name of LOCKABLE_PICKERS) {
-        const before = pickerChosen(name)
-        expect(arrowPicker(name, 'ArrowRight').prevented).toBe(true)
+    const live = puzzle()
+    for (const name of LOCKABLE_PICKERS) {
+      const before = pickerChosen(name)
+      for (const key of ['ArrowLeft', 'ArrowRight']) {
+        expect(arrowPicker(name, key).prevented).toBe(true)
         expect(pickerChosen(name)).toEqual(before)
-        expect(reachedTheWindow).not.toHaveBeenCalled()
+        expect(puzzle()).toBe(live)
       }
-      // The control that makes the four assertions above mean something: the same key, pressed
-      // outside any picker, does reach the page.
-      act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
-      expect(reachedTheWindow).toHaveBeenCalledTimes(1)
-    } finally {
-      window.removeEventListener('keydown', reachedTheWindow)
     }
+    // …and the control that makes those assertions mean something: with the menu closed, the same
+    // key does step the page.
+    closeSettings('escape')
+    expect(puzzle()).toBe(live)
+    pressKey('ArrowLeft')
+    expect(puzzle()).not.toBe(live)
   })
 
   // G2.10 — unlocking restores exactly ONE tab stop, on the pill that is actually chosen, with no

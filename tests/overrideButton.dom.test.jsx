@@ -14,7 +14,7 @@
 // guard deliberately lets through: the keyboard and assistive routes have never had the accidental
 // double-press problem (App drops key repeats outright), and adding a delay to them would be adding
 // a fault. So the two halves are asserted here side by side rather than left to be inferred.
-import { describe, it, expect, beforeEach, afterEach, onTestFinished, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, cleanup, act, fireEvent } from '@testing-library/react'
 import { resetAppState, mountApp } from './helpers/settingsPanel.jsx'
 import { readDate, correctDayName } from './helpers/modeScreen.jsx'
@@ -129,20 +129,8 @@ describe('the Override ⇄ Undo button ignores a double-tap', () => {
   // means it twice. This is also why the rest of the suite, which clicks programmatically, is
   // untouched by the guard.
   it('a keyboard or programmatic press is not guarded, even back to back', () => {
-    // The O shortcut reaches the button through App's [data-key] walk, which skips anything whose
-    // offsetParent is null — that is EVERY element in jsdom's layout-free DOM. So, exactly as
-    // tests/classic.dom does for its own O case, offsetParent is given the one rule the walk relies
-    // on for the length of this test: null inside a display:none ancestor (the hidden mode screens),
-    // a parent otherwise.
-    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetParent')
-    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
-      configurable: true,
-      get() {
-        for (let e = this; e; e = e.parentElement) if (e.style?.display === 'none') return null
-        return this.parentElement
-      },
-    })
-    onTestFinished(() => Object.defineProperty(HTMLElement.prototype, 'offsetParent', desc))
+    // The O shortcut reaches the button through App's [data-key] walk (the harness gives the walk
+    // the one layout fact it asks — tests/setup/dom.js).
     answeredCorrectly()
     clickButton(ctrl('Override')) // what assistive technology does
     expect(statValue('Score')).toBe('0/1')

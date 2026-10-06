@@ -1683,18 +1683,20 @@ export default function GuidePage({
             modifier (Ctrl/Cmd/Alt/Shift) is held.
           </li>
           <li>
-            The answer keys, the Game Actions and the Lookup keys above are ignored while a popup is
-            open, too — whatever is behind a popup is out of reach until you close it, so an answer,
-            an Override or an Undo can't be pressed through one. (Lookup&apos;s arrows also stand
-            aside while a list is open and using them.) The mode letters and <Kbd>H</Kbd> still
-            work: they leave the screen, and any popup belonging to it goes at the same moment.{' '}
-            <Kbd>G</Kbd> still closes the ⚙ menu together with any of its popups, but does nothing
-            while a game screen&apos;s own popup (such as a Reset Stats question or a breakdown) is
-            open. The two popups those keys can&apos;t take with them are the ones that belong to no
-            screen — the &quot;Your progress isn&apos;t being saved&quot; notice and the{' '}
-            <b>Storage used</b> breakdown: while one of them is up the mode letters, <Kbd>H</Kbd>{' '}
-            and <Kbd>G</Kbd> do nothing either, until you close it. <Kbd>Tab</Kbd> stays inside the
-            popup rather than opening the mode selector (see Accessibility).
+            The answer keys, the Game Actions and the Lookup keys above are ignored while the ⚙ menu
+            or a popup is open, too — whatever is behind one is out of reach until you close it, so
+            an answer, a New, a Back, an Override or an Undo can't be pressed through it, and on
+            Lookup the arrows, <Kbd>Backspace</Kbd> and <Kbd>Delete</Kbd> leave the page behind it
+            alone. (Lookup&apos;s arrows also stand aside while a list is open and using them.) The
+            mode letters and <Kbd>H</Kbd> still work: they leave the screen, closing the ⚙ menu and
+            taking any popup that belongs to the screen with it. <Kbd>G</Kbd> still closes the ⚙
+            menu together with any of its popups, but does nothing while a game screen&apos;s own
+            popup (such as a Reset Stats question or a breakdown) is open. The two popups those keys
+            can&apos;t take with them are the ones that belong to no screen — the &quot;Your
+            progress isn&apos;t being saved&quot; notice and the <b>Storage used</b> breakdown:
+            while one of them is up the mode letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing
+            either, until you close it. <Kbd>Tab</Kbd> stays inside the popup rather than opening
+            the mode selector (see Accessibility).
           </li>
           <li>
             <Kbd>Tab</Kbd> is the exception — it toggles the mode selector even from inputs (use{' '}
@@ -1725,8 +1727,9 @@ export default function GuidePage({
             setting is the choice, not the row: Date Format is a single five-way choice, so the
             arrows carry straight from the Written row into the Numeric one — and Theme does the
             same across Dark and Light whenever Use System Settings is off, since that's when the
-            five themes are one pick. A locked setting ignores the keys. None of these presses reach
-            past the menu, so they never step the date behind it.
+            five themes are one pick. A locked setting ignores the keys. No key reaches past the
+            open menu, so these never step the date behind it — and inside the menu <Kbd>Tab</Kbd>,{' '}
+            <Kbd>Esc</Kbd> and typing in its boxes work as they do everywhere.
           </li>
           <li>
             Reset Stats (<Kbd>S</Kbd>) only applies to the casual modes (

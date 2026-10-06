@@ -12,6 +12,8 @@ import { dismissKeyboard, opensKeyboard } from '../lib/textEntry.js'
 //   • ESCAPE closes the top LAYER — one press, one layer, newest first.
 //   • A PRESS OUTSIDE closes the top layer only, never the one under it as well.
 //   • THE DIM is painted by the top popup alone, so two popups never darken the page twice.
+//   • THE KEYBOARD'S PAGE SHORTCUTS stand aside while a popup or the ⚙ menu is open: no key acts
+//     on the page behind one (isPageCovered).
 //   • OPENING anything takes the soft keyboard down (dismissKeyboard, in pushOverlay).
 // There used to be one registry (Back) and three rules that each kept their own idea of what was
 // open — a document Escape listener per popup, a press-outside listener per layer, a scrim per
@@ -61,6 +63,9 @@ type Entry = {
   escape: boolean
   // A popup: it sits behind a scrim that owns every press, and it is what the dim follows.
   modal: boolean
+  // It COVERS THE PAGE — every popup, and the ⚙ menu: while it is open the page behind it is out
+  // of the keyboard's reach (isPageCovered). A dropdown list and a page state do not.
+  coversPage: boolean
   // A popup that belongs to the APP rather than to a screen or to the ⚙ panel (the storage-full
   // notice): nothing that changes the screen takes it away. See isAppWidePopupOpen.
   appWide: boolean
@@ -106,10 +111,23 @@ const notify = () => {
 // The id of the top POPUP, or null while none is open. Layers and page states above it do not
 // count: a dropdown cannot open over a popup, and Show Codes is not something a scrim sits under.
 const topPopupId = (): string | null => topWhere((entry) => entry.modal)?.id ?? null
-// Is any popup open? The plain function is for an event handler deciding what a key press may
-// reach (src/main.tsx's shortcuts); the hook is for rendering.
+// Is any popup open? The plain function is for an event handler (src/main.tsx's Tab and G, whose
+// answers differ for a popup and for the ⚙ menu); the hook is for rendering.
 export const isPopupOpen = () => topPopupId() !== null
 export const usePopupOpen = () => useSyncExternalStore(subscribe, isPopupOpen)
+// ★ IS THE PAGE COVERED — by a popup, or by the ⚙ menu? THE ONE RULE FOR EVERY KEY THAT ACTS ON THE
+// PAGE: while this is true the page behind is out of reach, so none of them does anything — the
+// answer keys (0–9), the Game Actions (N, R, O, C, S, ← and →: src/main.tsx's handler) and Lookup's
+// own ↑ / ↓ / Backspace / Delete (components/LookupCard's). It is asked here, of the stack, because
+// the stack is the only thing that knows what is open; each of those two handlers asks this one
+// question and keeps no gate of its own.
+// It used to be true for a popup only. Under the ⚙ MENU every one of those keys still acted on the
+// page: a digit answered the date behind the menu, N drew a new one, ← stepped the history, and on
+// Lookup an arrow moved the selection and Backspace emptied the card — all behind a menu the player
+// was reading. (What an open layer does NOT block is argued where the keys are handled: the mode
+// letters, H and G replace or close what is open rather than reach behind it, and a control inside
+// the menu still gets its own keys — the arrows along a setting's options, Tab, Escape, typing.)
+export const isPageCovered = () => stack.some((entry) => entry.coversPage)
 // Is THIS the top popup, as the stack stands this instant? For a popup's own event handlers, which
 // can run between the stack changing and React re-rendering the popups to match (components/Popup's
 // focus rule); rendering reads the same answer through usePopupLayer.
@@ -179,8 +197,8 @@ if (typeof window !== 'undefined') {
 //     layer. The test is lib/textEntry's opensKeyboard, so a slider (which keeps focus after an
 //     adjust and has no Escape meaning of its own) never swallows the dismiss.
 //   • A HELD KEY IS ONE PRESS. Auto-repeat would otherwise peel every open layer in a second.
-//   • A PAGE STATE IS SKIPPED, not a blocker: Show Codes can be opened by its key while ⚙ is open,
-//     and Escape must still close the panel.
+//   • A PAGE STATE IS SKIPPED, not a blocker: with Show Codes open, Escape must still close the
+//     layer that is open with it.
 //
 // A PRESS is handed to the top layer and to no other. It is `pointerdown` — one event per press
 // for mouse, touch and pen alike. The older mousedown + touchstart pair reports one tap TWICE (the
@@ -297,6 +315,7 @@ function useRegistration(
   id: string,
   escape: boolean,
   modal: boolean,
+  coversPage: boolean,
   press: Press | null,
   appWide = false,
 ) {
@@ -316,30 +335,40 @@ function useRegistration(
       close: () => closeRef.current(),
       escape,
       modal,
+      coversPage,
       appWide,
       press: pressed ? (e) => pressRef.current?.(e) : null,
     })
     return () => popOverlay(id)
-  }, [isOpen, id, escape, modal, pressed, appWide])
+  }, [isOpen, id, escape, modal, coversPage, pressed, appWide])
 }
 
 // A PAGE STATE (Show Codes, How-to-Play): Back closes it, and nothing else here does.
 export function useBackButton(isOpen: boolean, close: () => void, id: string) {
-  useRegistration(isOpen, close, id, false, false, null)
+  useRegistration(isOpen, close, id, false, false, false, null)
 }
 
 // A LAYER with no scrim (⚙ Settings, a dropdown list, the preset manager's delete question): Back
 // and Escape close it. `onPress` is told about every press on the page while this is the top
 // layer, and decides for itself what counts as outside; a layer that is a view of a popup's own
 // card passes none, and the press is its popup's scrim's to answer.
-export function useLayer(isOpen: boolean, close: () => void, id: string, onPress?: Press) {
-  useRegistration(isOpen, close, id, true, false, onPress ?? null)
+// `coversPage`: the ⚙ menu alone says true — it is the one scrim-less layer the player reads rather
+// than picks from, so the page behind it takes no key while it is open (isPageCovered). A dropdown
+// list handles the keys it uses itself and leaves the rest as they were.
+export function useLayer(
+  isOpen: boolean,
+  close: () => void,
+  id: string,
+  onPress?: Press,
+  coversPage = false,
+) {
+  useRegistration(isOpen, close, id, true, false, coversPage, onPress ?? null)
 }
 
 // A POPUP, open for as long as its component is mounted (components/Popup, the only caller).
 // Returns whether it is the TOP popup — the one that paints the dim and holds the keyboard.
 // `appWide`: it belongs to no screen and no panel (isAppWidePopupOpen argues what that changes).
 export function usePopupLayer(close: () => void, id: string, appWide: boolean) {
-  useRegistration(true, close, id, true, true, null, appWide)
+  useRegistration(true, close, id, true, true, true, null, appWide)
   return useSyncExternalStore(subscribe, () => isTopPopup(id))
 }

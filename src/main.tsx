@@ -25,7 +25,7 @@ import GuidePage from './components/GuidePage.jsx'
 import LookupCard from './components/LookupCard.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import PresetSwitcher from './components/PresetSwitcher.jsx'
-import { isAppWidePopupOpen, isPopupOpen, useBackButton, useLayer, usePopupOpen } from './components/overlayStack.js'
+import { isAppWidePopupOpen, isPageCovered, isPopupOpen, useBackButton, useLayer, usePopupOpen } from './components/overlayStack.js'
 import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
 import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
@@ -1487,16 +1487,19 @@ import BlitzMode from './modes/BlitzMode.jsx'
       useEffect(()=>{if(updating)dismissBootSplash();},[updating]);
       useEffect(()=>{const onKey=(e: KeyboardEvent)=>{
         if(e.repeat||e.isComposing)return;
-        // ★★ WHAT AN OPEN MODAL BLOCKS, AND WHAT IT DELIBERATELY DOES NOT — the whole rule, in one
-        // place, because it is exactly one line different for each half and the difference is the
-        // point. A modal is up ⇒ the page underneath is INERT (components/modalContract), so the two
-        // categories that REACH INTO that page bail: Category 1's answer grid and Category 2's
-        // [data-key] DOM walk both find a live button under the scrim and CLICK it. That is not
-        // theoretical — it shipped: Blitz with Allow Mistakes off, answer wrong, tap the stat strip
-        // to open the round breakdown, press O, and the walk clicked Override behind the scrim,
-        // resumed the finished round and reverted its provisional Best. The run breakdown is what
-        // made it reachable, being the first modal to sit over a LIVE GAME SCREEN rather than over
-        // the settings panel; the bail used to live in the Tab branch alone.
+        // ★★ WHAT AN OPEN POPUP OR ⚙ MENU BLOCKS, AND WHAT IT DELIBERATELY DOES NOT — the whole
+        // rule, in one place, because it is exactly one line different for each half and the
+        // difference is the point. Either one is open ⇒ the page behind it is OUT OF REACH
+        // (components/overlayStack's isPageCovered — the one rule, which Lookup's own keys ask too),
+        // so the two categories that REACH INTO that page bail: Category 1's answer grid and
+        // Category 2's [data-key] DOM walk both find a live button behind what is open and CLICK it.
+        // That is not theoretical — it shipped: Blitz with Allow Mistakes off, answer wrong, tap the
+        // stat strip to open the round breakdown, press O, and the walk clicked Override behind the
+        // scrim, resumed the finished round and reverted its provisional Best. The run breakdown is
+        // what made it reachable, being the first modal to sit over a LIVE GAME SCREEN rather than
+        // over the settings panel; the bail used to live in the Tab branch alone. And for a long time
+        // it covered popups only: under the ⚙ MENU a digit still answered the date behind it, N drew
+        // a new one and ← stepped the history, with the menu in the way of seeing any of it.
         // ⚠ CATEGORY 3 STAYS LIVE, and that is a DECISION with two tests standing on it, not an
         // oversight. The mode letters, H and G do not operate the page underneath — they REPLACE
         // what is on screen, and every modal goes with it: the four ⚙ popups are children of the
@@ -1514,9 +1517,11 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // while one is open, Category 3 does nothing either. It closes like any popup (Escape, a tap
         // outside, Back), and the keys work again.
         // The scrim's trap already stopPropagation()s presses inside the modal's own tree; this
-        // covers presses that start outside it. The question is isPopupOpen — the app's stack of
-        // open things (components/overlayStack) — asked only for a press that has already turned
-        // out to belong to one of the two gated categories.
+        // covers presses that start outside it. The question is isPageCovered — asked of the app's
+        // stack of open things (components/overlayStack) — and only for a press that has already
+        // turned out to belong to one of the two gated categories. A control INSIDE the menu or a
+        // popup keeps its own keys (the arrows along a setting's options, Tab, Escape, typing):
+        // those are handled on the control, not here.
         // Tab: toggle the mode selector dropdown. Plain Tab only — Ctrl+Tab, Ctrl+Shift+Tab,
         // Shift+Tab, Alt+Tab all pass through to the browser. Works universally, including
         // when an input is focused (Esc/Enter already blur inputs, so the standard "leave
@@ -1539,7 +1544,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         if(ae){const tag=ae.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||ae.isContentEditable)return;}
         // Category 1: 0–9 → answer grid — GATED, it clicks a button on the page underneath
         if(k>='0'&&k<='9'){
-          if(isPopupOpen())return;
+          if(isPageCovered())return;
           const grids=document.querySelectorAll<HTMLElement>('[data-answer-grid="true"]');
           let visible: HTMLElement | null=null;
           for(const g of grids){if(g.offsetParent!==null){visible=g;break;}}
@@ -1582,7 +1587,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         if(dataKey==='G'){if(isPopupOpen()&&!settingsOpen)return;e.preventDefault();toggleSettings();return;}
         // Category 2: data-key DOM walk for game-loop letters and arrows — GATED for the same
         // reason as Category 1, and it is the one that shipped the bug (Override, through a scrim).
-        if(isPopupOpen())return;
+        if(isPageCovered())return;
         const tagged=document.querySelectorAll<HTMLElement>(`[data-key="${dataKey}"]`);
         for(const btn of tagged){
           if(btn.tagName!=='BUTTON')continue;
@@ -1905,7 +1910,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
           if(ae&&ae.tagName==='INPUT'&&settingsPopoverRef.current&&settingsPopoverRef.current.contains(ae))ae.blur();
           setSettingsOpen(false);
         }};
-      useLayer(settingsOpen, ()=>setSettingsOpen(false), 'settings', pressOutsideSettings);
+      useLayer(settingsOpen, ()=>setSettingsOpen(false), 'settings', pressOutsideSettings, true); // true: the menu covers the page — no key acts behind it
       // Close-on-drag-activate: the pointer controller dispatches a bubbling "drag-dismiss"
       // CustomEvent from a drag-clicked member of a data-drag-dismiss menu (lib/pointerGestures) — the
       // settings popover card is the only such menu. Closing here is exactly a normal close, so the
