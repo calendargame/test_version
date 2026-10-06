@@ -41,7 +41,7 @@ export class Disk {
   log = []
   /** A chunk key written a second time with different text — must stay empty. */
   rewritten = []
-  /** Called with (page, key, text) after a main key lands. */
+  /** Called with (page, key, text, the text it replaced or undefined) after a main key lands. */
   onMain = null
 
   /** Characters held (keys + values), kept as a running total. */
@@ -59,7 +59,7 @@ export class Disk {
       this.rewritten.push(key)
     this.put(key, value)
     this.log.push(['set', key, value.length, page])
-    if (key.startsWith(MAIN)) this.onMain?.(page, key, value)
+    if (key.startsWith(MAIN)) this.onMain?.(page, key, value, old)
   }
   remove(key, page) {
     this.tick()

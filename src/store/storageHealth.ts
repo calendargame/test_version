@@ -263,10 +263,19 @@ export function removeItem(storage: Storage, key: string): void {
  * and its NEXT save is its own; that is the same last-save-wins as on a device with room.
  */
 export function placeChangedElsewhere(storage: Storage, key: string | null): void {
+  elsewhere.set(storage, changesElsewhere(storage) + 1)
   if (key === null) held.delete(storage)
   else release(storage, key)
   settle()
 }
+// How many changes other pages have reported to each area.
+const elsewhere = new Map<Storage, number>()
+/**
+ * A number that moves every time ANOTHER page is reported to have changed `storage`. For a reader
+ * that remembers what it last saw there (store/progressStorage, which remembers which chunk keys
+ * exist): the same number as last time means no other page has been heard from since.
+ */
+export const changesElsewhere = (storage: Storage): number => elsewhere.get(storage) ?? 0
 // The browser's own report of it: a `storage` event, which fires in every OTHER same-origin page when
 // one changes localStorage (never in the page that made the change).
 // ⚠ Not for a measurement's scratch key (SCRATCH_KEY): that is no change to anyone's data.
@@ -308,5 +317,6 @@ export const guardedStorage = (getStorage: () => Storage) => (): StateStorage =>
  */
 export function forgetStorageHealth(): void {
   held.clear()
+  elsewhere.clear()
   useStorageHealth.setState({ unsaved: false, noticeOpen: false })
 }

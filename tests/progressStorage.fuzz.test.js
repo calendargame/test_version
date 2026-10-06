@@ -23,6 +23,12 @@
 // as lost — never doubled, never a false popup. It is allowed ONLY when chunks really were deleted
 // since that page loaded, and the last group below shows it cannot happen without two things: a page
 // of this line deleting, and an older page already holding the sealed save.
+// ★ …AND ITS TWIN, in the `stale` worlds: what a page reads of another tab's writes can lag them, so
+// a page of THIS line may save having compared the main key with a copy one write out of date —
+// passing over a deletion it has not been told of yet. That one save may name chunks that are gone
+// (the same strand, allowed only when chunks really were deleted since the page last looked). The
+// report of the other tab's write reaches it right after, and from its NEXT save on every chunk it
+// names must be there again: the oracle holds it to the letter as soon as the report has arrived.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { isDeepStrictEqual } from 'node:util'
 import { createProgressCodec, removeProgressCopy } from '../src/store/progressStorage.js'
@@ -51,7 +57,28 @@ const mismatchV226 = (s) => s.good !== s.times.length
 const PRESETS = [1, 12] // 12 on purpose: preset 1's chunk prefix must never match it
 const SILOS = ['classic', 'flash']
 
-function world(seed, { seals, older, deletes }) {
+// Whole chunks of one page's times, gone from (or back in) what a save means — counted in
+// `timesLost`, every count untouched. Says whether any are gone.
+function wholeChunksLost(was, means) {
+  let lost = false
+  for (const silo of Object.keys(was.stats)) {
+    const held = was.stats[silo]
+    const got = means.stats[silo]
+    const gone = held.times.length - got.times.length
+    expect(Math.abs(gone) % 250).toBe(0)
+    expect((got.timesLost ?? 0) - (held.timesLost ?? 0)).toBe(gone)
+    expect([got.played, got.good, got.streak, got.best]).toEqual([
+      held.played,
+      held.good,
+      held.streak,
+      held.best,
+    ])
+    if (gone > 0) lost = true
+  }
+  return lost
+}
+
+function world(seed, { seals, older, deletes, stale = false }) {
   const rand = mulberry(seed)
   const pick = (list) => list[Math.floor(rand() * list.length)]
   const local = new Disk()
@@ -63,6 +90,7 @@ function world(seed, { seals, older, deletes }) {
   const untimed = new Set()
   const trimmed = new Set() // `${key}:${silo}` a v2.26.0 page has trimmed
   const oursLast = new Set() // main keys whose last landed save was a page of this line's
+  const staleSaved = new Set() // …and was made on a stale read, naming chunks that had just gone
   let removals = 0 // chunk keys deleted so far
   let strands = 0
   const pages = []
@@ -83,13 +111,23 @@ function world(seed, { seals, older, deletes }) {
   }
 
   const isOurs = (p) => p.build === undefined
-  local.onMain = (who, key, text) => {
+  local.onMain = (who, key, text, old) => {
     const writer = pages.find((p) => p.name === who)
     const preset = PRESETS.find((id) => mainKey(id) === key)
     // A save made by a page of this line, directly, IS that page's state (the check after the step
     // holds what the text means to it, to the letter).
     if (writer && isOurs(writer) && writer.saving === key) {
-      expected.set(key, writer.state)
+      const means = writer.lagging?.has(key) ? meaning(local, text, preset).state : writer.state
+      staleSaved.delete(key)
+      if (!isDeepStrictEqual(means, writer.state)) {
+        // THE STRAND'S TWIN: a save made on a stale read of this key.
+        expect(wholeChunksLost(writer.state, means)).toBe(true)
+        countRemovals()
+        expect(removals).toBeGreaterThan(writer.removalsSeen)
+        staleSaved.add(key)
+        strands++
+      }
+      expected.set(key, means)
       oursLast.add(key)
     } else {
       // An older page's save, or a held save landing later: what its text means as it lands.
@@ -97,28 +135,17 @@ function world(seed, { seals, older, deletes }) {
       expected.set(key, means)
       if (writer && isOurs(writer)) oursLast.add(key)
       else oursLast.delete(key)
+      // A save a page of this line was HOLDING, landing while the news of another page's write has
+      // not reached it: the twin again — it was composed before a deletion that page has not heard
+      // of (and, landing in the middle of that other save, may be followed by its deletions).
+      if (writer && isOurs(writer) && writer.pending?.has(key)) staleSaved.add(key)
+      else staleSaved.delete(key)
       if (writer?.shadow && !isDeepStrictEqual(means, writer.shadow)) {
         // A v2.27.3 page: what it believes it holds, kept beside it, is what its save means —
         // unless whole chunks it names came or went since it loaded. GONE is THE STRAND, and needs
         // a deletion; BACK is another page having written the same times again under the same
         // names. Either way: whole chunks, counted in `timesLost`, every count untouched.
-        const shadow = writer.shadow
-        let lost = false
-        for (const silo of Object.keys(shadow.stats)) {
-          const was = shadow.stats[silo]
-          const got = means.stats[silo]
-          const gone = was.times.length - got.times.length
-          expect(Math.abs(gone) % 250).toBe(0)
-          expect((got.timesLost ?? 0) - (was.timesLost ?? 0)).toBe(gone)
-          expect([got.played, got.good, got.streak, got.best]).toEqual([
-            was.played,
-            was.good,
-            was.streak,
-            was.best,
-          ])
-          if (gone > 0) lost = true
-        }
-        if (lost) {
+        if (wholeChunksLost(writer.shadow, means)) {
           expect(removals).toBeGreaterThan(writer.removalsAtLoad)
           strands++
         }
@@ -126,8 +153,16 @@ function world(seed, { seals, older, deletes }) {
       }
     }
     // The browser tells every OTHER page that this key changed; store/storageHealth forgets what
-    // that page was holding for it.
-    for (const p of pages) if (p !== writer && isOurs(p)) placeChangedElsewhere(p.area, key)
+    // that page was holding for it. In a `stale` world the news sometimes reaches a page late: until
+    // its next save is done it reads the text this write replaced, and is told only afterwards.
+    for (const p of pages) {
+      if (p === writer || !isOurs(p)) continue
+      if (stale && rand() < 0.5) (p.pending ??= new Map()).set(key, old ?? null)
+      else {
+        p.pending?.delete(key)
+        placeChangedElsewhere(p.area, key)
+      }
+    }
   }
   let seen = 0
   const countRemovals = () => {
@@ -142,16 +177,29 @@ function world(seed, { seals, older, deletes }) {
     const p = newPage(createProgressCodec, local, { seal, preset: pick(PRESETS), name })
     p.seal = seal
     p.session = null
+    // A stale read: while `lagging` names a key, this page reads the text another page's last
+    // write to it replaced.
+    const read = p.area.getItem
+    p.area.getItem = (k) => (p.lagging?.has(k) ? p.lagging.get(k) : read(k))
     const save = p.save
     p.save = () => {
       p.saving = p.copy.area === p.area ? mainKey(p.copy.presetId) : null
+      p.lagging = p.pending?.size ? p.pending : null
+      p.pending = null
       try {
         save()
       } finally {
         p.saving = null
+        // …and now the news arrives.
+        for (const key of p.lagging?.keys() ?? []) placeChangedElsewhere(p.area, key)
+        p.lagging = null
+        countRemovals()
+        p.removalsSeen = removals
       }
     }
     p.load()
+    countRemovals()
+    p.removalsSeen = removals
     return p
   }
   const theirs = (build, name) => {
@@ -276,6 +324,10 @@ function world(seed, { seals, older, deletes }) {
         continue
       }
       const means = meaning(local, text, preset)
+      if (staleSaved.has(key) && !isDeepStrictEqual(means.state, expected.get(key))) {
+        wholeChunksLost(expected.get(key), means.state)
+        expected.set(key, means.state)
+      }
       expect(means.state).toEqual(expected.get(key))
       for (const seal of [false, true]) {
         const loaded = createProgressCodec(seal).load({
@@ -305,8 +357,9 @@ function world(seed, { seals, older, deletes }) {
           if (!stored.sealed && !stored.timesLost && !trimmed.has(`${key}:${silo}`))
             expect(mismatchV226(v226)).toBe(false)
         }
-        // Every chunk a main key names is there — unless an older page wrote it (the strand).
-        if (stored.sealed && oursLast.has(key))
+        // Every chunk a main key names is there — unless an older page wrote it (the strand), or a
+        // page of this line did on a stale read (its twin).
+        if (stored.sealed && oursLast.has(key) && !staleSaved.has(key))
           stored.sealed.ids.forEach((id, j) =>
             expect(local.items.has(`${family(preset)}${silo}:${j}.${id}`)).toBe(true),
           )
@@ -359,6 +412,15 @@ describe('with ONE older page and no reset or delete, nothing is ever lost — n
   })
 })
 
+describe.each([
+  ['two pages of the next release', [true, true], []],
+  ['this release beside the next one, and v2.27.3', [false, true], ['v2.27.3']],
+])('%s, reading each other’s saves one write late', (_label, seals, older) => {
+  it.each(seeds(8001 + seals[0] * 100, 6))('seed %i', (seed) => {
+    world(seed, { seals, older, deletes: true, stale: true }).run(STEPS)
+  })
+})
+
 describe('the fuzz reaches what it is for', () => {
   it('seals, deletes and strands all really happen across the seeds', () => {
     let strands = 0
@@ -377,5 +439,16 @@ describe('the fuzz reaches what it is for', () => {
     expect(removals).toBeGreaterThan(0)
     expect(chunks).toBeGreaterThan(0)
     expect(strands).toBeGreaterThan(0)
+  })
+
+  it('a stale read really does pass over a deletion somewhere across the seeds', () => {
+    // Rare by construction — a reset, the news of it held back, and the other page's very next act
+    // a save of the same preset — so these are seeds found by a search (3 in 150), not a range.
+    for (const seed of [8052, 8132, 8150]) {
+      const got = world(seed, { seals: [true, true], older: [], deletes: true, stale: true }).run(
+        STEPS,
+      )
+      expect(got.strands).toBeGreaterThan(0)
+    }
   })
 })

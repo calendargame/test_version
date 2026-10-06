@@ -6,6 +6,7 @@ import {
   removeItem,
   tryWriteItem,
   storageSpaceFreed,
+  changesElsewhere,
 } from './storageHealth.js'
 import { captureError } from '../observability/sentry.js'
 import { isRecord } from './json.js'
@@ -239,6 +240,9 @@ type Book = {
   // refused it and store/storageHealth is holding it).
   text: string | null
   landed: boolean
+  // How many changes other pages had reported to this area when it was last read or written here
+  // (store/storageHealth's changesElsewhere).
+  heard: number
   silos: Map<string, SiloBook>
   // Chunk keys to delete at the next main save that lands (rules a and b), with the silo each
   // belongs to.
@@ -251,6 +255,7 @@ const openBook = (copy: ProgressCopy): Book => ({
   family: familyOf(copy.presetId),
   text: null,
   landed: true,
+  heard: changesElsewhere(copy.area),
   silos: new Map(),
   doomed: new Map(),
 })
@@ -388,9 +393,16 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
     // ★ MAY THE CHUNK IDS THIS PAGE REMEMBERS BE USED WITHOUT LOOKING? Only while the main text is
     // still the one this page last read or wrote: every deletion on this origin either follows a
     // main save that no longer names the chunk, or removes the main key itself, so an unchanged main
-    // means its chunks are there. ⚠ EXCEPT WHILE THIS PAGE'S OWN LAST SAVE IS BEING HELD (the device
-    // refused it): the read then returns the held text whatever another page has done since, so
-    // each remembered chunk is looked for.
+    // means its chunks are there. ⚠ TWO EXCEPTIONS, and in both each remembered chunk is looked for:
+    //   • THIS PAGE'S OWN LAST SAVE IS BEING HELD (the device refused it): the read returns the held
+    //     text whatever another page has done since;
+    //   • ANOTHER PAGE HAS BEEN HEARD FROM since this page last looked (`heard`). What this page reads
+    //     of another tab's writes can lag them by a moment, so its last save may have compared the
+    //     main key with a copy that was already out of date — and then written over it, which makes
+    //     the text match again from here on. The other tab's change is still reported (the browser's
+    //     `storage` event), and that report is what this asks about: a chunk such a save deleted is
+    //     found missing at this page's next save and written again from memory, instead of being
+    //     named for ever and found missing at the next load.
     // Asked only when a sealed silo needs the answer (once per save): a save with nothing sealed
     // reads nothing back.
     let trust: boolean | null = null
@@ -398,7 +410,7 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
       (trust ??=
         samePlace &&
         readItem(b.area, mainKey) === b.text &&
-        (b.landed ||
+        ((b.landed && changesElsewhere(b.area) === b.heard) ||
           [...b.silos].every(([silo, s]) =>
             s.ids.every((id, j) => b.area.getItem(`${b.family}${silo}:${j}.${id}`) !== null),
           )))
@@ -447,6 +459,7 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
       anySealed ? { ...value, state: { ...(state as object), stats: onDisk } } : value,
     )
     b.landed = writeItem(b.area, mainKey, b.text)
+    b.heard = changesElsewhere(b.area)
     if (!b.landed || b.doomed.size === 0) return
     for (const [key, silo] of b.doomed)
       if (!stillSpells(b, key, saved.get(silo) ?? [])) removeItem(b.area, key)

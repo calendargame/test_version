@@ -33,6 +33,7 @@ import {
 // here cannot reach a module that is already loaded.
 vi.mock('../src/observability/sentry.js', () => ({ captureError: vi.fn() }))
 let createProgressCodec, removeProgressCopy, sweepAbandonedTimes, hasTimesKeys, parseTimesKey
+let placeChangedElsewhere
 let baselineTrimmedTimes, SEAL_NEW_SILOS
 let readItem, writeItem, removeItem, useStorageHealth, forgetStorageHealth, captureError
 beforeAll(async () => {
@@ -46,8 +47,14 @@ beforeAll(async () => {
     baselineTrimmedTimes,
     SEAL_NEW_SILOS,
   } = await import('../src/store/progressStorage.js'))
-  ;({ readItem, writeItem, removeItem, useStorageHealth, forgetStorageHealth } =
-    await import('../src/store/storageHealth.js'))
+  ;({
+    readItem,
+    writeItem,
+    removeItem,
+    useStorageHealth,
+    forgetStorageHealth,
+    placeChangedElsewhere,
+  } = await import('../src/store/storageHealth.js'))
   ;({ captureError } = await import('../src/observability/sentry.js'))
 })
 
@@ -84,6 +91,49 @@ afterEach(() => {
   // ★ THE IMMUTABILITY SPY, on every disk any test here made: no chunk key was ever set twice to
   // different text.
   for (const d of disks.splice(0)) expect(d.rewritten).toEqual([])
+})
+
+// ★ WHAT A PAGE READS OF ANOTHER TAB'S WRITES CAN LAG THEM. The check that lets a save reuse the
+// chunk ids it remembers compares the main key with the text this page last saw — and if that read is
+// one write behind, it passes over a reset another tab has just made. The save that follows names
+// chunks the reset deleted (that much cannot be prevented: the page cannot see what has not reached
+// it). What must not happen is that it goes on naming them: the other tab's change is still reported
+// to this page, and its next save puts every chunk back from memory.
+describe('a save made on a stale read of the main key', () => {
+  it('names chunks another tab just deleted — until the change is reported, and then heals', () => {
+    const d = disk()
+    const rand = mulberry(41)
+    const state = stateWith({ classic: siloOf(2300, rand) })
+    seedSealed(d, state)
+    const mine = page(d, { seal: true, name: 'mine' })
+    const other = page(d, { seal: true, name: 'other' })
+    mine.load()
+    other.load()
+    const before = d.items.get(MAIN)
+    other.reset('classic') // the other tab: main saved without the silo, its chunks deleted
+    expect(d.chunkKeys()).toEqual([])
+    // This page answers before that has reached it: its read of the main key is one write stale.
+    const read = mine.area.getItem
+    mine.area.getItem = (k) => (k === MAIN ? before : read(k))
+    mine.update('classic', play.timed(timeOf(rand)))
+    mine.area.getItem = read
+    const named = siloOnDisk(d).sealed.ids.length
+    expect(named).toBeGreaterThan(0)
+    expect(d.chunkKeys()).toEqual([]) // …named, and not there: those times read as lost
+    const lost = meaning(d, d.items.get(MAIN)).state.stats.classic
+    expect(lost.timesLost).toBe(named * CHUNK)
+    expect(lost.times).toHaveLength(mine.state.stats.classic.times.length - named * CHUNK)
+    // The browser's report of the other tab's write arrives; this page's next save looks.
+    placeChangedElsewhere(mine.area, MAIN)
+    mine.update('classic', play.timed(timeOf(rand)))
+    expect(d.chunkKeys()).toHaveLength(siloOnDisk(d).sealed.ids.length)
+    expectLoads(d, mine.state)
+    expect(mine.state.stats.classic.times).toHaveLength(2302)
+    // …and with nobody heard from since, the save after that reads no chunk back.
+    const reads = vi.spyOn(mine.area, 'getItem')
+    mine.update('classic', play.timed(timeOf(rand)))
+    expect(reads.mock.calls.filter(([k]) => k.startsWith('cg-times-v1'))).toHaveLength(0)
+  })
 })
 
 describe('the staged rollout', () => {
