@@ -627,6 +627,78 @@ describe('Flash — Override ⇄ Undo', () => {
     expect(dateDisplayText()).not.toBe(flashed)
     expect(statValue('Score')).toBe('1/1')
   })
+
+  // ★ THE SAME SHAPE THROUGH TWO MORE DOORS (round 24). Reset Stats and "Enable and Reset Stats" both
+  // take the question away too, and their teardown also ran only for a flash still LIVE — so after a
+  // Reveal or a Show Codes had frozen the flash, the idle screen kept the countdown pinned where the
+  // frozen flash had stopped (number and bar) until the next Begin. Every door that takes the
+  // question away now runs the one teardown (FlashMode's clearFlash).
+  const FREEZES = [
+    ['Reveal', () => press('Reveal')],
+    ['Show Codes', () => press('Show Codes')],
+    [
+      'Reveal after the window ran out',
+      () => {
+        wait(2500)
+        press('Reveal')
+      },
+    ],
+  ]
+  const bar = () =>
+    Array.from(document.querySelectorAll('.bar')).find((b) => !isHidden(b)).firstElementChild
+  it.each(FREEZES)('%s, then Reset Stats: the countdown is back at rest', (_, freeze) => {
+    mountApp()
+    switchToFlash()
+    const atRest = flashCountdownText()
+    press('Begin')
+    wait(700)
+    freeze()
+    expect(flashCountdownText()).not.toBe(atRest) // frozen part-way down
+    act(() => fireEvent.click(ctrl('Reset Stats')))
+    act(() =>
+      fireEvent.click(
+        within(screen.getByRole('dialog', { name: 'Reset Stats?' })).getByRole('button', {
+          name: 'Reset Stats',
+        }),
+      ),
+    )
+    expect(statValue('Score')).toBe('0/0')
+    expect(flashCountdownText()).toBe(atRest) // not frozen on the idle screen
+    expect(bar().style.transform).toBe('scaleX(1)') // …and neither is the bar
+    expect(dateDisplayText()).toBe('—')
+    expect(ctrl('Begin')).toBeInTheDocument()
+    wait(3000)
+    expect(flashCountdownText()).toBe(atRest)
+  })
+
+  it.each(FREEZES)(
+    '%s, then Enable and Reset Stats: the countdown is back at rest',
+    (_, freeze) => {
+      mountApp()
+      switchToFlash()
+      const atRest = flashCountdownText()
+      act(() => fireEvent.click(statCell('Last'))) // hide the timer readouts
+      press('Begin')
+      act(() => fireEvent.click(dayBtn(correctName(readDate())))) // a credit with no time: a mismatch
+      press('Begin')
+      wait(700)
+      freeze()
+      expect(flashCountdownText()).not.toBe(atRest)
+      act(() => fireEvent.click(statCell('Last'))) // show them again — which has to reset first
+      act(() =>
+        fireEvent.click(
+          within(screen.getByRole('dialog', { name: 'Enable and Reset Stats?' })).getByRole(
+            'button',
+            { name: 'Enable and Reset Stats' },
+          ),
+        ),
+      )
+      expect(statValue('Score')).toBe('0/0')
+      expect(flashCountdownText()).toBe(atRest)
+      expect(bar().style.transform).toBe('scaleX(1)')
+      expect(dateDisplayText()).toBe('—')
+    },
+  )
 })
 
 // ── What belongs to the waiting question goes when the question goes — and only then ────────────

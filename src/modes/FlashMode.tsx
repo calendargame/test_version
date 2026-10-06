@@ -184,6 +184,19 @@ function FlashMode({
     setFlashRemainMs(flashMs)
     resetFlashBar()
   }
+  // ★ THE QUESTION THE FLASH BELONGED TO IS GONE — everything of its goes with it, in one place: the
+  // flash if it was still running, the date left showing, and the countdown (number and bar) back to
+  // full. UNCONDITIONALLY, and that is the point: a Reveal or a Show Codes FREEZES a flash — it is no
+  // longer `active`, its date stays shown and its countdown stays pinned where it stopped — so a
+  // teardown that ran only for a running flash walked straight past it. That shape has shipped twice
+  // through two different doors: an Override that credited a frozen question left its date showing
+  // over the next one, and a Reset Stats after a freeze left the idle screen with a countdown stuck
+  // part-way down until the next Begin. Every door that takes the question away calls this.
+  const clearFlash = () => {
+    setActive(false)
+    setShowTimerDate(false)
+    stopFlash()
+  }
   // Keep the idle countdown label + bar in step with a store-driven flashMs change that BYPASSES
   // the slider's onChange sync — Reset Settings restoring the saved/factory Flash speed while Flash
   // sits idle (round 6). flashRemainMs is a local mirror seeded from flashMs; a live flash owns it via
@@ -349,42 +362,32 @@ function FlashMode({
     const advanced = overrideAdvances(plan, false)
     if (creditsLiveCard(plan)) setFlashWithTimeout({ type: 'good', idx: correct })
     eng.override()
-    if (advanced) {
-      setActive(false)
-      setShowTimerDate(false)
-      stopFlash()
-    }
+    if (advanced) clearFlash()
   }
   const resetRound = () => {
     eng.resetRound()
-    setActive(false)
-    setShowTimerDate(false)
-    stopFlash()
+    clearFlash()
   } // primary "Reset" while live (= App arm)
 
   // ★ THE WAITING QUESTION WAS REPLACED UNDER THE SCREEN — by one of the three doors that regenerate
   // it (a date setting changed in the ⚙ panel, timing shown again, Save Stats back on while timing is
-  // shown) or by "Enable and Reset Stats". Two things on this screen belonged to the question that
-  // went, and go with it: a flash that was live (it was that question's reveal window — left running,
-  // the player would be judged against a date they were never shown), and a date left showing.
+  // shown) or by "Enable and Reset Stats". Everything on this screen that belonged to the question
+  // that went goes with it (clearFlash): a flash that was live (it was that question's reveal window
+  // — left running, the player would be judged against a date they were never shown), a date left
+  // showing, and a countdown a Reveal or Show Codes had frozen ("Enable and Reset Stats" replaces
+  // even a question that has been used).
   // ⚠ ONLY WHEN IT WAS REPLACED. The engine KEEPS a question that has been used — answered wrong,
   // revealed, shown its codes — and then nothing here may move: tearing down regardless blanked a
   // revealed date to "—" under its lit answer, and stopped a flash on a question already answered
   // wrong, which could then never be finished. So every door asks the engine (regenDate says whether
   // the question went) instead of assuming.
-  const endFlashForFreshQuestion = () => {
-    if (active) {
-      setActive(false)
-      stopFlash()
-    }
-    setShowTimerDate(false)
-  }
   const regenWaiting = () => {
-    if (eng.regenDate()) endFlashForFreshQuestion()
+    if (eng.regenDate()) clearFlash()
   }
   // Hideable stats chrome shared with Classic/Deduction. Flash supplies its two teardowns:
-  // onQuestionReplaced (above — turning timing back on replaced the waiting question) and onHide
-  // (leaving the mode stops a live flash). Classic/Deduction pass neither (no timer).
+  // onQuestionReplaced (clearFlash — turning timing back on replaced the waiting question) and onHide
+  // (leaving the mode stops a live flash; a frozen one stays as it is, with the question it belongs
+  // to). Classic/Deduction pass neither (no timer).
   const { statsArr, enableResetOpen, confirmEnableReset, closeEnableReset } = useStatsHideToggles({
     eng,
     timed: [eng],
@@ -394,7 +397,7 @@ function FlashMode({
     setTimingOff,
     scoringOff,
     setScoringOff,
-    onQuestionReplaced: endFlashForFreshQuestion,
+    onQuestionReplaced: clearFlash,
     onHide: () => {
       if (active) {
         setActive(false)
@@ -448,15 +451,13 @@ function FlashMode({
     state.calcOpen ||
     state.calcPenaltyActive ||
     (!shouldShowTimerDate && !inBack)
+  // Reset Stats clears the engine's question state with its stats, so nothing of the question that
+  // was on screen survives it — a running flash, or one a Reveal or Show Codes froze (clearFlash).
   const onResetStats = () => {
     eng.resetStats()
-    if (active) {
-      setActive(false)
-      stopFlash()
-    }
-    setShowTimerDate(false)
+    clearFlash()
   }
-  // The Reset Stats confirmation popup (Flash's reset also tears the live flash down).
+  // The Reset Stats confirmation popup (Flash's reset also tears the flash down).
   const {
     confirmOpen: resetStatsOpen,
     onResetTap,
