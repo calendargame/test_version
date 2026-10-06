@@ -135,8 +135,8 @@ const finger = (type, el, under = null) => {
     delete document.elementFromPoint
   }
 }
-// "The player has just become free" is said from a microtask: let it be said.
-const settled = () => act(async () => {})
+// "The player has just become free" is said from the next task: let it be said.
+const settled = () => act(() => new Promise((resolve) => setTimeout(resolve)))
 
 let stop = () => {}
 const watch = () => {
@@ -1091,7 +1091,42 @@ describe('on the mounted app, while a date is being typed into Lookup', () => {
     expect(gearLit()).toBe(true)
     expect(popup()).toBeNull()
     expect(document.activeElement).toBe(box)
-    await act(async () => box.blur())
+    act(() => box.blur())
+    await settled()
+    expect(popup()).not.toBeNull()
+  })
+
+  // ⚙ is open, a Year Range box has the keyboard, and the player presses the other one. A press
+  // moves the keyboard in two steps with a gap between them, and the popup used to open in the gap
+  // — over the menu, with the keyboard taken off the box that had just been pressed.
+  it('a press from one text box into another does not open it, or take the keyboard', async () => {
+    fill()
+    mountApp()
+    pressKey('Escape')
+    act(() => {
+      empty()
+      refreshStorageUsage()
+    })
+    openSettings()
+    const [from, to] = panel().getAllByRole('textbox')
+    act(() => from.focus())
+    act(() => {
+      fill()
+      refreshStorageUsage()
+    })
+    expect(popup()).toBeNull()
+    await act(async () => {
+      from.blur() // the press: the first box is left…
+      await Promise.resolve() // …what the page queued in answer runs…
+      await Promise.resolve()
+      to.focus() // …and then the pressed box has the keyboard
+    })
+    await settled()
+    expect(popup()).toBeNull()
+    expect(document.activeElement).toBe(to)
+    expect(localStorage.getItem(WARNED_KEY)).toBeNull()
+    act(() => to.blur())
+    await settled()
     expect(popup()).not.toBeNull()
   })
 

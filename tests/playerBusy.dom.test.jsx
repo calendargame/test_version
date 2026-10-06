@@ -7,7 +7,8 @@
 // (Classic and Deduction while they are the page shown; a Flash from Begin until it is answered
 // right or revealed; a Blitz round and a MoX run from Begin to their end, whatever card is showing
 // and whether or not anything is recorded); a text box holding the keyboard; and that "free" is
-// said only once it is true — never in the gap between one screen's clock and the next one's.
+// said only once it is true — never in the gap between one screen's clock and the next one's, nor
+// in the gap a press leaves between one text box losing the keyboard and the next one getting it.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, renderHook, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { useGameEngine } from '../src/engine/useGameEngine.js'
@@ -31,8 +32,8 @@ const timed = {
   timingOff: false,
   play: 'question',
 }
-// "Free" is said from a microtask: let it be said.
-const settled = () => act(async () => {})
+// "Free" is said from the next task: let it be said.
+const settled = () => act(() => new Promise((resolve) => setTimeout(resolve)))
 
 afterEach(() => {
   cleanup()
@@ -171,6 +172,36 @@ describe('"free" is said once it is true, and only then', () => {
       box.remove()
       other.remove()
       slider.remove()
+    }
+  })
+
+  // A PRESS from one box into another is not one step, the way a script's move is: the browser
+  // reports the first box left, runs everything the page queued in answer to that, and only then
+  // gives the second box the keyboard. "Free" used to be said in that gap — and the popup waiting
+  // on it opened and took the keyboard off the box the player had just pressed.
+  it('a press from one text box into another is never free in between', async () => {
+    const box = document.createElement('input')
+    const other = document.createElement('input')
+    document.body.append(box, other)
+    const free = vi.fn()
+    const undo = onPlayerFree(free)
+    try {
+      box.focus()
+      box.blur() // the press: the first box is left, with nothing holding the keyboard yet…
+      expect(isPlayerBusy()).toBe(false)
+      await Promise.resolve() // …the page's queued answers to that run…
+      await Promise.resolve()
+      expect(free).not.toHaveBeenCalled()
+      other.focus() // …and only now does the pressed box have it
+      await settled()
+      expect(free).not.toHaveBeenCalled()
+      other.blur() // left for nothing: free, and said once
+      await settled()
+      expect(free).toHaveBeenCalledTimes(1)
+    } finally {
+      undo()
+      box.remove()
+      other.remove()
     }
   })
 })

@@ -35,18 +35,26 @@ export const isRoundLive = (): boolean => [...reports.values()].includes('live')
 
 export const isPlayerBusy = (): boolean => reports.size > 0 || opensKeyboard(document.activeElement)
 
-// ★ "THE PLAYER HAS JUST BECOME FREE" IS SAID FROM A MICROTASK, AND CHECKED AGAIN THERE. The things
-// that end one kind of busy are followed, inside the same turn, by the things that begin another:
-// one screen's clock stops and the next screen's starts within one commit (a mode letter, a preset
-// switch, a Deduction type change), and focus leaves one box on its way to the next. Said at once,
-// "free" would be announced in the gap between the two — and a popup would open over a question
-// whose clock had just started. A microtask runs when that turn's work is done, and says it only if
-// it is still true.
+// ★ "THE PLAYER HAS JUST BECOME FREE" IS SAID FROM THE NEXT TASK, AND CHECKED AGAIN THERE. The things
+// that end one kind of busy are followed at once by the things that begin another, and "free" said
+// in the gap between the two would open a popup over a question whose clock had just started, or
+// take the keyboard off a box the player had just pressed. There are two such gaps, and they are
+// not the same length:
+//   • ONE SCREEN'S CLOCK STOPS AND THE NEXT SCREEN'S STARTS within one commit (a mode letter, a
+//     preset switch, a Deduction type change). That gap closes inside the turn that opened it.
+//   • FOCUS LEAVES ONE BOX ON ITS WAY TO THE NEXT. When a SCRIPT moves it, that too is one turn. But
+//     when a PRESS moves it — a tap or a click from one text box into another — the browser tells
+//     the page the first box has been left, lets everything the page queued in answer to that run,
+//     and only then gives the second box focus. ⚠ Nothing that runs inside the turn can see across
+//     that: a microtask is exactly what runs in the middle of it, with focus on nothing. "Free" was
+//     said from one, and the waiting popup opened and took the keyboard off the box being entered.
+// A task cannot start until the browser has finished handling the press that is moving focus, so by
+// then both gaps have closed — and "free" is said only if it is still true.
 let queued = false
 const freed = (): void => {
   if (queued || waiting.size === 0) return
   queued = true
-  queueMicrotask(() => {
+  setTimeout(() => {
     queued = false
     if (!isPlayerBusy()) for (const fn of [...waiting]) fn()
   })
