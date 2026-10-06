@@ -78,6 +78,7 @@ import {
   isOffered,
   resetAppState,
 } from './helpers/settingsPanel.jsx'
+import { questionText } from './helpers/modeScreen.jsx'
 
 // ⚠ WHERE THE PANEL LIVES IS NOT THIS FILE'S BUSINESS ANY MORE. Everything that used to be a DOM
 // walk from a label, an id literal, or a Tailwind token now goes through
@@ -797,53 +798,61 @@ describe('Settings — the radiogroup keyboard contract', () => {
     expect(st().dateFormat).toBe('written-mdy')
   })
 
+  // ★ THE PAGE BEHIND THE MENU, WITH A HISTORY THE ARROWS COULD STEP. App's global handler maps
+  // ← / → to the game's Back and Forward buttons, so the two cases below give those keys somewhere
+  // to go — one played date behind the one on screen — and assert the thing a player would see: the
+  // date on screen did not change. (They used to assert that the key never reached the window,
+  // which pinned the mechanism — the group stopping the event — because no DOM test could watch a
+  // game key act. Since round 24 they can, and the rule is the app's one rule: no key acts on the
+  // page while the ⚙ menu is open — components/overlayStack's isPageCovered; tests/keysUnderMenu.)
+  const mountPanelOverAHistory = () => {
+    mountApp()
+    press(window, 'r') // Reveal: one played date…
+    press(window, 'n') // …now behind a fresh one
+    openSettings('key')
+    return questionText()
+  }
+  const backSteps = () => {
+    const live = questionText()
+    press(window, 'ArrowLeft')
+    return questionText() !== live
+  }
+
   // The dim's pointer-events-none stops POINTERS. Nothing stopped a keyboard, so a locked picker
   // was still operable by anyone using one — which is exactly the gap the group's inertness fills.
-  it('a locked group has no tab stop, ignores the arrows, and SWALLOWS them', () => {
-    mountPanel()
-    const spy = vi.fn()
-    window.addEventListener('keydown', spy)
-    try {
-      clickToggle('Random Format')
-      pills('Date Format').forEach((b) => expect(b.tabIndex).toBe(-1))
-      // Focus is forced in — the point is that the HANDLER refuses, not merely that Tab can't get
-      // there. A locked group must not act on a key even when something has parked focus inside it.
-      const pill = pills('Date Format')[0]
-      pill.focus()
-      press(pill, 'ArrowRight')
+  it('a locked group has no tab stop, ignores the arrows, and never steps the date behind', () => {
+    const live = mountPanelOverAHistory()
+    clickToggle('Random Format')
+    pills('Date Format').forEach((b) => expect(b.tabIndex).toBe(-1))
+    // Focus is forced in — the point is that the HANDLER refuses, not merely that Tab can't get
+    // there. A locked group must not act on a key even when something has parked focus inside it.
+    const pill = pills('Date Format')[0]
+    pill.focus()
+    for (const key of ['ArrowRight', 'ArrowLeft']) {
+      press(pill, key)
       expect(document.activeElement).toBe(pill)
       expect(st().dateFormat).toBe('written-mdy')
-      // …and refusing to ACT is only half of inert. Returning early without consuming the key
-      // would hand it straight to App's global handler, which maps ArrowLeft/ArrowRight to the
-      // game's history buttons — so a locked picker would step the puzzle behind the open panel.
-      expect(spy).not.toHaveBeenCalled()
-      // Unlocking restores the stop with no interaction at all — the effect re-asserts it.
-      clickToggle('Random Format')
-      expectOneTabStop('Date Format')
-    } finally {
-      window.removeEventListener('keydown', spy)
+      // …and refusing to ACT is only half of inert: the press must not step the date behind the
+      // open panel either.
+      expect(questionText()).toBe(live)
     }
+    // Unlocking restores the stop with no interaction at all — the effect re-asserts it.
+    clickToggle('Random Format')
+    expectOneTabStop('Date Format')
   })
 
-  // App's global handler maps ArrowLeft/ArrowRight to the game's history back/forward buttons, so
-  // an arrow the group has consumed has to stop at the group — otherwise walking between pills
-  // would also step the puzzle behind the panel.
-  it('an arrow the group consumed never reaches the window', () => {
-    mountPanel()
-    const spy = vi.fn()
-    window.addEventListener('keydown', spy)
-    try {
-      const pill = pills('Date Format')[0]
-      pill.focus()
-      press(pill, 'ArrowRight')
-      expect(spy).not.toHaveBeenCalled()
-      // The control, which is what makes the assertion above mean anything: the same key from
-      // outside any group still reaches the global handler.
-      press(document.body, 'ArrowRight')
-      expect(spy).toHaveBeenCalledTimes(1)
-    } finally {
-      window.removeEventListener('keydown', spy)
-    }
+  it('an arrow that moves the pick never steps the date behind the menu', () => {
+    const live = mountPanelOverAHistory()
+    const pill = pills('Date Format')[1]
+    pill.focus()
+    press(pill, 'ArrowLeft') // the game's Back key, spent on the picker
+    expect(st().dateFormat).toBe('written-mdy')
+    expect(questionText()).toBe(live)
+    // The control, which is what makes the assertion above mean anything: with the menu closed,
+    // the same key steps the page.
+    press(document.body, 'Escape')
+    expect(panelEl()).toBeNull()
+    expect(backSteps()).toBe(true)
   })
 
   // THE ENTRY PATH. With Tab bound to the mode selector app-wide, clicking a pill is the only way
