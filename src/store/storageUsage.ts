@@ -199,42 +199,40 @@ export const useStorageUsage = create<StorageUsageState>()((set) => ({
  * localStorage has nothing saved and reads as empty.
  */
 export function refreshStorageUsage(): void {
-  let area: Storage
-  let reading: UsageReading
   try {
-    area = window.localStorage
-    reading = readStorageUsage(area)
+    const area = window.localStorage
+    const reading = readStorageUsage(area)
+    // ★ A save to THIS area is being held: the device is full at what it holds right now, and that
+    // is its limit. Remembered, so the next open starts from the truth — best-effort (a full device
+    // may refuse even that; it is then learned again at the next refusal).
+    let limit = readNumber(LIMIT_KEY) ?? DEFAULT_STORAGE_LIMIT
+    if (isHolding(area) && reading.used > 0 && reading.used !== limit) {
+      limit = reading.used
+      tryWriteItem(area, LIMIT_KEY, String(limit))
+    }
+    const percent = usagePercent(reading.used, limit)
+    const warning = percent >= STORAGE_WARN_PERCENT
+    // Once per crossing. ⚠ The popup does not open by itself while the device is REFUSING saves:
+    // the storage-full notice is the one that speaks then (components/StorageFullNotice — it says
+    // more, and it says it now). The crossing still counts as announced.
+    const warned = readNumber(WARNED_KEY) !== null
+    let announce = false
+    if (warning && !warned) {
+      tryWriteItem(area, WARNED_KEY, '1')
+      announce = !useStorageHealth.getState().unsaved
+    } else if (!warning && warned) {
+      area.removeItem(WARNED_KEY)
+    }
+    useStorageUsage.setState((s) => ({
+      ...reading,
+      limit,
+      percent,
+      warning,
+      popupOpen: s.popupOpen || announce,
+    }))
   } catch {
-    return
+    /* localStorage refused: nothing is saved there, and the reading stays as it was */
   }
-  // ★ A save to THIS area is being held: the device is full at what it holds right now, and that is
-  // its limit. Remembered, so the next open starts from the truth — best-effort (a full device may
-  // refuse even that; it is then learned again at the next refusal).
-  let limit = readNumber(LIMIT_KEY) ?? DEFAULT_STORAGE_LIMIT
-  if (isHolding(area) && reading.used > 0 && reading.used !== limit) {
-    limit = reading.used
-    tryWriteItem(area, LIMIT_KEY, String(limit))
-  }
-  const percent = usagePercent(reading.used, limit)
-  const warning = percent >= STORAGE_WARN_PERCENT
-  // Once per crossing. ⚠ The popup does not open by itself while the device is REFUSING saves: the
-  // storage-full notice is the one that speaks then (components/StorageFullNotice — it says more,
-  // and it says it now). The crossing still counts as announced.
-  const warned = readNumber(WARNED_KEY) !== null
-  let announce = false
-  if (warning && !warned) {
-    tryWriteItem(area, WARNED_KEY, '1')
-    announce = !useStorageHealth.getState().unsaved
-  } else if (!warning && warned) {
-    area.removeItem(WARNED_KEY)
-  }
-  useStorageUsage.setState((s) => ({
-    ...reading,
-    limit,
-    percent,
-    warning,
-    popupOpen: s.popupOpen || announce,
-  }))
 }
 
 // How much the player could clear, cheaply: every saved solve time, Best, lookup and preset.

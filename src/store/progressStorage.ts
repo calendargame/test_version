@@ -385,13 +385,17 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
     // means its chunks are there. ⚠ EXCEPT WHILE THIS PAGE'S OWN LAST SAVE IS BEING HELD (the device
     // refused it): the read then returns the held text whatever another page has done since, so
     // each remembered chunk is looked for.
-    const trusted =
-      samePlace &&
-      readItem(b.area, mainKey) === b.text &&
-      (b.landed ||
-        [...b.silos].every(([silo, s]) =>
-          s.ids.every((id, j) => b.area.getItem(`${b.family}${silo}:${j}.${id}`) !== null),
-        ))
+    // Asked only when a sealed silo needs the answer (once per save): a save with nothing sealed
+    // reads nothing back.
+    let trust: boolean | null = null
+    const trusted = (): boolean =>
+      (trust ??=
+        samePlace &&
+        readItem(b.area, mainKey) === b.text &&
+        (b.landed ||
+          [...b.silos].every(([silo, s]) =>
+            s.ids.every((id, j) => b.area.getItem(`${b.family}${silo}:${j}.${id}`) !== null),
+          )))
     const state: unknown = value.state
     const stats = isRecord(state) && isRecord(state.stats) ? state.stats : {}
     const onDisk: Record<string, unknown> = {}
@@ -413,7 +417,7 @@ export function createProgressCodec<S>(sealNewSilos: boolean = SEAL_NEW_SILOS) {
       // How many remembered ids still name their chunk: all of them when the times are the very
       // array last saved; otherwise every chunk before the first time that differs.
       let kept = 0
-      if (trusted && was && target > 0) {
+      if (was && target > 0 && trusted()) {
         const span = Math.min(was.ids.length * CHUNK_TIMES, was.ref.length, times.length)
         let same = was.ref === times ? span : 0
         while (same < span && was.ref[same] === times[same]) same++

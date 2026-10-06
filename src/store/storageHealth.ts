@@ -198,7 +198,7 @@ export const guardedStorage = (getStorage: () => Storage) => (): StateStorage =>
   const s = getStorage()
   return {
     getItem: (name) => readItem(s, name),
-    setItem: (name, value) => void writeItem(s, name, value),
+    setItem: (name, value) => writeItem(s, name, value),
     removeItem: (name) => removeItem(s, name),
   }
 }
