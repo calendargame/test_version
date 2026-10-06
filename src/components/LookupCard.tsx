@@ -9,6 +9,7 @@ import {
   useWindowedRows,
 } from './scrollRegion.js'
 import { isPageCovered } from './overlayStack.js'
+import { shortcutActed } from '../lib/keyboardFocus.js'
 import type { FormatId } from '../lib/format.js'
 // The history entry's persisted shape lives with the store that versions and migrates it
 // (store/lookupHistory) — it is {id, y, m, d, isGap?} and nothing else. Everything shown on screen
@@ -514,6 +515,8 @@ export default function LookupCard({
   //     straight through one: in Manage Presets, ↓ on a reorder grip moved the preset AND the Lookup
   //     selection behind the dim (and selecting blurs whatever has the keyboard, so the grip lost it
   //     too), Backspace emptied the card under any popup — and under the ⚙ menu all four still did.
+  //   • ONE THAT ACTS SAYS SO (lib/keyboardFocus's shortcutActed), as the game keys do: using a
+  //     shortcut is not finding your way round by keyboard, so it puts the focus ring out.
   //   • A CONTROL ALREADY USED THE KEY ⇒ it is not also a shortcut. An open dropdown list walks its
   //     options with ↑/↓ and says so by preventing the key's default; this listener sits on the
   //     document, after every control's own handler, so it can see that and leave the press alone.
@@ -527,6 +530,7 @@ export default function LookupCard({
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         if (entries.length === 0) return
         e.preventDefault()
+        shortcutActed()
         const idx = entries.findIndex((x) => x.id === sid)
         const next =
           e.key === 'ArrowDown'
@@ -544,6 +548,7 @@ export default function LookupCard({
         // question (lookupOutput holds an error message or nothing at all).
         if (!li && !lo && !cdv && !sid) return
         e.preventDefault()
+        shortcutActed()
         clearLookup()
         return
       }

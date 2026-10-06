@@ -2129,18 +2129,21 @@ export default function GuidePage({
             only while you are finding your way by keyboard, which means after <Kbd>Tab</Kbd> or{' '}
             <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd>, or an arrow key that moves you from one control to the
             next (along a setting&apos;s options, through a list, on a slider). A tap or a click
-            never draws it, on anything, and puts it out if it was showing. Nor does any other key
-            start it: the answer keys, the Game Actions, the mode letters, <Kbd>H</Kbd> and{' '}
-            <Kbd>G</Kbd>, <Kbd>Enter</Kbd>, <Kbd>Space</Kbd> and anything typed in a box leave
-            things as they are — so playing with the number keys and a mouse never lights a ring on
-            the button you last clicked. A control that is greyed out and marked unavailable can
-            still be reached, and its ring is <i>dotted</i> rather than solid: the keyboard is
-            there, and pressing will do nothing. Nothing inside an open list is outlined, in the top
-            bar or in the menu: the soft grey box on an option is where the keyboard is, and the
-            ring stays on the list&apos;s button. None of this is the dashed outline Amnesic puts
-            round numbers that won&apos;t be kept — that one is dashed and fainter, marks numbers
-            rather than a control, and has nothing to do with the keyboard; where the stats strip
-            wears it and has the keyboard too, the solid ring sits just inside the dashes.
+            never draws it, on anything, and puts it out if it was showing. So does a shortcut, the
+            moment it does something: the answer keys, the Game Actions, the Lookup keys, the mode
+            letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> never start it, and put it out — so playing with
+            the number keys and a mouse never lights a ring on the button you last clicked, and
+            after <Kbd>Tab</Kbd> and a choice from the mode list the ring on the Mode button is gone
+            with your first answer. <Kbd>Enter</Kbd>, <Kbd>Space</Kbd>, a key that does nothing
+            where you are and anything typed in a box leave things as they are. A control that is
+            greyed out and marked unavailable can still be reached, and its ring is <i>dotted</i>{' '}
+            rather than solid: the keyboard is there, and pressing will do nothing. Nothing inside
+            an open list is outlined, in the top bar or in the menu: the soft grey box on an option
+            is where the keyboard is, and the ring stays on the list&apos;s button. None of this is
+            the dashed outline Amnesic puts round numbers that won&apos;t be kept — that one is
+            dashed and fainter, marks numbers rather than a control, and has nothing to do with the
+            keyboard; where the stats strip wears it and has the keyboard too, the solid ring sits
+            just inside the dashes.
           </li>
           <li>
             The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button — but it

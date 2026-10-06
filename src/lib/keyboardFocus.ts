@@ -27,15 +27,27 @@
 //         the thumb under the keyboard), or wherever the press MOVES FOCUS (along a setting's
 //         options, say). The second is found out rather than assumed: the key arms a watch for the
 //         rest of its own turn, and focus arriving somewhere in that turn is the answer.
-//   • EVERY OTHER KEY CHANGES NOTHING, in either direction. ★ That is the point of the rule, since
-//     the ring is drawn on every screen and not only in the ⚙ menu: the app's keys are mostly
-//     SHORTCUTS — the answer keys 0–9, N, R, O, C, S, ← and →, the mode letters, H, G — pressed by
-//     players who have a hand on the mouse or a finger on the screen, and a button they clicked a
-//     moment ago still has focus. A shortcut that counted as "the keyboard" would light a ring on
-//     that button in the middle of a game. Enter and Space change nothing either: they press what
-//     already has the keyboard, wherever it is. Nor does typing in a text box (a phone's on-screen
-//     keyboard sends the same key events as a real one), nor a modifier or a chord addressed to the
-//     browser or the system (Shift on its way to Shift+Tab, Ctrl+R, Alt+Tab away, ⌘-anything).
+//   • A SHORTCUT THAT ACTS ⇒ not the keyboard, exactly as a press is not (shortcutActed, called by
+//     whoever owns the shortcut at the moment it does something). The app's keys are mostly
+//     SHORTCUTS — the answer keys 0–9, N, R, O, C, S, ← and →, Lookup's ↑ ↓ and Backspace, the mode
+//     letters, H, G — and using one is PLAYING, not finding your way round. Without this, the one
+//     navigating key a mouse-and-number-keys player does use left its ring behind for the rest of
+//     the game: Tab opens the mode list, an arrow and Enter choose a mode, and the Mode button —
+//     which still has focus — wore a ring through every answer until the next press of the mouse.
+//     ⚠ ONLY ONE THAT ACTS, which is why the owner says so and this file does not go by the key's
+//     name: the same key is a shortcut on one page and nothing on another (↑ and ↓ choose a row on
+//     Lookup and scroll everywhere else; a digit answers a question, and does nothing on Lookup or
+//     under the ⚙ menu), and a key that did nothing must not take the ring from someone who IS
+//     finding their way round by keyboard.
+//   • EVERY OTHER KEY CHANGES NOTHING, in either direction — and no shortcut ever LIGHTS it. ★ That
+//     matters because the ring is drawn on every screen and not only in the ⚙ menu: a shortcut is
+//     pressed by players who have a hand on the mouse or a finger on the screen, and a button they
+//     clicked a moment ago still has focus. A shortcut that counted as "the keyboard" would light a
+//     ring on that button in the middle of a game. Enter and Space change nothing either: they
+//     press what already has the keyboard, wherever it is. Nor does typing in a text box (a phone's
+//     on-screen keyboard sends the same key events as a real one), nor a modifier or a chord
+//     addressed to the browser or the system (Shift on its way to Shift+Tab, Ctrl+R, Alt+Tab away,
+//     ⌘-anything).
 //
 // Nothing here reads which control has focus or marks an element: that is the browser's :focus,
 // and the stylesheet joins the two.
@@ -58,10 +70,18 @@ const standDown = () => {
   watching = false
 }
 
-const onPointerDown = () => {
+// The player is not finding their way round by keyboard: a press has gone down, or a shortcut has
+// just acted. Whatever an arrow was being watched for, it is no longer that either.
+const putOut = () => {
   watching = false
   setKeyboard(false)
 }
+/**
+ * A page shortcut has just ACTED (an answer key, a Game Action, a page's own key, a mode letter, H,
+ * G): the player is playing, not navigating. Called by the handler that owns the shortcut, at the
+ * moment it acts — never for a key that did nothing.
+ */
+export const shortcutActed = putOut
 const onKeyDown = (e: KeyboardEvent) => {
   watching = false // a new key: whatever the last one was watching for, its turn is over
   if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -83,14 +103,13 @@ export function installKeyboardFocus() {
   // On the WINDOW, in the CAPTURE phase: ahead of every handler in the app, so the answer is
   // already right when one of them moves focus (a Tab trap, an arrow along a setting, a grab), and
   // out of reach of the ones that stop a press or a key they consider theirs.
-  window.addEventListener('pointerdown', onPointerDown, true)
+  window.addEventListener('pointerdown', putOut, true)
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('focusin', onFocusIn, true)
   return () => {
-    window.removeEventListener('pointerdown', onPointerDown, true)
+    window.removeEventListener('pointerdown', putOut, true)
     window.removeEventListener('keydown', onKeyDown, true)
     window.removeEventListener('focusin', onFocusIn, true)
-    watching = false
-    setKeyboard(false)
+    putOut()
   }
 }

@@ -8,6 +8,8 @@
 //   • WHICH KEYS count as finding your way by keyboard — Tab, and an arrow that moves focus; never
 //     a game shortcut. The ring is drawn anywhere a control has focus, so this is what keeps it off
 //     a button a mouse player clicked a moment ago and is now answering with the number keys.
+//     And a shortcut that ACTS is the player going back to playing: it puts the ring out, the way
+//     a press does — which is what takes it off the Mode button after Tab has chosen a mode.
 //
 // ⚠ WHAT NO CASE HERE CAN PROVE. jsdom draws nothing and has no cascade worth trusting for layered
 // CSS, so "a ring is on the screen" is not a thing this file can see. What it pins is each fact
@@ -19,8 +21,9 @@ import { cleanup, act, fireEvent, screen, within } from '@testing-library/react'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { installKeyboardFocus, KEYBOARD_ATTR } from '../src/lib/keyboardFocus.js'
+import { installKeyboardFocus, shortcutActed, KEYBOARD_ATTR } from '../src/lib/keyboardFocus.js'
 import { resetAppState, mountApp, openSettings, pressKey } from './helpers/settingsPanel.jsx'
+import { useLookupHistory } from '../src/store/lookupHistory.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const cssCode = readFileSync(join(root, 'src', 'index.css'), 'utf8').replace(
@@ -85,6 +88,27 @@ describe('lib/keyboardFocus — is the keyboard what is being used?', () => {
       expect(byKeyboard()).toBe(false)
     },
   )
+
+  // Said by whoever owns the shortcut, when it does something (the mounted cases below drive the
+  // real ones): the player has gone back to playing.
+  it('a shortcut that ACTED puts it out, as a press does — and Tab lights it again', () => {
+    key('Tab', button)
+    expect(byKeyboard()).toBe(true)
+    shortcutActed()
+    expect(byKeyboard()).toBe(false)
+    key('Tab', button, { shiftKey: true })
+    expect(byKeyboard()).toBe(true)
+  })
+
+  it('…and an arrow that turned out to be a shortcut is no longer watched for moving focus', () => {
+    const other = document.createElement('button')
+    document.body.append(other)
+    key('ArrowLeft', button) // armed: has it moved focus?
+    shortcutActed() // no — it stepped back a card
+    act(() => other.focus()) // whatever the shortcut's own work then focuses is not the arrow's
+    expect(byKeyboard()).toBe(false)
+    other.remove()
+  })
 
   it('Enter, Space and Escape press or close what is there: they change nothing either way', () => {
     press(button)
@@ -295,6 +319,101 @@ describe('on the mounted app', () => {
       pressKey(k)
       expect([k, byKeyboard()]).toEqual([k, false])
     }
+  })
+
+  // ★ The one navigating key a mouse-and-number-keys player does use: Tab opens the mode list (it
+  // is the documented key for it), an arrow and Enter choose. The Mode button keeps focus — and it
+  // used to keep the ring for the rest of the game, through every number key, until the next press
+  // of the mouse.
+  it('Tab, choose a mode, play on with the number keys: the ring goes with the first answer', () => {
+    mountApp()
+    const modeButton = screen.getByRole('button', { name: /^Mode,/ })
+    pressKey('Tab')
+    key('ArrowDown', modeButton)
+    key('ArrowUp', modeButton)
+    key('Enter', modeButton) // Classic, chosen from the list
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(document.activeElement).toBe(modeButton)
+    expect(byKeyboard()).toBe(true) // still finding their way round: nothing has been played yet
+    pressKey('3') // an answer, right or wrong
+    expect(byKeyboard()).toBe(false)
+    pressKey('Tab') // …and navigating again lights it again
+    expect(byKeyboard()).toBe(true)
+  })
+
+  it.each([
+    ['a Game Action (N)', [], 'n'],
+    ['Reveal (R)', [], 'r'],
+    ['a mode letter (D)', [], 'd'],
+    ['How to Play (H)', [], 'h'],
+    ['the ⚙ menu (G)', [], 'g'],
+    ['← once there is a card to step back to', ['r', 'n'], 'ArrowLeft'],
+  ])('every shortcut that acts puts it out: %s', (_name, first, shortcut) => {
+    mountApp()
+    for (const k of first) pressKey(k)
+    pressKey('Tab')
+    pressKey('Escape') // the mode list Tab opened; the keyboard mark stays
+    expect(byKeyboard()).toBe(true)
+    pressKey(shortcut)
+    expect(byKeyboard()).toBe(false)
+  })
+
+  it('on Lookup, ↑ and ↓ choose a history row — shortcuts there — and Backspace clears the box', () => {
+    const entry = (id, y, m, d) => ({ id, y, m, d })
+    useLookupHistory.getState().setHistory([entry('a', 2001, 1, 1), entry('b', 2002, 2, 2)])
+    mountApp()
+    pressKey('l')
+    for (const k of ['ArrowDown', 'ArrowUp', 'Backspace']) {
+      pressKey('Tab')
+      pressKey('Escape') // the mode list Tab opened; the keyboard mark stays
+      expect([k, byKeyboard()]).toEqual([k, true])
+      key(k) // Lookup listens on the document: pressed on the page
+      expect([k, byKeyboard()]).toEqual([k, false])
+    }
+  })
+
+  // The same keys, where they do nothing: a keyboard user finding their way round keeps the ring.
+  it('a key that is not a shortcut where it is pressed changes nothing', () => {
+    mountApp()
+    pressKey('Tab')
+    pressKey('Escape')
+    for (const k of ['ArrowUp', 'ArrowDown', 'Backspace', 'x', 'Enter', ' ']) {
+      key(k) // Classic: ↑ ↓ and Backspace are Lookup's, and there is no X
+      expect([k, byKeyboard()]).toEqual([k, true])
+    }
+    pressKey('l')
+    pressKey('Tab')
+    pressKey('Escape')
+    for (const k of ['3', 'n', 'r', 'ArrowLeft', 'ArrowUp']) {
+      key(k) // Lookup: no answer grid, no Game Actions, and no history to choose from yet
+      expect([k, byKeyboard()]).toEqual([k, true])
+    }
+  })
+
+  it('under the ⚙ menu the page`s keys are out of reach, so they change nothing — G closes it, and does', () => {
+    mountApp()
+    openSettings()
+    const panel = document.getElementById('settings-popover')
+    key('Tab', panel)
+    expect(byKeyboard()).toBe(true)
+    for (const k of ['3', 'n', 'r', 'ArrowLeft', 'ArrowDown']) {
+      key(k)
+      expect([k, byKeyboard()]).toEqual([k, true])
+    }
+    pressKey('g')
+    expect(document.getElementById('settings-popover')).toBeNull()
+    expect(byKeyboard()).toBe(false)
+  })
+
+  it('typing in a text box is neither: the ring a Tab lit stays while a year is typed', () => {
+    mountApp()
+    openSettings()
+    const [from] = within(document.getElementById('settings-popover')).getAllByRole('textbox')
+    act(() => from.focus())
+    key('Tab', from)
+    expect(byKeyboard()).toBe(true)
+    for (const k of ['1', '9', 'ArrowLeft', 'Backspace', 'n', 'g']) key(k, from)
+    expect(byKeyboard()).toBe(true)
   })
 
   it('Tab lights it (the keyboard is on the Mode button), and a press puts it out', () => {

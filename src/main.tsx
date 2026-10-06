@@ -34,7 +34,7 @@ import { useStorageUsage, watchStorageUsage, announceStorageWarning, measureStor
 import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, watchScrollEdges, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
-import { installKeyboardFocus } from './lib/keyboardFocus.js'
+import { installKeyboardFocus, shortcutActed } from './lib/keyboardFocus.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
 import { useUpdateCheck } from './components/useUpdateCheck.js'
 import { DEPLOY_TS } from './deployStamp.js'
@@ -1531,6 +1531,11 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // leaves the popup standing is a press on the page behind it, and that page is inert — so
         // while one is open, Category 3 does nothing either. It closes like any popup (Escape, a tap
         // outside, Back), and the keys work again.
+        // ★ AND EVERY SHORTCUT THAT ACTS SAYS SO (lib/keyboardFocus's shortcutActed) — at each of the
+        // four places below where one does, and nowhere a key turned out to do nothing. A shortcut
+        // is playing, not finding your way round by keyboard, so it puts the focus ring out exactly
+        // as a press does: otherwise Tab → pick a mode left a ring on the Mode button through a
+        // whole game of number keys.
         // The scrim's trap already stopPropagation()s presses inside the modal's own tree; this
         // covers presses that start outside it. The question is isPageCovered — asked of the app's
         // stack of open things (components/overlayStack) — and only for a press that has already
@@ -1569,6 +1574,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
           if(!btn||btn.tagName!=='BUTTON')return;
           if(btn.className.includes('pointer-events-none'))return;
           e.preventDefault();
+          shortcutActed();
           btn.click();
           return;
         }
@@ -1588,6 +1594,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         const page=PAGE_BY_KEY[dataKey];
         if(page){
           e.preventDefault();
+          shortcutActed();
           closeLists();
           if(page.id==='guide')switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');
           else switchMode(page.id);
@@ -1603,7 +1610,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // false ⇒ the popup belongs to a mode screen (or is the storage-full notice over one).
         // When the panel IS open its own popups are children of it, and G still closes both
         // together (tests/settingsPanel.defaults) — that path is untouched.
-        if(dataKey==='G'){if(isPopupOpen()&&!settingsOpen)return;e.preventDefault();closeLists();toggleSettings();return;}
+        if(dataKey==='G'){if(isPopupOpen()&&!settingsOpen)return;e.preventDefault();shortcutActed();closeLists();toggleSettings();return;}
         // Category 2: data-key DOM walk for game-loop letters and arrows — GATED for the same
         // reason as Category 1, and it is the one that shipped the bug (Override, through a scrim).
         if(isPageCovered())return;
@@ -1613,6 +1620,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
           if(btn.offsetParent===null)continue;
           if(btn.className.includes('pointer-events-none'))continue;
           e.preventDefault();
+          shortcutActed();
           btn.click();
           return;
         }
