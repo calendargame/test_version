@@ -276,13 +276,14 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
     expectLock('Julian Chance', true)
   })
 
-  // G2.8 — ONE boolean, five consequences, asserted as a set for all four lockable pickers at
+  // G2.8 — ONE boolean, five consequences, asserted as a set for every lockable picker at
   // once. A picker locked four ways out of five is a real bug and a per-facet test cannot see it.
-  // All four conditions are held simultaneously here, which is not a contrivance: Deduction with
-  // Random Format on and a [1900,1900] range is a state a user can sit in.
+  // All the conditions are held simultaneously here, which is not a contrivance: Deduction with
+  // Random Format on, Save Stats off and a [1900,1900] range is a state a user can sit in.
   it('every lockable picker publishes the whole lock together, and refuses a press', () => {
     standUp()
     toggleSwitch('Random Format')
+    toggleSwitch('Save Stats')
     commitRange(1900, 1900)
     goMode('deduction')
     for (const name of LOCKABLE_PICKERS) {
@@ -300,6 +301,7 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
   it('a locked picker swallows the arrows instead of letting them reach the page behind it', () => {
     standUp()
     toggleSwitch('Random Format')
+    toggleSwitch('Save Stats')
     commitRange(1900, 1900)
     goMode('deduction')
     const reachedTheWindow = vi.fn()
@@ -322,7 +324,7 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
 
   // G2.10 — unlocking restores exactly ONE tab stop, on the pill that is actually chosen, with no
   // interaction at all: the group's layout effect re-asserts it on the pass that clears the lock.
-  // Asserted for all FIVE lockable pickers, and every pick below is deliberately NOT the first pill,
+  // Asserted for all SIX lockable pickers, and every pick below is deliberately NOT the first pill,
   // so "restores a tab stop" cannot pass by landing on the front of the tray. (Rotate Dots left this
   // list in round 20, when it became a switch, and is back since round 23 made it a picker again;
   // it is locked here by its SECOND condition, Input on Buttons, which the mode walk above does not
@@ -358,6 +360,12 @@ describe('⚙ Settings → the picker locks and their exact conditions', () => {
       pick: '75%',
       lock: () => toggleSwitch(JULIAN_SWITCH),
       unlock: () => toggleSwitch(JULIAN_SWITCH),
+    },
+    {
+      name: 'Amnesic',
+      pick: 'Stats Only',
+      lock: () => toggleSwitch('Save Stats'),
+      unlock: () => toggleSwitch('Save Stats'),
     },
   ]
   UNLOCK_CASES.forEach(({ name, pick, arrange, lock, unlock }) => {

@@ -1,0 +1,297 @@
+{
+  "freshOpen:off": {
+    "flag": false,
+    "permanentPlayed": 4,
+    "sessionPlayed": null,
+    "registry": null,
+    "savedAfter": {
+      "settings": {
+        "randomFormat": false,
+        "dateFormat": "numeric-ymd",
+        "inputStyle": "buttons",
+        "dotRotation": "standard",
+        "defaultMode": "classic",
+        "useJulian": true,
+        "minY": 1583,
+        "maxY": 10000,
+        "leapChance": "random",
+        "janFebChance": "random",
+        "julianChance": "random",
+        "saveStats": true,
+        "useSystem": true,
+        "darkTheme": "dusk",
+        "lightTheme": "light",
+        "manualTheme": "dusk"
+      },
+      "prefs": {
+        "flashMs": 800,
+        "blitzSec": 60,
+        "blitzQSec": 10,
+        "aoxN": "10"
+      },
+      "amnesic": false,
+      "amnesicMode": "off"
+    }
+  },
+  "freshOpen:stats": {
+    "flag": true,
+    "permanentPlayed": 3,
+    "sessionPlayed": 1,
+    "registry": {
+      "presets": [
+        {
+          "id": 1,
+          "name": "Preset 1",
+          "amnesic": true
+        }
+      ],
+      "activeId": 1,
+      "nextId": 2,
+      "openInPreset": "last"
+    },
+    "savedAfter": {
+      "settings": {
+        "randomFormat": false,
+        "dateFormat": "numeric-ymd",
+        "inputStyle": "buttons",
+        "dotRotation": "standard",
+        "defaultMode": "classic",
+        "useJulian": true,
+        "minY": 1583,
+        "maxY": 10000,
+        "leapChance": "random",
+        "janFebChance": "random",
+        "julianChance": "random",
+        "saveStats": true,
+        "useSystem": true,
+        "darkTheme": "dusk",
+        "lightTheme": "light",
+        "manualTheme": "dusk"
+      },
+      "prefs": {
+        "flashMs": 800,
+        "blitzSec": 60,
+        "blitzQSec": 10,
+        "aoxN": "10"
+      },
+      "amnesic": true,
+      "amnesicMode": "stats"
+    }
+  },
+  "freshOpen:full": {
+    "flag": true,
+    "permanentPlayed": 3,
+    "sessionPlayed": 1,
+    "registry": {
+      "presets": [
+        {
+          "id": 1,
+          "name": "Preset 1",
+          "amnesic": true
+        }
+      ],
+      "activeId": 1,
+      "nextId": 2,
+      "openInPreset": "last"
+    },
+    "savedAfter": {
+      "settings": {
+        "randomFormat": false,
+        "dateFormat": "numeric-ymd",
+        "inputStyle": "buttons",
+        "dotRotation": "standard",
+        "defaultMode": "classic",
+        "useJulian": true,
+        "minY": 1583,
+        "maxY": 10000,
+        "leapChance": "random",
+        "janFebChance": "random",
+        "julianChance": "random",
+        "saveStats": true,
+        "useSystem": true,
+        "darkTheme": "dusk",
+        "lightTheme": "light",
+        "manualTheme": "dusk"
+      },
+      "prefs": {
+        "flashMs": 800,
+        "blitzSec": 60,
+        "blitzQSec": 10,
+        "aoxN": "10"
+      },
+      "amnesic": true,
+      "amnesicMode": "full"
+    }
+  },
+  "freshOpen:stringField:off": {
+    "flag": "off",
+    "permanentPlayed": 4,
+    "sessionPlayed": null
+  },
+  "freshOpen:stringField:stats": {
+    "flag": "stats",
+    "permanentPlayed": 4,
+    "sessionPlayed": null
+  },
+  "freshOpen:stringField:full": {
+    "flag": "full",
+    "permanentPlayed": 4,
+    "sessionPlayed": null
+  },
+  "saveDefaultsOverStatsOnly": {
+    "loaded": {
+      "settings": {
+        "randomFormat": false,
+        "dateFormat": "numeric-ymd",
+        "inputStyle": "buttons",
+        "dotRotation": "standard",
+        "defaultMode": "classic",
+        "useJulian": true,
+        "minY": 1583,
+        "maxY": 10000,
+        "leapChance": "random",
+        "janFebChance": "random",
+        "julianChance": "random",
+        "saveStats": true,
+        "useSystem": true,
+        "darkTheme": "dusk",
+        "lightTheme": "light",
+        "manualTheme": "dusk"
+      },
+      "prefs": {
+        "flashMs": 800,
+        "blitzSec": 60,
+        "blitzQSec": 10,
+        "aoxN": "10"
+      },
+      "amnesic": true,
+      "amnesicMode": "stats"
+    },
+    "saved": {
+      "settings": {
+        "randomFormat": false,
+        "dateFormat": "numeric-ymd",
+        "inputStyle": "buttons",
+        "dotRotation": "standard",
+        "defaultMode": "classic",
+        "useJulian": true,
+        "minY": 1583,
+        "maxY": 10000,
+        "leapChance": "random",
+        "janFebChance": "random",
+        "julianChance": "random",
+        "saveStats": true,
+        "useSystem": true,
+        "darkTheme": "dusk",
+        "lightTheme": "light",
+        "manualTheme": "dusk"
+      },
+      "prefs": {
+        "flashMs": 800,
+        "blitzSec": 60,
+        "blitzQSec": 10,
+        "aoxN": "10"
+      },
+      "amnesic": true
+    }
+  },
+  "migratedV2": {
+    "state": {
+      "saved": {
+        "settings": {
+          "randomFormat": false,
+          "dateFormat": "numeric-ymd",
+          "inputStyle": "buttons",
+          "defaultMode": "classic",
+          "useJulian": true,
+          "minY": 1583,
+          "maxY": 10000,
+          "leapChance": "random",
+          "janFebChance": "random",
+          "julianChance": "random",
+          "saveStats": true,
+          "useSystem": true,
+          "darkTheme": "dusk",
+          "lightTheme": "light",
+          "manualTheme": "dusk",
+          "dotRotation": "ccw90"
+        },
+        "prefs": {
+          "flashMs": 800,
+          "blitzSec": 60,
+          "blitzQSec": 10,
+          "aoxN": "10"
+        },
+        "amnesic": true,
+        "amnesicMode": "stats"
+      }
+    },
+    "version": 3
+  },
+  "guestSession": {
+    "flag": true,
+    "permanentPlayed": 3,
+    "sessionPlayed": 1,
+    "registry": {
+      "presets": [
+        {
+          "id": 1,
+          "name": "Preset 1",
+          "amnesic": true
+        }
+      ],
+      "activeId": 1,
+      "nextId": 2,
+      "openInPreset": "last"
+    },
+    "sessionKeys": [
+      "cg-browsing-session-v1",
+      "cg-history-v1:1:saved:classic",
+      "cg-history-v1:1:saved:dedDay",
+      "cg-history-v1:1:saved:dedMonth",
+      "cg-history-v1:1:saved:dedYear",
+      "cg-history-v1:1:saved:flash",
+      "cg-progress-v1",
+      "cg-session-mode-v1"
+    ]
+  },
+  "staleFlag": {
+    "freshOpen": {
+      "flag": false,
+      "permanentPlayed": 4,
+      "sessionPlayed": null
+    },
+    "reload": {
+      "flag": true,
+      "permanentPlayed": 4,
+      "sessionPlayed": 1
+    }
+  },
+  "sameTabAfterThisBuild": {
+    "flag": false,
+    "permanentPlayed": 4,
+    "sessionPlayed": 9
+  },
+  "createdPreset": {
+    "presets": [
+      {
+        "id": 1,
+        "name": "Preset 1",
+        "amnesic": false
+      },
+      {
+        "id": 2,
+        "name": "Guest",
+        "amnesic": true
+      },
+      {
+        "id": 3,
+        "name": "Third",
+        "amnesic": false
+      }
+    ],
+    "activeId": 1,
+    "nextId": 4,
+    "openInPreset": "last"
+  }
+}

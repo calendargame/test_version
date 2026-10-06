@@ -511,6 +511,33 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .card{background:var(--card-bg);border:1px solid var(--card-bd)}
 .panel{background:var(--panel-bg);border:1px solid var(--panel-bd)}
 .thin{border:1px solid var(--thin-bd)}
+/* ★ THE DASHED OUTLINE — "these numbers are for this session only" (Amnesic). It marks WHAT IS
+   TEMPORARY, ON THE PAGE ITSELF: the stats strip while the preset is on Stats Only or Full
+   (components/StatPanel), and the Best readouts too under Full (components/BestReadout). It
+   replaced a letter "A" beside the preset's name, which said that something about the preset was
+   amnesic and cost the name its width; this says WHICH numbers, where they are, and tells the two
+   kinds apart for free — a dashed strip over plain Bests is Stats Only, both dashed is Full.
+   WHY DASHED: a broken line already reads as "provisional — not inked in" (a draft, a cut-out, a
+   placeholder), and nothing else in the app is dashed, so it cannot be mistaken for any other state.
+   In particular it cannot be mistaken for the FOCUS RING (.kbd-ring below): that one is solid,
+   brighter, 2px, and only ever on the one control the keyboard is on.
+   ⚠ IT MUST NOT MOVE A PIXEL — the strip and the readouts are the same size and in the same place
+   with it or without. So it is a ::after BORDER on an absolutely-positioned box, which takes no part
+   in layout, never the host's own border-width or padding. On the strip (a .panel) the box sits on
+   the padding edge and the panel's own solid border goes transparent — still 1px wide, so nothing
+   shifts — which makes the dashes the strip's frame rather than a second line inside one.
+   .session-only-outset is for a host with no box of its own (the Best readouts are bare text): the
+   frame is drawn AROUND it, in the gaps that are already there (12px above and below, the page's
+   16px gutter at the sides).
+   ⚠ NOT AN outline: the strip is sometimes one big <button>, and `button:focus{outline:none}`
+   below would take an outline off it the moment it was tapped.
+   COLOUR: the theme's own label tone, thinned — so it is right in all five themes with no table of
+   its own, and calm: it has to sit under numbers the player is reading without competing with them.
+   pointer-events:none, so the frame never takes a tap meant for the strip. */
+.session-only{position:relative}
+.session-only::after{content:"";position:absolute;inset:0;border:1.5px dashed color-mix(in oklab,var(--tx-200-80) 70%,transparent);border-radius:inherit;pointer-events:none}
+.panel.session-only{border-color:transparent}
+.session-only-outset::after{inset:-.375rem;border-radius:.75rem}
 /* ★ THE .2s BACKGROUND FADE — the app's three interactive surfaces (these two + .btn-solid below)
    all carry it, and all three multiply by --motion-scale (round 16) so Reduce Motion makes the
    fade instant. It is DECORATIVE, checked rather than assumed, and the check is worth keeping:

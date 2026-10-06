@@ -135,7 +135,7 @@ const resolve = <T>(next: Updater<T>, prev: T): T =>
 // SETTINGS_DEFAULTS rather than listed, so the "16" every comment in this file quotes cannot drift
 // from the code: add a setting to SETTINGS_DEFAULTS and it is persisted by construction. ⚠ 16 here
 // counts the STORE's settings only. The Save Defaults snapshot is 21 (these 16 + 4 mode prefs + the
-// preset's amnesic flag) and the gear's "modified" comparison is 22 or 21 — both counted in
+// preset's Amnesic value) and the gear's "modified" comparison is 22 or 21 — both counted in
 // main.tsx, at resetSettings and settingsAtDefaults respectively. Do not carry this number over.
 // ⚠ THE COMPARISON IS NOT A SUBSET OF THE SNAPSHOT, and round 15 is what changed that: it is 20 or
 // 19 of the snapshot's 21 (a dormant theme value is always excluded) PLUS the ⚙ panel's two Year

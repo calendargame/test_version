@@ -4,8 +4,8 @@
 //
 // ★ WHAT THIS FILE IS FOR, and what it deliberately leaves to its neighbours. It covers the control
 // ITSELF: that it reads the registry, that picking an option is a real switch, and that the two
-// things this control does differently from the mode selector are actually there — the amnesic
-// marker and the fixed-width name cell. It does NOT re-test CustomSelect's popover behaviour
+// things this control does differently from the mode selector are actually there — what it says of
+// an amnesic preset, and the name cell that does not size itself to its longest option. It does NOT re-test CustomSelect's popover behaviour
 // (tests/customselect owns that) and it does NOT re-test what a switch does to saved data
 // (tests/presets.dom and tests/presetSwitch.dom own that, the second one with a real <App/>
 // mounted, which is the only place the remount hazard is visible at all).
@@ -14,11 +14,10 @@
 // layout engine: it does not lay out flex boxes, it does not resolve `em`, it does not truncate
 // text and it cannot report a width. So every geometric claim this control makes — that the trigger
 // fits the space the wordmark vacates, that a long name truncates with an ellipsis instead of
-// pushing the bar wider, that the "A" markers line up as a column — is UNVERIFIED HERE and can only
-// be confirmed on the owner's iPhone. What these cases pin is the STRUCTURE those results depend
+// pushing the bar wider — is UNVERIFIED HERE and can only be confirmed on the owner's iPhone. What these cases pin is the STRUCTURE those results depend
 // on: that every option's name cell carries the same fixed width, that the width is the exported
-// constant rather than a literal somebody can drift, that the name (not the cell) carries
-// `truncate`, and that the marker carries `ml-auto`. If a future edit breaks the geometry it will
+// constant rather than a literal somebody can drift, and that the name (not the cell) carries
+// `truncate`. If a future edit breaks the geometry it will
 // almost certainly break one of those first, which is the most a jsdom suite can honestly offer.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createRef } from 'react'
@@ -149,82 +148,102 @@ describe('choosing an option switches preset', () => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-describe('the amnesic marker', () => {
-  it('marks only the amnesic presets, and marks them with a WORD, not a bare letter', () => {
-    let p2
+describe('an amnesic preset in the list: nothing drawn, and a word spoken', () => {
+  const guestOn = (mode) =>
     act(() => {
-      p2 = createPreset('Guest')
-      setPresetAmnesic(p2.id, true)
+      const p = createPreset('Guest')
+      setPresetAmnesic(p.id, mode)
+    })
+
+  // ★ THE LETTER IS GONE. A preset's row used to carry an "A" after its name, in a column of its
+  // own that every amnesic preset's name had to give room to. What is temporary is marked on the
+  // page now (the dashed outline — tests/sessionOnlyOutline.dom), so a row is its name and nothing
+  // else, whatever the preset's Amnesic value.
+  for (const mode of ['off', 'stats', 'full'])
+    it(`${mode}: the row DRAWS the name and nothing beside it — no letter, no marker column`, () => {
+      guestOn(mode)
+      mount()
+      openMenu()
+      const row = screen.getByRole('option', { name: /Guest/ })
+      const cell = row.querySelector('[data-preset-name-cell]')
+      // Everything in the cell a sighted player can see is the one name element.
+      const drawn = [...cell.children].filter((el) => !el.className.includes('sr-only'))
+      expect(drawn).toHaveLength(1)
+      expect(drawn[0].textContent).toBe('Guest')
+      expect(drawn[0].className).toContain('truncate') // …and it has the whole cell to truncate in
+      expect(within(row).queryByText('A')).toBeNull()
+      expect(row.querySelector('.ml-auto')).toBeNull() // the marker's right-aligned slot is gone
+    })
+
+  // ★ THE ACCESSIBLE NAME IS THE POINT, and a screen-reader user has to be able to tell the two
+  // kinds apart: ", amnesic" is kept as it has always been said, and Stats Only adds what it is.
+  it('speaks ", amnesic" for Full and ", amnesic, stats only" for Stats Only — and nothing for Off', () => {
+    act(() => {
+      setPresetAmnesic(createPreset('Guest').id, 'full')
+      setPresetAmnesic(createPreset('Practice').id, 'stats')
+      createPreset('Timed')
     })
     mount()
     openMenu()
-    // ★ THE ACCESSIBLE NAME IS THE POINT. A bare "A" is a glyph a screen reader reads as the
-    // indefinite article; the row has to NAME the state. Exactly one row does.
-    const marked = screen.getAllByRole('option', { name: /amnesic/ })
-    expect(marked).toHaveLength(1)
-    expect(marked[0].textContent).toContain('Guest')
-    // …and the visible letter is hidden FROM that name, so the word is not announced twice.
-    const letter = within(marked[0]).getByText('A')
-    expect(letter.getAttribute('aria-hidden')).toBe('true')
-    // The other preset carries neither.
-    const plain = screen.getByRole('option', { name: /Preset 1/ })
+    expect(screen.getByRole('option', { name: 'Guest, amnesic' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Practice, amnesic, stats only' })).toBeTruthy()
+    const plain = screen.getByRole('option', { name: 'Timed' })
     expect(plain.textContent).not.toContain('amnesic')
-    expect(within(plain).queryByText('A')).toBeNull()
+    // Exactly those two rows say it.
+    expect(screen.getAllByRole('option', { name: /amnesic/ })).toHaveLength(2)
   })
 
-  it('says the name and the word as ONE phrase — nothing for a screen reader to join', () => {
+  it('says the name and the words as ONE phrase — nothing for a screen reader to join', () => {
     // A name assembled from two elements is joined differently by different engines: Chromium put
     // a space between the name and a ", amnesic" tail ("Guest , amnesic"), and a join that trims
     // each piece runs them together ("Guestamnesic"). So one sr-only element holds the whole
-    // phrase, and the visible name beside it is hidden from a screen reader instead of being said
-    // twice.
-    act(() => {
-      const p = createPreset('Guest')
-      setPresetAmnesic(p.id, true)
-    })
+    // phrase — in ONE text node — and the visible name beside it is hidden from a screen reader
+    // instead of being said twice.
+    for (const [mode, phrase] of [
+      ['full', 'Guest, amnesic'],
+      ['stats', 'Guest, amnesic, stats only'],
+    ]) {
+      resetRegistry()
+      guestOn(mode)
+      const view = mount()
+      openMenu()
+      const row = screen.getByRole('option', { name: phrase })
+      const spoken = within(row).getByText(phrase)
+      expect(spoken.className).toContain('sr-only')
+      expect(spoken.childNodes).toHaveLength(1)
+      expect(within(row).getByText('Guest').getAttribute('aria-hidden')).toBe('true')
+      view.unmount()
+    }
+    // A preset that is not amnesic has nothing hidden and nothing added: its name is its text.
+    resetRegistry()
     mount()
     openMenu()
-    const row = screen.getByRole('option', { name: 'Guest, amnesic' })
-    expect(within(row).getByText('Guest, amnesic').className).toContain('sr-only')
-    expect(within(row).getByText('Guest').getAttribute('aria-hidden')).toBe('true')
-    // A preset that is not amnesic has nothing hidden and nothing added: its name is its text.
     const plain = screen.getByRole('option', { name: /Preset 1/ })
     expect(within(plain).getByText('Preset 1').getAttribute('aria-hidden')).toBeNull()
   })
 
-  it('is aligned to the right of the name cell, and never gives way before the name does', () => {
-    // ⚠ CLASSES, NOT GEOMETRY — jsdom lays out nothing. ml-auto is what eats the cell's leftover
-    // space (so every marker sits on the same edge and they read as a column); shrink-0 is what
-    // makes the NAME the thing that truncates when a name is too long, never the marker.
+  it('reaches the trigger too when the preset you are ON is amnesic — its name, never a drawn mark', () => {
     act(() => {
-      const p = createPreset('Guest')
-      setPresetAmnesic(p.id, true)
+      setPresetAmnesic(1, 'stats')
     })
     mount()
-    openMenu()
-    const letter = within(screen.getByRole('option', { name: /amnesic/ })).getByText('A')
-    expect(letter.className).toContain('ml-auto')
-    expect(letter.className).toContain('shrink-0')
-    // No colour token on it: the dropdown panel hardcodes a dark text colour on a light frosted
-    // ground in every theme, while the trigger wears the theme's own. A themed class here would be
-    // invisible on the panel in the three dark themes, so the dim is opacity and the glyph inherits.
-    expect(letter.className).not.toMatch(/text-\(/)
-    expect(letter.className).toContain('opacity-70')
-  })
-
-  it('appears in the trigger too when the preset you are ON is amnesic', () => {
+    // The same label element serves the trigger and the rows. The trigger used to wear an
+    // aria-label that replaced its content — announcing "Preset" and dropping the preset, the
+    // "amnesic" and everything else; its name is composed from the setting plus the selected
+    // option's own text (components/CustomSelect), so this is the phrase arriving through it.
+    expect(screen.getByRole('button', { name: 'Preset, Preset 1, amnesic, stats only' })).toBe(
+      trigger(),
+    )
     act(() => {
-      setPresetAmnesic(1, true)
+      setPresetAmnesic(1, 'full')
     })
-    mount()
-    // Same label element serves the trigger and the rows, so the bar shows the state at a glance.
-    expect(triggerLabel()).toContain('amnesic')
-    // …and it reaches the trigger's ACCESSIBLE NAME, which is the half that matters here: the
-    // marker's whole requirement is that it be a word a screen reader says, and the trigger used to
-    // wear an aria-label that replaced its content — announcing "Preset" and dropping the preset,
-    // the "amnesic" and everything else. The name is composed from the setting plus the selected
-    // option's own text (components/CustomSelect), so this is the marker arriving through it.
     expect(screen.getByRole('button', { name: 'Preset, Preset 1, amnesic' })).toBe(trigger())
+    // …and with it back on Off the trigger is the plain name again, live.
+    act(() => {
+      setPresetAmnesic(1, 'off')
+    })
+    expect(screen.getByRole('button', { name: 'Preset, Preset 1' })).toBe(trigger())
+    expect(triggerLabel()).toBe('Preset 1')
   })
 })
 

@@ -7,20 +7,22 @@
 //
 // WHY A MARKER IS NEEDED AT ALL. Almost everything session-lived in this app is already right about
 // reloads for free, because it lives in sessionStorage (store/sessionMode, store/sessionRound,
-// store/sessionHistory, store/sessionGuide, the Amnesic session stats, the session Lookup overflow):
-// a reload keeps sessionStorage and a real close clears it, and nothing has to notice either. The one
-// things that have to ACT on a cold open are the Amnesic reseed (src/main.tsx — guest mode reverts to
-// each preset's saved default on the next open) and the "Open in" pin (store/presets — a fresh open
-// lands in the pinned preset, a reload stays where the player was), and neither can tell a reload
-// from a cold open by itself: both boot the page from scratch.
-// Round 21 ran the reseed on every mount and called a reload "a reopen"; the owner reversed that.
+// store/sessionHistory, store/sessionGuide, an amnesic preset's session copy, the session Lookup
+// overflow): a reload keeps sessionStorage and a real close clears it, and nothing has to notice
+// either. The two things that have to know which it was are each preset's Amnesic value
+// (store/sessionAmnesic — the session's own value on a reload, the preset's saved default on a fresh
+// open, so guest mode ends with the guest) and the "Open in" pin (store/presets — a fresh open lands
+// in the pinned preset, a reload stays where the player was), and neither can tell a reload from a
+// cold open by itself: both boot the page from scratch.
+// Round 21 treated every mount as a fresh open and called a reload "a reopen"; the owner reversed
+// that.
 // So the question is asked of sessionStorage itself: the marker below is written on the first boot of
 // a session and survives every reload of it, so its ABSENCE is exactly "the browser started a new
 // session" — the same fact everything else here already leans on, read from the same place.
 //
 // ⚠ A BROWSER THAT REFUSES sessionStorage answers "cold" every time. That is the consistent answer
-// rather than a guess: in such a browser the Amnesic session stats were never written anywhere but
-// memory, so a reload has ALREADY thrown the guest's session away — reseeding the flag to its saved
+// rather than a guess: in such a browser an amnesic preset's session was never written anywhere but
+// memory, so a reload has ALREADY thrown the guest's session away — each preset back on its saved
 // default is the only state that matches what is left.
 // ⚠ ⚠ UNVERIFIABLE FROM HERE: that swiping the installed iOS app away clears its sessionStorage (the
 // expected behaviour — a new process, a new browsing session). The owner checks it on his device.
@@ -32,9 +34,11 @@ const MARKER = 'cg-browsing-session-v1'
 
 /**
  * Is this browsing session ALREADY open — i.e. is this page load a reload inside it rather than a
- * fresh open? A pure read, for the one thing that has to know BEFORE the app has booted: the
+ * fresh open? A pure read, for the two things that have to know BEFORE the app has booted: the
  * "Open in" pin (store/presets' hydrate `merge`, and index.html's boot script beside it), which
- * decides the preset a FRESH OPEN lands in and must leave a reload on the preset the player was on.
+ * decides the preset a FRESH OPEN lands in and must leave a reload on the preset the player was on;
+ * and each preset's Amnesic value (store/sessionAmnesic), which a fresh open takes from the saved
+ * defaults and a reload from the session's own record.
  * False in a browser that refuses sessionStorage, for the reason given in the header.
  */
 export function browsingSessionOpen(): boolean {

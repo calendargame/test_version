@@ -26,13 +26,14 @@
 // bump. (Pinned by tests/moxRename.dom — a Best recorded under the old label is still found.)
 import { useEffect, useRef, useState } from 'react'
 import type { ModeProps, FmtDate, GenDate } from './modeTypes.js'
-import { FLASH_MS, useButtonFlash, useMountedDataId } from './modeHooks.js'
+import { FLASH_MS, useButtonFlash, useMountedBestsId } from './modeHooks.js'
 import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { NUM_INPUT_CLASS, RESET_BTN_CLASS } from '../components/controlClasses.js'
 import { fmtTime, truncTime, fmtAccuracyPct } from '../lib/modeFormat.js'
 import { randomDate } from '../lib/dateGen.js'
 import WeekdayAnswer from '../components/WeekdayAnswer.jsx'
 import StatPanel from '../components/StatPanel.jsx'
+import BestReadout from '../components/BestReadout.jsx'
 import CardNumber from '../components/CardNumber.jsx'
 import OverrideButton from '../components/OverrideButton.jsx'
 import RunBreakdown from '../components/RunBreakdown.jsx'
@@ -84,7 +85,7 @@ interface AoxRunSnapshot {
 //   • the Best is filed under the key the run was played on;
 //   • a run PARKED for the browsing session (store/sessionRound) carries it, and comes back only if
 //     it is still exactly the live configuration (sameRun). Settings and the per-mode setup are
-//     shared by a preset's two stats copies, so a guest's interlude can change them under a parked
+//     shared by every copy of a preset's stats and bests, so a guest's interlude can change them under a parked
 //     run — and a run restored over a different length or a different date range reconciled its Best
 //     against settings it was never played on (erasing it), or would have resumed drawing the wrong
 //     dates. A run that no longer matches is simply not restored: the screen comes up idle, exactly
@@ -141,9 +142,9 @@ function AoxMode({
     setOneByOne = useModePrefs((s) => s.setAoxOneByOne) // persisted (mode-prefs store)
   const timingOff = useModePrefs((s) => s.aoxTimingOff),
     setTimingOff = useModePrefs((s) => s.setAoxTimingOff) // persisted; VISUAL-ONLY — blanks the trio of a run still going; an ENDED run (done or failed) always shows its times
-  // ★ THE STATS COPY THIS SCREEN WAS MOUNTED ON, read once — see modes/modeHooks' useMountedDataId
-  // for why a round is parked and restored ONLY against the copy it was played on (round 23).
-  const dataId = useMountedDataId()
+  // ★ THE BESTS COPY THIS SCREEN WAS MOUNTED ON, read once — see modes/modeHooks' useMountedBestsId
+  // for why a run is parked and restored ONLY against the Best records it was scored on.
+  const bestsId = useMountedBestsId()
   const n = +normalizeAoxN(aoxN) // the ONE 2–1000 clamp (store/userDefaults normalizeAoxN; junk → 10)
   // Best keying: bests are siloed per difficulty configuration. Dimensions: n, allowMistakes,
   // format (random→'random' bucket), leapChance, janFebChance, julianChance, year range,
@@ -154,9 +155,9 @@ function AoxMode({
   const bestKey = `${n}|${allowMistakes}|${randomFormat ? 'random' : dateFormat}|${leapChance}|${janFebChance}|${julianChance}|${minY}-${maxY}|${useJulian}`
   // The configuration a run begun (or restored) RIGHT NOW is played under — see RunConfig.
   const liveRun: RunConfig = { n, bestKey, oneByOne }
-  // The ended run this (stats copy, mode) parked before its last unmount, read EXACTLY ONCE at
-  // mount. On a preset switch or an Amnesic toggle the always-mounted screens remount (src/main.tsx
-  // remountScreens) and the registry ALREADY names the INCOMING copy by then — the registry is
+  // The ended run this (bests copy, mode) parked before its last unmount, read EXACTLY ONCE at
+  // mount. On a preset switch or an Amnesic change the always-mounted screens remount (src/main.tsx
+  // remountScreens) and the INCOMING copy is ALREADY the one named by then — its name is
   // written before the stores rehydrate, one synchronous turn (store/presetControl). So this is the
   // incoming copy's OWN parked run and never the one just left; the copy key is the whole
   // contamination guard. Factored into one read so the initializers below don't each hit
@@ -167,7 +168,7 @@ function AoxMode({
   //     restoreParkedEngine) — a blob this build cannot read is not a run.
   // (…and a blob that does not say whether its run counts is not one this build parked.)
   const [parkedRun] = useState<AoxRunSnapshot | null>(() => {
-    const snap = readSessionRound<ParkedSnapshot<AoxRunSnapshot>>(dataId, 'aox')
+    const snap = readSessionRound<ParkedSnapshot<AoxRunSnapshot>>(bestsId, 'aox')
     if (!snap || !sameRun(snap.run, liveRun) || typeof snap.recorded !== 'boolean') return null
     const engine = restoreParkedEngine(snap.engine, useJulian, 'aox')
     return engine ? { ...snap, engine } : null
@@ -203,7 +204,7 @@ function AoxMode({
     saveStats: true,
     timingOff: false,
     // Round 21 — seed the reducer from the parked ended run when there is one (a getter, read
-    // once in the lazy init). `parkedRun` was keyed to the stats copy live at mount, so this only ever
+    // once in the lazy init). `parkedRun` was keyed to the bests copy live at mount, so this only ever
     // restores the incoming copy's own run.
     getInitialState: () => parkedRun?.engine ?? null,
   })
@@ -344,9 +345,9 @@ function AoxMode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runPhase, doneCount, runN, saveStats, S.good, S.times, runId, setBests])
 
-  // Round 21 — mirror an ENDED run (done | failed) to sessionStorage, keyed by the stats copy
-  // this screen was mounted on (`dataId`), exactly as the effect above mirrors the run's Best to
-  // store/progress. On the remount a preset switch or an Amnesic toggle causes, the mount-time reads
+  // Round 21 — mirror an ENDED run (done | failed) to sessionStorage, keyed by the bests copy
+  // this screen was mounted on (`bestsId`), exactly as the effect above mirrors the run's Best to
+  // store/progress. On the remount a preset switch or an Amnesic change causes, the mount-time reads
   // restore whatever is parked for the now-live copy (see `parkedRun`). Only an ended run is parked; every other state DISCARDS the slot:
   //   • running → discard, so a mid-run switch parks nothing and the remount starts fresh (owner's
   //     rule), and any stale blob from a prior run goes;
@@ -359,7 +360,7 @@ function AoxMode({
   // ended (they are deps only because they are state this effect reads).
   useEffect(() => {
     if ((runPhase === 'done' || runPhase === 'failed') && run)
-      writeSessionRound(dataId, 'aox', {
+      writeSessionRound(bestsId, 'aox', {
         engine: state,
         runPhase,
         revealedQ,
@@ -368,8 +369,8 @@ function AoxMode({
         preRunBest: preRunBestRef.current,
         recorded: recordedRef.current === true,
       } satisfies AoxRunSnapshot)
-    else discardSessionRound(dataId, 'aox')
-  }, [runPhase, revealedQ, state, runId, run, dataId])
+    else discardSessionRound(bestsId, 'aox')
+  }, [runPhase, revealedQ, state, runId, run, bestsId])
 
   // Settings reconcile now fires on the ⚙ popover CLOSE — the useSettingsCloseEffect is below,
   // after reset() is defined (a RUNNING or ENDED run resets, an idle run regenerates its hidden date).
@@ -755,7 +756,7 @@ function AoxMode({
           These four readouts sit in a flex-wrap row of shrinkable min-w-[125px] columns, so on a
           narrow phone a bare value would break across two lines mid-number and read as two numbers.
           The label may still wrap — "Best" / "Mean:" is legible; "1m" / "2.34s" is not. */}
-      <div className="mt-3 text-xs text-(--tx-300-60)">
+      <BestReadout>
         <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-[125px]">
             <div>
@@ -781,7 +782,7 @@ function AoxMode({
             </span>
           )}
         </div>
-      </div>
+      </BestReadout>
       {/* items-stretch, NOT items-center (round 9) — this is the app's ONLY flex row that puts an
               <input> beside a <button>, and neither declares a height: each derives one from its own inner
               line box, and WebKit's machinery for a text control lands ~2px away from its machinery for a

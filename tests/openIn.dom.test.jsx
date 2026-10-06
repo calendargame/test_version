@@ -26,11 +26,8 @@ import {
   setOpenInPreset,
   setPresetAmnesic,
 } from '../src/store/presetControl.js'
-import { useSettings } from '../src/store/settings.js'
-import { useModePrefs } from '../src/store/modePrefs.js'
-import { useProgress } from '../src/store/progress.js'
-import { useUserDefaults } from '../src/store/userDefaults.js'
 import { forgetBrowsingSession } from '../src/store/browsingSession.js'
+import { loadPage } from './helpers/pageLoad.js'
 
 const openInTrigger = () => screen.getByRole('button', { name: /^Open in,/ })
 const list = () => screen.getByRole('listbox', { name: 'Open in' })
@@ -60,11 +57,7 @@ describe('the pin applies on a fresh open only', () => {
     cleanup()
     document.getElementById('root')?.remove()
     act(() => {
-      usePresets.persist.rehydrate()
-      useSettings.persist.rehydrate()
-      useModePrefs.persist.rehydrate()
-      useProgress.persist.rehydrate()
-      useUserDefaults.persist.rehydrate()
+      loadPage()
     })
     mountApp()
   }
@@ -111,20 +104,20 @@ describe('the pin applies on a fresh open only', () => {
 })
 
 describe('"Open in" is a dropdown', () => {
-  it('lists "Last used" and then every preset, the amnesic ones marked as in the top bar', () => {
+  it('lists "Last used" and then every preset, the amnesic ones spoken as in the top bar', () => {
     act(() => {
       createPreset('Timed')
       createPreset('Guest')
     })
     mountApp()
-    // After the mount: round 21 reseeds Amnesic from saved defaults on a cold open.
-    act(() => setPresetAmnesic(3, true))
+    act(() => setPresetAmnesic(3, 'full'))
     openSettings('key')
     fireEvent.click(openInTrigger())
     // The ✓ column is part of each option's text, so the selected row reads "✓Last used". An
-    // amnesic row's text is what is DRAWN (the name, the A) followed by what is SPOKEN in their
-    // place (the one sr-only phrase) — components/PresetSwitcher's shared label.
-    expect(optionNames()).toEqual(['✓Last used', 'Preset 1', 'Timed', 'GuestAGuest, amnesic'])
+    // amnesic row's text is what is DRAWN (the name, and nothing else — the "A" that used to follow
+    // it is gone) followed by what is SPOKEN in its place (the one sr-only phrase) —
+    // components/PresetSwitcher's shared label.
+    expect(optionNames()).toEqual(['✓Last used', 'Preset 1', 'Timed', 'GuestGuest, amnesic'])
     expect(screen.getByRole('option', { name: 'Guest, amnesic' })).toBeTruthy()
   })
 

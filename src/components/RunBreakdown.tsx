@@ -167,7 +167,7 @@ export default function RunBreakdown({
                   wide (W against R), and a content-sized box would stagger every date after it.
                   The box is PresetManager's ✓ column, class for class, for the same reason.
                   ⚠ THE LETTER IS aria-hidden AND THE FULL NAME IS sr-only — the idiom every quiet
-                  marker in this app uses (that ✓, the switcher's amnesic "A", the footer's Changelog
+                  marker in this app uses (that ✓, the footer's Changelog
                   dot). "R" read aloud names nothing; "Thursday" is what the letter says. */}
               <span className="w-3 shrink-0 text-center text-(--mut-color)">
                 <span aria-hidden="true">{DAY_LETTER[r.wday]}</span>

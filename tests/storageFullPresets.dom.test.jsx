@@ -157,26 +157,26 @@ describe('a full session area, and the Amnesic toggle', () => {
 
   it("Amnesic off: the guest's unsaved session is thrown away, never written over the permanent stats", () => {
     useProgress.getState().setModeStats('classic', stats(500)) // the owner's permanent stats
-    setPresetAmnesic(1, true)
+    setPresetAmnesic(1, 'full')
     expect(liveClassic().played).toBe(0)
     useProgress.getState().setModeStats('classic', stats(2))
     refuseSession = true
     useProgress.getState().setModeStats('classic', stats(3))
     expect(useStorageHealth.getState().unsaved).toBe(true)
-    setPresetAmnesic(1, false)
+    setPresetAmnesic(1, 'off')
     expect(savedClassic().played).toBe(500)
     expect(liveClassic().played).toBe(500)
     expect(useStorageHealth.getState().unsaved).toBe(false)
     // …and a later guest starts from zero: the refused session did not come back.
     refuseSession = false
-    setPresetAmnesic(1, true)
+    setPresetAmnesic(1, 'full')
     expect(liveClassic().played).toBe(0)
     expect(savedClassic(1, sessionStorage)).toBeUndefined()
   })
 
   it("a switch away and back keeps a guest's unsaved session", () => {
     const p2 = createPreset()
-    setPresetAmnesic(1, true)
+    setPresetAmnesic(1, 'full')
     refuseSession = true
     useProgress.getState().setModeStats('classic', stats(3))
     switchPreset(p2.id)

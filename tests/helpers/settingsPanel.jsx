@@ -46,6 +46,7 @@ import { useProgress } from '../../src/store/progress.js'
 import { useLookupHistory, useLookupSession } from '../../src/store/lookupHistory.js'
 import { usePresets, makePresetRegistryDefaults } from '../../src/store/presets.js'
 import { discardSessionStats } from '../../src/store/amnesic.js'
+import { forgetSessionAmnesic } from '../../src/store/sessionAmnesic.js'
 // Re-exported so the panel helper's API is complete at one import, while the definition lives in
 // the file that owns the question — mode-screen tests ask "is this offered" about game controls
 // that have nothing to do with settings, and should not be importing from a settings helper.
@@ -92,17 +93,19 @@ export { isOffered, isDimmed }
 // entry at all (store/presets — a default registry says nothing a missing one does not), which is
 // the state every case in this suite is entitled to assume.
 export function resetAppState() {
-  // ★ AN AMNESIC PRESET'S STATS ARE THE ONE PIECE OF APP STATE localStorage.clear() CANNOT REACH —
-  // they live in sessionStorage (store/amnesic) — so a case that turns Amnesic on would otherwise
-  // leave a session copy standing for every later case in its file, and the symptom would be
+  // ★ AN AMNESIC PRESET'S SESSION IS THE ONE PIECE OF APP STATE localStorage.clear() CANNOT REACH —
+  // its session copy lives in sessionStorage (store/amnesic), and so does each preset's Amnesic
+  // value (store/sessionAmnesic) — so a case that puts a preset on Stats Only or Full would
+  // otherwise leave both standing for every later case in its file, and the symptom would be
   // "stats I never wrote" rather than anything naming amnesia. Discarded through the app's own
-  // call, so this file still never spells a storage key, and BEFORE the registry goes back to its
+  // calls, so this file still never spells a storage key, and BEFORE the registry goes back to its
   // defaults, because the registry is what says which presets have a copy to discard.
   // ⚠ NOT sessionStorage.clear(). The other two things that live there are not app state — the
   // post-update splash-skip flag and the update-attempt loop breaker (src/main.tsx) — and the two
   // files that care about them keep their own explicit clear, where it reads as the setup for the
   // thing they are testing instead of as a line nobody can account for.
   for (const preset of usePresets.getState().presets) discardSessionStats(preset.id)
+  forgetSessionAmnesic()
   usePresets.setState(makePresetRegistryDefaults())
   localStorage.clear()
   useSettings.getState().resetToFactory()
@@ -561,21 +564,14 @@ export const changelogDot = () => updateDot(changelogLink())
 // Every On/Off switch in the panel, by the setting it controls — the label a screen reader hears
 // and a caller writes. Exported as data so "change each of them individually" is a sweep rather
 // than four hand-written tests. Order is the panel's own, top to bottom.
-// ⚠ 'Amnesic' is the one entry that is NOT a ⚙ setting: the value belongs to the PRESET
-// (store/presets' `Preset.amnesic`) and is written through store/presetControl rather than through
-// useSettings. That is a fact about STORAGE only — it IS captured by the Save Defaults snapshot
-// (round 20) and it DOES light the gear (round 22, which fixed the bug that omission caused:
-// Save Defaults was dimmed and inert for an Amnesic-only change, so the capture was unreachable).
-// It is listed here because this list is "every On/Off switch in the panel", which is a question
-// about the panel, not about the store.
-// ⚠ Rotate Dots is NOT here: it was a switch from round 20 ('Dot Layout', then 'Rotate Dots CCW')
-// until round 23 gave it a third option, which made it a picker again — see PICKER_NAMES.
+// ⚠ Two settings are NOT here because each grew a third option and became a picker (see
+// PICKER_NAMES): Rotate Dots (a switch from round 20 until round 23) and Amnesic (a switch until
+// round 24 made it Off / Stats Only / Full).
 export const SWITCH_LABELS = [
   'Random Format',
   'Use System Settings',
   'Julian Calendar (pre-Oct 15, 1582)',
   'Save Stats',
-  'Amnesic',
 ]
 
 // A SWITCH, by the name of the setting it controls. This replaces
@@ -668,15 +664,18 @@ export const PICKER_NAMES = [
   'Leap Year Chance',
   'Jan/Feb Chance on Leap Years',
   'Julian Chance',
+  'Amnesic',
 ]
-// The five that can LOCK, and the only five — Jan/Feb Chance is the deliberate negative control
-// (it has no lock branch at all) and the theme groups never take `disabled`.
+// The six that can LOCK, and the only six — Jan/Feb Chance is the deliberate negative control
+// (it has no lock branch at all) and the theme groups never take `disabled`. (Amnesic locks while
+// Save Stats is off: with nothing recorded there is nothing for it to be about.)
 export const LOCKABLE_PICKERS = [
   'Input',
   'Rotate Dots',
   'Date Format',
   'Leap Year Chance',
   'Julian Chance',
+  'Amnesic',
 ]
 
 // A PICKER'S LOCK, reported as the things the USER meets rather than as the class that happens to

@@ -1,0 +1,279 @@
+// @vitest-environment jsdom
+// Drives an OLDER build's real app (this file is copied into that build's tests/ folder, as
+// amnesicDrive.dom.test.jsx) over storage as THIS build leaves it, and writes down what the older
+// build made of it and what it left behind (run with OLDER_BUILD=<tag> AMNESIC_OUT=<file>). The
+// record is tests/fixtures/olderBuilds/amnesic-<build>.json; tests/sessionAmnesic.olderBuilds.test.js
+// holds this build to it.
+//
+// The older build keeps a preset's Amnesic switch as a boolean on the shared preset registry, puts
+// it back to `saved.amnesic` (its saved-defaults snapshot) at every fresh open, and knows nothing of
+// a three-way value, of `amnesicMode`, or of the session's own record (`cg-amnesic-v1`).
+import { describe, it, afterEach } from 'vitest'
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
+import { writeFileSync } from 'node:fs'
+import { App } from '../src/main.jsx'
+import { usePresets } from '../src/store/presets.js'
+import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
+import { useModePrefs } from '../src/store/modePrefs.js'
+import { useProgress } from '../src/store/progress.js'
+import { useUserDefaults } from '../src/store/userDefaults.js'
+import { setPresetAmnesic, createPreset } from '../src/store/presetControl.js'
+import { readDate, correctDayName } from './helpers/modeScreen.jsx'
+
+const BUILD = process.env.OLDER_BUILD
+const PREFS = { flashMs: 800, blitzSec: 60, blitzQSec: 10, aoxN: '10' }
+// A settings snapshot the questions can be read and answered under (numeric-ymd, Gregorian only).
+const READABLE = {
+  ...SETTINGS_DEFAULTS,
+  randomFormat: false,
+  dateFormat: 'numeric-ymd',
+  minY: 1583,
+  maxY: 10000,
+}
+const PROGRESS = 'cg-progress-v1'
+const DEFAULTS = 'cg-userdefaults-v1'
+const REGISTRY = 'cg-presets-v1'
+const SETTINGS = 'cg-settings-v1'
+
+function mountApp() {
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+  return render(<App />)
+}
+function unmountApp() {
+  cleanup()
+  document.getElementById('root')?.remove()
+}
+const isHidden = (el) => {
+  for (let n = el; n; n = n.parentElement) if (n.style && n.style.display === 'none') return true
+  return false
+}
+const visibleButton = (name) => screen.getAllByRole('button', { name }).find((b) => !isHidden(b))
+const tap = (el) =>
+  act(() => {
+    fireEvent.pointerDown(el)
+    fireEvent.click(el, { detail: 1 })
+  })
+const answerRight = () => tap(visibleButton(correctDayName(readDate())))
+
+// A page load of the older build: every store reads storage again, then the app mounts (its boot
+// effect is what puts each preset's switch back to its saved default on a fresh open).
+function load() {
+  act(() => {
+    usePresets.persist.rehydrate()
+    useSettings.persist.rehydrate()
+    useModePrefs.persist.rehydrate()
+    useProgress.persist.rehydrate()
+    useUserDefaults.persist.rehydrate()
+  })
+  mountApp()
+}
+const put = (key, state, version) => localStorage.setItem(key, JSON.stringify({ state, version }))
+const stored = (key, area = localStorage) => JSON.parse(area.getItem(key) ?? 'null')
+// Start from a device this build has been used on: readable settings, 3 saved Classic answers.
+function seedDevice() {
+  localStorage.clear()
+  sessionStorage.clear()
+  put(SETTINGS, READABLE, 4)
+  put(
+    PROGRESS,
+    {
+      stats: {
+        classic: { played: 3, good: 3, streak: 3, best: 3, times: [] },
+        flash: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+        dedDay: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+        dedMonth: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+        dedYear: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+      },
+      blitzBest: {},
+      suddenBest: {},
+      suddenAmBest: {},
+      aoxBest: {},
+    },
+    5,
+  )
+}
+// What the older build shows and where one answered question went.
+function playOne() {
+  tap(visibleButton('New'))
+  answerRight()
+  return {
+    flag: usePresets.getState().presets.find((p) => p.id === usePresets.getState().activeId)
+      .amnesic,
+    permanentPlayed: stored(PROGRESS).state.stats.classic.played,
+    sessionPlayed: stored(PROGRESS, sessionStorage)?.state?.stats?.classic?.played ?? null,
+  }
+}
+
+const out = {}
+afterEach(unmountApp)
+
+describe(`amnesic drive — ${BUILD}`, () => {
+  // A. A FRESH OPEN over a saved-defaults snapshot in this build's spelling, for each value.
+  for (const mode of ['off', 'stats', 'full'])
+    it(`a fresh open over a snapshot saved as ${mode}`, () => {
+      seedDevice()
+      put(
+        DEFAULTS,
+        { saved: { settings: READABLE, prefs: PREFS, amnesic: mode !== 'off', amnesicMode: mode } },
+        3,
+      )
+      load()
+      const played = playOne()
+      out[`freshOpen:${mode}`] = {
+        ...played,
+        registry: stored(REGISTRY)?.state ?? null,
+        savedAfter: stored(DEFAULTS).state.saved,
+      }
+    })
+
+  // B. The spelling this build did NOT choose — the value in the boolean's own field — to have on
+  // record what the older build would have made of it.
+  for (const mode of ['off', 'stats', 'full'])
+    it(`a fresh open over a snapshot whose amnesic field is the string ${mode}`, () => {
+      seedDevice()
+      put(DEFAULTS, { saved: { settings: READABLE, prefs: PREFS, amnesic: mode } }, 3)
+      load()
+      out[`freshOpen:stringField:${mode}`] = playOne()
+    })
+
+  // C. The older build SAVES defaults over a snapshot this build wrote (its own Save Defaults call).
+  it('its Save Defaults over a Stats Only snapshot', () => {
+    seedDevice()
+    put(
+      DEFAULTS,
+      { saved: { settings: READABLE, prefs: PREFS, amnesic: true, amnesicMode: 'stats' } },
+      3,
+    )
+    load()
+    const loaded = stored(DEFAULTS).state.saved
+    act(() => {
+      useUserDefaults.getState().saveDefaults({
+        settings: { ...READABLE },
+        prefs: PREFS,
+        amnesic: usePresets.getState().presets[0].amnesic,
+      })
+    })
+    out.saveDefaultsOverStatsOnly = { loaded, saved: stored(DEFAULTS).state.saved }
+  })
+
+  // D. Its load of an OLDER-version snapshot carrying this build's field (its migrate re-saves).
+  it('its migration of a v2 snapshot that carries amnesicMode', () => {
+    seedDevice()
+    const { dotRotation: _drop, ...pre } = READABLE
+    put(
+      DEFAULTS,
+      {
+        saved: {
+          settings: { ...pre, rotateDots: true },
+          prefs: PREFS,
+          amnesic: true,
+          amnesicMode: 'stats',
+        },
+      },
+      2,
+    )
+    load()
+    out.migratedV2 = stored(DEFAULTS)
+  })
+
+  // E. THE HAND-OVER: a guest is playing in the older build with its switch on. What is on the
+  // device and in the session at that moment is what this build's first load (the update reload)
+  // finds.
+  it('a guest session: the switch turned on, one answer', () => {
+    seedDevice()
+    load()
+    act(() => {
+      setPresetAmnesic(1, true)
+    })
+    const played = playOne()
+    out.guestSession = {
+      ...played,
+      registry: stored(REGISTRY).state,
+      sessionKeys: Object.keys({ ...sessionStorage }).sort(),
+    }
+  })
+
+  // F. A registry as this build writes it (every preset carrying the boolean), with one preset's
+  // flag left TRUE by an earlier older-build session — at a fresh open, and at a reload.
+  it('a registry this build wrote, with a stale flag — fresh open, then a reload', () => {
+    seedDevice()
+    put(
+      REGISTRY,
+      {
+        presets: [
+          { id: 1, name: 'Preset 1', amnesic: true },
+          { id: 2, name: 'Guest', amnesic: false },
+        ],
+        activeId: 1,
+        nextId: 3,
+        openInPreset: 'last',
+      },
+      1,
+    )
+    load()
+    const fresh = playOne()
+    unmountApp()
+    // …and the same registry met by a RELOAD of the older build (its session already open).
+    put(
+      REGISTRY,
+      {
+        presets: [
+          { id: 1, name: 'Preset 1', amnesic: true },
+          { id: 2, name: 'Guest', amnesic: false },
+        ],
+        activeId: 1,
+        nextId: 3,
+        openInPreset: 'last',
+      },
+      1,
+    )
+    load()
+    out.staleFlag = { freshOpen: fresh, reload: playOne() }
+  })
+
+  // G. THE ONE SEQUENCE LEFT OPEN: this build has a preset on Full (or Stats Only) for a guest — its
+  // value is in the session's own record, the registry flag is untouched — and the OLDER build is
+  // then loaded in the same tab, as a reload.
+  it('this build’s session value, then the older build loaded in the same tab', () => {
+    seedDevice()
+    load() // the older build's own fresh open marks the session open
+    unmountApp()
+    sessionStorage.setItem('cg-amnesic-v1', JSON.stringify({ 1: 'full' }))
+    sessionStorage.setItem(
+      PROGRESS,
+      JSON.stringify({ state: { stats: { classic: { played: 9, good: 9, streak: 9, best: 9, times: [] } } }, version: 5 }),
+    )
+    load()
+    out.sameTabAfterThisBuild = playOne()
+  })
+
+  // H. A preset it creates, and what it writes for the ones it did not touch.
+  it('the registry it writes when it creates a preset', () => {
+    seedDevice()
+    put(
+      REGISTRY,
+      {
+        presets: [
+          { id: 1, name: 'Preset 1', amnesic: false },
+          { id: 2, name: 'Guest', amnesic: true },
+        ],
+        activeId: 1,
+        nextId: 3,
+        openInPreset: 'last',
+      },
+      1,
+    )
+    sessionStorage.setItem('cg-browsing-session-v1', '1') // a reload: no put-back at this load
+    load()
+    act(() => {
+      createPreset('Third')
+    })
+    out.createdPreset = stored(REGISTRY).state
+  })
+
+  it('writes the record', () => {
+    writeFileSync(process.env.AMNESIC_OUT, JSON.stringify(out, null, 2) + '\n')
+  })
+})

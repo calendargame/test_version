@@ -340,7 +340,7 @@ describe('⚙ Reset Settings — its full reach, positive and negative (net grou
       useUserDefaults.getState().saveDefaults({
         settings: { ...SETTINGS_DEFAULTS, dateFormat: 'numeric-ymd', minY: 1700, maxY: 1700 },
         prefs: pick(MODE_PREFS_DEFAULTS, CAPTURABLE),
-        amnesic: false,
+        amnesic: 'off',
       }),
     )
     act(() => {
@@ -879,12 +879,13 @@ describe('⚙ The defaults snapshot — Save, the manager, Clear (net group 9)',
     // A legacy payload: the saver never saw julianChance, so the effective defaults forward-merge
     // the factory value under it. Without that merge the comparison reads `undefined` forever and
     // the gear can never be cleared by any affordance the panel has.
+    // (Put straight into the store rather than through saveDefaults: this build's own save writes
+    // every field, the Amnesic value included, and this snapshot has to LACK things.)
     const legacy = { ...SETTINGS_DEFAULTS }
     delete legacy.julianChance
     act(() =>
-      useUserDefaults.getState().saveDefaults({
-        settings: legacy,
-        prefs: pick(MODE_PREFS_DEFAULTS, CAPTURABLE),
+      useUserDefaults.setState({
+        saved: { settings: legacy, prefs: pick(MODE_PREFS_DEFAULTS, CAPTURABLE) },
       }),
     )
     mountApp()

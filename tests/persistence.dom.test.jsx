@@ -172,14 +172,16 @@ describe('what you saved is there when you come back', () => {
     userDefaults.getState().saveDefaults({
       settings: { ...settings.getState(), minY: 1600, leapChance: '75' },
       prefs: { flashMs: 800, blitzSec: 120, blitzQSec: 20, aoxN: '25' },
-      amnesic: true, // round 20 — non-default so the round trip is a real claim, not a coincidence
+      amnesic: 'full', // round 20 — non-default so the round trip is a real claim, not a coincidence
     })
     const fresh = await reopenApp()
     const back = fresh.userDefaults.getState().saved
     expect(back.settings.minY).toBe(1600)
     expect(back.settings.leapChance).toBe('75')
     expect(back.prefs).toEqual({ flashMs: 800, blitzSec: 120, blitzQSec: 20, aoxN: '25' })
+    // Saved as the boolean an older build acts on AND the three-way value beside it (store/amnesicMode).
     expect(back.amnesic).toBe(true)
+    expect(back.amnesicMode).toBe('full')
   })
 
   // EVERY SOLVE IS KEPT (round 23), stated as the player meets it: a long practice history comes
@@ -392,7 +394,7 @@ describe('saved personal defaults outlive a Full Reset', () => {
     userDefaults.getState().saveDefaults({
       settings: { ...settings.getState(), minY: 1600, leapChance: '75' },
       prefs: { flashMs: 800, blitzSec: 120, blitzQSec: 20, aoxN: '25' },
-      amnesic: false,
+      amnesic: 'off',
     })
     act(() => {
       settings.getState().setMinY(1)

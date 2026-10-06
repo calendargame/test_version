@@ -15,7 +15,7 @@ import type { StateStorage } from 'zustand/middleware'
 // and HELD IN MEMORY UNDER THE EXACT PLACE IT WAS FOR: this storage area, this key. From then on:
 //   • a READ of that place returns the held value — it is what that place would hold if it had fit.
 //     So anything that re-reads saved data inside this page (a preset switch and the switch back, an
-//     Amnesic toggle, "is this preset factory-fresh?") sees the player's newest answers, not the
+//     Amnesic change, "is this preset factory-fresh?") sees the player's newest answers, not the
 //     older copy on the device;
 //   • the next write that DOES fit (or the app itself freeing space — a preset deleted) retries
 //     every held value, each to its own place and nowhere else;
@@ -35,7 +35,7 @@ import type { StateStorage } from 'zustand/middleware'
 // remembered only WHICH store had been refused and re-saved "what that store holds now" through the
 // store's own adapter. That adapter writes to whichever preset is active AT THE MOMENT OF THE RETRY —
 // and the retry ran inside the registry write of a preset switch, a preset delete and an Amnesic
-// toggle, i.e. after the registry named the incoming preset and before the stores had reloaded. One
+// change, i.e. after the incoming preset or copy was named and before the stores had reloaded. One
 // preset's stats were written over another's, and a guest's session over the permanent copy. A value
 // held under its own destination has no adapter to be redirected by: the retry is that string, to
 // that key, in that area.

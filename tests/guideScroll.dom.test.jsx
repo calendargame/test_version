@@ -420,10 +420,10 @@ describe('the guide keeps its place when the data underneath is swapped', () => 
   it('an Amnesic toggle of the preset you are on leaves the guide alone', () => {
     const { container } = mountApp()
     const g = reading(container)
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     expect(g.pos()).toBe(600)
     expect(overviewOpen(container)).toBe('true')
-    act(() => setPresetAmnesic(1, false))
+    act(() => setPresetAmnesic(1, 'off'))
     expect(g.pos()).toBe(600)
     expect(overviewOpen(container)).toBe('true')
   })

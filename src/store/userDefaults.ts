@@ -5,16 +5,19 @@ import { readItem } from './storageHealth.js'
 import { SETTINGS_DEFAULTS, migrateDotRotation } from './settings.js'
 import type { SettingsValues, LegacyDotFields } from './settings.js'
 import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
+import { readAmnesicMode, storedAmnesic } from './amnesicMode.js'
+import type { AmnesicMode, StoredAmnesic } from './amnesicMode.js'
 
 // userDefaults.ts — the user's saved PERSONAL DEFAULTS (Session 11, "Save Defaults").
 //
 // The ⚙ footer's Save Defaults button snapshots the full 16-value settings panel PLUS the four
 // capturable mode-screen prefs (Flash reveal speed, both Blitz timer lengths, the AoX run length —
 // deliberately NOT Blitz Per-Round/Per-Question, Deduction sub-type, Allow Mistakes, One-by-One,
-// or the show/hide stat toggles) PLUS, since round 20, whether the active preset was Amnesic
-// at the moment of saving. From then on those saved values — not the factory constants — are what
-// "default" means everywhere: Reset Settings restores the saved panel values AND the four prefs
-// (extended to the prefs in round 6 — it used to be panel-only) AND the saved Amnesic state,
+// or the show/hide stat toggles) PLUS, since round 20, the active preset's Amnesic setting (Off,
+// Stats Only or Full) at the moment of saving. From then on those saved values — not the factory
+// constants — are what "default" means everywhere: Reset Settings restores the saved panel values
+// AND the four prefs (extended to the prefs in round 6 — it used to be panel-only) AND the saved
+// Amnesic setting,
 // Full Reset does the same (it delegates its ENTIRE settings restore to resetSettings, Amnesic
 // included — see main.tsx's resetSettings) and additionally wipes stats/history and returns every
 // non-capturable mode pref to factory, and the gear's "modified" bar lights when live state
@@ -26,6 +29,9 @@ import { MODE_PREFS_DEFAULTS } from './modePrefs.js'
 // Amnesic was the only thing a player had changed — making "Amnesic: on" impossible to capture into
 // the very snapshot this file says captures it. It is compared there now, against
 // effectiveAmnesicDefault below, and every offer that lights as a result genuinely acts on it.
+// ★ THE SAVED AMNESIC SETTING IS ALSO WHAT A FRESH APP OPEN STARTS EACH PRESET ON
+// (store/sessionAmnesic): the setting itself is held for the browsing session only, and this
+// snapshot is the one permanent thing that says what it should be the next time the app is opened.
 //
 // A THIRD store (not a settings-store v2) because the capture spans two stores — it belongs to
 // neither — and because surviving Full Reset must be an explicit property: Full Reset deliberately
@@ -47,15 +53,23 @@ export type PrefDefaults = {
   blitzQSec: number
   aoxN: string
 }
-// amnesic: whether the ACTIVE PRESET was Amnesic at the moment of saving (round 20). Owner's
-// explicit, confirmed decision: Save Defaults captures it, and Reset Settings / Full Reset restore
-// it along with everything else — even though pressing either mid-guest-session for an unrelated
-// reason will then silently flip Amnesic back to whatever was saved. See effectiveAmnesicDefault
-// below and main.tsx's resetSettings for the restore.
-export type SavedDefaults = { settings: SettingsValues; prefs: PrefDefaults; amnesic: boolean }
+// The Amnesic setting of the ACTIVE PRESET at the moment of saving (round 20; three-way since
+// round 24). Owner's explicit, confirmed decision: Save Defaults captures it, and Reset Settings /
+// Full Reset restore it along with everything else — even though pressing either mid-guest-session
+// for an unrelated reason will then silently put Amnesic back to whatever was saved. See
+// effectiveAmnesicDefault below and main.tsx's resetSettings for the restore.
+// ⚠ A SNAPSHOT IS HANDED IN WITH THE VALUE AND SAVED IN ITS TWO-FIELD SPELLING (store/amnesicMode's
+// StoredAmnesic — the boolean an older build on this origin acts on, and the three-way value beside
+// it). Nothing reads either field directly: effectiveAmnesicDefault is the way in.
+export type DefaultsSnapshot = {
+  settings: SettingsValues
+  prefs: PrefDefaults
+  amnesic: AmnesicMode
+}
+export type SavedDefaults = { settings: SettingsValues; prefs: PrefDefaults } & StoredAmnesic
 export type UserDefaultsState = {
   saved: SavedDefaults | null
-  saveDefaults: (snapshot: SavedDefaults) => void
+  saveDefaults: (snapshot: DefaultsSnapshot) => void
   clearDefaults: () => void
 }
 
@@ -79,36 +93,35 @@ export const effectiveSettingsDefaults = (saved: SavedDefaults | null): Settings
   saved ? { ...SETTINGS_DEFAULTS, ...saved.settings } : SETTINGS_DEFAULTS
 export const effectivePrefDefaults = (saved: SavedDefaults | null): PrefDefaults =>
   saved ? { ...FACTORY_PREF_DEFAULTS, ...saved.prefs } : FACTORY_PREF_DEFAULTS
-// The effective Amnesic default — same "nothing saved = factory" rule as the two helpers above,
-// AND THE SAME FORWARD-MERGE NEED: a snapshot saved by a build from before round 20 shipped this
-// field has `saved !== null` but `saved.amnesic === undefined` — the field is simply absent from
-// the persisted JSON, the one-boolean equivalent of effectiveSettingsDefaults' missing-julianChance
-// case. `?? false` is that merge (there is only one key, so there is nothing to spread). Factory is
-// false (a brand-new preset is never amnesic — see presetControl's createPreset). main.tsx's
-// resetSettings is the one caller; it exists as a named helper anyway, for the same reason the
-// other two are named rather than inlined — a second `saved?.amnesic ?? false` literal is exactly
-// how a caller added later could disagree with this one about what "nothing saved" restores to.
-export const effectiveAmnesicDefault = (saved: SavedDefaults | null): boolean =>
-  saved ? (saved.amnesic ?? false) : false
+// The effective Amnesic default — same "nothing saved = factory" rule as the two helpers above, and
+// factory is Off (a brand-new preset is never amnesic — see presetControl's createPreset). The
+// snapshot's stored spelling goes through store/amnesicMode's readAmnesicMode, the one reader of
+// every stored copy of the setting: a snapshot an older build saved carries only the boolean (true
+// reads as Full), one from before round 20 carries neither field (Off), and a value this build does
+// not recognise reads as Full. Named rather than inlined for the same reason the other two are — a
+// second reading of `saved` somewhere else is exactly how a caller added later could disagree with
+// this one about what "nothing saved" restores to.
+export const effectiveAmnesicDefault = (saved: SavedDefaults | null): AmnesicMode =>
+  readAmnesicMode(saved)
 
 // ★ THE AMNESIC DEFAULT FOR ANY PRESET, read straight off ITS namespaced userDefaults key rather
 // than through the live store (which is only ever the ACTIVE preset's — persist scopes it via
-// store/presets' presetScopedStorage). src/main.tsx's cold-open reseed (round 21) is the one
-// caller: on every full app open it walks EVERY preset and resets its Amnesic flag to this value,
-// because an Amnesic flag is a SESSION toggle — guest mode is temporary by construction, so a
-// preset left Amnesic must be back to normal the next time the app opens. Session toggles still
-// stick within a session; they are re-seeded on the next cold open.
+// store/presets' presetScopedStorage). store/sessionAmnesic is the one caller: this is what every
+// preset's Amnesic setting starts a fresh app open on, because the setting is a SESSION value —
+// guest mode is temporary by construction, so a preset left on Stats Only or Full is back to its
+// saved default the next time the app is opened.
 //
 // Reads the persist envelope directly — the same `{ state: {...} }` shape store/presets'
 // readStoredRegistry parses, and for the same reason: a store pointed at one preset cannot answer
-// for another. Only `saved.amnesic` is consulted, which the Rotate Dots migration (the only
-// rewrite this store has) never touches, so no migration step is reproduced here. An absent, unreadable or
-// malformed payload is treated as "nothing saved" → effectiveAmnesicDefault(null) → false, which
-// is the intended fallback: a preset manually set Amnesic with NO saved defaults reverts to off on
-// every reopen (owner-confirmed — guest mode is temporary by default).
+// for another. Only the snapshot's Amnesic fields are consulted, which the Rotate Dots migration
+// (the only rewrite this store has) never touches, so no migration step is reproduced here. An
+// absent, unreadable or malformed payload is treated as "nothing saved" →
+// effectiveAmnesicDefault(null) → Off, which is the intended fallback: a preset manually set
+// amnesic with NO saved defaults reverts to Off on every reopen (owner-confirmed — guest mode is
+// temporary by default).
 // ⚠ The ACTIVE preset's key is the un-namespaced base key (presetKey's identity), so this one path
 // covers it too — no special case, and no divergence from effectiveAmnesicDefault(saved) for it.
-export const storedAmnesicDefault = (presetId: number): boolean => {
+export const storedAmnesicDefault = (presetId: number): AmnesicMode => {
   try {
     const raw = readItem(window.localStorage, presetKey(PRESET_STORE_KEYS.userDefaults, presetId))
     if (raw === null) return effectiveAmnesicDefault(null)
@@ -151,14 +164,14 @@ export const useUserDefaults = create<UserDefaultsState>()(
   persist(
     (set) => ({
       saved: null,
-      // Shallow-copy the snapshot so no live object is shared into the persisted store. amnesic is
-      // a boolean, so there is nothing to shallow-copy — it is carried through as-is.
+      // Shallow-copy the snapshot so no live object is shared into the persisted store. The Amnesic
+      // value is saved in its two-field spelling (store/amnesicMode's storedAmnesic).
       saveDefaults: (snapshot) =>
         set({
           saved: {
             settings: { ...snapshot.settings },
             prefs: { ...snapshot.prefs },
-            amnesic: snapshot.amnesic,
+            ...storedAmnesic(snapshot.amnesic),
           },
         }),
       clearDefaults: () => set({ saved: null }),
@@ -189,6 +202,10 @@ export const useUserDefaults = create<UserDefaultsState>()(
       //   layout; and although it re-saves at once (zustand's migrate-then-save on the version
       //   mismatch), its `partialize` keeps `saved` WHOLE, so `dotRotation` rides through untouched
       //   and this build reads it back intact.
+      // ⚠ THE AMNESIC SETTING BECAME THREE-WAY WITH NO VERSION OF ITS OWN, and needs none: nothing
+      // is rewritten. Its stored spelling is read by shape on every use (effectiveAmnesicDefault), a
+      // snapshot is written in the new spelling only when the player saves one, and that spelling
+      // still carries the boolean an older build acts on (store/amnesicMode).
       version: 3,
       // Saved-shape migration, run at hydrate whenever the stored version differs — the same pure,
       // idempotent, shape-keyed migrateDotRotation store/settings runs on its own top level, reached

@@ -3,6 +3,8 @@ import CustomSelect from './CustomSelect.jsx'
 import { usePresets } from '../store/presets.js'
 import type { Preset } from '../store/presets.js'
 import { switchPreset } from '../store/presetControl.js'
+import { useSessionAmnesic } from '../store/sessionAmnesic.js'
+import { AMNESIC_SPOKEN } from '../store/amnesicMode.js'
 
 // PresetSwitcher — the control that says which preset you are on and moves you to another one.
 //
@@ -39,12 +41,10 @@ import { switchPreset } from '../store/presetControl.js'
 //     the bug it exists to prevent), App passes `presetSelectRef`, and that ref is now the handler's
 //     fourth exclusion. tests/topBar.dom pins the behaviour, not the wiring: press this trigger with
 //     the ⚙ panel open and the panel must still be open.
-//   • RULE 4: How to Play documents everything observable, and this control puts TWO new observable
-//     things on screen — the switcher itself, and the "A". Neither can be documented honestly
-//     before the bar that hosts them exists (where it sits, what it replaced), so the guide section
-//     belongs to the change that mounts it, not to this one.
-//     ✔ DONE by that same change: GuidePage's "Presets" section (Interface), plus the two
-//     Accessibility bullets that name this control and its ", amnesic".
+//   • RULE 4: How to Play documents everything observable, and this control puts a new observable
+//     thing on screen — the switcher itself — and a new audible one, the spoken ", amnesic".
+//     ✔ DONE: GuidePage's "Presets" section (Interface), plus the Accessibility bullets that name
+//     this control and what it says of an amnesic preset.
 //
 // ── THE ONE THING THIS CONTROL DOES DIFFERENTLY FROM THE MODE SELECTOR ────────────────────────
 //
@@ -73,8 +73,7 @@ import { switchPreset } from '../store/presetControl.js'
 //   ⚠ THE ONE PLACE CustomSelect DID need a matching change is the DROPDOWN rows, which are a
 //   structurally different flex row (not the trigger's stacked grid) and would NOT have picked up
 //   the same fill by construction — see that file's option-row rendering for the fix and why it
-//   was needed to keep the amnesic marker's column alignment once this cell stopped being a fixed
-//   constant.
+//   was needed once this cell stopped being a fixed constant.
 //   THE FLOOR STAYS as the TRIGGER-GRID floor and a defensive one. Since round 21 the
 //   portaled panel is `dropdownWidth="match-trigger"` — it takes this trigger's live rendered
 //   width, not `max-content` — so a menu row now DOES have something to fill (the label cell is
@@ -105,30 +104,28 @@ import { switchPreset } from '../store/presetControl.js'
 // already reaches across an unrelated component boundary elsewhere (the game's `[data-key="..."]`
 // shortcuts, the answer grid's `[data-answer-grid]`).
 //
-// ── THE AMNESIC MARKER ────────────────────────────────────────────────────────────────────────
+// ── WHAT A PRESET LIST SAYS OF AN AMNESIC PRESET ──────────────────────────────────────────────
 //
-// ★ Preset.amnesic lives on the REGISTRY (store/presets argues why at length), which is exactly
-// what makes this marker cheap: one subscription to the presets list answers for EVERY preset at
-// once, including the ones you are not on. There is nothing to derive and no second source to keep
-// in step — if it were a ⚙ setting instead, a switcher could only ever have answered for the
-// active preset, because a preset's settings are not loaded until you open it.
-//
-// ⚠ IT IS A LETTER PLUS A WORD, NEVER A LETTER ALONE. A bare "A" is not an accessible name — it is
-// a glyph a screen reader reads as the indefinite article. So the letter is `aria-hidden` and an
-// `sr-only` sibling carries the real word.
-// ⚠ AND THAT SIBLING CARRIES THE WHOLE PHRASE — "Weekend, amnesic", name included, with the visible
-// name hidden from a screen reader beside it — rather than a ", amnesic" tail for the browser to
-// join onto the name. A name assembled from several elements is joined by rules that differ by
-// engine and by each piece's layout: Chromium puts a space between a block-level piece and its
-// neighbour (the name is a flex item, the sr-only span is absolutely positioned), which read as
-// "Weekend , amnesic"; and a join that trims each piece drops a leading space instead, which is
-// "Weekendamnesic". One text node has nothing to join, so it reads the same everywhere.
-// ⚠ NOTHING ABOUT IT IS CONVEYED BY COLOUR — it is a glyph, dimmed by OPACITY rather than tinted.
-// That is not only an a11y rule here, it is a correctness one: the dropdown panel paints a light
-// frosted background and hardcodes `color:#1a1a1a` on its rows in EVERY theme, while the trigger
-// wears the theme's own text colour. A themed colour token on this marker would read correctly in
-// the bar and be invisible on the panel in the three dark themes. Inheriting `currentColor` and
-// dimming with opacity is the one treatment that is right in both places.
+// ★ NOTHING IS DRAWN, AND SOMETHING IS SPOKEN. A preset's row used to carry a small "A" after its
+// name; the owner dropped it (an arbitrary letter, and it cost every amnesic preset part of its
+// name's width — "it doesn't make sense to require names to be shorter for amnesic presets"). What
+// is temporary is marked on the page itself instead, where the numbers are: the dashed outline
+// (index.css's .session-only) on the stats strip, and on the Best readouts under Full. So a row is
+// its name and nothing else, and the name has the whole cell.
+// ★ A SCREEN READER STILL HEARS IT, for every preset in the list and not only the one you are on —
+// the outline is on the screen you are looking at, and a list is where you choose where to go:
+//     Full        "Weekend, amnesic"
+//     Stats Only  "Weekend, amnesic, stats only"
+// ", amnesic" is kept as it has always been said, and the two kinds are told apart by the words
+// that follow it. Each preset's value is the session's (store/sessionAmnesic), and one subscription
+// there answers for EVERY preset at once, including the ones you are not on.
+// ⚠ IT IS SPOKEN AS ONE WHOLE PHRASE — "Weekend, amnesic", name included, in an `sr-only` element,
+// with the visible name hidden from a screen reader beside it — rather than a ", amnesic" tail for
+// the browser to join onto the name. A name assembled from several elements is joined by rules that
+// differ by engine and by each piece's layout: Chromium puts a space between a block-level piece
+// and its neighbour (the name is a flex item, the sr-only span is absolutely positioned), which
+// read as "Weekend , amnesic"; and a join that trims each piece drops a leading space instead,
+// which is "Weekendamnesic". One text node has nothing to join, so it reads the same everywhere.
 
 // ★ THE FLOOR OF A PRESET NAME'S CELL — before round 20 this was the ONLY number the whole control was
 // measured from (the trigger's exact width, and MAX_PRESET_NAME derived from it); since then the
@@ -166,12 +163,13 @@ export const PRESET_NAME_CELL_SELECTOR = '[data-select-trigger] [data-preset-nam
 // ★ ONE PRESET'S ROW, AS EVERY PRESET LIST IN THE APP DRAWS IT — this switcher's, and since round 23
 // the ⚙ panel's "Open in" dropdown, which is the SAME control showing the SAME list (the
 // owner's "learn it once"). Exported rather than copied so the two can never drift: a name that
-// truncates here and overflows there, or an amnesic "A" that one list forgets, would be exactly the
-// kind of disagreement this file's history keeps paying for.
+// truncates here and overflows there, or an amnesic preset that one list forgets to announce, would
+// be exactly the kind of disagreement this file's history keeps paying for.
 // ⚠ `data-preset-name-cell` COMES ALONG TO "Open in" TOO, AND IS INERT THERE: PRESET_NAME_CELL_SELECTOR
 // is scoped to a `[data-select-trigger]` ancestor, which only this switcher's trigger has (it is the
 // one with pressDrag), so lib/presetNameWidth can never measure the ⚙ panel's copy by mistake.
 export function PresetOptionLabel({ preset: p }: { preset: Preset }) {
+  const spoken = AMNESIC_SPOKEN[useSessionAmnesic((s) => s.modes[p.id] ?? 'off')]
   return (
     // The name cell (floor PRESET_NAME_COL, grows past it — see the ⚠⚠ block above). `flex`
     // makes it a block-level flex container, so inside the trigger's grid cell AND inside a
@@ -188,7 +186,7 @@ export function PresetOptionLabel({ preset: p }: { preset: Preset }) {
       {/* `truncate` (overflow-hidden + ellipsis + nowrap) goes on the NAME, not on the cell: a
           flex container's own text-overflow never fires, because the ellipsis rule applies to a
           block box's inline content and this box's children are flex items. Put it here and the
-          name shortens with a real "…" while the marker beside it stays put.
+          name shortens with a real "…".
           ⚠⚠ THE ELLIPSIS STAYS UNCONDITIONALLY, even with a live typing-time cap in front of it
           (lib/presetNameWidth) — argued at length in components/PresetManager, where that cap is
           actually applied. Short version: a typing-time cap can only promise "fit under THESE
@@ -197,24 +195,10 @@ export function PresetOptionLabel({ preset: p }: { preset: Preset }) {
           after typing (a rotation, a text-size accessibility setting, a viewport resize), and a
           canvas measurement is not bit-for-bit identical to this element's own DOM layout. This
           is the safety net that makes all three survivable instead of an overflowing name. */}
-      <span className="truncate" aria-hidden={p.amnesic || undefined}>
+      <span className="truncate" aria-hidden={spoken ? true : undefined}>
         {p.name}
       </span>
-      {p.amnesic && (
-        <>
-          {/* ml-auto is the right-alignment: it eats the cell's leftover space, so the marker sits
-              on the cell's right edge and — because every cell is the same width — the markers
-              line up as a column down the menu. shrink-0 keeps the name, never the marker, as the
-              thing that gives way when a name is too long. */}
-          <span
-            aria-hidden="true"
-            className="ml-auto shrink-0 pl-1.5 text-[0.8em] font-semibold leading-none opacity-70"
-          >
-            A
-          </span>
-          <span className="sr-only">{p.name}, amnesic</span>
-        </>
-      )}
+      {spoken && <span className="sr-only">{`${p.name}, ${spoken}`}</span>}
     </span>
   )
 }
@@ -258,7 +242,7 @@ export default function PresetSwitcher({
       // ⚠ ariaLabel names the trigger AND the listbox, and the two are named DIFFERENTLY on
       // purpose — CustomSelect's doing, not this call site's. The listbox is "Preset". The TRIGGER
       // composes this label with the selected option's own text, so it announces "Preset, Weekend,
-      // amnesic" rather than the bare "Preset, collapsed" it said while an aria-label was replacing
+      // amnesic" (for a preset on Full) rather than the bare "Preset, collapsed" it said while an aria-label was replacing
       // its content. That fix belongs to the shared component (the mode selector had the identical
       // gap — "Mode" without "Classic") and the argument is written out there; what matters here is
       // that the ", amnesic" this file renders sr-only is INSIDE the option label, which is why it

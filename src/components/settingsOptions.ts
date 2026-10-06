@@ -15,6 +15,7 @@
 import type { FormatId } from '../lib/format.js'
 import type { InputStyle } from '../store/settings.js'
 import type { DotRotation } from '../lib/dotLayout.js'
+import type { AmnesicMode } from '../store/amnesicMode.js'
 
 // Date Format — five ids across TWO trays but ONE setting and ONE radiogroup, so whichever half
 // doesn't hold the active id simply shows no selected segment. Sharing a group is also why 'MDY'
@@ -42,6 +43,15 @@ export const DOT_ROTATION_OPTIONS: { value: DotRotation; label: string }[] = [
   { value: 'standard', label: 'Standard' },
   { value: 'ccw45', label: '45° CCW' },
   { value: 'ccw90', label: '90° CCW' },
+]
+// Amnesic — how much of what is played LASTS (store/amnesicMode's three values, in AMNESIC_MODES
+// order). "Stats Only" has no hyphen as a label standing on its own. No ariaLabel: the panel's
+// switches also SHOW "Off", but each of those is named for its setting, so "Off" is the name of this
+// one pill only.
+export const AMNESIC_OPTIONS: { value: AmnesicMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'stats', label: 'Stats Only' },
+  { value: 'full', label: 'Full' },
 ]
 // Theme — two independent picks under Use System Settings, one pick ACROSS both rows when it's off
 // (see the Theme block in the panel).

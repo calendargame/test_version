@@ -260,7 +260,7 @@ describe('Full Reset clears it too', () => {
 
   it('clears the session overflow too, in an amnesic preset', () => {
     mountApp()
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     lookFourthOfJuly() // held in the session overflow — see the next describe block
     expect(historyRowCount()).toBe(1)
     pressKey('K')
@@ -277,15 +277,15 @@ describe('Full Reset clears it too', () => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// (e) AMNESIC SUPPRESSION: a lookup made while the active preset is amnesic never joins the
+// (e) AMNESIC: FULL — SUPPRESSION: a lookup made while the active preset is on Full never joins the
 // permanent list, still shows for the rest of the session, and does not survive the app being
 // reopened — while a non-amnesic preset's lookup persists through the identical reopen normally.
-describe('a lookup made while the active preset is amnesic', () => {
+describe('a lookup made while the active preset is on Amnesic: Full', () => {
   beforeEach(() => resetAppState())
 
   it('shows on screen, but is held in the session overflow, never the permanent list', () => {
     mountApp()
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     lookFourthOfJuly()
     expect(historyRowCount()).toBe(1)
     expect(historyText()).toContain('July 4, 1776')
@@ -301,11 +301,11 @@ describe('a lookup made while the active preset is amnesic', () => {
   // opening it again (see that file's own header for why this is a close and not merely a reload).
   it('does not survive the app being reopened, while a non-amnesic lookup does', async () => {
     mountApp()
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     lookFourthOfJuly() // 7/4/1776 — session-only
     pressKey('K')
 
-    act(() => setPresetAmnesic(1, false)) // back to normal — the session entry is not reconciled in
+    act(() => setPresetAmnesic(1, 'off')) // back to normal — the session entry is not reconciled in
     // Ask the SAME date again, now while non-amnesic. LookupCard's runLookup() matches on y/m/d
     // against the merged display (which still shows the amnesic entry) and calls onMoveHistory, not
     // onAddHistory — so this exercises moveHistoryEntryToTop's own "stays in whichever list it came
@@ -345,13 +345,62 @@ describe('a lookup made while the active preset is amnesic', () => {
 
   it('turning Amnesic off does not reach back and promote what is already in the session bucket', () => {
     mountApp()
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     lookFourthOfJuly()
     expect(useLookupSession.getState().sessionEntries).toHaveLength(1)
-    act(() => setPresetAmnesic(1, false))
+    act(() => setPresetAmnesic(1, 'off'))
     // No merge on toggle-off — the same rule store/amnesic states for stats. The entry is still
     // only in the session bucket; it did not just become permanent because Amnesic turned off.
     expect(useLookupHistory.getState().history).toEqual([])
     expect(useLookupSession.getState().sessionEntries).toHaveLength(1)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// (f) STATS ONLY IS NOT FULL: a lookup is a question you asked, not a stat, so under Stats Only it
+// is saved exactly as under Off — to the permanent, shared list — and survives the app closing.
+describe('a lookup made while the active preset is on Stats Only', () => {
+  beforeEach(() => resetAppState())
+
+  it('joins the permanent list, not the session overflow — and survives the app being reopened', async () => {
+    mountApp()
+    act(() => setPresetAmnesic(1, 'stats'))
+    lookFourthOfJuly()
+    expect(historyRowCount()).toBe(1)
+    const saved = [{ id: expect.any(String), y: 1776, m: 7, d: 4 }]
+    expect(useLookupHistory.getState().history).toEqual(saved)
+    expect(useLookupSession.getState().sessionEntries).toEqual([])
+    // On the device already, under the shared key.
+    expect(JSON.parse(localStorage.getItem('cg-lookup-v1')).state.history).toEqual(saved)
+
+    // THE CLOSE (the same stand-in as the Full case above).
+    sessionStorage.clear()
+    await act(async () => {
+      await useLookupSession.persist.rehydrate()
+      await useLookupHistory.persist.rehydrate()
+    })
+    expect(useLookupHistory.getState().history).toEqual(saved)
+  })
+
+  it('each lookup goes where the value says at the moment it is made: Off, Stats Only, Full, Stats Only', () => {
+    mountApp()
+    const lookUp = (text) => {
+      pressKey('L')
+      const input = document.querySelector('input[placeholder^="e.g.,"]')
+      act(() => fireEvent.change(input, { target: { value: text } }))
+      act(() => fireEvent.click(screen.getByRole('button', { name: 'Lookup' })))
+    }
+    const years = (entries) => entries.map((e) => e.y)
+    lookUp('1/1/1900') // Off
+    act(() => setPresetAmnesic(1, 'stats'))
+    lookUp('1/1/1901')
+    act(() => setPresetAmnesic(1, 'full'))
+    lookUp('1/1/1902')
+    act(() => setPresetAmnesic(1, 'stats'))
+    lookUp('1/1/1903')
+    expect(years(useLookupHistory.getState().history)).toEqual([1903, 1901, 1900])
+    expect(years(useLookupSession.getState().sessionEntries)).toEqual([1902])
+    // The page shows all four for the rest of the visit, whatever the value is by then.
+    expect(historyRowCount()).toBe(4)
   })
 })

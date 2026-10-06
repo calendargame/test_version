@@ -120,7 +120,7 @@ function seedSavedDefaults() {
       blitzQSec: prefs.blitzQSec,
       aoxN: prefs.aoxN,
     },
-    amnesic: false,
+    amnesic: 'off',
   })
 }
 

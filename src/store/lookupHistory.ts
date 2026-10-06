@@ -32,23 +32,24 @@ import { dimEither } from '../lib/calendar.js'
 //   • the PERMANENT list (`useLookupHistory`) — localStorage-backed, one un-namespaced key,
 //     survives forever exactly like today's saved Lookup history always has;
 //   • the SESSION-ONLY overflow (`useLookupSession`) — sessionStorage-backed, for lookups made
-//     while the ACTIVE preset is Amnesic (store/amnesic), which must never reach the permanent list
+//     while the ACTIVE preset is on Amnesic: Full (store/amnesic), which must never reach the permanent list
 //     but still have to appear on screen for the rest of the browsing session. See that store's
 //     header for what "session" means here (survives a refresh, gone when the browser closes) —
-//     the identical promise Amnesic's own stats sessionStorage copy makes, for the same reason: a
+//     the identical promise an amnesic preset's session copy makes, for the same reason: a
 //     browser can only honestly promise to forget what it never wrote down permanently.
-//     ⚠ IT IS NOT KEYED BY PRESET, unlike Amnesic's stats session copy (store/amnesic's `statsKey`).
+//     (Under Amnesic: Stats Only a lookup is saved normally — it is not a stat.)
+//     ⚠ IT IS NOT KEYED BY PRESET, unlike an amnesic preset's session copy (store/amnesic's `statsKey`).
 //     That key exists per preset because the store it shadows is per-preset; this list is GLOBAL,
 //     so its session overflow is one bucket for the whole browsing session, not one per preset. A
-//     lookup made while Preset 2 was amnesic and one made while Preset 4 was amnesic later in the
+//     lookup made while Preset 2 was on Full and one made while Preset 4 was on Full later in the
 //     same session sit in the same bucket — consistent with the permanent list being one shared
 //     list too. Nothing here ever reads which preset a session entry was added under, because the
 //     permanent list does not track that either.
-//   • main.tsx (not this file) decides WHICH bucket a new entry goes into, by reading
-//     store/amnesic's `selectAmnesic` at the moment of the push — the identical shape as fullReset's
-//     own amnesic check there. It is not decided here so this file stays what every other store in
-//     this folder is: state plus setters, with the app owning the one piece of cross-store business
-//     logic ("is the active preset amnesic right now") the way it already does for Full Reset.
+//   • main.tsx (not this file) decides WHICH bucket a new entry goes into, by asking store/amnesic
+//     (`keepsLookups` of the active preset's Amnesic value) at the moment of the push. It is not
+//     decided here so this file stays what every other store in this folder is: state plus
+//     setters, with the app owning the one piece of cross-store business logic ("is the active
+//     preset on Full right now") the way it already does for Full Reset.
 
 // A saved Lookup history entry — moved verbatim from store/progress (Stage D1 → round 20),
 // unchanged: {id, y, m, d, isGap?} and nothing else. It carries only what the user supplied — the
@@ -195,12 +196,12 @@ export const useLookupHistory = create<LookupHistoryState>()(
 
 // ── The session-only overflow (Amnesic suppression) ──────────────────────────────────────────
 //
-// A lookup made while the active preset is Amnesic must never reach the list above, but it still
+// A lookup made while the active preset is on Amnesic: Full must never reach the list above, but it still
 // has to appear on screen for the rest of THIS browsing session — the file header argues why this
 // is its own bucket rather than a reuse of store/amnesic's per-preset session machinery. It is
 // created here, alongside the permanent list, rather than in store/amnesic itself, because it is
 // Lookup's data and Lookup's shape (LookupEntry, likewise unlimited) — amnesic.ts stays the single owner
-// of the FLAG (`selectAmnesic`) that main.tsx reads to decide which of the two stores below a new
+// of the RULE (`keepsLookups`) that main.tsx asks to decide which of the two stores below a new
 // entry goes into; it does not need to know this bucket exists.
 const LOOKUP_SESSION_KEY = 'cg-lookup-session-v1'
 

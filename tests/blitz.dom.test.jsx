@@ -1365,7 +1365,7 @@ describe('Blitz — the settings net: an in-progress round vs Reset Settings and
           blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
           aoxN: MODE_PREFS_DEFAULTS.aoxN,
         },
-        amnesic: false, // this fixture's preset is never amnesic — Reset Settings must not disturb it
+        amnesic: 'off', // this fixture's preset is never amnesic — Reset Settings must not disturb it
       }),
     )
   }

@@ -220,9 +220,9 @@ describe('on the app', () => {
 
   it('an Amnesic toggle keeps the screen', () => {
     lookedUp()
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     expectLookedUp()
-    act(() => setPresetAmnesic(1, false))
+    act(() => setPresetAmnesic(1, 'off'))
     expectLookedUp()
   })
 

@@ -4,7 +4,7 @@
 // props, so nothing about its behaviour changes by living here.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ModeProps, FmtDate, GenDate } from './modeTypes.js'
-import { useButtonFlash, useMountedDataId } from './modeHooks.js'
+import { useButtonFlash, useMountedBestsId } from './modeHooks.js'
 import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { RESET_BTN_CLASS } from '../components/controlClasses.js'
 import {
@@ -21,6 +21,7 @@ import CardNumber from '../components/CardNumber.jsx'
 import OverrideButton from '../components/OverrideButton.jsx'
 import SliderValueEditor from '../components/SliderValueEditor.jsx'
 import BlitzBestRow from '../components/BlitzBestRow.jsx'
+import BestReadout from '../components/BestReadout.jsx'
 import { NewBestStar } from '../components/primitives.jsx'
 import { MethodBreakdownSection } from '../components/MethodBreakdown.jsx'
 import { calcAvg, calcLast, calcMed } from '../engine/stats.js'
@@ -137,9 +138,9 @@ function BlitzMode({
     setAllowMistakes = useModePrefs((s) => s.setBlitzAllowMistakes) // persisted (mode-prefs store)
   const timingOff = useModePrefs((s) => s.blitzTimingOff),
     setTimingOff = useModePrefs((s) => s.setBlitzTimingOff) // persisted; VISUAL-ONLY — blanks the timing trio, the engine clock never stops (no arm/reset)
-  // ★ THE STATS COPY THIS SCREEN WAS MOUNTED ON, read once — every parked-round read, write and
-  // discard below uses it (modes/modeHooks' useMountedDataId argues why, round 23).
-  const dataId = useMountedDataId()
+  // ★ THE BESTS COPY THIS SCREEN WAS MOUNTED ON, read once — every parked-round read, write and
+  // discard below uses it (modes/modeHooks' useMountedBestsId argues why).
+  const bestsId = useMountedBestsId()
   const blitzSec = useModePrefs((s) => s.blitzSec),
     setBlitzSec = useModePrefs((s) => s.setBlitzSec) // persisted (mode-prefs store)
   const qSec = useModePrefs((s) => s.blitzQSec),
@@ -157,7 +158,7 @@ function BlitzMode({
   // which dates a resumed round would draw. A round carries the one it was BEGUN under
   // (roundConfigRef), a PARKED round carries it into the snapshot, and it comes back only if it is
   // still exactly the live one.
-  // WHY: the settings and the per-mode setup are shared by a preset's two stats copies, so a guest's
+  // WHY: the settings and the per-mode setup are shared by every copy of a preset's stats and bests, so a guest's
   // interlude can change them under a parked round (the idle guest screen's Per Question / Allow
   // Mistakes toggles and its sliders are all live). The mount reconcile branches on the LIVE
   // sub-mode, so a restored Per Round round wrote its score into the Per Question records — a Best
@@ -166,10 +167,10 @@ function BlitzMode({
   // cover. A round that no longer matches is simply not restored: the screen comes up idle, exactly
   // as a settings change resets a round that is on screen, and the Bests it set stay as saved.
   const roundConfig = `${perQ ? 'q' : 'r'}|${allowMistakes ? 'm' : 'n'}|${perQ ? suddenBk : blitzBk}`
-  // The ended round this (stats copy, mode) parked before its last unmount, read EXACTLY ONCE at
-  // mount. On a preset switch or an Amnesic toggle the always-mounted screens remount (src/main.tsx
-  // remountScreens) and the registry ALREADY names the INCOMING copy by the time this runs —
-  // switchPreset / setPresetAmnesic write the registry before they rehydrate the stores, one
+  // The ended round this (bests copy, mode) parked before its last unmount, read EXACTLY ONCE at
+  // mount. On a preset switch or an Amnesic change the always-mounted screens remount (src/main.tsx
+  // remountScreens) and the INCOMING copy is ALREADY the one named by the time this runs —
+  // switchPreset / setPresetAmnesic name the incoming copy before they rehydrate the stores, one
   // synchronous turn (store/presetControl). So this is the incoming copy's OWN parked round and never
   // the one just left; the copy key is the whole contamination guard (a blob keyed to preset 1's
   // saved copy is unreachable while preset 2, or preset 1's guest session, is up). Factored into one
@@ -181,7 +182,7 @@ function BlitzMode({
   //     restoreParkedEngine) — a blob this build cannot read is not a round.
   // (…and a blob that does not say whether its ending was recorded is not one this build parked.)
   const [parkedRound] = useState<BlitzRoundSnapshot | null>(() => {
-    const snap = readSessionRound<ParkedSnapshot<BlitzRoundSnapshot>>(dataId, 'blitz')
+    const snap = readSessionRound<ParkedSnapshot<BlitzRoundSnapshot>>(bestsId, 'blitz')
     if (!snap || snap.config !== roundConfig || typeof snap.recorded !== 'boolean') return null
     const engine = restoreParkedEngine(snap.engine, useJulian, 'blitz')
     return engine ? { ...snap, engine } : null
@@ -267,7 +268,7 @@ function BlitzMode({
   // WHY IT IS REMEMBERED RATHER THAN READ LIVE. The reconcile used to gate on the live setting, so a
   // practice round sitting ended on screen was recorded the moment Save Stats was turned back on —
   // a Best for a round played while nothing counted — and, since the setting is shared by a preset's
-  // two stats copies, a guest flipping it recorded the owner's PARKED practice round when it came
+  // copies, a guest flipping it recorded the owner's PARKED practice round when it came
   // back. The other direction was wrong too: a recorded round whose score an Override then lowered
   // kept its old Best for as long as Save Stats was off.
   // WHY ONCE PER ROUND AND NOT ONCE PER ENDING. A press can put an ended round back in play, and the
@@ -291,7 +292,7 @@ function BlitzMode({
     saveStats: true,
     timingOff: false,
     // Round 21 — seed the reducer from the parked ended round when there is one (a getter, read
-    // once in the lazy init). `parkedRound` was keyed to the stats copy live at mount, so this only
+    // once in the lazy init). `parkedRound` was keyed to the bests copy live at mount, so this only
     // ever restores the incoming copy's own round and cannot pull in the one just left.
     getInitialState: () => parkedRound?.engine ?? null,
   }) // Blitz: timing always tracked
@@ -790,9 +791,9 @@ function BlitzMode({
     setSuddenAmBest,
   ])
 
-  // Round 21 — mirror an ENDED round to sessionStorage, keyed by the stats copy this screen was
-  // mounted on (`dataId`), exactly as the effect above mirrors the round's Best to store/progress. On
-  // the remount a preset switch or an Amnesic toggle causes, the mount-time reads restore whatever is
+  // Round 21 — mirror an ENDED round to sessionStorage, keyed by the bests copy this screen was
+  // mounted on (`bestsId`), exactly as the effect above mirrors the round's Best to store/progress. On
+  // the remount a preset switch or an Amnesic change causes, the mount-time reads restore whatever is
   // parked for the now-live copy (see `parkedRound`). Only an ENDED round is parked; every other state DISCARDS the slot:
   //   • in-progress (active, !timerDone) → discard, so a mid-round switch parks nothing and the
   //     remount starts fresh — the owner's requirement — and any stale blob from a prior round goes;
@@ -816,7 +817,7 @@ function BlitzMode({
     // (`endKind` is set by the same call that sets `timerDone` — settleEnded — so the two tests are
     // one fact; naming both is what lets the snapshot's `endKind` be the plain type.)
     if (timerDone && endKind)
-      writeSessionRound(dataId, 'blitz', {
+      writeSessionRound(bestsId, 'blitz', {
         engine: state,
         timerDone,
         showTimerDate,
@@ -833,8 +834,8 @@ function BlitzMode({
         // has already run in the commit that first ended the round.
         recorded: recordedRef.current === true,
       } satisfies BlitzRoundSnapshot)
-    else discardSessionRound(dataId, 'blitz')
-  }, [timerDone, active, showTimerDate, state, endKind, clockPaused, roundId, dataId])
+    else discardSessionRound(bestsId, 'blitz')
+  }, [timerDone, active, showTimerDate, state, endKind, clockPaused, roundId, bestsId])
 
   // Both toggles are bare idle-gated flips — fully independent since Per Question gained Allow Mistakes (the old auto-off
   // coupling died with the sudden-death-only per-Q). The idle lock (also mirrored by the
@@ -1007,14 +1008,14 @@ function BlitzMode({
       {!perQ && <BlitzBestRow rec={bScore} roundId={roundId} />}
       {perQ && allowMistakes && <BlitzBestRow rec={saScore} roundId={roundId} />}
       {perQ && !allowMistakes && (
-        <div className="mt-3 text-xs text-(--tx-300-60)">
+        <BestReadout>
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-[125px]">
               Best Score: {sScore?.score ?? '—'}
               {isNewBest(sScore?.roundId, roundId) && <NewBestStar />}
             </div>
           </div>
-        </div>
+        </BestReadout>
       )}
       <div className="mt-3 flex gap-2">
         <button

@@ -31,6 +31,7 @@ import { discardAllSessionHistories } from '../../src/store/sessionHistory.js'
 import { discardGuidePlace } from '../../src/store/sessionGuide.js'
 import { discardLookupScreen } from '../../src/store/sessionLookup.js'
 import { forgetBrowsingSession } from '../../src/store/browsingSession.js'
+import { forgetSessionAmnesic } from '../../src/store/sessionAmnesic.js'
 import { forgetStorageHealth } from '../../src/store/storageHealth.js'
 import { useUserDefaults } from '../../src/store/userDefaults.js'
 import { usePresets, makePresetRegistryDefaults } from '../../src/store/presets.js'
@@ -93,6 +94,12 @@ beforeEach(() => {
   // It is the same ordering tests/helpers/settingsPanel's resetAppState states for the same reason;
   // this is the global net saying it for every file, including the ones with a reset of their own.
   usePresets.setState(makePresetRegistryDefaults())
+  // …and with it each preset's AMNESIC VALUE (store/sessionAmnesic), which is the other half of
+  // "where does a reset land": while a preset is on Stats Only or Full the progress reset below would
+  // go to its session copy. It is session-held, so the harness — which has no close — forgets it
+  // here; every preset then reads Off until a test sets one, or models a page load
+  // (tests/helpers/pageLoad.js) to have the saved defaults read.
+  forgetSessionAmnesic()
   useProgress.getState().resetProgress()
   // The per-mode setup store (Stage D follow-up) is the same kind of persisted singleton.
   useModePrefs.getState().resetModePrefs()
@@ -126,9 +133,9 @@ beforeEach(() => {
   discardLookupScreen()
   // The BROWSING-SESSION MARKER (store/browsingSession) is what tells a genuine cold open
   // from a reload — it survives a reload and not a close. The harness has no close event, so without
-  // this every test after the first in a worker would boot as a "reload" and the Amnesic cold-open
-  // reseed would never run. Forgetting it here makes each test's first mount the fresh visit it
-  // models; a test that wants a reload simply remounts without forgetting it.
+  // this every test after the first in a worker would boot as a "reload". Forgetting it here makes
+  // each test's first mount the fresh visit it models; a test that wants a reload simply remounts
+  // without forgetting it.
   forgetBrowsingSession()
   // The STORAGE-FULL state (store/storageHealth) is in-memory module state: the saves a full device
   // refused, held for their destinations, and whether the notice is up. A test that fills the device would

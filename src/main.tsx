@@ -39,7 +39,8 @@ import { useUpdateCheck } from './components/useUpdateCheck.js'
 import { DEPLOY_TS } from './deployStamp.js'
 import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot, subscribeUpdateDot, CHANGELOG, changelogSignature, changelogChanged, readChangelogSeen, writeChangelogSeen } from './changelog.js'
 import { usePresets } from './store/presets.js'
-import { activeDataId, selectAmnesic, discardParkedStats } from './store/amnesic.js'
+import { activeDataId, activeBestsId, activeAmnesicMode, useActiveAmnesicMode, keepsLookups, discardParkedStats } from './store/amnesic.js'
+import { useSessionAmnesic, commitSessionAmnesic } from './store/sessionAmnesic.js'
 import { setPresetAmnesic, commitOpenedPreset, sweepDeletedPresetTimes } from './store/presetControl.js'
 import { openBrowsingSession } from './store/browsingSession.js'
 import { useSettings, readStoredDefaultMode } from './store/settings.js'
@@ -53,7 +54,7 @@ import { useStorageHealth, showStorageNotice } from './store/storageHealth.js'
 import { readGuidePlace, discardGuidePlace } from './store/sessionGuide.js'
 import { readLookupScreen, writeLookupScreen, discardLookupScreen } from './store/sessionLookup.js'
 import { useModePrefs } from './store/modePrefs.js'
-import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, effectiveAmnesicDefault, storedAmnesicDefault, prefsMatchDefaults } from './store/userDefaults.js'
+import { useUserDefaults, effectiveSettingsDefaults, effectivePrefDefaults, effectiveAmnesicDefault, prefsMatchDefaults } from './store/userDefaults.js'
 import { useProgress } from './store/progress.js'
 import { useLookupHistory, useLookupSession, addLookupEntry, moveEntryToTop, mergeForDisplay } from './store/lookupHistory.js'
 import type { LookupEntry } from './store/lookupHistory.js'
@@ -247,7 +248,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // screen ever holds — for that mode's silos. The stats themselves are saved and untouched; the
     // screen comes back with them and a fresh question.
     const forgetCrashedHistory=(...silos: HistorySilo[])=>()=>{
-      const dataId=activeDataId(usePresets.getState());
+      const dataId=activeDataId();
       for(const silo of silos)discardSessionHistory(dataId,silo);
     };
     const forgetClassicHistory=forgetCrashedHistory('classic');
@@ -259,7 +260,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // the snapshot is read as it was written — and a screen that crashes while restoring one never
     // reaches the effect that would have retired the slot, so without this the Reload restored the
     // same round and crashed again. The Bests the round set were saved when it ended and are untouched.
-    const forgetCrashedRound=(mode: 'blitz'|'aox')=>()=>discardSessionRound(activeDataId(usePresets.getState()),mode);
+    const forgetCrashedRound=(mode: 'blitz'|'aox')=>()=>discardSessionRound(activeBestsId(),mode);
     const forgetBlitzRound=forgetCrashedRound('blitz');
     const forgetMoxRun=forgetCrashedRound('aox');
     // (How to Play's parked place is dropped the same way, by its boundary below: discardGuidePlace.
@@ -530,15 +531,15 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // and the gear's "modified" indicator; the mode components read their own slices for their
       // freshness checks. Survives Full Reset by design (see store/userDefaults).
       const savedDefaults=useUserDefaults(s=>s.saved);
-      // ★ THE ACTIVE PRESET'S AMNESIC FLAG, BOUND HERE FOR settingsAtDefaults BELOW (round 22).
-      // It is NOT a ⚙ setting — it lives on the registry (store/presets' `Preset.amnesic`) for the
-      // reasons store/amnesic argues at length — but Save Defaults CAPTURES it and Reset Settings /
-      // Full Reset RESTORE it, so it is one of the values "back to my defaults" is talking about and
-      // therefore one of the values the gear's modified bar has to watch. A zustand SELECTOR
-      // subscription rather than the getState() reads elsewhere in this file: a boolean selector
-      // re-renders App only when the answer actually flips, and this one has to move the four offers
-      // the instant the switch is tapped.
-      const amnesic=usePresets(selectAmnesic);
+      // ★ THE ACTIVE PRESET'S AMNESIC VALUE, BOUND HERE FOR settingsAtDefaults BELOW (round 22).
+      // It is NOT a ⚙ setting — it is held per preset for the browsing session (store/sessionAmnesic),
+      // for the reasons store/amnesic argues at length — but Save Defaults CAPTURES it and Reset
+      // Settings / Full Reset RESTORE it, so it is one of the values "back to my defaults" is talking
+      // about and therefore one of the values the gear's modified bar has to watch. A SUBSCRIPTION
+      // rather than the getState() reads elsewhere in this file: it re-renders App only when the
+      // value actually changes, and this one has to move the four offers the instant the pill is
+      // tapped.
+      const amnesic=useActiveAmnesicMode();
       const defSettings=useMemo(()=>effectiveSettingsDefaults(savedDefaults),[savedDefaults]);
       const defPrefs=useMemo(()=>effectivePrefDefaults(savedDefaults),[savedDefaults]);
       // prefsAtDefaults: do the four capturable mode-screen prefs match their effective defaults?
@@ -669,7 +670,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // every preset instead of living inside the progress store: sourced from store/lookupHistory's
       // two stores instead of local useState. lookupHistory is the PERMANENT shared list;
       // sessionLookupEntries is this browsing session's overflow for lookups made while the ACTIVE
-      // preset was amnesic at the moment they were added (never written to the permanent list — see
+      // preset was on Amnesic: Full at the moment they were added (never written to the permanent list — see
       // pushLookupHistory below) — displayLookupHistory (declared further down, once fmtDate/dateFormat
       // are in scope) is the two merged for LookupCard to render. Both setters accept a direct value
       // OR a functional updater, so the push/move/clear handlers below read exactly like they did
@@ -1603,21 +1604,22 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // App's effect order that they had when they were written out on these lines.
       const yearRange=useYearRangeMirrors(minY,maxY,setMinY,setMaxY,minInputRef,maxInputRef);
       // Newest to the front, and every one kept — the rule lives in store/lookupHistory (addLookupEntry).
-      // ⚠ WHICH LIST an entry joins is decided HERE, once, at the moment it is added — the identical
-      // shape as fullReset's own `selectAmnesic(usePresets.getState())` check below. While the ACTIVE
-      // preset is amnesic the entry goes into the SESSION overflow instead of the permanent list, so
-      // it can never reach permanent storage; it still shows on screen for the rest of this browsing
-      // session via displayLookupHistory (below), and it can never be promoted into the permanent list
-      // later — turning Amnesic off does not reach back and adopt it, the same "no merge on toggle-
-      // off" rule store/amnesic states for stats. See store/lookupHistory's header for the full
-      // argument for why this is a separate mechanism from Amnesic's own per-preset session stats.
+      // ⚠ WHICH LIST an entry joins is decided HERE, once, at the moment it is added, by the ACTIVE
+      // preset's Amnesic value (store/amnesic's keepsLookups). Under Off and Stats Only it joins the
+      // permanent list — a lookup is not a stat. Under Full it goes into the SESSION overflow
+      // instead, so it can never reach permanent storage; it still shows on screen for the rest of
+      // this browsing session via displayLookupHistory (below), and it can never be promoted into the
+      // permanent list later — leaving Full does not reach back and adopt it, the same "no merge"
+      // rule store/amnesic states for stats. See store/lookupHistory's header for the full argument
+      // for why this is a separate mechanism from an amnesic preset's own per-preset session copy.
       const pushLookupHistory=(entry: LookupEntry)=>{
-        if(selectAmnesic(usePresets.getState()))setSessionLookupEntries(prev=>addLookupEntry(prev,entry));
-        else setLookupHistory(prev=>addLookupEntry(prev,entry));
+        if(keepsLookups(activeAmnesicMode()))setLookupHistory(prev=>addLookupEntry(prev,entry));
+        else setSessionLookupEntries(prev=>addLookupEntry(prev,entry));
       };
       // Re-asking a question you already have moves it to the front of WHICHEVER list it lives in —
-      // the session overflow if it was added while amnesic, the permanent list otherwise. It can
-      // never jump lists: a session entry re-asked while still amnesic stays a session entry.
+      // the session overflow if it was added under Full, the permanent list otherwise. It can
+      // never jump lists: a session entry re-asked stays a session entry, whatever the Amnesic value
+      // is by then.
       const moveHistoryEntryToTop=(id: string)=>{
         if(sessionLookupEntries.some(e=>e.id===id))setSessionLookupEntries(prev=>moveEntryToTop(prev,id));
         else setLookupHistory(prev=>moveEntryToTop(prev,id));
@@ -1742,7 +1744,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
       },[]);
       // ★★ THE PRESET SWITCH'S REMOUNT, WIRED TO THE FACT RATHER THAN TO THE CALLER. Anything that
       // changes which DATA the app is reading — store/presetControl's switchPreset, deleting the
-      // preset you are on, making the preset you are on amnesic, or whatever a later group adds —
+      // preset you are on, changing its Amnesic value, or whatever a later group adds —
       // lands here, because the one thing all of them have in common is that the bytes underneath
       // the five mode screens were swapped. presetControl therefore takes no remount callback: there is
       // nothing for a call site to forget.
@@ -1759,19 +1761,18 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // business and not a contract anyone signed.
       // ⚠ THE COMPARISON IS activeDataId AND NOT activeId — store/amnesic owns that expression, and
       // owning it there rather than spelling it out here is the point. It answers one question:
-      // WHICH BYTES are underneath the always-mounted screens — which preset, and which of that
-      // preset's two storage areas its stats live in. Making a preset amnesic repoints the progress
-      // store at sessionStorage without activeId moving an inch, so an activeId-only comparison
-      // would leave the screens holding the parked stats while the store held the session's, and
-      // the next answered question would write one into the other: the same 500-cards-becomes-4
-      // failure, reached by a different door. A third repointing added later extends that one
-      // expression instead of this line.
-      // ⚠ It still ignores everything ELSE in the registry: renaming or creating a preset, or
-      // flipping some OTHER preset's amnesic flag, all rewrite the registry value and none of them
-      // may throw away a run in progress.
+      // WHICH BYTES are underneath the always-mounted screens — which preset, and which copy of that
+      // preset's stats. Changing a preset's Amnesic value repoints the progress store without
+      // activeId moving an inch, so an activeId-only comparison would leave the screens holding the
+      // parked stats while the store held the session's, and the next answered question would write
+      // one into the other: the same 500-cards-becomes-4 failure, reached by a different door. A
+      // further repointing added later extends that one expression instead of this line.
+      // ⚠ It still ignores everything ELSE: renaming or creating a preset, or changing some OTHER
+      // preset's Amnesic value, all write to a store watched here and none of them may throw away a
+      // run in progress.
       // ⚠ Round 21: the same subscription now also moves the current PAGE — but only when the
-      // ACTIVE PRESET actually changed (s.activeId !== prev.activeId), never on a bare Amnesic
-      // toggle of the preset you are already on (which changes activeDataId but not which preset's
+      // ACTIVE PRESET actually changed (`presetMoved`), never on a bare Amnesic
+      // change of the preset you are already on (which changes activeDataId but not which preset's
       // page you want). The incoming preset shows its session page if it has one this session, else
       // its `defaultMode` — read via readStoredDefaultMode straight off that preset's own settings
       // key, because switchPreset fires this subscription BEFORE it rehydrates useSettings, so the
@@ -1787,58 +1788,62 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // ⚠ THE EXPLICIT scrollTop=0 IS FOR A GAME SCREEN THAT STAYS ON SHOW: both presets resolving to
       // the same mode, where `mode` never changes and the scroll-ownership layout effect — which
       // seats every game screen at its own top — never re-runs for the remounted screen. Gated on a
-      // real active-preset change, so a bare Amnesic toggle of the preset you are already on is
+      // real active-preset change, so a bare Amnesic change of the preset you are already on is
       // untouched; and never on the guide, whose offset is the reader's.
       // ★ AND THE CASUAL HISTORIES ARE PARKED FIRST (parkCasualHistories; store/sessionHistory argues
       // the lifecycle). This is the one moment that can be done right: the outgoing screens are still
       // mounted, each still holding the stats copy it was mounted on, so each parks under ITS OWN
       // copy — and whoever caused the swap gets the last word after this returns (a preset delete
-      // removes the deleted preset's parks; an Amnesic toggle discards the guest copy's). The
+      // removes the deleted preset's parks; an Amnesic change discards the session copies'). The
       // remounted screens then read whatever is parked for the INCOMING copy: its own history, as it
       // was left earlier this session.
-      useEffect(()=>usePresets.subscribe((s,prev)=>{
-        if(activeDataId(s)===activeDataId(prev))return;
-        parkCasualHistories();
-        if(s.activeId!==prev.activeId)switchMode(readSessionMode(s.activeId)??readStoredDefaultMode(s.activeId));
-        remountScreens();
-        if(s.activeId!==prev.activeId&&modeRef.current!=='guide'&&appScrollRef.current)appScrollRef.current.scrollTop=0;
-      }),[remountScreens,switchMode]);
+      // ⚠ TWO STORES ARE WATCHED, BECAUSE THE FACT LIVES IN TWO: which preset is the registry's, and
+      // each preset's Amnesic value is the session's (store/sessionAmnesic). Either one changing can
+      // move activeDataId, so both report here, and `seen` is what the last report left — a change
+      // that does not move activeDataId (a rename, another preset's value, a deleted preset's value
+      // being forgotten) returns at the first line.
+      useEffect(()=>{
+        const reading=()=>({dataId:activeDataId(),presetId:usePresets.getState().activeId});
+        let seen=reading();
+        const onChange=()=>{
+          const now=reading();
+          if(now.dataId===seen.dataId)return;
+          const presetMoved=now.presetId!==seen.presetId;
+          seen=now;
+          parkCasualHistories();
+          if(presetMoved)switchMode(readSessionMode(now.presetId)??readStoredDefaultMode(now.presetId));
+          remountScreens();
+          if(presetMoved&&modeRef.current!=='guide'&&appScrollRef.current)appScrollRef.current.scrollTop=0;
+        };
+        const offPresets=usePresets.subscribe(onChange),offAmnesic=useSessionAmnesic.subscribe(onChange);
+        return()=>{offPresets();offAmnesic();};
+      },[remountScreens,switchMode]);
       // …and the same park when the PAGE is going away or to the background — a reload, the app's
       // own update reload, a tab the browser may discard (lib/pageHidden).
       useEffect(()=>onPageHidden(parkCasualHistories),[]);
-      // ★ COLD-OPEN AMNESIC RESEED (a GENUINE cold open only). An
-      // Amnesic flag is a SESSION toggle: guest mode is temporary by construction, so when the app is
-      // truly opened afresh EVERY preset's Amnesic flag is reset to that preset's own saved default
-      // (store/userDefaults' effectiveAmnesicDefault — false when nothing is saved, which is the
-      // owner-confirmed revert for a preset set Amnesic with no saved defaults). Session toggles still
-      // stick within the session; this only re-seeds on the next cold open.
-      // ★★ A RELOAD IS NOT A COLD OPEN (the owner reversed round 21's "a reload counts as
-      // a reopen"): "only truly closing the app starts fresh", so a browser reload and the auto-update
-      // reload keep a guest's Amnesic preset Amnesic, with its session stats and its finished round,
-      // exactly like every other session-lived thing in the app. A boot effect alone cannot tell the
-      // two apart — both mount <App/> from scratch — so store/browsingSession asks sessionStorage,
-      // whose lifetime IS the browsing session: its marker survives a reload and not a close.
-      // ⚠ DESIGN: reseed ALL presets here, not just the active one, by reading each preset's OWN
-      // namespaced userDefaults key straight off disk (storedAmnesicDefault) — userDefaults is
-      // per-preset-scoped, so `savedDefaults` bound above is only the ACTIVE preset's. Doing every
-      // preset in one boot pass (rather than piggybacking a per-preset reseed onto switchPreset)
-      // keeps this a single self-contained effect with no coupling into the switch path. A realistic
-      // registry is two or three presets; the reads are one localStorage.getItem each, once.
-      // ⚠ setPresetAmnesic NO-OPS when the flag already equals the default (its own guard returns
-      // before any registry write), so a preset already at its default causes no applyRegistry, no
-      // discard and no remount. When it DOES flip the active preset, the subscription registered just
-      // above catches the activeDataId change and remounts the mode screens — which is why this effect
-      // sits AFTER that subscription in source order. (On a genuine cold open there is no session copy
-      // left to discard anyway: the browser cleared sessionStorage when it closed the session.)
-      // ★ …AND THE PRESET THIS OPEN LANDED IN IS WRITTEN DOWN FIRST (commitOpenedPreset): the "Open in"
-      // pin is applied at hydrate, in memory only, and the reload that may follow reads the device.
-      // ★ …AND THE SOLVE-TIME CHUNKS OF PRESETS THAT NO LONGER EXIST ARE CLEARED (sweepDeletedPresetTimes
-      // — what an older build's preset delete leaves behind).
+      // ★ THE BOOT EFFECT: MARK THE BROWSING SESSION OPEN, AND WRITE DOWN WHAT THIS PAGE OPENED WITH.
+      // store/browsingSession tells a genuine cold open from a reload — both mount <App/> from
+      // scratch, so it asks sessionStorage, whose lifetime IS the browsing session: its marker
+      // survives a reload and not a close. ("Only truly closing the app starts fresh": a browser
+      // reload and the auto-update reload keep a guest's amnesic preset amnesic, with its session
+      // stats and its finished round, exactly like every other session-lived thing in the app.)
+      // ★ ON EVERY LOAD, each preset's Amnesic value is put on the session's record
+      // (commitSessionAmnesic). The values themselves were worked out when the page loaded
+      // (store/sessionAmnesic: the session's own record on a reload, each preset's saved default on a
+      // fresh open) — NOTHING IS RESET HERE and nothing permanent is written, which is the point: the
+      // write a full device used to refuse at this moment no longer exists. Recording them is what
+      // makes the reload that may follow read this session's values rather than the saved defaults
+      // as they stand by then.
+      // ★ ON A COLD OPEN ONLY, the preset this open landed in is written down (commitOpenedPreset: the
+      // "Open in" pin is applied at hydrate, in memory only, and the reload that may follow reads the
+      // device), and the solve-time chunks of presets that no longer exist are cleared
+      // (sweepDeletedPresetTimes — what an older build's preset delete leaves behind).
       useEffect(()=>{
-        if(!openBrowsingSession())return;
+        const cold=openBrowsingSession();
+        commitSessionAmnesic();
+        if(!cold)return;
         commitOpenedPreset();
         sweepDeletedPresetTimes();
-        for(const p of usePresets.getState().presets)setPresetAmnesic(p.id,storedAmnesicDefault(p.id));
       },[]);
       // ★ COLD-OPEN PAGE (round 21). `mode` starts "classic" only for the first paint; this
       // one-shot boot effect immediately moves it to the ACTIVE preset's session page — set if a
@@ -1849,9 +1854,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // switchPreset needed. switchMode('classic') on the common factory
       // path is a same-value setMode → React bails, no re-render. Empty deps: a boot effect, so a
       // mid-session switchMode is never fought (the subscription above owns switches).
-      // ⚠ AFTER the amnesic reseed above: if that reseed flips the active preset's Amnesic flag it
-      // fires the subscription, but that guards on activeId (unchanged here) so it does not touch
-      // the page — this effect is the one that sets the opening page, once.
+      // (The effect above moves no preset and no Amnesic value, so the subscription before it never
+      // fires on its account — this effect is the one that sets the opening page, once.)
       useEffect(()=>{
         const pid=usePresets.getState().activeId;
         switchMode(readSessionMode(pid)??readStoredDefaultMode(pid));
@@ -1956,9 +1960,9 @@ import BlitzMode from './modes/BlitzMode.jsx'
         applySettingsStore(defSettings);
         yearRange.resetTo(defSettings.minY,defSettings.maxY);
         applyModePrefs(defPrefs);
-        // …and (round 20, owner's explicit, confirmed decision) the SAVED AMNESIC STATE, onto the
-        // ACTIVE preset. setPresetAmnesic no-ops when the flag already matches; when it actually flips
-        // it reloads all four per-preset stores (store/presetControl's reloadPresetStores), which is a
+        // …and (round 20, owner's explicit, confirmed decision) the SAVED AMNESIC VALUE, onto the
+        // ACTIVE preset. setPresetAmnesic no-ops when the value already matches; when it actually
+        // changes it reloads all four per-preset stores (store/presetControl's reloadPresetStores), which is a
         // documented genuine no-op for the two of those four this function just wrote — useSettings
         // (applySettingsStore) and useModePrefs (applyModePrefs); it never touches useProgress or
         // useUserDefaults. Both writes persist SYNCHRONOUSLY on every set, so storage already holds
@@ -1967,12 +1971,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // no-op for the ordinary reason — nothing here changed them — not because of that guarantee).
         // ⚠ resetSettings is ALSO fullReset's delegate for the
         // ENTIRE settings restore (see the note above pressResetSettings), so this line means Full
-        // Reset restores the saved Amnesic state too — not just the footer's own Reset Settings button.
+        // Reset restores the saved Amnesic value too — not just the footer's own Reset Settings button.
         // That reading is deliberate, not incidental: it keeps this function's "total, unconditional
         // contract" intact rather than special-casing Amnesic out of Full Reset's path, and it cannot
-        // resurrect anything either way — fullReset's own discardParkedStats call below re-reads
-        // selectAmnesic AFTER this line runs, so it already accounts for whichever state this leaves
-        // the preset in.
+        // resurrect anything either way — fullReset's own discardParkedStats call below reads the
+        // Amnesic value AFTER this line runs, so it already accounts for whichever one this leaves
+        // the preset on.
         setPresetAmnesic(usePresets.getState().activeId,effectiveAmnesicDefault(savedDefaults));
       };
       // ★ THE FOOTER BUTTON'S HANDLER, and the round-14 dimmed-button guard lives HERE rather than
@@ -2045,14 +2049,16 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // rewritten. Runs here rather than folding into clearLookupHistory's own definition, because
         // this IS Full Reset choosing to reach for it, not a property of the function itself.
         clearLookupHistory();
-        // ⚠ AND, IN AN AMNESIC PRESET, THE PARKED COPY TOO. resetProgress() writes through the
-        // progress store, which while amnesic points at the SESSION copy — so on its own it would
-        // leave the permanent stats sitting untouched behind the session, and turning Amnesic off
-        // afterwards would RESURRECT stats the player had just destroyed. Full Reset is the one
+        // ⚠ AND, IN AN AMNESIC PRESET (Stats Only or Full), THE PARKED COPY TOO. resetProgress()
+        // writes through the progress store, whose stats are the SESSION's while a preset is amnesic
+        // — so on its own it would leave the permanent stats sitting untouched behind the session,
+        // and going back to Off afterwards would RESURRECT stats the player had just destroyed.
+        // (Under Stats Only that same resetProgress() has already emptied the permanent Bests, which
+        // is what Full Reset means for them; this removes the copy they sat in, stats and all.) Full Reset is the one
         // control that means "everything, gone"; an erase cannot contaminate anything, so it is
-        // outside the "nothing writes the permanent stats while amnesic" rule rather than an
+        // outside the "nothing writes the permanent stats of an amnesic preset" rule rather than an
         // exception to it. The argument in full is at store/amnesic's discardParkedStats.
-        if (selectAmnesic(usePresets.getState())) discardParkedStats(usePresets.getState().activeId);
+        if (activeAmnesicMode() !== 'off') discardParkedStats(usePresets.getState().activeId);
         // Per-mode setup (Flash speed, Blitz/AoX config, Deduction sub-type, the stat-visibility
         // toggles) → launch defaults. Runs BEFORE the remount-key bumps so the modes re-read the
         // now-default prefs. The store holds no "last mode" and never has — WHICH mode you were on
@@ -2073,10 +2079,10 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // ended round" — so it must clear the park BEFORE the remount below, or the timed screens'
         // getInitialState would re-read the still-parked blob and restore the very round this button
         // just erased. Scoped to the active preset, like every other line here (a switch's own
-        // discard covers the preset you leave). It clears BOTH of the preset's stats copies' parks
+        // discard covers the preset you leave). It clears BOTH of the preset's bests copies' parks
         // (they are keyed "<id>:saved" / "<id>:session"), which is exactly Full Reset's reach —
-        // in an amnesic preset it erases the parked permanent stats too — so no amnesic branch is
-        // needed: a round of either copy would otherwise come back over the stats just wiped. The per-mode
+        // in an amnesic preset it erases the parked permanent copy too — so no amnesic branch is
+        // needed: a round of either copy would otherwise come back over the bests just wiped. The per-mode
         // Reset button never reaches here: it drives the mode's own idle transition, whose mirror
         // effect discards the park itself.
         discardSessionRounds(usePresets.getState().activeId);
@@ -2087,8 +2093,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // is parked over stats of zero, which a reset leaves matching, and a Full Reset must not rest
         // on that.) It is the LAST word on them: nothing parks between here and the remount — a
         // screen parks when the page hides or the stats copy is swapped, never when it unmounts — so
-        // nothing can bring back what this just cleared. (resetSettings above may have flipped
-        // Amnesic, which parks the outgoing screens; that is before this line, and under it.)
+        // nothing can bring back what this just cleared. (resetSettings above may have changed the
+        // Amnesic value, which parks the outgoing screens; that is before this line, and under it.)
         discardSessionHistories(usePresets.getState().activeId);
         remountScreens();
         // …AND THE TWO APP-WIDE SCREENS, which only a Full Reset returns to their launch state:
@@ -2158,12 +2164,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // the fix, and it retires the whole class of dormant-value false positives.
       const themeAtDefaults=useSystem?(darkTheme===defSettings.darkTheme&&lightTheme===defSettings.lightTheme):(manualTheme===defSettings.manualTheme);
       // ★★ AMNESIC IS THE LAST TERM, AND ADDING IT WAS A BUG FIX RATHER THAN A WIDENING (round
-      // 22). Save Defaults CAPTURES the flag (components/SettingsPanel's commitSaveDefaults writes
+      // 22). Save Defaults CAPTURES the value (components/SettingsPanel's commitSaveDefaults writes
       // the live value into the snapshot) and both reset buttons RESTORE it (resetSettings above),
       // so it was always one of the values "your defaults" covers — but it was the one value this
       // expression did not compare. The consequence was not cosmetic: `settingsModified` is this
-      // line's complement, and openSaveDefaults early-returns on it, so turning Amnesic on and
-      // changing nothing else left Save Defaults DIMMED and INERT — "Amnesic: on" could never be
+      // line's complement, and openSaveDefaults early-returns on it, so changing Amnesic and
+      // nothing else left Save Defaults DIMMED and INERT — an amnesic preset could never be
       // saved as a default at all unless the player happened to move some other setting in the same
       // visit. The fix belongs HERE, in the one shared expression, and not in a second narrower
       // boolean for that one button: the note above spells out why three offers reading one line is
@@ -2176,10 +2182,9 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // delegates its entire settings restore to that same function. So every newly-lit offer has
       // something to do. isFullyReset reads this expression too, so Full Reset's dim follows for
       // free and for the same reason.
-      // ⚠ THE COMPARISON IS AGAINST effectiveAmnesicDefault, NOT `false`. "Default" here means the
-      // player's SAVED default when a snapshot exists — a preset saved while Amnesic was on is at
-      // its defaults while Amnesic is on — and factory (false) only when none does. A literal
-      // `false` would leave such a player's gear permanently lit with a Reset Settings that undid
+      // ⚠ THE COMPARISON IS AGAINST effectiveAmnesicDefault, NOT Off. "Default" here means the
+      // player's SAVED default when a snapshot exists — a preset saved on Full is at its defaults
+      // while it is on Full — and factory (Off) only when none does. A literal Off would leave such a player's gear permanently lit with a Reset Settings that undid
       // nothing, which is the dormant-theme false positive one store over.
       const amnesicAtDefault=amnesic===effectiveAmnesicDefault(savedDefaults);
       const settingsAtDefaults=randomFormat===defSettings.randomFormat&&dateFormat===defSettings.dateFormat&&inputStyle===defSettings.inputStyle&&dotRotation===defSettings.dotRotation&&defaultMode===defSettings.defaultMode&&useJulian===defSettings.useJulian&&minY===defSettings.minY&&maxY===defSettings.maxY&&leapChance===defSettings.leapChance&&janFebChance===defSettings.janFebChance&&julianChance===defSettings.julianChance&&saveStats===defSettings.saveStats&&useSystem===defSettings.useSystem&&themeAtDefaults&&amnesicAtDefault&&yearRange.min.value===String(defSettings.minY)&&yearRange.max.value===String(defSettings.maxY);

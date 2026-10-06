@@ -39,6 +39,7 @@ import {
   NUMERIC_FORMATS,
   INPUT_STYLES,
   DOT_ROTATION_OPTIONS,
+  AMNESIC_OPTIONS,
   DARK_THEMES,
   LIGHT_THEMES,
   CHANCE_OPTIONS,
@@ -57,10 +58,16 @@ import { CHANGELOG } from '../changelog.js'
 import { useSettings, SETTINGS_DEFAULTS } from '../store/settings.js'
 import type { SettingsValues } from '../store/settings.js'
 import { useModePrefs } from '../store/modePrefs.js'
-import { useUserDefaults, effectivePrefDefaults, normalizeAoxN } from '../store/userDefaults.js'
+import {
+  useUserDefaults,
+  effectivePrefDefaults,
+  effectiveAmnesicDefault,
+  normalizeAoxN,
+} from '../store/userDefaults.js'
 import type { PrefDefaults } from '../store/userDefaults.js'
 import { usePresets } from '../store/presets.js'
-import { selectAmnesic } from '../store/amnesic.js'
+import { useActiveAmnesicMode } from '../store/amnesic.js'
+import type { AmnesicMode } from '../store/amnesicMode.js'
 import { setPresetAmnesic, setOpenInPreset } from '../store/presetControl.js'
 import type { YearRangeMirrors } from './useYearRangeMirrors.js'
 
@@ -215,21 +222,24 @@ export function SettingsPanel({
   // ── AMNESIC (the row directly under Save Stats) ──────────────────────────────────────────────
   //
   // ★ THE PAIR IS THE POINT, AND IT IS WHY THESE TWO ROWS TOUCH. Save Stats answers "does this
-  // COUNT"; amnesic answers "does it LAST". They are ORTHOGONAL, not exclusive — in an amnesic
-  // preset you may still want Save Stats off for throwaway questions so even the session's count
-  // does not move. A three-way picker (Saved / Amnesic / Off) was proposed and the owner correctly
-  // killed it: it would have made two independent facts look like one choice among three.
+  // COUNT"; Amnesic answers "does it LAST" — Off: all of it; Stats Only: the round modes' Bests,
+  // and not the stats; Full: none of it. They are ORTHOGONAL, not exclusive — in an amnesic preset
+  // you may still want Save Stats off for throwaway questions so even the session's count does not
+  // move. Folding the two into one picker (Saved / Amnesic / Off) was proposed and the owner
+  // correctly killed it: it would have made two independent facts look like one choice. (Amnesic's
+  // OWN three values are one fact — how much lasts — which is why it is a picker and Save Stats
+  // stays a switch; and Save Stats has no matching middle value, by the owner's ruling.)
   //
-  // ⚠ NOT A ⚙ SETTING, despite living in the ⚙ panel. The value belongs to the PRESET (store/presets'
-  // `Preset.amnesic`), so it is read from the registry and written through store/presetControl —
-  // which pairs the write with the storage work it implies. The reasons are argued in full at the
-  // top of store/amnesic; the one that matters here is that a settings value can be overwritten
-  // wholesale by Reset Settings, with no rehydration and no screen remount, and this flag decides
-  // WHICH STORAGE AREA the stats are read from.
+  // ⚠ NOT A ⚙ SETTING, despite living in the ⚙ panel. The value is held per preset for the browsing
+  // session (store/sessionAmnesic), so it is read from there and written through
+  // store/presetControl — which pairs the write with the storage work it implies. The reasons are
+  // argued in full at the top of store/amnesic; the one that matters here is that a settings value
+  // can be overwritten wholesale by Reset Settings, with no rehydration and no screen remount, and
+  // this value decides WHICH STORAGE the stats and bests are read from.
   // ⚠⚠ WHERE IT LIVES IS NOT WHETHER IT COUNTS, AND THIS COMMENT USED TO CONFLATE THE TWO. It said
-  // two things followed from the flag being a preset property: that it is not in the Save Defaults
-  // snapshot, and that it never lights the gear's "modified" bar. BOTH WERE WRONG, in two separate
-  // rounds. Round 20 put it IN the snapshot (commitSaveDefaults below writes it, and Reset
+  // two things followed from the value not being a settings value: that it is not in the Save
+  // Defaults snapshot, and that it never lights the gear's "modified" bar. BOTH WERE WRONG, in two
+  // separate rounds. Round 20 put it IN the snapshot (commitSaveDefaults below writes it, and Reset
   // Settings / Full Reset restore it), and round 22 put it into the comparison that lights the
   // bar (main.tsx's settingsAtDefaults) — because leaving it out of ONE shared expression that also
   // dims Save Defaults meant an amnesic-only change could never be saved as a default at all. So
@@ -237,7 +247,7 @@ export function SettingsPanel({
   // and it is judged exactly like one; only its STORAGE is different, and that difference is what
   // the paragraph above is about.
   const activePresetId = usePresets((s) => s.activeId)
-  const amnesic = usePresets(selectAmnesic)
+  const amnesic = useActiveAmnesicMode()
   // The active preset's NAME, for the Presets section's one line of prose at the head of the panel.
   // A selector rather than `activePreset()` from store/presetControl: this has to RE-RENDER when the
   // name changes (the manage modal below can rename it while the panel is open), and a plain
@@ -247,12 +257,12 @@ export function SettingsPanel({
   const activePresetName = usePresets((s) => s.presets.find((p) => p.id === s.activeId)?.name ?? '')
   // ── GLOBAL: the "Open in" pin (round 21) ─────────────────────────────────────────────────
   // App-global, not per-preset — it lives on the registry (store/presets' openInPreset), read here
-  // and written through store/presetControl like the amnesic flag above. NOT captured by Save
+  // and written through store/presetControl. NOT captured by Save
   // Defaults (no registry field is in any snapshot). The picker offers "Last used" plus one entry
   // per preset; a fresh app open then lands in the pinned preset, or in whatever was active last
   // time when it is 'last'. Options rebuild when the preset list changes (rename / add / delete),
   // and each preset is drawn by components/PresetSwitcher's PresetOptionLabel — the same row the
-  // top-bar switcher draws, truncation and amnesic "A" included, because it is the same list.
+  // top-bar switcher draws, truncation and the spoken ", amnesic" included, because it is the same list.
   const presetList = usePresets((s) => s.presets)
   const openInPreset = usePresets((s) => s.openInPreset)
   const openInOptions = [
@@ -267,10 +277,10 @@ export function SettingsPanel({
   // problem they have. The How-to-Play section carries the explanation instead.
   // The teardown, the zero start and the discard all belong to setPresetAmnesic; this is a tap.
   // ⚠ IT ALSO MOVES THE FOUR OFFERS AS OF ROUND 22 — the gear's bar, and the Save Defaults /
-  // Reset Settings / Full Reset dims — because App compares this flag against the preset's saved
+  // Reset Settings / Full Reset dims — because App compares this value against the preset's saved
   // default now. Nothing here does that; `settingsModified` arrives as a prop and this tap simply
   // changes one of the values it is computed from, exactly as flipping Save Stats above does.
-  const toggleAmnesic = () => setPresetAmnesic(activePresetId, !amnesic)
+  const changeAmnesic = (mode: AmnesicMode) => setPresetAmnesic(activePresetId, mode)
   // The saved-defaults snapshot. A store value, so it is read here directly — but the EFFECTIVE
   // defaults derived from it (defPrefs) arrive as a prop, because their memo identity is load
   // bearing up in App.
@@ -542,7 +552,7 @@ export function SettingsPanel({
   // here on Reset Settings / Full Reset / the gear indicator mean THESE values by "default".
   // ⚠ amnesic RIDES ALONG, READ LIVE AT COMMIT (round 20) — NOT frozen into a ref at open like
   // pendSettingsRef. The popup has no UI for it (it is not shown or editable here — see the note at
-  // toggleAmnesic), so unlike the 16 settings values there is nothing a user could edit out from
+  // changeAmnesic), so unlike the 16 settings values there is nothing a user could edit out from
   // under a captured-at-open snapshot; reading the bound `amnesic` (a live store subscription
   // declared with the panel's other values above) at the moment of commit is equivalent to
   // capturing it at open and one line simpler. The owner's confirmed decision — flagged as a real
@@ -569,15 +579,15 @@ export function SettingsPanel({
   // the snapshot — the factory ⚙ values plus these edits, the natural flow from the factory view
   // (the footer's Clear link appears with it).
   // ⚠ amnesic PASSES THROUGH UNCHANGED, THE SAME AS THE 15 SETTINGS (round 20) — this popup shows
-  // and edits none of it (PresetManager and this file's manage-defaults markup both confirm Amnesic
-  // is read-only outside ⚙ → Stats), so it is not this popup's to re-capture. Previously-saved value
-  // when one exists, factory (false — a fresh preset is never amnesic) when creating the snapshot
-  // from the factory view — mirroring effectiveAmnesicDefault's own "nothing saved = factory" rule.
+  // and edits none of it (Amnesic is set only in ⚙ → Stats), so it is not this popup's to
+  // re-capture. Previously-saved value when one exists, factory (Off — a fresh preset is never
+  // amnesic) when creating the snapshot from the factory view: effectiveAmnesicDefault's own
+  // "nothing saved = factory" rule, and its reading of a snapshot an older build saved.
   const commitManageDefaults = () => {
     saveUserDefaults({
       settings: savedDefaults ? savedDefaults.settings : SETTINGS_DEFAULTS,
       prefs: { ...managePrefs, aoxN: normalizeAoxN(managePrefs.aoxN) },
-      amnesic: savedDefaults ? savedDefaults.amnesic : false,
+      amnesic: effectiveAmnesicDefault(savedDefaults),
     })
     setManageDefaultsOpen(false)
   }
@@ -1023,9 +1033,9 @@ export function SettingsPanel({
           <div className="space-y-2 pt-3 border-t border-(--bd-500-20)">
             <SectionLabel>Display</SectionLabel>
             <div className="text-xs text-(--tx-200-80)">Date Format</div>
-            {/* ★ EVERY SWITCH NAMES ITS SETTING (aria-label), on all five of them — this one, Use
-                System Settings, the Julian Calendar toggle, Save Stats and Amnesic. Their visible
-                content is the STATE ("On"/"Off"), which is the same two words on all five, so without
+            {/* ★ EVERY SWITCH NAMES ITS SETTING (aria-label), on all four of them — this one, Use
+                System Settings, the Julian Calendar toggle and Save Stats. Their visible
+                content is the STATE ("On"/"Off"), which is the same two words on all four, so without
                 a name a screen reader hears identical buttons and nothing can address one of them
                 except by walking the DOM from its label span. The setting name is the row's label
                 text VERBATIM, so speaking what you see still activates the switch and there is no
@@ -1383,41 +1393,23 @@ export function SettingsPanel({
                 {saveStats ? 'On' : 'Off'}
               </button>
             </div>
-            {/* AMNESIC — "does it last", directly under "does it count". A SWITCH by THE PICKER
-                RULE above: label left, one On/Off button right, aria-label the row's label
-                VERBATIM. See toggleAmnesic for why this one row's value is a property of the
-                PRESET rather than a ⚙ setting, and store/amnesic for what it clears and keeps.
-                ⚠ THE LOCK, AND WHY IT IS DRAWN ON THE ROW RATHER THAN ON THE BUTTON. With Save
-                Stats off nothing is being recorded at all, so "does it last" has no subject and
-                the row dims — the app's established "dimmed means disabled". The dim goes on the
-                ROW so the label greys with its control, which is PillGroup's rule (a lock fades
-                one housing and CSS opacity covers every descendant, so the whole thing greys as
-                ONE piece); putting opacity-60 on both row and button would multiply to 0.36.
-                That is also why this is not NOT_OFFERED_BTN_CLASS: that token bundles the dim
-                with the cursor for a button that carries its own dim, and this one's dim is
-                inherited. The other two thirds of controlClasses' three-statement convention are
-                unchanged and both live on the button — aria-disabled ANNOUNCES it and the
-                handler guard is what actually makes it inert. No pointer-events-none, for round
-                15's reason: it would stop the not-allowed cursor from ever painting and would
-                leave a keyboard user pressing a silent control.
+            {/* AMNESIC — "does it last", directly under "does it count". A PICKER by THE PICKER RULE
+                above (three values, exactly one of them): caption above, one tray, the group named
+                by the caption VERBATIM. See changeAmnesic for why this one row's value is held for
+                the session rather than as a ⚙ setting, and store/amnesic for what each value
+                clears and keeps.
+                ⚠ THE LOCK. With Save Stats off nothing is being recorded at all, so "does it last"
+                has no subject and the tray dims — the app's established "dimmed means disabled",
+                stated once, as PillGroup's `disabled`, like every other picker: the housing greys
+                as one piece and the caption stays lit.
                 ⚠ THE VALUE IS PRESERVED WHILE LOCKED, like Julian Chance's selection — turning
                 Save Stats back on restores an amnesic preset to being amnesic. Locking it is what
-                stops the flip: a toggle from behind the dim would throw away the session and the
+                stops the change: one made from behind the dim would throw away the session and the
                 run in progress with it, for a setting the user was told did not apply. */}
-            <div className={`flex items-center justify-between ${saveStats ? '' : 'opacity-60'}`}>
-              <span className="text-xs text-(--tx-200-80)">Amnesic</span>
-              <button
-                type="button"
-                aria-label="Amnesic"
-                aria-disabled={!saveStats || undefined}
-                onClick={() => {
-                  if (saveStats) toggleAmnesic()
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium border ${amnesic ? 'btn-solid border-transparent' : 'surface-toggle text-(--tx-100-80)'}${saveStats ? '' : ' cursor-not-allowed'}`}
-              >
-                {amnesic ? 'On' : 'Off'}
-              </button>
-            </div>
+            <div className="text-xs text-(--tx-200-80) pt-1">Amnesic</div>
+            <PillGroup label="Amnesic" disabled={!saveStats}>
+              <PillTray value={amnesic} onChange={changeAmnesic} options={AMNESIC_OPTIONS} />
+            </PillGroup>
           </div>
         </div>
         {/* The panel's bottom boundary. elev-shadow-up is UNCONDITIONAL: its strength is the

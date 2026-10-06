@@ -9,6 +9,7 @@ import {
 } from '../src/store/userDefaults.js'
 import { SETTINGS_DEFAULTS } from '../src/store/settings.js'
 import { MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
+import { storedAmnesic } from '../src/store/amnesicMode.js'
 
 // userDefaults.test.js — the saved-personal-defaults store (Session 11, "Save Defaults")
 // and its pure helpers. Mirrors settings.test.js/modePrefs.test.js: locks the pure state
@@ -28,9 +29,10 @@ const FACTORY_PREFS = {
   blitzQSec: MODE_PREFS_DEFAULTS.blitzQSec,
   aoxN: MODE_PREFS_DEFAULTS.aoxN,
 }
-// Round 20 — diverges from the factory `false` the same way the settings/prefs fixtures above
-// diverge from theirs, so a round-trip through it proves something rather than being a coincidence.
-const CUSTOM_AMNESIC = true
+// Diverges from the factory Off the same way the settings/prefs fixtures above diverge from theirs,
+// so a round-trip through it proves something rather than being a coincidence. Stats Only, because
+// it is the one value the older boolean could not spell.
+const CUSTOM_AMNESIC = 'stats'
 
 describe('userDefaults store', () => {
   beforeEach(() => {
@@ -49,7 +51,11 @@ describe('userDefaults store', () => {
     const saved = useUserDefaults.getState().saved
     expect(saved.settings).toEqual(CUSTOM_SETTINGS)
     expect(saved.prefs).toEqual(CUSTOM_PREFS)
-    expect(saved.amnesic).toBe(CUSTOM_AMNESIC)
+    // Saved in its two-field spelling (store/amnesicMode): the boolean an older build acts on, and
+    // the value beside it — and read back through the one reader.
+    expect(saved.amnesic).toBe(true)
+    expect(saved.amnesicMode).toBe(CUSTOM_AMNESIC)
+    expect(effectiveAmnesicDefault(saved)).toBe(CUSTOM_AMNESIC)
     useUserDefaults.getState().clearDefaults()
     expect(useUserDefaults.getState().saved).toBeNull()
   })
@@ -79,16 +85,15 @@ describe('userDefaults pure helpers', () => {
     expect(effectivePrefDefaults(saved)).toEqual(CUSTOM_PREFS)
   })
 
-  // Round 20 — mirrors the two tests above: factory (false) when nothing is saved, the saved
-  // value (in EITHER direction) when a snapshot exists.
-  it('effectiveAmnesicDefault: factory (false) when null, the saved value when present', () => {
-    expect(effectiveAmnesicDefault(null)).toBe(false)
-    expect(
-      effectiveAmnesicDefault({ settings: CUSTOM_SETTINGS, prefs: CUSTOM_PREFS, amnesic: true }),
-    ).toBe(true)
-    expect(
-      effectiveAmnesicDefault({ settings: CUSTOM_SETTINGS, prefs: CUSTOM_PREFS, amnesic: false }),
-    ).toBe(false)
+  // Mirrors the two tests above: factory (Off) when nothing is saved, the saved value when a
+  // snapshot exists — in this build's spelling, and in the boolean-only one an older build saves.
+  it('effectiveAmnesicDefault: factory (Off) when null, the saved value when present', () => {
+    const snapshot = (amnesic) => ({ settings: CUSTOM_SETTINGS, prefs: CUSTOM_PREFS, ...amnesic })
+    expect(effectiveAmnesicDefault(null)).toBe('off')
+    for (const mode of ['off', 'stats', 'full'])
+      expect(effectiveAmnesicDefault(snapshot(storedAmnesic(mode)))).toBe(mode)
+    expect(effectiveAmnesicDefault(snapshot({ amnesic: true }))).toBe('full')
+    expect(effectiveAmnesicDefault(snapshot({ amnesic: false }))).toBe('off')
   })
 
   it('a saved snapshot is FORWARD-MERGED over factory — fields a release adds after the save mean factory, never undefined', () => {
@@ -106,10 +111,9 @@ describe('userDefaults pure helpers', () => {
       ...CUSTOM_PREFS,
       blitzQSec: FACTORY_PREFS.blitzQSec,
     })
-    // amnesic wasn't SPREAD onto `saved` at all here — the one-boolean equivalent of "a release adds
-    // this field after the save": a build from before round 20 never wrote it, so `saved.amnesic`
-    // is `undefined` rather than merely absent from an object spread. Must still read factory (false).
-    expect(effectiveAmnesicDefault(saved)).toBe(false)
+    // Neither Amnesic field is on `saved` at all here — "a release adds this field after the save":
+    // a build from before round 20 never wrote one. Must still read factory (Off).
+    expect(effectiveAmnesicDefault(saved)).toBe('off')
   })
 
   it('normalizeAoxN applies the AoX commit clamp (2–1000, non-numeric → 10)', () => {

@@ -14,9 +14,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { useSettings } from '../src/store/settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
-import { useUserDefaults } from '../src/store/userDefaults.js'
-import { usePresets } from '../src/store/presets.js'
-import { selectAmnesic } from '../src/store/amnesic.js'
+import { useUserDefaults, effectiveAmnesicDefault } from '../src/store/userDefaults.js'
+import { activeAmnesicMode } from '../src/store/amnesic.js'
 import {
   mountApp,
   openSettings,
@@ -28,8 +27,8 @@ import {
   isOffered,
   makeSaveable,
   resetAppState,
-  switchState,
-  toggleSwitch,
+  pickPill,
+  pickerChosen,
   drainHistory,
 } from './helpers/settingsPanel.jsx'
 
@@ -240,65 +239,74 @@ describe('Save Defaults + gear indicator', () => {
     expect(isOffered(footerButton('Save Defaults'))).toBe(false)
   })
 
-  // ── Round 20: Amnesic joins the Save Defaults / Reset Settings / Full Reset contract ────────
+  // ── Amnesic is part of the Save Defaults / Reset Settings / Full Reset contract ─────────────
   // Owner's explicit, confirmed decision (flagged as a real tradeoff, reaffirmed anyway): Save
-  // Defaults captures whether the active preset is Amnesic at the moment of saving; Reset Settings
-  // and Full Reset both restore it.
-  // ⚠ ROUND 22 CHANGED WHAT THIS BLOCK CAN ASSUME. Amnesic used to be invisible to the gear's
-  // "modified" bar, so every case here had to arrange a SEPARATE divergence (makeSaveable) to get
-  // the button it presses offered at all — and that workaround was quietly standing on the bug: the
-  // capture below was UNREACHABLE for an Amnesic-only change, because Save Defaults was dimmed and
-  // its own opener early-returns while it is. Amnesic is compared now (main.tsx's
-  // settingsAtDefaults), so it lights the button by itself; the case directly below is the one that
-  // says so, and the rest keep makeSaveable only where the case is about something else.
-  it('the Save Defaults popup captures the LIVE Amnesic value at commit — both Off and On', () => {
+  // Defaults captures the active preset's Amnesic value at the moment of saving — whichever of the
+  // three it is — and Reset Settings and Full Reset both restore it. The saved value is also what
+  // the preset starts every fresh app open on (tests/sessionAmnesic.dom).
+  // ⚠ Amnesic lights the gear's "modified" bar by itself (main.tsx's settingsAtDefaults compares
+  // it), so the capture is reachable from the pill alone; the first case below says so, and the
+  // rest keep makeSaveable only where the case is about something else.
+  const saved = () => useUserDefaults.getState().saved
+  const AMNESIC_LABELS = { off: 'Off', stats: 'Stats Only', full: 'Full' }
+  const pickAmnesic = (mode) => pickPill('Amnesic', AMNESIC_LABELS[mode])
+
+  it('the Save Defaults popup captures the LIVE Amnesic value at commit — each of the three', () => {
     mountApp()
     openSettings()
-    // Off first: Amnesic starts Off and nothing else needs to diverge to prove the capture.
+    // Off first: Amnesic starts Off and something else has to diverge for the popup to open.
     makeSaveable()
     openPopup()
     act(() => fireEvent.click(btn('Save')))
-    expect(useUserDefaults.getState().saved.amnesic).toBe(false)
-    // Flip Amnesic On — which is now a divergence in its own right, so the popup is reachable from
-    // the toggle alone.
-    toggleSwitch('Amnesic')
-    openPopup()
-    act(() => fireEvent.click(btn('Save')))
-    expect(useUserDefaults.getState().saved.amnesic).toBe(true)
+    expect(effectiveAmnesicDefault(saved())).toBe('off')
+    // Each other value is a divergence in its own right, so the popup is reachable from the pill
+    // alone.
+    for (const mode of ['stats', 'full', 'off']) {
+      pickAmnesic(mode)
+      openPopup()
+      act(() => fireEvent.click(btn('Save')))
+      expect(effectiveAmnesicDefault(saved())).toBe(mode)
+      // The spelling on the device: the boolean an OLDER build acts on says "amnesic" for both
+      // amnesic values, and the value itself rides beside it (store/amnesicMode).
+      expect([saved().amnesic, saved().amnesicMode]).toEqual([mode !== 'off', mode])
+    }
   })
 
-  // ★★ THE BUG, AS THE USER MET IT: turn Amnesic on, change NOTHING else, and Save Defaults sat
-  // dimmed and did nothing — so "Amnesic: on" could never become part of your defaults unless you
-  // happened to move some other setting in the same visit. Both halves are asserted, because the
-  // dim and the inertness were two separate consequences of one missing comparison: the button is
-  // offered, AND pressing it actually opens the popup (openSaveDefaults early-returns on the same
+  // ★★ THE BUG, AS THE USER MET IT: change Amnesic, change NOTHING else, and Save Defaults sat
+  // dimmed and did nothing — so an amnesic preset could never become part of your defaults unless
+  // you happened to move some other setting in the same visit. Both halves are asserted, because
+  // the dim and the inertness were two separate consequences of one missing comparison: the button
+  // is offered, AND pressing it actually opens the popup (openSaveDefaults early-returns on the same
   // boolean that dims it, so a fix to only one of them would leave the feature just as unreachable).
-  it('an Amnesic-only change can be saved as a default, with nothing else touched', () => {
-    mountApp()
-    openSettings()
-    expect(isOffered(footerButton('Save Defaults'))).toBe(false)
-    toggleSwitch('Amnesic')
-    expect(isOffered(footerButton('Save Defaults'))).toBe(true)
-    openPopup()
-    act(() => fireEvent.click(btn('Save')))
-    expect(useUserDefaults.getState().saved.amnesic).toBe(true)
-    // …and once saved, the live state matches the saved default again, so the offer withdraws —
-    // the flag is compared against the SAVED default, not against factory.
-    expect(isOffered(footerButton('Save Defaults'))).toBe(false)
-    // Turning it back off now diverges from the saved default in the other direction.
-    toggleSwitch('Amnesic')
-    expect(isOffered(footerButton('Save Defaults'))).toBe(true)
-  })
+  for (const mode of ['stats', 'full'])
+    it(`an Amnesic-only change to ${AMNESIC_LABELS[mode]} can be saved as a default, with nothing else touched`, () => {
+      mountApp()
+      openSettings()
+      expect(isOffered(footerButton('Save Defaults'))).toBe(false)
+      pickAmnesic(mode)
+      expect(isOffered(footerButton('Save Defaults'))).toBe(true)
+      openPopup()
+      act(() => fireEvent.click(btn('Save')))
+      expect(effectiveAmnesicDefault(saved())).toBe(mode)
+      // …and once saved, the live value matches the saved default again, so the offer withdraws —
+      // the value is compared against the SAVED default, not against factory.
+      expect(isOffered(footerButton('Save Defaults'))).toBe(false)
+      // Any OTHER value now diverges from the saved default — the other amnesic one included.
+      pickAmnesic(mode === 'stats' ? 'full' : 'stats')
+      expect(isOffered(footerButton('Save Defaults'))).toBe(true)
+      pickAmnesic('off')
+      expect(isOffered(footerButton('Save Defaults'))).toBe(true)
+    })
 
   it("the manager's Save passes the PREVIOUSLY SAVED Amnesic value through unchanged, never the live one", () => {
     mountApp()
     openSettings()
-    toggleSwitch('Amnesic') // On
+    pickAmnesic('stats')
     makeSaveable()
     openPopup()
-    act(() => fireEvent.click(btn('Save'))) // saved.amnesic = true
-    expect(useUserDefaults.getState().saved.amnesic).toBe(true)
-    toggleSwitch('Amnesic') // live flips back Off — a re-capture would show up here
+    act(() => fireEvent.click(btn('Save'))) // saved: Stats Only
+    expect(effectiveAmnesicDefault(saved())).toBe('stats')
+    pickAmnesic('full') // the live value moves — a re-capture would show up here
     // Edit one shown row through the manager and Save — the manager's own rule (mirrors the
     // settings-byte-identical case in tests/settingsPanel.defaults.dom): it writes only what it
     // shows, never Amnesic.
@@ -310,49 +318,77 @@ describe('Save Defaults + gear indicator', () => {
       }),
     )
     act(() => fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })))
-    expect(useUserDefaults.getState().saved.amnesic).toBe(true) // unchanged — never re-captured
+    expect(effectiveAmnesicDefault(saved())).toBe('stats') // unchanged — never re-captured
   })
 
-  it('Reset Settings restores the saved Amnesic state onto the active preset', () => {
+  // A snapshot an OLDER build saved carries only its boolean. The manager's Save must carry that
+  // through as what it MEANS (true is Full) — and write it back in this build's spelling.
+  it("the manager's Save keeps an older build's boolean-only snapshot amnesic", () => {
     mountApp()
+    act(() =>
+      useUserDefaults.setState({
+        saved: {
+          settings: { ...useSettings.getState() },
+          prefs: { flashMs: 800, blitzSec: 60, blitzQSec: 10, aoxN: '10' },
+          amnesic: true,
+        },
+      }),
+    )
     openSettings()
-    toggleSwitch('Amnesic') // On
-    makeSaveable()
-    openPopup()
-    act(() => fireEvent.click(btn('Save'))) // saved.amnesic = true
-    toggleSwitch('Amnesic') // live diverges to Off — Reset Settings must put it back
-    act(() => useSettings.getState().setLeapChance('75')) // something else, so the tap is live
-    fireResetSettings()
-    expect(switchState('Amnesic')).toBe('On')
-    expect(selectAmnesic(usePresets.getState())).toBe(true)
+    act(() => fireEvent.click(footerButton('View Saved Defaults')))
+    const dialog = modalCard('Your saved defaults')
+    act(() =>
+      fireEvent.change(within(dialog).getByRole('slider', { name: 'Flash Speed' }), {
+        target: { value: '1200' },
+      }),
+    )
+    act(() => fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })))
+    expect([saved().amnesic, saved().amnesicMode]).toEqual([true, 'full'])
   })
 
-  it('with nothing saved, Reset Settings restores Amnesic to factory (Off)', () => {
-    mountApp()
-    openSettings()
-    toggleSwitch('Amnesic') // live On, nothing ever saved
-    act(() => useSettings.getState().setLeapChance('75')) // something capturable diverges too
-    fireResetSettings()
-    expect(switchState('Amnesic')).toBe('Off')
-    expect(selectAmnesic(usePresets.getState())).toBe(false)
-  })
+  for (const mode of ['stats', 'full'])
+    it(`Reset Settings restores a saved ${AMNESIC_LABELS[mode]} onto the active preset`, () => {
+      mountApp()
+      openSettings()
+      pickAmnesic(mode)
+      makeSaveable()
+      openPopup()
+      act(() => fireEvent.click(btn('Save'))) // saved: this value
+      pickAmnesic('off') // live diverges — Reset Settings must put it back
+      act(() => useSettings.getState().setLeapChance('75')) // something else, so the tap is live
+      fireResetSettings()
+      expect(pickerChosen('Amnesic')).toEqual([AMNESIC_LABELS[mode]])
+      expect(activeAmnesicMode()).toBe(mode)
+    })
+
+  for (const mode of ['stats', 'full'])
+    it(`with nothing saved, Reset Settings restores ${AMNESIC_LABELS[mode]} to factory (Off)`, () => {
+      mountApp()
+      openSettings()
+      pickAmnesic(mode) // live, nothing ever saved
+      act(() => useSettings.getState().setLeapChance('75')) // something capturable diverges too
+      fireResetSettings()
+      expect(pickerChosen('Amnesic')).toEqual(['Off'])
+      expect(activeAmnesicMode()).toBe('off')
+    })
 
   // The surprising half of this group's scope, called out on its own rather than left as inherited
   // coverage: fullReset delegates its ENTIRE settings restore to resetSettings (main.tsx's own
   // comment says so), so Amnesic rides along there too — Full Reset restores it exactly as Reset
   // Settings does, not just the footer's own middle button.
-  it('Full Reset ALSO restores the saved Amnesic state (not just the Reset Settings button)', () => {
-    mountApp()
-    openSettings()
-    toggleSwitch('Amnesic') // On
-    makeSaveable()
-    openPopup()
-    act(() => fireEvent.click(btn('Save'))) // saved.amnesic = true
-    toggleSwitch('Amnesic') // live diverges to Off
-    act(() => useSettings.getState().setLeapChance('75')) // something else, so Full Reset has work
-    fireFullReset()
-    expect(selectAmnesic(usePresets.getState())).toBe(true)
-  })
+  for (const mode of ['stats', 'full'])
+    it(`Full Reset ALSO restores a saved ${AMNESIC_LABELS[mode]} (not just the Reset Settings button)`, () => {
+      mountApp()
+      openSettings()
+      pickAmnesic(mode)
+      makeSaveable()
+      openPopup()
+      act(() => fireEvent.click(btn('Save'))) // saved: this value
+      pickAmnesic('off') // live diverges to Off
+      act(() => useSettings.getState().setLeapChance('75')) // something else, so Full Reset has work
+      fireFullReset()
+      expect(activeAmnesicMode()).toBe(mode)
+    })
 
   // Round 22 removed the popup's Cancel button app-wide (the owner: a dismiss already says it), so the
   // discard is now made by dismissing — Escape here, the route a keyboard reaches. What is asserted

@@ -91,16 +91,14 @@ export const presetKey = (baseKey: string, presetId: number): string =>
 export type Preset = {
   id: number // allocated once, from `nextId`, and NEVER reused — see normalizeRegistry
   name: string
-  // ★ AMNESIC: this preset's STATS live in sessionStorage instead of on the device, so they are
-  // gone when the app is closed. The flag is a property of the PRESET rather than one of its ⚙
-  // settings, and store/amnesic argues why at length — the short version is that a settings value
-  // can be rewritten wholesale by Reset Settings' applySettings, with no rehydration and no screen
-  // remount, which is precisely how the stats of the preset you just left get written into the one
-  // you just opened. Every write to this field goes through applyRegistry, which src/main.tsx is
-  // already subscribed to.
-  // ⚠ It lives HERE, in the global registry, rather than in the preset's own saved payload, for a
-  // second reason: a preset UI has to show its "A" marker for presets you are not currently on,
-  // and only the registry can answer for all of them at once.
+  // ★ AN OLDER BUILD'S FIELD, CARRIED AND NOT USED. Builds up to v2.27.3 kept a preset's Amnesic
+  // switch here, as a boolean, and live and staging share this registry — so such a build may be
+  // reading and writing this field in another tab right now. This build keeps each preset's Amnesic
+  // setting with the browsing session instead (store/sessionAmnesic) and NEVER CHANGES this field:
+  // every registry write below passes each preset's value through as it was read, so nothing this
+  // build does can switch an older tab's guest session off, or on. It is read in exactly one place
+  // — store/sessionAmnesic's hand-over from an older build — and a new preset is given `false`,
+  // which is what an older build's own new preset has.
   amnesic: boolean
 }
 
@@ -114,7 +112,7 @@ export type Preset = {
 // into the pinned (permanent) one by a refresh.
 // It lives HERE, on the registry, and not in useSettings, because useSettings is per-preset — a
 // "which preset" preference cannot live inside a preset. It is NOT captured by Save Defaults
-// (SavedDefaults carries settings/prefs/amnesic only — no registry field is in any of those), by
+// (SavedDefaults carries settings, prefs and the Amnesic value — no registry field is in any of those), by
 // construction rather than by an exclusion. The `merge` step below is what turns a pin into the
 // hydrated `activeId`, so index.html's boot script and every per-preset store agree on the active
 // preset from the first frame with no switch and no theme flash — index.html duplicates that one
@@ -178,9 +176,8 @@ export const defaultPresetName = (id: number): string => `Preset ${id}`
 // device does not even gain a `cg-presets-v1` entry — persist only writes on a set, and hydrating
 // from an absent payload is not a set. The first write happens when the player creates a second
 // preset, which is the first moment the registry says anything a default could not.
-// ⚠ `amnesic: false` is not a placeholder — it is the statement that the existing data is PERMANENT
-// data. A device that has never seen presets materialises exactly this registry, so the default has
-// to be the behaviour every build before amnesic had.
+// ⚠ `amnesic: false` is the older builds' field (see Preset above), spelled the way such a build
+// spells a preset whose data is PERMANENT — which is what the existing data is.
 export const makePresetRegistryDefaults = (): PresetRegistryValues => ({
   presets: [{ id: FIRST_PRESET_ID, name: defaultPresetName(FIRST_PRESET_ID), amnesic: false }],
   activeId: FIRST_PRESET_ID,
@@ -206,11 +203,9 @@ export function normalizeRegistry(
   const presets = (Array.isArray(raw?.presets) ? raw.presets : [])
     .filter((p): p is Preset => !!p && Number.isInteger(p.id) && p.id >= FIRST_PRESET_ID)
     .filter((p) => !seen.has(p.id) && (seen.add(p.id), true))
-    // ⚠ `=== true` rather than a cast: this field is read from the same untrusted storage the rest
-    // of the registry is, and it is the field that decides WHICH STORAGE AREA a preset's stats are
-    // read from. A truthy string out of a tampered payload must not be able to point a preset at a
-    // session copy it never had — and a payload written before amnesic existed simply lacks the
-    // key, which this turns into the permanent behaviour it had at the time.
+    // ⚠ `=== true` is the older builds' own reading of their field (see Preset above), kept exactly:
+    // this build only carries the value, and it must hand back the boolean such a build would have
+    // made of what is stored — never a value that build would read differently.
     .map((p) => ({
       id: p.id,
       name: normalizePresetName(p.name, p.id),
@@ -293,7 +288,8 @@ export function readStoredRegistry(): PresetRegistryValues | null {
 // exposes ONE deliberately low-level door, the operations are pure functions over the value
 // (below), and store/presetControl is the only place that opens the door.
 export type PresetRegistryState = PresetRegistryValues & {
-  // ⚠⚠ NOT FOR APP CODE. Replaces the whole registry value. Its callers are store/presetControl —
+  // ⚠⚠ NOT FOR APP CODE. Replaces the whole registry value (all of it but the older builds'
+  // `amnesic` field, which it carries — see the store below). Its callers are store/presetControl —
   // which pairs every call with the storage work the change implies — and the test suite. Reaching
   // for it from a component is the 500-cards-becomes-4 bug with extra steps.
   // ⚠ IT IS OBSERVED. src/main.tsx subscribes to this store and remounts the five always-mounted
@@ -309,7 +305,23 @@ export const usePresets = create<PresetRegistryState>()(
   persist(
     (set) => ({
       ...makePresetRegistryDefaults(),
-      applyRegistry: (next) => set(() => ({ ...next })),
+      // ★ EACH PRESET'S `amnesic` IS TAKEN FROM THE DEVICE AT THE MOMENT OF THE WRITE, not from this
+      // page's memory. It is an older build's field (see Preset above), and such a build in another
+      // tab may have changed it since this page loaded — a guest's session switched on there. Writing
+      // back the value this page happened to read would switch that session off at the older tab's
+      // next reload, so the write carries what is stored NOW; a preset the device does not list yet
+      // keeps the value it was handed.
+      applyRegistry: (next) =>
+        set(() => {
+          const stored = new Map(readStoredRegistry()?.presets.map((p) => [p.id, p.amnesic]))
+          return {
+            ...next,
+            presets: next.presets.map((p) => {
+              const amnesic = stored.get(p.id) ?? p.amnesic
+              return amnesic === p.amnesic ? p : { ...p, amnesic }
+            }),
+          }
+        }),
     }),
     {
       // ⚠ The default storage, NOT the scoped adapter below. The registry says which preset you are

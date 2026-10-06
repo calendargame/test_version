@@ -183,24 +183,31 @@ describe('the ⚙ panel offers it, and the card reads the registry', () => {
     expect(managePresetsButton().parentElement.textContent).toContain('You are on Mornings.')
   })
 
-  it('lists every preset in registry order, marks the active one, and marks the amnesic ones', () => {
+  it('lists every preset in registry order, marks the active one, and SAYS which are amnesic', () => {
     act(() => {
       createPreset('Timed')
       createPreset('Guest')
+      createPreset('Practice')
     })
     openManager()
-    // Guest (id 3) — a preset you are NOT on, which only the registry can answer for. Set AFTER
-    // mountApp(): round 21 reseeds every preset's Amnesic flag from its saved default on a cold
-    // open, and Guest has no saved defaults, so a flag set before the mount would be cleared by
-    // that boot pass. The manager re-renders off the registry subscription, so the marker appears.
-    act(() => setPresetAmnesic(3, true))
-    expect(listedNames()).toEqual(['Preset 1', 'Timed', 'Guest'])
-    // The two quiet markers are asked for by their sr-only WORDS, never by their glyphs: a bare ✓
-    // or A is a picture, and the word is the whole reason each marker is accessible at all.
+    // Guest (id 3) and Practice (id 4) — presets you are NOT on, which the session's Amnesic values
+    // answer for all at once. The manager re-renders off that subscription, so the words appear.
+    act(() => setPresetAmnesic(3, 'full'))
+    act(() => setPresetAmnesic(4, 'stats'))
+    expect(listedNames()).toEqual(['Preset 1', 'Timed', 'Guest', 'Practice'])
+    // The current-preset mark is asked for by its sr-only WORDS, never by its glyph: a bare ✓ is a
+    // picture, and the words are the whole reason the mark is accessible at all.
     expect(within(rowOf('Preset 1')).getByText('Current preset')).toBeTruthy()
     expect(within(rowOf('Timed')).queryByText('Current preset')).toBeNull()
-    expect(within(rowOf('Guest')).getByText('Amnesic')).toBeTruthy()
-    expect(within(rowOf('Timed')).queryByText('Amnesic')).toBeNull()
+    // Which presets forget is SPOKEN and not drawn — the same words the switcher's list says, and
+    // the two kinds told apart.
+    expect(within(rowOf('Guest')).getByText('amnesic').className).toContain('sr-only')
+    expect(within(rowOf('Practice')).getByText('amnesic, stats only').className).toContain(
+      'sr-only',
+    )
+    expect(within(rowOf('Timed')).queryByText(/amnesic/)).toBeNull()
+    // …and no letter stands in for it anywhere in the list.
+    for (const name of listedNames()) expect(within(rowOf(name)).queryByText('A')).toBeNull()
   })
 })
 
@@ -510,42 +517,48 @@ describe('reordering', () => {
   // ★ THE ROW HAS TWO ORDERS, AND BOTH ARE THE POINT.
   // ON SCREEN it is the iPhone reorder-list convention: the grip is grabbed over and over, the ✕ is
   // destructive (and deletes an untouched preset without asking), so they sit at opposite ends — ✕
-  // at the LEFT, grip at the RIGHT, the name and its two markers between them.
-  // IN THE MARKUP — the order Tab walks and a screen reader reads — the ✕ comes LAST: name, ✓, A,
+  // at the LEFT, grip at the RIGHT, the name and the current-preset mark between them.
+  // IN THE MARKUP — the order Tab walks and a screen reader reads — the ✕ comes LAST: name, ✓,
   // grip, ✕. On-screen order in the markup made "Delete <first preset>" the first Tab stop of the
   // popup, one Enter away from deleting an untouched preset unasked.
   describe('the row layout', () => {
     const column = (el) => /(?:^|\s)col-start-(\d)(?:\s|$)/.exec(el.className)?.[1]
-    it('reads ✕, name, ✓, A, grip — left to right on screen', () => {
+    it('reads ✕, name, ✓, grip — left to right on screen, with no column kept for an amnesic mark', () => {
       let guestId
       act(() => {
         guestId = createPreset('Guest').id
       })
       openManager()
-      // After the mount, for the reason the listing case above gives (the cold-open reseed).
-      act(() => setPresetAmnesic(guestId, true))
+      act(() => setPresetAmnesic(guestId, 'full'))
       // jsdom lays nothing out, so "on screen" is read off the grid placement each cell declares.
-      const onScreen = (name) => [...rowOf(name).children].sort((a, b) => column(a) - column(b))
+      // A row's CELLS are its children that take a column; the spoken word for an amnesic preset is
+      // positioned out of flow (sr-only) and takes none.
+      const onScreen = (name) =>
+        [...rowOf(name).children].filter(column).sort((a, b) => column(a) - column(b))
       const cells = onScreen('Preset 1')
-      expect(cells.map(column)).toEqual(['1', '2', '3', '4', '5'])
+      expect(cells.map(column)).toEqual(['1', '2', '3', '4'])
       expect(cells.every((c) => /(?:^|\s)row-start-1(?:\s|$)/.test(c.className))).toBe(true)
       expect(cells[0]).toBe(rowButton('Preset 1', 'delete'))
       expect(cells[1]).toBe(nameBoxes()[0])
       expect(cells[2].textContent).toBe('✓Current preset')
-      expect(cells[3].textContent).toBe('') // Preset 1 is not amnesic; the slot is still reserved
-      expect(cells[4]).toBe(reorderHandle('Preset 1'))
+      expect(cells[3]).toBe(reorderHandle('Preset 1'))
+      // The amnesic row has exactly the same four cells — the name box loses no width to a marker —
+      // and the grid is declared four columns wide, not five.
       const guest = onScreen('Guest')
-      expect(guest[2].textContent).toBe('') // not the current preset; the slot is still reserved
-      expect(guest[3].textContent).toBe('AAmnesic')
-      expect(guest[4]).toBe(reorderHandle('Guest'))
+      expect(guest.map(column)).toEqual(['1', '2', '3', '4'])
+      expect(guest[2].textContent).toBe('') // not the current preset; that slot is still reserved
+      expect(guest[3]).toBe(reorderHandle('Guest'))
+      expect(rowOf('Guest').className).toContain('grid-cols-[auto_minmax(0,1fr)_auto_auto]')
+      const spoken = [...rowOf('Guest').children].filter((el) => !column(el))
+      expect(spoken.map((el) => [el.className, el.textContent])).toEqual([['sr-only', 'amnesic']])
     })
 
-    it('reads name, ✓, A, grip, ✕ in the markup — the destructive control is the LAST of its row', () => {
+    it('reads name, ✓, grip, ✕ in the markup — the destructive control is the LAST of its row', () => {
       openManager()
       const kids = [...rowOf('Preset 1').children]
       expect(kids[0]).toBe(nameBoxes()[0])
-      expect(kids[3]).toBe(reorderHandle('Preset 1'))
-      expect(kids[4]).toBe(rowButton('Preset 1', 'delete'))
+      expect(kids[2]).toBe(reorderHandle('Preset 1'))
+      expect(kids[3]).toBe(rowButton('Preset 1', 'delete'))
     })
 
     it('opening the popup puts the keyboard on the card, and the first Tab stop is a NAME — never a ✕', () => {
@@ -1281,7 +1294,7 @@ describe('deleting', () => {
 
   // ⚠ THE OWNER'S EXPLICIT CALL, and the one place "holds nothing" is not the same as "untouched":
   // Amnesic is a statement about where stats WOULD be kept, and a preset with none has lost nothing
-  // by being deleted. It also lives on the registry rather than in any of the four stores, so this
+  // by being deleted. It is also the session's rather than in any of the four stores, so this
   // case is what would fail if a later change started consulting it.
   it('Amnesic on its own does not count as holding something — still no question', () => {
     let id
@@ -1289,14 +1302,10 @@ describe('deleting', () => {
       id = createPreset('Guest').id
     })
     openManager()
-    // ⚠ AFTER THE MOUNT, NOT BEFORE IT. main.tsx's cold-open reseed (round 21) walks every preset
-    // on app open and puts its Amnesic flag back to that preset's saved default — so a flag set
-    // before mountApp would be switched off again before the first render, and this case would
-    // silently be testing an ordinary fresh preset instead.
     act(() => {
-      setPresetAmnesic(id, true)
+      setPresetAmnesic(id, 'full')
     })
-    expect(within(rowOf('Guest')).getByText('Amnesic')).toBeTruthy() // the A marker is really up
+    expect(within(rowOf('Guest')).getByText('amnesic')).toBeTruthy() // it really is amnesic
     tap(rowButton('Guest', 'delete'))
     expect(queryConfirmCard()).toBeNull()
     expect(listedNames()).toEqual(['Preset 1'])

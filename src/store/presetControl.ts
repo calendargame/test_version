@@ -8,7 +8,9 @@ import {
   FIRST_PRESET_ID,
 } from './presets.js'
 import type { Preset } from './presets.js'
-import { isAmnesic, discardSessionStats, readSessionStats, dataIdOf } from './amnesic.js'
+import { discardSessionStats, readSessionStats, dataIdOf, bestsIdOf } from './amnesic.js'
+import { amnesicModeOf, setSessionAmnesic, forgetSessionAmnesicOf } from './sessionAmnesic.js'
+import type { AmnesicMode } from './amnesicMode.js'
 import { readItem, removeItem, storageSpaceFreed } from './storageHealth.js'
 import { removeProgressCopy, hasTimesKeys, sweepAbandonedTimes } from './progressStorage.js'
 import { discardSessionMode } from './sessionMode.js'
@@ -28,17 +30,17 @@ import { useUserDefaults, makeUserDefaultsDefaults } from './userDefaults.js'
 //
 // WHY THIS IS NOT IN store/presets.ts. The registry file holds a saved value and the storage layer
 // that reads it; this file holds the operations, because three of them (switching, deleting,
-// and turning amnesic on or off) are not registry edits at all — they are a registry edit PLUS four
-// store rehydrations, and both halves are load-bearing. Splitting them apart is what makes "did
+// and changing a preset's Amnesic value) are not edits to one saved value at all — they are an edit
+// PLUS four store rehydrations, and both halves are load-bearing. Splitting them apart is what makes "did
 // only the first half" impossible to write by accident. It is also what keeps the dependency graph one-way: presets.ts knows nothing
 // about the four data stores, this file imports all of them, and nothing imports this file back.
 //
 // ⚠ THERE IS A THIRD PART, AND IT IS DELIBERATELY NOT HERE: remounting the five always-mounted
 // mode screens. It cannot live in a store file — it is React state in src/main.tsx — and it is not an
-// argument to these functions either. main.tsx SUBSCRIBES to the registry and remounts whenever
-// store/amnesic's `activeDataId` changes — "which preset, and which of its two storage areas its
-// stats live in" — so every path into that hazard is covered by construction rather than by a
-// caller remembering. It is NOT `activeId`: repointing the preset you are already on at
+// argument to these functions either. main.tsx SUBSCRIBES to the registry and to the session's
+// Amnesic values, and remounts whenever store/amnesic's `activeDataId` changes — "which preset, and
+// which copy of its stats" — so every path into that hazard is covered by construction rather than
+// by a caller remembering. It is NOT `activeId`: repointing the preset you are already on at
 // sessionStorage is the same hazard without activeId moving at all. The full argument, including
 // the required-parameter design this replaced and why the subscription must not be an effect, is at
 // switchPreset below.
@@ -171,17 +173,17 @@ const clearPresetStorage = (presetId: number) => {
   } catch {
     /* storage refused — nothing was ever written, so nothing is left behind */
   }
-  // …and the SECOND place a preset can have written: an amnesic preset's stats live in
+  // …and the SECOND place a preset can have written: an amnesic preset's session copy lives in
   // sessionStorage under the same key, and "remove exactly its keys and nothing else" has to mean
   // both areas or a deleted preset leaves a session copy behind. Unconditional rather than gated on
-  // the flag — the preset is being removed from the registry in the same breath, so there would be
-  // nothing left to ask.
+  // its Amnesic value — which goes with it, on the next line.
   discardSessionStats(presetId)
+  forgetSessionAmnesicOf(presetId)
   // …and the THIRD place a preset can have written this session: its current-page entry
   // (round 21), in sessionStorage keyed by this id. Ids are never reused so a leftover entry is
   // harmless, but "remove exactly its keys" is the house rule.
   discardSessionMode(presetId)
-  // …and the FOURTH: its parked ended round/run (store/sessionRound), one sessionStorage entry per (stats
+  // …and the FOURTH: its parked ended round/run (store/sessionRound), one sessionStorage entry per (bests
   // copy, mode) for this id. discardSessionRounds clears both copies' modes in one call — same house
   // rule, same "harmless leftover but remove it anyway" reasoning as the page entry above.
   discardSessionRounds(presetId)
@@ -290,7 +292,7 @@ const sameJson = (a: unknown, b: unknown): boolean => {
 // first. The same goes for a payload `upgradeSaved` will not vouch for (no version, a newer
 // build's).
 // ⚠ AN UNPARSEABLE OR MIS-SHAPED ENVELOPE IS ALSO "NOT FACTORY". A truncated or tampered payload
-// cannot be trusted to say the preset is empty, and store/amnesic's seedFromParked already treats
+// cannot be trusted to say the preset is empty, and store/amnesic's readEnvelope already treats
 // the same corruption the same way. A `migrate` that throws lands in the same catch.
 const payloadIsFactory = (
   raw: string | null,
@@ -349,10 +351,10 @@ const liveIsFactory = (entry: (typeof PER_PRESET_STORES)[number]): boolean => {
  * count: the loop reads the parked copy off localStorage, and the session copy is read after it.
  *
  * ⚠ AMNESIC ITSELF IS NOT CONSULTED, and that is the owner's decided call, not an omission: a
- * preset that is otherwise untouched but has Amnesic switched on still counts as factory, because
- * nothing is lost by deleting it — the flag is a statement about where stats WOULD go, and there
- * are none. (It is a registry field anyway — store/presets' `Preset.amnesic` — so it is outside
- * everything this function reads by construction.)
+ * preset that is otherwise untouched but is on Stats Only or Full still counts as factory, because
+ * nothing is lost by deleting it — the value is a statement about where stats WOULD go, and there
+ * are none. (It is the session's anyway — store/sessionAmnesic — so it is outside everything this
+ * function reads by construction.)
  *
  * ⚠ NEITHER IS THE PRESET'S NAME, OR ITS POSITION IN THE LIST, and the owner's own yardstick is
  * what settles it: "as if you pressed clear saved defaults then full reset". Neither of those
@@ -360,8 +362,8 @@ const liveIsFactory = (entry: (typeof PER_PRESET_STORES)[number]): boolean => {
  * exactly the state that recipe produces and is factory by his definition. The confirmation this
  * skips says nothing about a name either — it names the stats, the bests, the
  * per-mode setup, the ⚙ settings and the saved defaults — so skipping it cannot withhold a warning
- * that was ever there. (Both are registry fields anyway, like amnesic, so they are outside what
- * this function reads.)
+ * that was ever there. (Both are registry fields anyway, so they are outside what this function
+ * reads.)
  *
  * ⚠ THE SESSION PAGE IS DELIBERATELY NOT COUNTED, and it is the one entry in clearPresetStorage
  * that this function skips, so the difference is stated rather than left to be noticed.
@@ -454,15 +456,18 @@ export function createPreset(name?: string): Preset {
   const stored = readStoredRegistry()
   let id = Math.max(reg.nextId, stored?.nextId ?? 0, FIRST_PRESET_ID + 1)
   while (presetStorageInUse(id)) id++
-  // A new preset is PERMANENT until somebody says otherwise. Inheriting the current preset's
-  // amnesic flag was rejected on sight: creating a preset is not a decision about where its stats
-  // are kept, and the one direction of that mistake — a preset that silently forgets — is the one
-  // the player would only discover after losing something.
+  // A new preset is PERMANENT until somebody says otherwise — its Amnesic value starts on Off
+  // (setSessionAmnesic, below). Inheriting the current preset's value was rejected on sight: creating
+  // a preset is not a decision about where its stats are kept, and the one direction of that mistake
+  // — a preset that silently forgets — is the one the player would only discover after losing
+  // something. (`amnesic: false` here is the older builds' field, store/presets' Preset: the way
+  // such a build spells its own new preset.)
   const preset: Preset = {
     id,
     name: normalizePresetName(name ?? defaultPresetName(id), id),
     amnesic: false,
   }
+  setSessionAmnesic(id, 'off')
   usePresets.getState().applyRegistry({
     presets: [...reg.presets, preset],
     activeId: reg.activeId,
@@ -485,8 +490,8 @@ export function createPreset(name?: string): Preset {
  * activeDataId is unaffected; src/main.tsx's subscription there is what would have). It still lives
  * here rather than as an action on the store because `applyRegistry` is deliberately the registry's
  * ONE low-level door and this file is the only room it opens into.
- * ⚠ NOT captured by Save Defaults — SavedDefaults carries settings/prefs/amnesic only, none of which
- * is a registry field, so this is outside every snapshot by construction.
+ * ⚠ NOT captured by Save Defaults — SavedDefaults carries settings, prefs and the Amnesic value only,
+ * none of which is a registry field, so this is outside every snapshot by construction.
  */
 export function setOpenInPreset(value: number | 'last'): boolean {
   const reg = usePresets.getState()
@@ -562,8 +567,8 @@ export function renamePreset(id: number, name: string): boolean {
  * a separate `order` field on sight), and `presetKey` is a pure function of a preset's ID, which
  * this never touches. So a reorder moves no bytes — not one storage key changes, nothing rehydrates
  * — and it must NOT remount the screens either: store/amnesic's activeDataId deliberately ignores
- * everything about the registry except which preset is live and which of its two storage areas its
- * stats are in, so a player reordering the list mid-run keeps the run. That exclusion is written
+ * everything about the registry except which preset is live (and, beside it, that preset's Amnesic
+ * value), so a player reordering the list mid-run keeps the run. That exclusion is written
  * down at activeDataId; this function is the second thing relying on it (renaming was the first).
  * ⚠ IT STILL LIVES HERE RATHER THAN AS AN ACTION ON THE STORE, and for the opposite reason to its
  * neighbours: not because it needs the storage work they need, but because `applyRegistry` is
@@ -654,34 +659,43 @@ export function switchPreset(id: number): boolean {
 }
 
 /**
- * Make a preset amnesic, or stop. Returns false when there is nothing to do (unknown id, or the
- * flag is already what was asked for).
+ * Set a preset's Amnesic value — Off, Stats Only or Full — for this browsing session. Returns false
+ * when there is nothing to do (unknown id, or the value is already what was asked for).
  *
- * ★★ IT IS THE SAME OPERATION AS switchPreset, WITH A DIFFERENT REASON. Flipping this flag repoints
- * the progress store at the OTHER storage area (store/amnesic's presetStatsStorage), which is
- * structurally identical to repointing it at another preset's keys — and the five always-mounted
- * mode screens hydrate their stats ONCE, at mount, and mirror them back on every change. Leave them
- * mounted across the flip and the next answered question writes the numbers they are still holding
- * into whichever copy is now live. That is the 500-cards-becomes-4 bug with a different trigger, so
- * it gets the identical treatment: registry write first (which schedules the remount, because
- * src/main.tsx is subscribed to store/amnesic's activeDataId and not to activeId alone), then the
- * rehydrations, all in one synchronous turn with no window in between.
+ * ★★ IT IS THE SAME OPERATION AS switchPreset, WITH A DIFFERENT REASON. Changing the value repoints
+ * the progress store (store/amnesic's presetStatsStorage) — at the other storage area, or at a
+ * different split between the two — which is structurally identical to repointing it at another
+ * preset's keys; and the five always-mounted mode screens hydrate their stats ONCE, at mount, and
+ * mirror them back on every change. Leave them mounted across the change and the next answered
+ * question writes the numbers they are still holding into whichever copy is now live. That is the
+ * 500-cards-becomes-4 bug with a different trigger, so it gets the identical treatment: the value
+ * first (which schedules the remount, because src/main.tsx is subscribed to store/amnesic's
+ * activeDataId), then the rehydrations, all in one synchronous turn with no window in between.
  *
- * ★ THE TOGGLE RULE, WHICH IS WHAT MAKES THIS SAFE:
- *     ON  → the saved stats are PARKED, UNTOUCHED; the session starts at ZERO.
- *     OFF → the session's stats are DISCARDED; the saved stats come back exactly as they were.
- *   Both directions are the SAME LINE — discard the session copy, then reload. Turning ON, the
- *   discard is what guarantees a zero start even if this preset was amnesic earlier in the same
- *   browsing session (the store then re-derives from store/amnesic's seed). Turning OFF, it is what
- *   guarantees the session's numbers cannot be reconciled into the permanent ones afterwards:
+ * ★ THE RULE, WHICH IS WHAT MAKES THIS SAFE — ONE LINE FOR ALL SIX CHANGES: THE SESSION'S COPY IS
+ * DISCARDED, THEN EVERYTHING IS READ AGAIN. What the screen shows afterwards follows from what each
+ * value keeps where:
+ *     → Off         your saved stats and bests come back exactly as they were (plus any Best a
+ *                   Stats Only session saved — that is what Stats Only is for).
+ *     → Stats Only  the stats start at ZERO; the Bests shown are your saved ones.
+ *     → Full        the stats start at ZERO and so do the Bests; everything saved is PARKED,
+ *                   untouched.
+ *   That holds whichever value it was before. Going between Stats Only and Full is a new session
+ *   too: the guest you hand the phone to starts from zero, and what the guest did is not waiting for
+ *   you afterwards.
  *   ⚠⚠ MERGING A SESSION BACK IS BANNED, and this is the line that makes it unwritable — by the
- *   time anything permanent is read again, the session's numbers no longer exist anywhere.
- *   ⚠⚠ …AND NEITHER DO ITS ROUNDS. An ended Blitz round / MoX run carries a Best
- *   floor and a round id, and the screen that restores it reconciles it into the live Bests — so a
- *   guest round that survived the flip WAS a merge, by another door (reproduced: it replaced,
- *   lowered or erased permanent bests). The session copy's parked rounds are discarded with its
- *   stats, and store/sessionRound keys every parked round by the copy it was played on, so neither
- *   copy's round can ever be restored against the other.
+ *   time anything permanent is read again, the session's numbers no longer exist anywhere. The one
+ *   thing a session ever adds to the permanent copy is a Best set under Stats Only, and that was
+ *   saved the moment the round set it, by the storage itself; nothing is carried across here.
+ *   ⚠⚠ …AND NEITHER DO THE SESSION'S ROUNDS. An ended Blitz round / MoX run carries the Best records
+ *   that stood before it and its round id, and the screen that restores it rebuilds the live Bests
+ *   from them — so a guest round that survived a change WAS a merge, by another door (reproduced: it
+ *   replaced, lowered or erased permanent bests). The rounds parked against the SESSION's bests are
+ *   discarded with the session copy, and store/sessionRound keys every parked round by the bests it
+ *   was scored against (store/amnesic's bestsIdOf), so a round can only ever be restored over those.
+ *   The round parked against the PERMANENT bests is untouched by every change: it is hidden while
+ *   the value is Full and back when it is not, and it stays on screen between Off and Stats Only,
+ *   which share those bests.
  *
  * ⚠ IT REHYDRATES ALL FOUR STORES, not just progress. Only progress can have moved, so the other
  * three re-read the values they already hold — a genuine no-op, since every one of them writes
@@ -691,34 +705,36 @@ export function switchPreset(id: number): boolean {
  * per-preset store added later is covered by being listed there, and there is no second, narrower
  * copy for a future change to forget to widen.
  *
- * ⚠ SWITCHING AWAY AND BACK IS NOT A TOGGLE and deliberately keeps the session going: the session
- * copy is keyed per preset and nothing here runs on a switch, so an amnesic preset you left and
- * returned to still has its session. You never closed the app; that is the only event that ends one.
+ * ⚠ SWITCHING AWAY AND BACK IS NOT A CHANGE and deliberately keeps the session going: the session
+ * copy and the value are both keyed per preset and nothing here runs on a switch, so an amnesic
+ * preset you left and returned to still has its session. You never closed the app; that is the only
+ * event that ends one.
+ * ⚠ NOTHING PERMANENT IS WRITTEN BY THE CHANGE ITSELF. The value is the session's
+ * (store/sessionAmnesic); what a preset starts the next fresh open on is its saved default, which
+ * only Save Defaults moves.
  */
-export function setPresetAmnesic(id: number, amnesic: boolean): boolean {
-  const reg = usePresets.getState()
-  if (!reg.presets.some((p) => p.id === id) || isAmnesic(reg, id) === amnesic) return false
-  usePresets.getState().applyRegistry({
-    ...reg,
-    presets: reg.presets.map((p) => (p.id === id ? { ...p, amnesic } : p)),
-  })
+export function setPresetAmnesic(id: number, mode: AmnesicMode): boolean {
+  const { presets, activeId } = usePresets.getState()
+  if (!presets.some((p) => p.id === id) || amnesicModeOf(id) === mode) return false
+  setSessionAmnesic(id, mode)
   discardSessionStats(id)
-  // …and the rounds parked against that session copy, which share its lifetime: a guest
-  // round must not outlive the guest stats it was scored against, and a fresh guest start must not
-  // find the last guest's round. The SAVED copy's parked rounds are untouched — turning Amnesic off
-  // brings your own finished round back exactly as you left it (store/sessionRound's header).
-  discardSessionRoundsOf(dataIdOf(id, true))
-  // …and, for the same reason, any casual history parked against that session copy. Turning Amnesic
-  // OFF, the registry write above has just parked the guest's screens (src/main.tsx's subscription),
-  // and this throws that away with the rest of the guest's session; turning it ON, the same write
-  // parked YOUR screens under the saved copy, which this does not touch — that is the history that
-  // is waiting when the guest is done.
-  discardSessionHistoriesOf(dataIdOf(id, true))
-  // Only the ACTIVE preset has anything loaded to reload. Flipping the flag on a preset you are not
+  // …and the rounds parked against the session's bests, which share that copy's lifetime: a guest
+  // round must not outlive the guest bests it was scored against, and a fresh guest start must not
+  // find the last guest's round. The round parked against the SAVED bests is untouched (above).
+  discardSessionRoundsOf(bestsIdOf(id, 'full'))
+  // …and, for the same reason, any casual history parked against a session's stats — both spellings
+  // of them, since a change between Stats Only and Full starts those stats again. The value written
+  // above has just parked the outgoing screens (src/main.tsx's subscription): leaving a session,
+  // this throws that away with the rest of it; leaving Off, the same write parked YOUR screens under
+  // the saved copy, which this does not touch — that is the history that is waiting when you are
+  // back on Off.
+  discardSessionHistoriesOf(dataIdOf(id, 'stats'))
+  discardSessionHistoriesOf(dataIdOf(id, 'full'))
+  // Only the ACTIVE preset has anything loaded to reload. Changing the value of a preset you are not
   // on changes nothing on screen and nothing in memory — it just decides where that preset's stats
   // will be read from the next time it is opened, which is exactly what deletePreset's `wasActive`
   // guard says about the same situation.
-  if (id === reg.activeId) reloadPresetStores()
+  if (id === activeId) reloadPresetStores()
   return true
 }
 

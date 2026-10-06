@@ -10,8 +10,7 @@ import { calcLast, calcAvg, calcMed } from '../engine/stats.js'
 import { fittedParkedText, restoreParkedText } from '../engine/parkedHistory.js'
 import type { ParkedScreen, RestoredHistory } from '../engine/parkedHistory.js'
 import { fmtAccuracyPct, truncTime, fmtTime } from '../lib/modeFormat.js'
-import { usePresets } from '../store/presets.js'
-import { activeDataId } from '../store/amnesic.js'
+import { activeDataId, activeBestsId } from '../store/amnesic.js'
 import { useProgress } from '../store/progress.js'
 import {
   SLOT_BUDGET,
@@ -294,16 +293,24 @@ export function useSaveStatsOnRegen(
   })
 }
 
-// ★ THE STATS COPY THIS SCREEN WAS MOUNTED ON — store/amnesic's activeDataId ("1:saved" /
-// "1:session"), read ONCE at mount and never again. Every parked round (store/sessionRound) and
-// parked history (store/sessionHistory) a screen reads, writes or discards is keyed by it, so a round
-// or a history is only ever parked against — and restored against — the copy it was PLAYED on.
-// Fixed for the life of the mount is exactly right, not a shortcut: any change of copy
-// (a preset switch, an Amnesic toggle) remounts every mode screen (src/main.tsx's subscription on
+// ★ THE COPY THIS SCREEN WAS MOUNTED ON, read ONCE at mount and never again — and there are two,
+// because a screen parks two different things (store/amnesic spells both):
+//   • useMountedDataId — the STATS copy ("1:saved" / "1:stats" / "1:session"). A casual mode's parked
+//     history (store/sessionHistory) is keyed by it, so a history is only ever restored over the
+//     stats it was PLAYED on.
+//   • useMountedBestsId — the BESTS copy ("1:saved" / "1:session"). A Blitz round or MoX run's parked
+//     ending (store/sessionRound) is keyed by it, so a round is only ever restored over the Best
+//     records it was scored against — and there is only ever one such round per copy of them.
+// Fixed for the life of the mount is exactly right, not a shortcut: any change of copy (a preset
+// switch, a change of the Amnesic value) remounts every mode screen (src/main.tsx's subscription on
 // activeDataId), so a mount's engine never belongs to any other copy.
 export function useMountedDataId(): string {
-  const [dataId] = useState(() => activeDataId(usePresets.getState()))
+  const [dataId] = useState(activeDataId)
   return dataId
+}
+export function useMountedBestsId(): string {
+  const [bestsId] = useState(activeBestsId)
+  return bestsId
 }
 
 // ── A CASUAL MODE'S HISTORY, KEPT FOR THE BROWSING SESSION ────────────────────────────────────────
@@ -363,7 +370,7 @@ export function readParkedHistory(
  *     own door for the moment it comes back ON over a question that was kept: useStatsHideToggles
  *     and useSaveStatsOnRegen, above.)
  *   • and an unanswered question drawn under DIFFERENT date settings is regenerated too (the settings
- *     are shared by a preset's two stats copies, so a guest can change them under a parked history) —
+ *     are shared by every copy of a preset's stats and bests, so a guest can change them under a parked history) —
  *     which is only what changing those settings does to a question on screen.
  * All three are ONE engine action, REGEN_DATE: the rule the app already had for "turning timing back
  * on" and for a date-setting change — it keeps a question that has been used, and reaches the live
@@ -383,7 +390,7 @@ const parkers = new Set<{ inUse: () => boolean; park: () => void }>()
  * Park every mounted casual history NOW — each under the stats copy its screen was mounted on.
  * src/main.tsx calls it at the two moments a screen is about to go away without the player asking
  * for a clean start: the page being hidden (a reload, the background), and the stats copy underneath
- * the screens being swapped (a preset switch, an Amnesic toggle).
+ * the screens being swapped (a preset switch, an Amnesic change).
  * ★ THE SCREEN IN USE PARKS LAST. store/sessionHistory holds every history together to one budget,
  * and each write makes room for itself by dropping others — so the last one written is the one that
  * always survives, and that has to be the history the player is looking at, not whichever screen

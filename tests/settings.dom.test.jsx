@@ -139,6 +139,8 @@ const PICKERS = [
   'Julian Chance',
   'Leap Year Chance',
   'Jan/Feb Chance on Leap Years',
+  // Amnesic — a picker since round 24 (Off / Stats Only / Full); a switch before that.
+  'Amnesic',
 ]
 // The On/Off switches, by the setting each one controls. This used to walk from the LABEL's text
 // to its parent to its first button, because all four read "On"/"Off" and so had no name to ask

@@ -14,6 +14,8 @@ import { MODAL_CARD_CLASS, MODAL_CARD_SHADOW } from './modalContract.js'
 import { NOT_OFFERED_BTN_CLASS, RESET_BTN_CLASS } from './controlClasses.js'
 import { usePresets, MAX_PRESET_NAME } from '../store/presets.js'
 import type { Preset } from '../store/presets.js'
+import { useSessionAmnesic } from '../store/sessionAmnesic.js'
+import { AMNESIC_SPOKEN } from '../store/amnesicMode.js'
 import {
   createPreset,
   deletePreset,
@@ -257,17 +259,17 @@ function ReorderHandleIcon({ held }: { held: boolean }) {
   )
 }
 
-// ── THE ROW, LEFT TO RIGHT ON SCREEN: ✕ · name · ✓ · A · grip ───────────────────────────────────
+// ── THE ROW, LEFT TO RIGHT ON SCREEN: ✕ · name · ✓ · grip ───────────────────────────────────────
 //
 // ★ THE iPHONE REORDER-LIST CONVENTION, AND THE REASON IS A MIS-TAP, NOT LOOKS. The grip and the ✕
 // used to sit side by side at the right edge. The grip is the control a thumb reaches for over and
 // over; the ✕ is the destructive one, and a preset that holds nothing deletes on the spot with no
 // question to catch a slip. A frequently-grabbed handle beside a destructive button is how a
 // reorder becomes a delete. So they are at opposite ends — the ✕ at the LEFT edge, the grip at the
-// RIGHT edge where the thumb already is — with the name between them and the two markers after the
-// name.
+// RIGHT edge where the thumb already is — with the name between them and the current-preset mark
+// after the name.
 //
-// ★★ THE ORDER IN THE MARKUP IS DIFFERENT, ON PURPOSE: name · ✓ · A · grip · ✕ — the ✕ LAST. The
+// ★★ THE ORDER IN THE MARKUP IS DIFFERENT, ON PURPOSE: name · ✓ · grip · ✕ — the ✕ LAST. The
 // markup order is the order Tab walks and the order a screen reader reads, and the on-screen order
 // would make "Delete <the first preset>" the first thing the keyboard lands on in this popup: one
 // Tab and one Enter from opening it, a preset that holds nothing would be gone, unasked. So the
@@ -308,14 +310,13 @@ const DELETE_BTN_CLASS =
 // index.css draws no ring on a grip so marked — neither its own nor the browser's default one.
 const GRIP_CLASS =
   'shrink-0 self-stretch flex items-center justify-center px-3 rounded-xl text-(--tx-200-80) cursor-grab kbd-ring'
-// Each cell's on-screen column in the row's five-column grid, all on the first row track — the
+// Each cell's on-screen column in the row's four-column grid, all on the first row track — the
 // placement that lets the markup order (above) differ from the order on screen.
 const ROW_COL = {
   delete: 'col-start-1 row-start-1',
   name: 'col-start-2 row-start-1',
   current: 'col-start-3 row-start-1',
-  amnesic: 'col-start-4 row-start-1',
-  grip: 'col-start-5 row-start-1',
+  grip: 'col-start-4 row-start-1',
 } as const
 
 // ── THE ROW IN THE HAND ─────────────────────────────────────────────────────────────────────────
@@ -336,7 +337,7 @@ const ROW_COL = {
 //     grid cells (heldShadows, in the row). Separate boxes, behind everything in the row, because a
 //     shadow on the pieces themselves falls on the piece beside it: the two are 4px apart and the
 //     shadow spreads 12, so whichever was painted second would smudge the other's edge.
-//   • HELD_INK_CLASS — on the ✓ and the grip's bars (and the A, while that marker exists): a patch
+//   • HELD_INK_CLASS — on the ✓ and the grip's bars: a patch
 //     of the card's colour exactly behind the mark, invisible against the card. It is what stops a
 //     row sliding past underneath from drawing its own grip THROUGH this one for the tenth of a
 //     second the two cross. It is not a surface — it has no edge, no shadow and no size beyond the
@@ -370,6 +371,7 @@ export default function PresetManager({
   // change signal) and `activeId` is the one scalar this card renders a mark for. Everything this
   // card does writes through store/presetControl and lands back here as a new list.
   const presets = usePresets((s) => s.presets)
+  const amnesicModes = useSessionAmnesic((s) => s.modes)
   const activeId = usePresets((s) => s.activeId)
 
   // ── The rename in flight ────────────────────────────────────────────────────────────────────
@@ -921,14 +923,14 @@ export default function PresetManager({
               // never pick up a stray transition.
               className={drag && !held ? 'transition-transform duration-150 ease-out' : undefined}
             >
-              {/* THE ROW IS A GRID, NOT A FLEX ROW — five columns, ✕ · name · ✓ · A · grip on
+              {/* THE ROW IS A GRID, NOT A FLEX ROW — four columns, ✕ · name · ✓ · grip on
               screen (both orders are argued at DELETE_BTN_CLASS above), and a SECOND ROW that only
               the width-cap note ever occupies, placed under the name box in the name's own column.
               As a flex row the note had to live outside it with a hand-tuned indent; the ✕ in
               front of the name is a width no fixed indent can know, so the grid does the lining up
               instead. `items-center` works per row track, so the note appearing never moves the
               controls above it. */}
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-1">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-1">
                 {/* THE LIFT, while THIS row is the one being dragged: one shadow box behind the ✕
                 and one behind the name box, in those pieces' own cells and of their own size
                 (HELD_SHADOW_CLASS, above the component, says why the shadow is not on the pieces).
@@ -998,8 +1000,8 @@ export default function PresetManager({
                 {/* THE CURRENT-PRESET MARK, after the name, in a reserved fixed-width slot so every
                 name box ends at the same x whether the row is marked or not — the same reason
                 CustomSelect gives its ✓ column a width of its own. aria-hidden + an sr-only word,
-                the idiom every quiet marker in this app uses (the switcher's "A", the footer's
-                Changelog dot), because a bare ✓ is a glyph rather than an accessible name. */}
+                the idiom every quiet marker in this app uses (the footer's Changelog dot, the
+                run breakdown's ✓), because a bare ✓ is a glyph rather than an accessible name. */}
                 <span className={`${ROW_COL.current} w-3 text-center text-xs text-(--tx-200-80)`}>
                   {p.id === activeId && (
                     <>
@@ -1010,27 +1012,15 @@ export default function PresetManager({
                     </>
                   )}
                 </span>
-                {/* The amnesic marker, the SAME letter the switcher shows and in a reserved slot for
-                the same reason the ✓ beside it is: every row's name box and grip line up whether or
-                not the row is marked. It is read-only here — Amnesic is flipped in ⚙ → Stats, and
-                only for the preset you are on — so this is purely the answer to "which of these
-                forget", which is worth knowing at the moment you are deciding what to delete.
-                ⚠ DIMMED BY OPACITY, NEVER TINTED, and inheriting currentColor: components/
-                PresetSwitcher argues it (a themed colour token would read correctly in one of the
-                two places this letter appears and be invisible in the other). */}
-                <span className={`${ROW_COL.amnesic} w-3 text-center`}>
-                  {p.amnesic && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className={`text-[0.8em] font-semibold opacity-70 ${held ? HELD_INK_CLASS : ''}`}
-                      >
-                        A
-                      </span>
-                      <span className="sr-only">Amnesic</span>
-                    </>
-                  )}
-                </span>
+                {/* WHICH OF THESE FORGET — spoken, not drawn (components/PresetSwitcher argues both
+                halves: the letter that used to sit here is gone, and with it the column that kept
+                every name box that much narrower). Worth hearing at the moment you are deciding
+                what to delete; read-only here — Amnesic is set in ⚙ → Stats, and only for the
+                preset you are on. sr-only is positioned out of flow, so it is not a grid cell and
+                takes no track. */}
+                {AMNESIC_SPOKEN[amnesicModes[p.id] ?? 'off'] && (
+                  <span className="sr-only">{AMNESIC_SPOKEN[amnesicModes[p.id] ?? 'off']}</span>
+                )}
                 {/* THE REORDER GRIP — one control that is both a pointer/touch drag (pointerdown →
                 pointermove → pointerup/cancel, wired to lib/presetReorder's pure arithmetic above)
                 AND a keyboard reorder action (ArrowUp/ArrowDown). No disabled visual at either end

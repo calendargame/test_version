@@ -67,7 +67,7 @@ function playOnThisPreset({ minY = 1583, blitzSec = 45, theme = 'nebula' } = {})
   useUserDefaults.getState().saveDefaults({
     settings: { ...useSettings.getState() },
     prefs: { flashMs: 800, blitzSec, blitzQSec: 20, aoxN: '25' },
-    amnesic: false,
+    amnesic: 'off',
   })
 }
 
@@ -737,7 +737,7 @@ describe('is a preset factory-fresh', () => {
   // everything isPresetFactory reads — this case is what fails if that ever stops being true.)
   it('Amnesic on its own does not make a preset non-factory', () => {
     const id = other('Guest')
-    setPresetAmnesic(id, true)
+    setPresetAmnesic(id, 'full')
     expect(isPresetFactory(id, true)).toBe(true)
   })
 
@@ -810,14 +810,14 @@ describe('is a preset factory-fresh', () => {
       presetKey(PRESET_STORE_KEYS.progress, id),
       envelope({ stats: { classic: PLAYED } }, 4),
     )
-    setPresetAmnesic(id, true)
+    setPresetAmnesic(id, 'full')
     expect(isPresetFactory(id, true)).toBe(false)
   })
 
   // …and the other direction: the session copy is real data too, and deleting takes it.
   it('an amnesic SESSION copy of the stats is not factory either', () => {
     const id = other('Guest')
-    setPresetAmnesic(id, true)
+    setPresetAmnesic(id, 'full')
     sessionStorage.setItem(
       presetKey(PRESET_STORE_KEYS.progress, id),
       envelope({ stats: { classic: PLAYED } }, 4),

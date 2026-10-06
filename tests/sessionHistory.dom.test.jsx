@@ -44,6 +44,7 @@ import { useSettings } from '../src/store/settings.js'
 import { useModePrefs } from '../src/store/modePrefs.js'
 import { useProgress } from '../src/store/progress.js'
 import { forgetBrowsingSession } from '../src/store/browsingSession.js'
+import { loadPage } from './helpers/pageLoad.js'
 import { wday } from '../src/lib/calendar.js'
 import { DAY } from '../src/lib/format.js'
 
@@ -145,6 +146,11 @@ function closeApp(app) {
   teardown(app)
   sessionStorage.clear()
   forgetBrowsingSession()
+  // …and the page that opens next reads everything again — each preset's Amnesic value included,
+  // which a fresh open takes from its saved defaults (tests/helpers/pageLoad).
+  act(() => {
+    loadPage()
+  })
   return mountApp()
 }
 let other // a second preset, made on demand
@@ -158,12 +164,14 @@ const switchAwayAndBack = (whileAway) => {
   if (whileAway) whileAway()
   act(() => switchPreset(1))
 }
-// A guest's visit: Amnesic on, then off.
-const guestInterlude = (whileAway) => {
-  act(() => setPresetAmnesic(1, true))
+// A spell on one of the two amnesic values, then back to Off: a guest's visit (Full), or your own
+// playing around (Stats Only).
+const interlude = (mode) => (whileAway) => {
+  act(() => setPresetAmnesic(1, mode))
   if (whileAway) whileAway()
-  act(() => setPresetAmnesic(1, false))
+  act(() => setPresetAmnesic(1, 'off'))
 }
+const guestInterlude = interlude('full')
 const historyKeys = () =>
   Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)).filter((k) =>
     k.startsWith('cg-history-v1:'),
@@ -187,6 +195,7 @@ const WAYS_BACK = [
   ['a reload', () => (app = reloadApp(app))],
   ['a preset switch and back', () => switchAwayAndBack()],
   ['an Amnesic interlude', () => guestInterlude()],
+  ['a Stats Only interlude', () => interlude('stats')()],
 ]
 
 describe('the history comes back exactly', () => {
@@ -280,7 +289,7 @@ describe('the history comes back exactly', () => {
 describe('an Amnesic interlude: your history returns, the guest’s does not', () => {
   it('the guest never sees your history, and their own is gone when they are', () => {
     answerRight() // the owner's own card
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     expect(statValue('Score')).toBe('0/0')
     expect(canGo('ArrowLeft')).toBe(false)
     answerRight()
@@ -289,14 +298,41 @@ describe('an Amnesic interlude: your history returns, the guest’s does not', (
     expect(statValue('Score')).toBe('2/2') // still the guest, still amnesic
     back()
     expect(badge()).toBe('Q2')
-    act(() => setPresetAmnesic(1, false))
+    act(() => setPresetAmnesic(1, 'off'))
     expect(statValue('Score')).toBe('1/1') // yours, with your one card behind it
     back()
     expect(badge()).toBe('Q1')
     // A later guest starts from nothing — not from the last guest's history.
-    act(() => setPresetAmnesic(1, true))
+    act(() => setPresetAmnesic(1, 'full'))
     expect(statValue('Score')).toBe('0/0')
     expect(canGo('ArrowLeft')).toBe(false)
+  })
+
+  // STATS ONLY keeps its stats in the session too, so its history is the session's in the same way:
+  // its own, kept through a reload, and gone at the next change of the value — in EITHER direction,
+  // the other amnesic value included.
+  it('a Stats Only session has its own history, and it does not carry into Full or back', () => {
+    answerRight() // the owner's own card
+    act(() => setPresetAmnesic(1, 'stats'))
+    expect(statValue('Score')).toBe('0/0')
+    expect(canGo('ArrowLeft')).toBe(false)
+    answerRight()
+    answerRight()
+    app = reloadApp(app)
+    expect(statValue('Score')).toBe('2/2') // still the session's
+    back()
+    expect(badge()).toBe('Q2')
+    act(() => setPresetAmnesic(1, 'full')) // Stats Only → Full: a guest starts from nothing
+    expect(statValue('Score')).toBe('0/0')
+    expect(canGo('ArrowLeft')).toBe(false)
+    answerRight()
+    act(() => setPresetAmnesic(1, 'stats')) // Full → Stats Only: nothing of the guest's, or of before
+    expect(statValue('Score')).toBe('0/0')
+    expect(canGo('ArrowLeft')).toBe(false)
+    act(() => setPresetAmnesic(1, 'off'))
+    expect(statValue('Score')).toBe('1/1') // yours, with your one card behind it
+    back()
+    expect(badge()).toBe('Q1')
   })
 })
 
@@ -492,7 +528,7 @@ describe('what starts the history over — and nothing brings it back', () => {
 
   it('Full Reset clears the history a guest interlude had put aside as well', () => {
     answerRight() // yours
-    act(() => setPresetAmnesic(1, true)) // parked for the guest's visit
+    act(() => setPresetAmnesic(1, 'full')) // parked for the guest's visit
     openSettings('key')
     fireFullReset() // in the Amnesic preset: wipes both copies, and turns Amnesic back off
     expect(statValue('Score')).toBe('0/0')
@@ -755,12 +791,16 @@ describe("a preset's parked histories go where its other session data goes", () 
     act(() => deletePreset(p2.id))
     expect(readSessionHistory(`${p2.id}:saved`, 'classic')).toBe(null)
   })
-  it('an Amnesic toggle discards the parks of the guest copy, and only those', () => {
+  it('an Amnesic change discards the parks of both session copies, and only those', () => {
     const p2 = otherPreset()
-    writeSessionHistory(`${p2.id}:saved`, 'classic', '{}', true)
-    writeSessionHistory(`${p2.id}:session`, 'classic', '{}', true)
-    act(() => setPresetAmnesic(p2.id, true))
-    expect(readSessionHistory(`${p2.id}:session`, 'classic')).toBe(null)
-    expect(readSessionHistory(`${p2.id}:saved`, 'classic')).toBe('{}')
+    for (const mode of ['stats', 'full', 'off', 'stats']) {
+      writeSessionHistory(`${p2.id}:saved`, 'classic', '{}', true)
+      writeSessionHistory(`${p2.id}:stats`, 'classic', '{}', true)
+      writeSessionHistory(`${p2.id}:session`, 'classic', '{}', true)
+      act(() => setPresetAmnesic(p2.id, mode))
+      expect(readSessionHistory(`${p2.id}:stats`, 'classic')).toBe(null)
+      expect(readSessionHistory(`${p2.id}:session`, 'classic')).toBe(null)
+      expect(readSessionHistory(`${p2.id}:saved`, 'classic')).toBe('{}')
+    }
   })
 })

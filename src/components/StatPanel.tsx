@@ -1,15 +1,18 @@
-import { useRef, useLayoutEffect, useEffect } from 'react'
+import { useId, useRef, useLayoutEffect, useEffect } from 'react'
 import type { ElementType, ReactNode } from 'react'
 import { fitScale } from '../lib/statFit.js'
+import { useActiveAmnesicMode } from '../store/amnesic.js'
 
 // StatPanel — the horizontal stats strip (Score / Accuracy / Streak / Last /
 // Mean / Median) shown under the header in the timed/scored modes.
 //
-// Pure presentational shell: it renders whatever `stats` array it's given (each item
+// A presentational shell: it renders whatever `stats` array it's given (each item
 // {label, value, fn?, off?}) as equal-width cells separated by thin dividers.
-// A cell with `fn` renders as a button.
+// A cell with `fn` renders as a button. (The one thing it reads for itself is the Amnesic value —
+// the fourth signal below.)
 //
-// ★ THE THREE SIGNALS (round 16) — one meaning each, and NO STRIKETHROUGH ANYWHERE:
+// ★ THE FOUR SIGNALS — one meaning each, and NO STRIKETHROUGH ANYWHERE (three since round 16; the
+// dashed outline is the fourth):
 //   • an em dash (—)  = there is no data YET, but there could be. It is produced by the VALUE
 //                       ITSELF (fmtTime/truncTime/fmtAccuracyPct return '—' with nothing recorded),
 //                       and by `dimmed` below, which is the same statement at strip scale.
@@ -27,12 +30,24 @@ import { fitScale } from '../lib/statFit.js'
 //   • DIM             = nothing is being recorded at all (Save Stats off). Comes from `dimmed`, and
 //                       applies to the WHOLE STRIP — never to one cell, because "this cell is not
 //                       recording" is not a state the app has.
+//   • A DASHED OUTLINE = these numbers are being recorded, but ONLY FOR THIS SESSION: the preset is
+//                       on Amnesic: Stats Only or Full, and the strip is gone when the app is closed
+//                       (index.css's .session-only argues the look). The whole strip, in every
+//                       mode — under either value nothing in it is kept. The strip reads the value
+//                       itself (store/amnesic), not a prop, so no mode screen can show a session's
+//                       numbers unmarked by forgetting to pass one.
+//                       ⚠ THE DIM WINS when both apply. With Save Stats off the strip holds no
+//                       numbers at all — six dashes — so there is nothing on it to call
+//                       temporary, and "nothing is being recorded" is the whole truth. One cue,
+//                       never two stacked. (The Best readouts under it keep theirs: they still
+//                       show real records — components/BestReadout.)
 // The full table this builds to:
 //   group on, no data ....... the values, which read '—'      plain
 //   group on, has data ...... the values                      plain
 //   group OFF ............... value cells BLANK, labels stay  plain
 //   Save Stats off .......... '—' in every value cell         whole strip dimmed
 //   group off + Save off .... value cells BLANK               whole strip dimmed
+//   …any row with Save Stats ON, on Amnesic: Stats Only or Full ......... + the dashed outline
 // Blank beats dash: your own choice is the more specific statement, so it is the one shown.
 //
 // It replaced a scheme where ONE `off` flag — `scoringOff || !saveStats` in modeHooks — drove BOTH
@@ -78,6 +93,10 @@ import { fitScale } from '../lib/statFit.js'
 // data yet both announce as six dashes. It sits on the strip and not on a cell because the fact is
 // the strip's — the same reason `dimmed` is one flag rather than six. `sr-only` is absolutely
 // positioned, so like the "Off" it costs no layout and moves no pixel.
+// ⚠ THE DASHED OUTLINE CARRIES ONE AS WELL — "These stats are for this session only" — in the same
+// place. And since the strip can be ONE BUTTON (onActivate), whose aria-label replaces its content
+// as its name, the line is also the strip's DESCRIPTION (aria-describedby): a screen reader that
+// lands on the button hears its name and then this.
 //
 // VALUE AUTO-FIT: each value box AUTO-FITS — a per-box measure-and-scale keeps any value, however
 // long (a big Score "12345/67890", a long solve time), inside its own cell on every device, while short
@@ -153,6 +172,16 @@ export default function StatPanel({
   // HTMLElement, not HTMLDivElement: the root is a <div> or a <button> depending on onActivate, and
   // everything this ref is used for (querySelectorAll for the fit, ResizeObserver) is on HTMLElement.
   const rootRef = useRef<HTMLElement | null>(null)
+  // The session's numbers, not kept (see the fourth signal in the header) — unless nothing is being
+  // recorded at all, which the dim says on its own.
+  const sessionOnly = useActiveAmnesicMode() !== 'off' && !dimmed
+  // The one line a screen reader gets about the strip as a whole, and the element it is read from.
+  const note = dimmed
+    ? 'Stats are not being saved'
+    : sessionOnly
+      ? 'These stats are for this session only'
+      : null
+  const noteId = useId()
   // A CALLBACK ref, not `ref={rootRef}`, and the reason is the line above: the root is a <div> or a
   // <button> depending on onActivate, so React types the `ref` slot as the INTERSECTION of both
   // elements' refs — a RefObject<HTMLElement> satisfies neither half. A callback taking the base
@@ -227,18 +256,28 @@ export default function StatPanel({
   // otherwise collapse the strip to its content's width.
   const Root: ElementType = onActivate ? 'button' : 'div'
   const rootProps = onActivate
-    ? { type: 'button' as const, onClick: onActivate, 'aria-label': activateLabel }
+    ? {
+        type: 'button' as const,
+        onClick: onActivate,
+        'aria-label': activateLabel,
+        'aria-describedby': note ? noteId : undefined,
+      }
     : {}
   return (
     <Root
       ref={setRoot}
       {...rootProps}
-      className={`mt-4 rounded-2xl panel flex overflow-hidden ${onActivate ? ' w-full' : ''}${dimmed ? ' opacity-50' : ''}`}
+      className={`mt-4 rounded-2xl panel flex overflow-hidden ${onActivate ? ' w-full' : ''}${dimmed ? ' opacity-50' : ''} ${sessionOnly ? 'session-only' : ''}`}
     >
-      {/* The word that keeps the DIM from meaning nothing to a screen reader — see the header note.
-          Absolutely positioned by `sr-only`, so it is outside the flex flow, adds no cell and costs
-          no layout. First child so it is announced before the readouts it qualifies. */}
-      {dimmed && <span className="sr-only">Stats are not being saved</span>}
+      {/* The words that keep the DIM and the DASHED OUTLINE from meaning nothing to a screen reader
+          — see the header note. Absolutely positioned by `sr-only`, so it is outside the flex
+          flow, adds no cell and costs no layout. First child so it is announced before the readouts
+          it qualifies. */}
+      {note && (
+        <span id={noteId} className="sr-only">
+          {note}
+        </span>
+      )}
       {(() => {
         const items: ReactNode[] = []
         for (let i = 0; i < stats.length; i++) {

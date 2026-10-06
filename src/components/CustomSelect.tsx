@@ -199,9 +199,9 @@ export default function CustomSelect({
   // an `aria-label` cannot express it. An aria-label REPLACES an element's content, so the trigger
   // used to wear one and announce "Mode, collapsed" / "Preset, collapsed" — the setting's name with
   // the selected option's text, the one thing a reader needs from a closed dropdown, silently
-  // dropped. (The owner's requirement for the preset control's amnesic marker was explicit: an
-  // indicator "with a real accessible name". Reading the preset control without its preset name
-  // fails that on the enclosing control instead of on the marker.)
+  // dropped. (The owner's requirement for the preset control's amnesic indication was explicit: one
+  // "with a real accessible name". Reading the preset control without its preset name fails that
+  // on the enclosing control.)
   //   WHY aria-labelledby RATHER THAN A COMPOSED STRING. Option labels are ReactNodes, not text —
   // the preset switcher's is a whole element tree carrying a truncating name cell and, for an
   // amnesic preset, an `sr-only` phrase that stands in for it. There is nothing to concatenate at
@@ -692,11 +692,10 @@ export default function CustomSelect({
                     needs to fill the row so its OWN children can fill IT in turn. `min-w-0` is the
                     same "let a truncating child shrink" fix as the trigger's own wrapper: without
                     it a flex item's content-based minimum can refuse to shrink at all.
-                    ⚠ EVERY ROW GETS THE SAME TREATMENT, which is what keeps a caller's per-row
-                    markers (components/PresetSwitcher's amnesic "A") in a COLUMN: every option
-                    button is the same width (`w-full` of one shared panel), so flex-1 stretches
-                    every row's label cell to that same shared width regardless of that row's own
-                    text length — a hardcoded per-row width is no longer what aligns them. */}
+                    ⚠ EVERY ROW GETS THE SAME TREATMENT: every option button is the same width
+                    (`w-full` of one shared panel), so flex-1 stretches every row's label cell to
+                    that same shared width regardless of that row's own text length — which is the
+                    width a long preset name truncates against. */}
                   <span className="min-w-0 flex-1">{opt.label}</span>
                 </button>
               ))}

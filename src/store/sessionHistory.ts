@@ -8,8 +8,9 @@
 // player asking for a clean start:
 //   • a RELOAD — a browser reload, the app's own update reload, the error card's Reload;
 //   • a PRESET SWITCH — each preset's history is waiting when you switch back to it;
-//   • an AMNESIC interlude — your own history, parked for the guest's visit, returns with your own
-//     stats when the guest is done (and the guest's is thrown away with the guest's session).
+//   • an AMNESIC interlude (Stats Only or Full) — your own history, parked for the session, returns
+//     with your own stats when the preset is back on Off (and the session's is thrown away with the
+//     session).
 // A real close clears it (the browser drops sessionStorage; nothing here schedules a wipe).
 //
 // THIS FILE IS THE STORAGE HALF, and it never looks inside what it stores — the same split as
@@ -23,7 +24,7 @@
 // answer. Nothing needs it until the screen goes, and a screen never goes unannounced:
 //   • the PAGE going away or to the background — every reload fires `pagehide`, and a mobile browser
 //     that later discards a backgrounded tab fired `visibilitychange` → hidden on the way out;
-//   • the STATS COPY underneath the screens being swapped — a preset switch, an Amnesic toggle, the
+//   • the STATS COPY underneath the screens being swapped — a preset switch, an Amnesic change, the
 //     active preset being deleted — which src/main.tsx sees in its registry subscription, while the
 //     outgoing screens are still mounted and still hold the outgoing copy.
 // Both call modes/modeHooks' parkCasualHistories, which parks every mounted casual screen under the
@@ -34,10 +35,10 @@
 // a park can never bring cleared data back:
 //   • Reset Stats / "Enable and Reset Stats" / Flash's Reset — the engine's own reset; the screen
 //     discards its slot in the same breath (modes/modeHooks' useParkedHistory);
-//   • Full Reset — discards the preset's histories, both copies, BEFORE its remount (src/main.tsx);
+//   • Full Reset — discards the preset's histories, every copy's, BEFORE its remount (src/main.tsx);
 //   • a preset DELETE — store/presetControl's clearPresetStorage, after the registry write that
 //     parks the outgoing screens, so the delete has the last word;
-//   • an Amnesic toggle — the SESSION copy's histories, with that copy's stats, same ordering;
+//   • an Amnesic change — the SESSION copies' histories, with the session's stats, same ordering;
 //   • a mode screen that CRASHES — src/main.tsx's error boundary hook, so a history that somehow
 //     breaks its screen cannot come back after the Reload and break it again.
 //
@@ -61,8 +62,9 @@
 //
 // ⚠ THE KEY IS `cg-history-v1:<dataId>:<silo>` — one entry per (stats copy, silo), so parking one
 // silo never re-serialises another's thousands of cards, and "forget this preset" is a prefix sweep.
-// KEYED BY THE STATS COPY (store/amnesic's dataId, "<presetId>:saved" / "<presetId>:session") for the
-// same reason store/sessionRound is: a history only ever comes back over the copy it was played on.
+// KEYED BY THE STATS COPY (store/amnesic's dataId — "<presetId>:saved", "<presetId>:stats" or
+// "<presetId>:session", one per Amnesic value): a history only ever comes back over the stats it
+// was played on.
 // No older build knows the prefix, so none of them reads it (live and staging share this origin); a
 // later build that changes the parked shape must change the version in the prefix, and the restore
 // door refuses any blob it cannot read anyway.
@@ -177,18 +179,18 @@ const discardPrefixed = (prefix: string): void => {
 }
 
 /**
- * Forget every parked history of ONE stats copy — setPresetAmnesic for the session copy, and a
- * crashed mode screen for the copy it was showing.
+ * Forget every parked history of ONE stats copy — setPresetAmnesic for the two session copies, and
+ * a crashed mode screen for the copy it was showing.
  */
 export const discardSessionHistoriesOf = (dataId: string): void =>
   discardPrefixed(`${PREFIX}${dataId}:`)
 
-/** Forget every parked history of one preset, both copies — Full Reset and a preset delete. */
+/** Forget every parked history of one preset, every copy's — Full Reset and a preset delete. */
 export const discardSessionHistories = (presetId: number): void =>
   discardPrefixed(`${PREFIX}${presetId}:`)
 
 /**
- * Does this preset have PLAY parked on either copy — a history, an answered question, a screen
+ * Does this preset have PLAY parked on any copy — a history, an answered question, a screen
  * setting; anything beyond the unanswered question a screen was waiting on? store/presetControl's
  * isPresetFactory asks, for a preset that is not the one on screen: parked play comes back the next
  * time that copy's screens mount, so a preset holding some is not factory-fresh. (A preset the player

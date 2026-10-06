@@ -1,6 +1,7 @@
 import type { BlitzBest } from '../store/progress.js'
 import { isNewBest } from '../engine/roundId.js'
 import { NewBestStar } from './primitives.jsx'
+import BestReadout from './BestReadout.jsx'
 
 // BlitzBestRow — the two-field Best Score / Best Streak row with ★ new-best flags and the
 // Same Round / Different Rounds tag, shared by the two BlitzBest-shaped records: per-round
@@ -10,10 +11,11 @@ import { NewBestStar } from './primitives.jsx'
 // Each ★ is DERIVED, never stored: a field is starred exactly when the round on screen (`roundId`,
 // null when there is none) is the round that set it — engine/roundId's isNewBest, the one rule MoX
 // uses too (round 23).
+// The row itself — and whether it is marked as the session's — is components/BestReadout.
 function BlitzBestRow({ rec, roundId }: { rec?: BlitzBest; roundId: number | null }) {
   const showTag = rec && rec.scoreRoundId != null && rec.streakRoundId != null
   return (
-    <div className="mt-3 text-xs text-(--tx-300-60)">
+    <BestReadout>
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-[125px]">
           Best Score: {rec?.score ?? '—'}
@@ -29,7 +31,7 @@ function BlitzBestRow({ rec, roundId }: { rec?: BlitzBest; roundId: number | nul
           </span>
         )}
       </div>
-    </div>
+    </BestReadout>
   )
 }
 
