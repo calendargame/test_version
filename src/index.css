@@ -276,11 +276,10 @@ body{color:var(--body-color)}
    an overflow div does not. Focus is placed by App on entry to the guide, never by the user: −1
    keeps the element out of the tab order entirely, so nothing about Tab (bound app-wide to the
    mode selector) or the modal tab traps changes.
-   No focus indicator, and that is a decision rather than an omission. This app draws NO focus
-   rings at all — .focus-ring has been a documented no-op since the Tab binding landed (see the
-   note further down) — so a UA outline here would be the only one on the site, and it would be a
-   box around the entire viewport. Nor is it hiding one from anybody: a scroll container is not a
-   control, it is never focused by a user gesture, and the feedback for "this is what the arrow
+   No focus indicator, and that is a decision rather than an omission. The app's focus ring is for
+   the controls in the ⚙ menu and the popups (THE KEYBOARD FOCUS RING, further down); a UA outline
+   here would be a box around the entire viewport. Nor is it hiding one from anybody: a scroll
+   container is not a control, it is never focused by a user gesture, and the feedback for "this is what the arrow
    keys move" is the page moving. `outline:none` flatly rather than :focus-visible, so the answer
    cannot depend on an engine's guess about whether a programmatic focus followed a keypress. */
 #appScroll{outline:none}
@@ -519,7 +518,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
    kinds apart for free — a dashed strip over plain Bests is Stats Only, both dashed is Full.
    WHY DASHED: a broken line already reads as "provisional — not inked in" (a draft, a cut-out, a
    placeholder), and nothing else in the app is dashed, so it cannot be mistaken for any other state.
-   In particular it cannot be mistaken for the FOCUS RING (.kbd-ring below): that one is solid,
+   In particular it cannot be mistaken for the KEYBOARD FOCUS RING (further down): that one is solid,
    brighter, 2px, and only ever on the one control the keyboard is on.
    ⚠ IT MUST NOT MOVE A PIXEL — the strip and the readouts are the same size and in the same place
    with it or without. So it is a ::after BORDER on an absolutely-positioned box, which takes no part
@@ -611,8 +610,8 @@ input,textarea{user-select:text;-webkit-user-select:text}
    design: it was the v3→v4 cascade regression the ★★ block at the top of this layer describes,
    read as a feature. The rule is now in `components`, so a utility CAN override any of these. It
    costs nothing today, checked rather than assumed: the element's className is
-   `svalue-input surface-tray text-right tabular-nums text-xs focus:outline-hidden focus-ring`, and
-   not one of those utilities declares position, inset, border-width/style, border-radius,
+   `svalue-input surface-tray text-right tabular-nums text-xs focus-ring`, and
+   not one of those classes declares position, inset, border-width/style, border-radius,
    padding-inline, margin-inline/block or appearance. The geometry still stands unopposed — it now
    stands there because nothing contests it, which is a fact anyone can check, rather than because
    the cascade was broken in its favour. */
@@ -699,21 +698,58 @@ button:focus,select:focus{outline:none}
    on the owner's device twice. Recorded here so nobody rediscovers it as a bug. */
 [data-select-trigger]{touch-action:none}
 .drag-target{outline:2px solid var(--drag-ring);outline-offset:-2px}
-/* THE KEYBOARD FOCUS RING — for a control that has no surface of its own to show the keyboard is
-   on it. One user today: the reorder grip in Manage Presets (components/PresetManager), a bare
-   glyph you Tab to and move with the arrow keys. :focus-visible, so it is drawn for the keyboard
-   and never for a finger or a mouse press; inset like the drag ring above, so the list's scroll
-   region cannot clip it. The colour is the card's strongest text tier rather than --drag-ring: that
-   one is tuned to be subtle (about half-transparent in every theme), which suits a hover-like hint
-   and is too faint for the only sign of where the keyboard is. */
-.kbd-ring:focus-visible{outline:2px solid var(--tx-50);outline-offset:-2px}
-/* …EXCEPT ON A GRIP A POINTER PRESS FOCUSED. A grab focuses the grip from script, and a browser
-   counts a scripted focus as keyboard focus (:focus-visible) once the keyboard has been used — so
-   without this, grabbing a row after one Tab drew the keyboard's ring on it. The component marks
-   the grip the press focused (components/PresetManager), and a marked grip draws no ring at all:
-   not this one, and not the browser's default one, which a div (unlike a button) would otherwise
-   get the moment this rule's outline is taken away. */
-.kbd-ring[data-pointer-focus]:focus-visible{outline:none}
+/* ★ THE KEYBOARD FOCUS RING — where the keyboard is, in the ⚙ menu and in every popup.
+   WHERE: inside a .focus-scope — the ⚙ menu's card (components/SettingsPanel) and every popup's
+   scrim (components/Popup), the two places a keyboard walks controls one at a time. The rule is
+   written against the SCOPE, not against a class each control would have to remember to wear, so
+   it reaches every control in them by construction: buttons, the option a setting's arrows are on,
+   switches, text boxes, sliders, the list buttons, links, the reorder grip — and whatever is added
+   next. Outside a scope nothing draws one; the guide's "Where it falls short" says so.
+   WHEN: only while the KEYBOARD is what is being used — :root[data-keyboard], kept by
+   lib/keyboardFocus, which argues why the app decides that itself. So it is never drawn for a
+   finger or a mouse press, on any control, however the press came to focus it; and the first key
+   that follows a press puts it on.
+   WHAT: the press-drag ring's own geometry (.drag-target, above) — 2px, INSET, so no scroll region
+   can clip it and it never spills onto a neighbour — in the strongest colour the surface has
+   (--kbd-ring): the card's top text tier by default, where the drag ring is tuned to be faint;
+   the list's own ink on a frosted list; and on a FILLED control — the purple of a chosen option or
+   a switched-on switch (.btn-solid), the rose of a reset button (.ring-on-fill, worn beside that
+   fill in components/controlClasses) — white, like its label, and 2px further in. Further in
+   because a white ring on the very edge of a fill is only visible against a dark card: on the two
+   light themes it melts into the white around the button and reads as the button shrinking. With
+   the fill on both sides of it, it is a ring in every theme. Solid and bright, it cannot be taken
+   for Amnesic's dashed frame (.session-only), and since that one is a ::after border and this one
+   an outline, a control can wear both.
+   ONE CONTROL TAKES IT ON THE OUTSIDE (.ring-outside): the tap-to-type readout beside a slider
+   (components/SliderValueEditor) is a button exactly the size of its digits — no padding for a
+   ring to sit in, filled or not — so there the ring is drawn 2px clear of the box, in the card's
+   colour, which shows against the card and against the purple of a changed readout alike.
+   THE LINE BEFORE IT is the other half: inside a scope the BROWSER draws nothing of its own — not
+   its default ring on a text box, a link or the grip, and not for a press. The outline is kept but
+   transparent (not `none`), so forced-colors mode, which paints transparent outlines, still shows
+   its users where focus is.
+   NOT RINGED, each for its own reason:
+     • the popup's CARD — it holds focus only so that Tab starts inside it; a ring round a whole
+       dialog is noise;
+     • a SLIDER's track — 5px tall, so the ring goes on its thumb instead (the two rules after);
+     • a LIST BUTTON whose open list has a cursor — the keyboard is on that option then, and the
+       option is what wears it ([data-kbd-cursor], set by components/CustomSelect for a cursor the
+       arrow keys moved; a mouse resting on an option is not one). */
+.focus-scope :focus{outline:2px solid transparent;outline-offset:-2px}
+:root[data-keyboard] .focus-scope :focus:not([role="dialog"],[type="range"],[aria-activedescendant]),[data-kbd-cursor]{outline:2px solid var(--kbd-ring,var(--tx-50));outline-offset:var(--kbd-ring-offset,-2px)}
+:root[data-keyboard] .focus-scope input[type="range"]:focus::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
+:root[data-keyboard] .focus-scope input[type="range"]:focus::-moz-range-thumb{box-shadow:0 0 0 2px var(--card-bg),0 0 0 4px var(--kbd-ring,var(--tx-50))}
+.btn-solid,.ring-on-fill{--kbd-ring:#fff;--kbd-ring-offset:-4px}
+.ring-outside{--kbd-ring:var(--tx-50);--kbd-ring-offset:2px}
+[role="listbox"]{--kbd-ring:#1a1a1a}
+/* …AND OUTSIDE A SCOPE: .focus-ring is the class a control wears to say "the browser draws no focus
+   look on me" — the text boxes and list buttons that also live on the game screens and in the top
+   bar, where the browser would otherwise put its own ring on a tapped box. The same transparent
+   outline, for the same forced-colors reason. It is a class here in `components` and NOT Tailwind's
+   focus:outline-hidden, deliberately: a utility outranks this whole layer, so a control wearing
+   that utility inside a scope could never be given the ring above (tests/keyboardFocus keeps the
+   utility out of the source). */
+.focus-ring:focus{outline:2px solid transparent;outline-offset:2px}
 /* The mode-selector dropdown (the only [data-select-group] portal) has a theme-INVARIANT frosted-light
    surface with dark text (CustomSelect's portaled listbox), so the per-theme ring tuned for the app
    surfaces would vanish on it — pin its ring to the fixed dark brand accent in every theme. */
@@ -972,23 +1008,6 @@ button:focus,select:focus{outline:none}
 [data-theme="light"] .btn-wrong-persist,[data-theme="parchment"] .btn-wrong-persist{background:rgba(220,38,38,.82)}
 [data-theme="light"] .btn-wrong-dim,[data-theme="parchment"] .btn-wrong-dim{background:rgba(220,38,38,.28)}
 [data-theme="light"] .btn-correct-persist,[data-theme="parchment"] .btn-correct-persist{background:rgba(22,163,74,.82)}
-/* Focus ring previously rendered via .focus-ring:focus-visible — removed
-   intentionally. With Tab bound exclusively to toggling the mode selector
-   dropdown (see App keydown handler), no other element is reachable via
-   keyboard focus, so a visible focus indicator on those elements is dead
-   weight. The .focus-ring class is left on element classNames as a no-op
-   so future re-enablement is a one-line CSS change rather than a sweep.
-   (That reasoning never covered the popups: inside one, Tab is trapped and
-   does walk its controls. The one control there with no surface of its own
-   draws a real ring — .kbd-ring, above — and the guide's "Where it falls
-   short" list states the rest.)
-   ⚠ ONE EXCEPTION since round-9: the ⚙ Settings pickers now implement
-   the radiogroup keyboard contract (components/PillGroup), so once focus is
-   inside a group — placed by a click or an AT activation, since Tab still
-   can't get there — the arrows walk it from pill to pill with nothing drawn
-   to say where it is. Whether those pills should show a ring is a real open
-   question, not an oversight: that round's brief was ZERO visual change, and a ring
-   is a visual change. */
 .bar{height:6px;border-radius:6px;overflow:hidden;background:var(--bar-bg);border:1px solid var(--bar-bd)}
 /* The fill is full-width (width:100% set inline) and animated with transform:scaleX(1->0),
    NOT width, so the countdown is GPU-composited (no per-frame layout) and stays smooth on

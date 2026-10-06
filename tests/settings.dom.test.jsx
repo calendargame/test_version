@@ -1137,7 +1137,7 @@ describe('Settings — PIXEL GATES (implementation-coupled on purpose)', () => {
     const SOLID =
       'flex-1 px-3 py-1.5 rounded-xl btn-solid border border-transparent text-xs font-medium overflow-hidden '
     const ROSE =
-      'flex-1 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white border border-transparent text-xs font-medium overflow-hidden '
+      'flex-1 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white ring-on-fill border border-transparent text-xs font-medium overflow-hidden '
     const OFF = 'opacity-60 cursor-not-allowed'
     // A pristine launch: nothing to save, nothing to reset, nothing to undo — all three withheld.
     expect(foot('Save Defaults').className).toBe(SOLID + OFF)

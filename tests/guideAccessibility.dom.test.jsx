@@ -5,7 +5,7 @@
 // ★ WHY THIS FILE EXISTS AT ALL, and it is not "coverage". Every other claim the How-to-Play guide
 // makes describes behaviour the suite already drives, so a change that falsified one would go red
 // somewhere. The Accessibility section is different in one specific way: four of its sentences
-// describe things the app DOES NOT DO — no focus ring, no pinch-zoom, unnamed history buttons and
+// describe things the app DOES NOT DO — no focus ring outside the ⚙ menu and the popups, no pinch-zoom, unnamed history buttons and
 // mode-screen sliders, and a game loop that withholds a button by dimming it without saying so
 // (the ⚙ footer and Show Codes being the two places that do say so). Fixing any of those is a
 // strict improvement that no existing test would notice, and the instant it lands the guide is
@@ -27,7 +27,7 @@
 // together, in one commit.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
@@ -77,13 +77,28 @@ describe('the guide names its Accessibility section and puts it where the sectio
 })
 
 describe('the four gaps the Accessibility section admits to — each fails when the app improves', () => {
-  it('GAP 1: no focus ring is drawn anywhere', () => {
-    // Protects: "Nothing on the site draws a focus ring… inside the popups above, Tab moves with
-    // nothing drawn to say where it went." Two halves, because the app states the gap twice: the
-    // blanket suppression on buttons, and .focus-ring surviving on element classNames as a
-    // deliberate no-op with NO rule behind it (index.css says so in prose — this asserts the code).
+  it('GAP 1: outside the ⚙ menu and the popups, no focus ring is drawn', () => {
+    // Protects: "Outside the ⚙ menu and the popups, nothing draws a focus ring…" The ring exists
+    // now (tests/keyboardFocus owns it) and its ONE rule is confined to a .focus-scope — so the gap
+    // is exactly "everything that is not inside one". Three halves: buttons everywhere else are
+    // still blanket-suppressed, every ring rule names a scope, and the only two scopes in the app
+    // are the ⚙ menu's card and the popup scrim. Give the game screens or the top bar a ring and
+    // one of these goes red; rewrite the sentence in the same change.
     expect(cssCode).toContain('button:focus,select:focus{outline:none}')
-    expect(cssCode).not.toMatch(/\.focus-ring[^{]*\{/)
+    const ringRules = [...cssCode.matchAll(/([^{}]*):focus[^{}]*\{[^}]*outline:2px solid var\(/g)]
+    expect(ringRules.length).toBe(1)
+    expect(ringRules[0][1]).toContain('.focus-scope')
+    const scoped = ['src/components', 'src/modes', 'src']
+      .flatMap((dir) =>
+        readdirSync(join(dirname(fileURLToPath(import.meta.url)), '..', dir))
+          .filter((f) => /\.tsx?$/.test(f))
+          .map((f) => `${dir}/${f}`),
+      )
+      .filter((f) => /['"` ]focus-scope[ '"`]/.test(repoFile(f)))
+    expect(scoped.sort()).toEqual([
+      'src/components/SettingsPanel.tsx',
+      'src/components/modalContract.ts',
+    ])
   })
 
   it('GAP 2: pinch-zoom is still switched off in the viewport meta', () => {

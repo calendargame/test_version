@@ -27,19 +27,21 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 // ─────────────────────────────────────────────────────────────────────────
 
 // The scrim: full-screen, above everything, centring its card. components/Popup is its only user.
-export const MODAL_SCRIM_CLASS = 'fixed inset-0 z-[60] flex items-center justify-center px-4'
+// focus-scope: inside it the keyboard's focus ring is drawn on whichever control has the keyboard
+// (index.css, "THE KEYBOARD FOCUS RING") — term 4's Tab has somewhere visible to land.
+export const MODAL_SCRIM_CLASS =
+  'focus-scope fixed inset-0 z-[60] flex items-center justify-center px-4'
 // The dim, worn by the TOP popup's scrim alone (term 5).
 export const MODAL_DIM_CLASS = 'bg-black/40'
 // The card: the popover's own surface language, py-4 only — horizontal padding belongs to the rows
 // and to any inner scroll region, so the scroller's right padding is the text-free lane the iOS
-// overlay scrollbar paints in (components/scrollRegion). focus:outline-hidden because term 2 focuses
-// it programmatically and a focus ring on a whole dialog is noise, not information.
-export const MODAL_CARD_CLASS =
-  'card rounded-2xl py-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden'
+// overlay scrollbar paints in (components/scrollRegion). It draws no focus ring
+// although term 2 focuses it — a ring on a whole dialog is noise, not information; index.css's
+// keyboard-ring rule leaves a role="dialog" out by name.
+export const MODAL_CARD_CLASS = 'card rounded-2xl py-4 w-full max-w-[20rem] space-y-3'
 // The same card for a popup with no inner scroll region — the confirmations and the storage-full
 // notice: padded all round, since there is no scrollbar lane to keep clear.
-export const MODAL_PLAIN_CARD_CLASS =
-  'card rounded-2xl p-4 w-full max-w-[20rem] space-y-3 focus:outline-hidden'
+export const MODAL_PLAIN_CARD_CLASS = 'card rounded-2xl p-4 w-full max-w-[20rem] space-y-3'
 // The card's elevation. An inline style rather than a class because that is how the popups have
 // always spelled it; sharing the literal is the point.
 export const MODAL_CARD_SHADOW = { boxShadow: '0 0 8px rgba(0,0,0,0.12)' } as const

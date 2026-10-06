@@ -44,6 +44,9 @@ import { isTopPopup, usePopupLayer } from './overlayStack.js'
 //     blurs itself when Enter commits it, a press on the dim that is not a tap (a right-click, one
 //     let go over the card), a control removed while it had the keyboard.
 //   • THE TAB TRAP, on the scrim (modalContract's trapModalTab).
+//   • THE KEYBOARD'S RING. The scrim is a .focus-scope (modalContract's MODAL_SCRIM_CLASS; index.css,
+//     "THE KEYBOARD FOCUS RING"), so every control in every popup shows where the keyboard is, and
+//     none of them has to ask.
 //   • THE [data-settings-modal] MARKER, which is how the test suite finds a popup's scrim. Nothing
 //     in the app reads it: every "is a popup open?" question is asked of the stack.
 //

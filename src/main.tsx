@@ -34,6 +34,7 @@ import { useStorageUsage, watchStorageUsage, refreshStorageUsage } from './store
 import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, watchScrollEdges, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
+import { installKeyboardFocus } from './lib/keyboardFocus.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
 import { useUpdateCheck } from './components/useUpdateCheck.js'
 import { DEPLOY_TS } from './deployStamp.js'
@@ -1608,6 +1609,10 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // appending to it. One set of document listeners for every one of them; lib/textEntry argues why
       // it is delegated rather than six onFocus props, and why the tap path needs three events.
       useEffect(()=>installSelectAllOnEntry(),[]);
+      // The third: whether the keyboard is what the player is using right now — the one fact the focus
+      // ring in the ⚙ menu and the popups is drawn from (lib/keyboardFocus argues why the app keeps it
+      // itself rather than trusting the browser's guess).
+      useEffect(()=>installKeyboardFocus(),[]);
       // The Year Range boxes' text state, their refs, their two commits and their two focus-guarded
       // store→text sync effects — one unit, in components/useYearRangeMirrors. Called HERE rather
       // than up beside the store bindings so those two effects keep the exact ordinal position in
@@ -2444,7 +2449,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
                   preset switcher beside it already wears, so the two now match by construction
                   instead of by coincidence. */}
               <div className="shrink-0">
-                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={PAGE_OPTIONS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus:outline-hidden focus-ring text-left"/>
+                <CustomSelect wrapperRef={modeSelectRef} value={mode} onChange={(v)=>{switchMode(v);setSettingsOpen(false);}} options={PAGE_OPTIONS} ariaLabel="Mode" showChevron pressDrag triggerMatchesDropdown className="panel rounded-xl px-2.5 py-2 pr-6 text-sm focus-ring text-left"/>
               </div>
               {/* THE ⚙ AT THE FAR EDGE. The gear moved from the INSIDE of the old right-hand pair
                   to the OUTSIDE of it (owner's layout: gear far right); flattening the row to four

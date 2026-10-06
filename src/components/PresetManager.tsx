@@ -296,20 +296,15 @@ const DELETE_BTN_CLASS =
 // bare ≡ says "drag", where a boxed one reads as one more thing to tap. What it keeps is everything
 // a control needs that is not decoration: a hit area wider and taller than its 14px glyph
 // (`self-stretch` takes the row's full height, px-3 gives it ~38px of width), a grab cursor for a
-// mouse, and a FOCUS RING for the keyboard route (index.css's .kbd-ring): the grip
-// is Tab-reachable and its ↑/↓ move a preset, and with no border or fill of its own there is nothing
-// else that could show the keyboard is on it.
+// mouse, and the popup's FOCUS RING for the keyboard route (index.css, "THE KEYBOARD FOCUS RING" —
+// drawn on whatever the keyboard is on in a popup, so the grip asks for nothing): it is
+// Tab-reachable and its ↑/↓ move a preset, and with no border or fill of its own there is nothing
+// else that could show the keyboard is on it. A GRAB draws none, though the press focuses the grip
+// from script (beginDrag says why it has to): the ring is for the keyboard, and lib/keyboardFocus
+// knows a press from a key whatever focuses afterwards.
 // The glyph is quieter than the text (--tx-200-80) because it is furniture until it is held.
-// ★ THE RING IS FOR THE KEYBOARD, AND A GRAB IS NOT THE KEYBOARD. The ring draws on :focus-visible,
-// which is the browser's own guess at "the keyboard put focus here" — and the guess is wrong for a
-// grab: a press on the grip focuses it from script (beginDrag says why it has to), and a browser
-// treats a scripted focus as keyboard focus whenever the keyboard was the last thing used. So after
-// one Tab or arrow inside the card, grabbing a row with a finger or a mouse drew the ring on it.
-// The card therefore says which it was: the one grip a pointer press focused carries
-// `data-pointer-focus` until it loses focus or takes a key (pointerGripId, in the component), and
-// index.css draws no ring on a grip so marked — neither its own nor the browser's default one.
 const GRIP_CLASS =
-  'shrink-0 self-stretch flex items-center justify-center px-3 rounded-xl text-(--tx-200-80) cursor-grab kbd-ring'
+  'shrink-0 self-stretch flex items-center justify-center px-3 rounded-xl text-(--tx-200-80) cursor-grab'
 // Each cell's on-screen column in the row's four-column grid, all on the first row track — the
 // placement that lets the markup order (above) differ from the order on screen.
 const ROW_COL = {
@@ -446,9 +441,6 @@ export default function PresetManager({
   useLayoutEffect(() => {
     if (cappedRowId !== null) revealRow(cappedRowId)
   }, [cappedRowId])
-  // The preset whose grip a POINTER press focused, or null (GRIP_CLASS argues it).
-  const [pointerGripId, setPointerGripId] = useState<number | null>(null)
-
   // ── Renaming ────────────────────────────────────────────────────────────────────────────────
 
   // Commit whatever is pending. store/presetControl's renamePreset normalizes (trim, cap, and an
@@ -720,8 +712,7 @@ export default function PresetManager({
     // the handle un-focused — silently breaking the "focus survives a reorder" accessibility claim
     // for every route EXCEPT the keyboard one. Calling focus() here is unaffected by preventDefault
     // — only the browser's OWN implicit behaviour was ever suppressed, never a programmatic call.
-    // …and it is a POINTER's focus, so this grip draws no keyboard ring for it (GRIP_CLASS).
-    setPointerGripId(p.id)
+    // …and it is a POINTER's focus, so no keyboard ring is drawn for it (GRIP_CLASS).
     e.currentTarget.focus()
     e.preventDefault()
     // Every row's center, converted from the viewport to the list's content coordinates (the ★★
@@ -799,9 +790,8 @@ export default function PresetManager({
   // ★ THE LIST FOLLOWS THE ROW. A moved row can land outside the part of the list that is on screen
   // — in a list of thirty, a few presses carried the row, and the ring that says where the keyboard
   // is, out of sight. flushSync commits the move first, so revealRow measures the row where it now
-  // is. (Any key on the grip is the keyboard in use, so the ring is its again.)
+  // is.
   const onHandleKeyDown = (p: Preset) => (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    setPointerGripId(null)
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
     e.preventDefault()
     flushSync(() => movePreset(p.id, e.key === 'ArrowUp' ? -1 : 1))
@@ -995,7 +985,7 @@ export default function PresetManager({
                       discardRename(e.currentTarget)
                     }
                   }}
-                  className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs focus:outline-hidden focus-ring ${held ? HELD_PIECE_CLASS : ''}`}
+                  className={`${ROW_COL.name} min-w-0 appearance-none rounded-xl border surface-tray px-2 py-1.5 text-xs focus-ring ${held ? HELD_PIECE_CLASS : ''}`}
                 />
                 {/* THE CURRENT-PRESET MARK, after the name, in a reserved fixed-width slot so every
                 name box ends at the same x whether the row is marked or not — the same reason
@@ -1043,11 +1033,7 @@ export default function PresetManager({
                   tabIndex={0}
                   aria-label={`Reorder ${p.name}, position ${i + 1} of ${presets.length}`}
                   className={`${ROW_COL.grip} ${GRIP_CLASS}`}
-                  data-pointer-focus={pointerGripId === p.id || undefined}
                   style={{ touchAction: 'none' }}
-                  // (Only its OWN mark: grabbing this grip takes focus from whichever grip had it, and
-                  // that one's blur arrives after the grab has marked this one.)
-                  onBlur={() => setPointerGripId((held) => (held === p.id ? null : held))}
                   onPointerDown={beginDrag(p, i)}
                   onPointerMove={onDragMove}
                   onPointerUp={endDrag}

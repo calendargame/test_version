@@ -185,6 +185,16 @@ export default function CustomSelect({
   // highlighted (e.g. mouse-only interaction). Reset to selected option's index on open so
   // ↑/↓ start from the current value, not the top.
   const [activeIdx, setActiveIdx] = useState(-1)
+  // Did the KEYBOARD put the cursor where it is? The grey box is the same for a mouse resting on an
+  // option and for an arrow key landing on it; the keyboard's focus ring is not — it is drawn on the
+  // option only for a cursor the keys moved (index.css, "THE KEYBOARD FOCUS RING": the open list is
+  // driven from the trigger, which keeps the real focus, so the option cannot take the ring by
+  // being focused and is marked instead).
+  const [cursorByKey, setCursorByKey] = useState(false)
+  const moveCursorByKey = (next: (i: number) => number) => {
+    setCursorByKey(true)
+    setActiveIdx(next)
+  }
   const localRef = useRef<HTMLDivElement>(null)
   const ref = wrapperRef || localRef
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -331,7 +341,7 @@ export default function CustomSelect({
         // First arrow (from the no-cursor -1 state) steps ONE option from the selected one — Down lands
         // just below the ✓, Up just above (owner's call 2026-06-06; previously the first arrow landed on
         // the selected option itself). Clamped at the ends; subsequent arrows keep moving.
-        setActiveIdx((i) =>
+        moveCursorByKey((i) =>
           i < 0
             ? selectedIdx >= 0
               ? Math.min(options.length - 1, selectedIdx + 1)
@@ -340,15 +350,15 @@ export default function CustomSelect({
         )
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setActiveIdx((i) =>
+        moveCursorByKey((i) =>
           i < 0 ? (selectedIdx >= 0 ? Math.max(0, selectedIdx - 1) : 0) : Math.max(0, i - 1),
         )
       } else if (e.key === 'Home') {
         e.preventDefault()
-        setActiveIdx(0)
+        moveCursorByKey(() => 0)
       } else if (e.key === 'End') {
         e.preventDefault()
-        setActiveIdx(options.length - 1)
+        moveCursorByKey(() => options.length - 1)
       } else if (e.key === 'Enter') {
         e.preventDefault()
         selectAt(activeIdx >= 0 ? activeIdx : selectedIdx)
@@ -658,10 +668,13 @@ export default function CustomSelect({
                   id={optionId(i)}
                   role="option"
                   aria-selected={opt.value === value}
+                  data-kbd-cursor={(i === activeIdx && cursorByKey) || undefined}
                   key={opt.value}
                   type="button"
                   onPointerEnter={(e) => {
-                    if (e.pointerType === 'mouse') setActiveIdx(i)
+                    if (e.pointerType !== 'mouse') return
+                    setCursorByKey(false)
+                    setActiveIdx(i)
                   }}
                   onClick={() => {
                     onChange(opt.value)

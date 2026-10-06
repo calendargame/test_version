@@ -1793,9 +1793,11 @@ export default function GuidePage({
           round-15 draft said "sliding panels, fades, and this guide's own scrolling" when no fade
           was scaled at all; the word is honest now, which is why it is back.)
           ★ THE KNOWN-GAPS BLOCK IS LOAD-BEARING, not throat-clearing. Each line is a thing the
-          code does NOT do, checked one at a time: button:focus{outline:none} is global
-          (index.css) and .focus-ring has been a no-op since the Tab binding landed (the one ring
-          that IS drawn, .kbd-ring on the preset manager's reorder grip, is named as the exception);
+          code does NOT do, checked one at a time: the keyboard's focus ring is drawn only inside
+          a .focus-scope — the ⚙ menu's card and the popup scrim (index.css, "THE KEYBOARD FOCUS
+          RING") — so everywhere else button:focus{outline:none} still stands and nothing is drawn,
+          and plain Tab is still bound to the mode selector while the ⚙ menu is open (main.tsx's
+          key handler bails only for a popup), so Tab does not walk the menu;
           index.html
           sets user-scalable=no on purpose; the < and > history buttons carry only their glyph and
           the mode-screen range inputs carry no aria-label (the DefaultsCard copies do); and the
@@ -1876,7 +1878,8 @@ export default function GuidePage({
             &quot;amnesic&quot;, or &quot;amnesic, stats only&quot;. <Kbd>Tab</Kbd> walks each row
             in the order it is read out — the name, then the reorder handle, then <b>✕</b> — rather
             than left to right, so the first thing the keyboard reaches in this popup is a name and
-            never a delete. The reorder handle is outlined while the keyboard is on it; ↑ and ↓ move
+            never a delete. The reorder handle has no box of its own, so the outline described under
+            Panels and popups below is the only thing that shows the keyboard is on it; ↑ and ↓ move
             the preset from there.
           </li>
           <li>
@@ -1917,6 +1920,15 @@ export default function GuidePage({
             returns to the list, and a second closes the popup; from the list, a dismiss closes it
             straight away. As in every other box in the app, the first <Kbd>Esc</Kbd> belongs to a
             name you are typing in.
+          </li>
+          <li>
+            In the ⚙ menu and in every popup, the control the keyboard is on is outlined: a solid
+            ring just inside its edge — white on a filled button, round the handle on a slider, and
+            in an open list on the option the arrow keys have reached. It is drawn only while you
+            are using the keyboard. A tap or a click never draws it, on anything; the first key you
+            press afterwards does. It is not the dashed outline Amnesic puts round numbers that
+            won&apos;t be kept — that one is dashed and fainter, marks numbers rather than a
+            control, and has nothing to do with the keyboard.
           </li>
           <li>
             The ⚙ menu itself is not a dialog — it&apos;s a menu hanging off its button, and it
@@ -1964,12 +1976,15 @@ export default function GuidePage({
         <p>Stated plainly, so you know before you try:</p>
         <UL>
           <li>
-            Almost nothing on the site draws a focus ring, so on a computer there&apos;s no outline
-            showing which button the keyboard is on. Inside a ⚙ picker the selection stands in for
-            one — landing on an option chooses it, so the option you&apos;re on is the lit one — but
-            inside the popups above, <Kbd>Tab</Kbd> moves with nothing drawn to say where it went.
-            The one exception is the reorder handle in Manage Presets, which is outlined while the
-            keyboard is on it.
+            Outside the ⚙ menu and the popups, nothing draws a focus ring: on the game screens,
+            Lookup, this guide and the top bar there&apos;s no outline showing which button the
+            keyboard is on.
+          </li>
+          <li>
+            <Kbd>Tab</Kbd> does not walk the ⚙ menu. It opens the mode selector from anywhere in the
+            app, the open menu included, so the keyboard only gets onto a setting there once
+            you&apos;ve clicked or tapped one — its keys work from then on, and the outline appears
+            with the first one you press. Inside a popup <Kbd>Tab</Kbd> does walk every control.
           </li>
           <li>
             The preset list at the top, and the <b>Open in</b> list in the ⚙ menu, can only be
@@ -2059,10 +2074,10 @@ export default function GuidePage({
         <p>
           Each of those three buttons greys out whenever pressing it would do nothing — there is
           nothing to save, nothing to reset, or nothing left to clear. A greyed one really is
-          inactive: it does nothing to a tap, a keypress, or a screen reader's press. You can still
-          reach it with <Kbd>Tab</Kbd>, and it's marked unavailable rather than left looking like an
-          ordinary button; on a computer the pointer shows the not-allowed cursor over it. (See
-          Accessibility.)
+          inactive: it does nothing to a tap, a keypress, or a screen reader's press. The keyboard
+          and a screen reader can still land on it, and it's marked unavailable rather than left
+          looking like an ordinary button; on a computer the pointer shows the not-allowed cursor
+          over it. (See Accessibility.)
         </p>
         <p className="text-(--tx-300-70) text-[12px]">
           Settings changes apply when you <b>close</b> the ⚙ menu, not on each adjustment — so

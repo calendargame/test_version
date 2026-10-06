@@ -36,6 +36,9 @@ import { commitSliderText } from '../lib/sliderValue.js'
 //     `accent` (dirty) variant (round 6) wears the btn-solid pill via px-1 -mx-1, the
 //     footer-link ring idiom: the fill bleeds 4px past the digits while the padding cancels back
 //     to a CONTENT box equal to the strut, so the digits themselves never move.
+//     ring-outside (index.css, "THE KEYBOARD FOCUS RING"): this button is exactly as tall as its
+//     digits, and without the pill exactly as wide, so the keyboard's ring — drawn just inside a
+//     control's edge everywhere else — would be drawn through them. Here it goes round the outside.
 //   • the edit input is `.svalue-input` (index.css, beside .surface-tray) — the same idiom on both
 //     axes, inset outward by its own 1px border + 1×--spacing padding so its CONTENT box also
 //     equals the strut. It therefore fits the full widest string exactly (the AoX Run Length site
@@ -123,7 +126,7 @@ export default function SliderValueEditor({
         onClick={() => {
           if (!disabled) setText(toText(value))
         }}
-        className={`absolute inset-0 whitespace-nowrap tabular-nums text-xs text-right ${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
+        className={`absolute inset-0 ring-outside whitespace-nowrap tabular-nums text-xs text-right ${accent ? ' btn-solid rounded-md px-1 -mx-1' : ''}${disabled ? ' pointer-events-none' : ''}`}
       >
         {format(value)}
       </button>,
@@ -153,7 +156,7 @@ export default function SliderValueEditor({
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
-      className="svalue-input surface-tray text-right tabular-nums text-xs focus:outline-hidden focus-ring"
+      className="svalue-input surface-tray text-right tabular-nums text-xs focus-ring"
     />,
   )
 }

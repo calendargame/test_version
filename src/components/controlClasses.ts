@@ -20,8 +20,12 @@ import type { ButtonState } from '../engine/answerButtons.js'
 // beside their bordered grid controls. The two places this class now stands ALONE in its row — a
 // ConfirmModal's confirm and the preset manager's Delete, both `w-full` since round 22 — keep the border
 // for the same reason every variant does: the token is one height tier, not a per-row measurement.
+// ring-on-fill: on this fill the keyboard's focus ring is white, like the label, and drawn a little
+// way in — the theme's own ring colour is the card's text colour, which in the two light themes is
+// dark and sinks into the rose (index.css, "THE KEYBOARD FOCUS RING"; .btn-solid carries the same
+// for the purple).
 export const RESET_BTN_CLASS =
-  'px-3 py-2 rounded-xl bg-rose-600/90 text-white border border-transparent text-sm font-medium'
+  'px-3 py-2 rounded-xl bg-rose-600/90 text-white ring-on-fill border border-transparent text-sm font-medium'
 // Settings-footer variant (Round-3 font normalization, Round-4 one-height tier): the ⚙
 // popover's Reset Settings / Full Reset buttons rest at the popover control tier in BOTH
 // font (text-xs) and height (py-1.5) — same button in every other way, so it's derived.
@@ -115,7 +119,7 @@ export const FOOTER_META_ROW_CLASS = 'flex items-center flex-wrap justify-betwee
 // SliderValueEditor's edit box via .svalue-input. Range sliders are deliberately untouched —
 // their native track/thumb IS the control that index.css styles.)
 export const NUM_INPUT_BASE =
-  'appearance-none rounded-xl px-2 text-center tabular-nums text-xs focus:outline-hidden focus-ring'
+  'appearance-none rounded-xl px-2 text-center tabular-nums text-xs focus-ring'
 export const NUM_INPUT_CLASS = NUM_INPUT_BASE + ' border surface-tray'
 // Presentational primitives (NewBestStar, SectionLabel, Kbd) + their class consts → src/components/primitives.jsx, imported at top.
 // buttonStateClass — picks the className for an answer-grid button based on its

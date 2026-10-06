@@ -53,6 +53,7 @@ import { usePresets, PRESET_STORE_KEYS, presetKey, MAX_PRESET_NAME } from '../sr
 import { createPreset, setPresetAmnesic, switchPreset } from '../src/store/presetControl.js'
 import { useSettings } from '../src/store/settings.js'
 import { hasSessionRound } from '../src/store/sessionRound.js'
+import { KEYBOARD_ATTR } from '../src/lib/keyboardFocus.js'
 
 // The mock: onChange's ONE call into lib/presetNameWidth, controllable per test. Defaults to
 // "everything fits, unchanged" (the shape every case that is not ABOUT the cap wants), so cases
@@ -594,23 +595,13 @@ describe('reordering', () => {
       const grip = reorderHandle('Preset 1').className
       expect(grip).not.toMatch(/(^|\s)border(\s|$)/)
       expect(grip).not.toMatch(/surface-/)
-      // …but it is still a control: a grab cursor for a mouse, and a focus ring for the keyboard.
+      // …but it is still a control: a grab cursor for a mouse, and a focus ring for the keyboard —
+      // the popup's own, drawn on whatever the keyboard is on inside a popup (tests/keyboardFocus),
+      // so the grip asks for nothing. What it must NOT do is switch that ring off: a Tailwind
+      // outline utility on :focus is what removed the grip's only keyboard indicator once.
       expect(grip).toMatch(/cursor-grab/)
-      expect(grip).toMatch(/(^|\s)kbd-ring(\s|$)/)
-      // Nothing may switch that ring off: Tailwind's outline-hidden on :focus is what removed the
-      // grip's only keyboard indicator once.
-      expect(grip).not.toMatch(/outline-hidden|outline-none/)
-    })
-
-    it('the grip`s ring is a real, visible outline drawn for keyboard focus (index.css)', () => {
-      const css = readFileSync(resolve(__dirname, '../src/index.css'), 'utf8').replace(
-        /\/\*[\s\S]*?\*\//g,
-        '',
-      )
-      const rule = /\.kbd-ring:focus-visible\{([^}]*)\}/.exec(css)?.[1]
-      expect(rule).toMatch(/outline:2px solid var\(--tx-50\)/)
-      // A rule on plain :focus would draw it for every finger and mouse press on the grip too.
-      expect(css).not.toMatch(/\.kbd-ring(:focus)?\{/)
+      expect(grip).not.toMatch(/outline-/)
+      expect(reorderHandle('Preset 1').closest('.focus-scope')).not.toBeNull()
     })
 
     it('the width-cap note sits under the NAME, in the row`s own grid, not under the ✕', () => {
@@ -718,22 +709,15 @@ describe('reordering', () => {
   })
 
   // ── The grip's ring is the keyboard's ─────────────────────────────────────────────────────────
-  // The ring draws on :focus-visible, and a browser counts a SCRIPTED focus as keyboard focus once
-  // the keyboard has been used — which a grab is (the press focuses the grip from script). So the
-  // card marks the one grip a pointer press focused (data-pointer-focus), until it loses focus or
-  // takes a key, and index.css draws no ring on a marked grip. jsdom has no :focus-visible, so the
-  // mark and the rule are the contract; the real ring was checked in a real browser.
+  // A grab focuses the grip from script, and the ring must not be drawn for it: the ring is drawn
+  // only while the keyboard is what is being used (lib/keyboardFocus's mark on <html>, which
+  // index.css's one ring rule requires — tests/keyboardFocus pins both), and a press is not the
+  // keyboard whatever focuses afterwards. The grip used to carry a mark of its own for this. jsdom
+  // draws nothing, so the mark is the contract; the real ring was checked in a real browser.
   describe('the grip draws no keyboard ring for a pointer grab', () => {
-    const ring = (name) => !reorderHandle(name).hasAttribute('data-pointer-focus')
-
-    it('index.css draws no ring at all on a grip a pointer press focused', () => {
-      const css = readFileSync(resolve(__dirname, '../src/index.css'), 'utf8').replace(
-        /\/\*[\s\S]*?\*\//g,
-        '',
-      )
-      // `none`, not merely "our ring removed": a div would fall back to the browser's default ring.
-      expect(css).toMatch(/\.kbd-ring\[data-pointer-focus\]:focus-visible\{outline:none\}/)
-    })
+    const ringed = (name) =>
+      document.documentElement.hasAttribute(KEYBOARD_ATTR) &&
+      document.activeElement === reorderHandle(name)
     const grab = (name) => {
       const e = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })
       Object.defineProperty(e, 'pointerId', { value: 3 })
@@ -741,35 +725,35 @@ describe('reordering', () => {
       Object.defineProperty(e, 'pointerType', { value: 'mouse' })
       act(() => reorderHandle(name).dispatchEvent(e))
     }
+    const tabTo = (name) => {
+      pressKey('Tab')
+      act(() => reorderHandle(name).focus())
+    }
 
-    it('a grab takes the ring off that grip alone; losing focus gives it back', () => {
+    it('the keyboard on a grip rings it; a grab does not', () => {
       act(() => {
         createPreset('Timed')
       })
       openManager()
-      expect(ring('Preset 1')).toBe(true)
+      tabTo('Preset 1')
+      expect(ringed('Preset 1')).toBe(true)
       grab('Preset 1')
       expect(document.activeElement).toBe(reorderHandle('Preset 1')) // the grab still focuses it
-      expect(ring('Preset 1')).toBe(false)
-      expect(ring('Timed')).toBe(true)
-      act(() => reorderHandle('Timed').focus()) // Tab on to the next grip
-      expect(ring('Preset 1')).toBe(true)
-      expect(ring('Timed')).toBe(true)
+      expect(ringed('Preset 1')).toBe(false)
     })
 
-    // The case a real browser showed and a first cut missed: the keyboard is on ONE grip when the
-    // pointer grabs ANOTHER. The grab focuses the new grip, which blurs the old one — and that blur
-    // arrives after the grab has marked the new grip, so it must not wipe the mark.
-    it('grabbing a grip while the keyboard is on a different one still draws no ring on it', () => {
+    // The case a real browser showed first: the keyboard is on ONE grip when the pointer grabs
+    // ANOTHER. The browser counts the scripted focus that follows as keyboard focus.
+    it('grabbing a grip while the keyboard is on a different one draws no ring on either', () => {
       act(() => {
         createPreset('Timed')
       })
       openManager()
-      act(() => reorderHandle('Preset 1').focus()) // the keyboard is here…
+      tabTo('Preset 1') // the keyboard is here…
       grab('Timed') // …and the pointer takes this one
       expect(document.activeElement).toBe(reorderHandle('Timed'))
-      expect(ring('Timed')).toBe(false)
-      expect(ring('Preset 1')).toBe(true)
+      expect(ringed('Timed')).toBe(false)
+      expect(ringed('Preset 1')).toBe(false)
     })
 
     it('a key pressed on a grabbed grip is the keyboard again — the ring is back', () => {
@@ -778,10 +762,10 @@ describe('reordering', () => {
       })
       openManager()
       grab('Preset 1')
-      expect(ring('Preset 1')).toBe(false)
+      expect(ringed('Preset 1')).toBe(false)
       act(() => fireEvent.keyDown(reorderHandle('Preset 1'), { key: 'ArrowDown' }))
       expect(listedNames()).toEqual(['Timed', 'Preset 1'])
-      expect(ring('Preset 1')).toBe(true)
+      expect(ringed('Preset 1')).toBe(true)
     })
   })
 

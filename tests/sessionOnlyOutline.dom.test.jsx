@@ -245,7 +245,7 @@ describe('the outline costs no layout', () => {
     )
     expect(frame.position).toBe('absolute') // out of the flow: it cannot push anything
     expect(frame['pointer-events']).toBe('none') // and it never takes a tap meant for the strip
-    expect(frame.border).toMatch(/dashed/) // dashed — the focus ring (.kbd-ring) is solid
+    expect(frame.border).toMatch(/dashed/) // dashed — the keyboard's focus ring is solid
     expect(frame['border-radius']).toBe('inherit')
     // The readouts' frame is drawn AROUND the row, in the gaps already there.
     expect(rule('.session-only-outset::after')).toMatch(/^inset:-/)
