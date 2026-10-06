@@ -576,6 +576,30 @@ describe('the limit', () => {
     },
   )
 
+  // A browser that gives the site no room at all: nothing is saved, and the first character is
+  // refused. "Used 0 of 0" was taken as a measurement, and the line read "Storage used: NaN%".
+  it('a device that holds nothing and takes nothing is not measured: a dash, never "NaN%"', () => {
+    freshPage(null)
+    localStorage.clear()
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === localStorage) throw quotaError()
+      return realSetItem.call(this, key, value)
+    })
+    measureStorageLimit() // the app's start
+    expect(usage()).toMatchObject({ limit: null, percent: null, warning: false })
+    mountApp()
+    pressKey('Escape') // the storage-full notice, if the app's first save was refused
+    openSettings() // …and ⚙ tries again
+    expect(usage()).toMatchObject({ limit: null, percent: null, warning: false })
+    expect(line().textContent).toBe('Storage used: —not measured yet')
+    tap(line())
+    expect(popup().querySelector('#storage-usage-title').textContent).toBe(
+      'Storage used: not measured yet',
+    )
+    expect(popup().textContent).toMatch(/couldn.t be measured, so there are no percentages/)
+    expect(document.body.textContent).not.toMatch(/NaN|Infinity/)
+  })
+
   it('the measurement at the start opens nothing: there is no screen yet to open it over', () => {
     freshPage(null)
     fill(SAFARI - 20_000)

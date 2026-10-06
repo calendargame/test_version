@@ -72,7 +72,8 @@ import { captureError } from '../observability/sentry.js'
 // And never while a save is being held: the device is full then, and what a measurement would find
 // is the room the held save is about to take.
 // ⚠ A DEVICE THAT COULD NOT BE MEASURED has no percentage, and none is shown: `percent` is null, the
-// ⚙ line shows a dash, and there is no warning.
+// ⚙ line shows a dash, and there is no warning. That includes a device that holds nothing and will
+// take nothing: a limit is always more than zero, so a percentage is always a number.
 //
 // ★ THE POPUP OPENS BY ITSELF ONCE PER UPWARD CROSSING — and never while the player is busy
 // (lib/playerBusy: a flash, run or round under way, a timed question waiting, or a text box in use).
@@ -368,6 +369,11 @@ export function measureStorageLimit(): void {
       DOCUMENTED_LIMITS.map((limit) => limit - used),
       MEASURE_WITHIN,
     )
+    // ⚠ NOTHING HELD AND NOTHING TAKEN IS NOT A LIMIT OF ZERO — it is a device that told the app
+    // nothing (a browser that gives a site no room at all refuses the first character). There is
+    // no whole to take a percentage of, so it stays unmeasured: the dash, and another try at the
+    // next of the moments above.
+    if (used + room === 0) return
     known = { limit: used + room, firm: true }
     tryWriteItem(area, LIMIT_KEY, String(known.limit))
     settle(area) // (the door has already settled it if the marker landed; this is for when it did not)
