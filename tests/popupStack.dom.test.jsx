@@ -262,7 +262,13 @@ describe('focus that leaves the popup in front for nowhere comes back to its dia
     expect(document.activeElement).toBe(modalCard('changelog'))
   })
 
-  it('a control removed while it had the keyboard — a tap-to-type readout closed with Escape', async () => {
+  // ── …but a tap-to-type readout hands the keyboard back to ITSELF ─────────────────────────────
+  // Its box is gone the moment Escape or Enter is pressed, and the keyboard used to be left on
+  // nothing — which the rule above answered by sending it to the dialog, so the next Tab started
+  // again from the popup's first control and a keyboard user lost their place in Save Defaults.
+  // The readout is the same control in its other state (components/SliderValueEditor), so it
+  // takes the keyboard, and the dialog is never involved.
+  it('a tap-to-type readout closed with Escape takes the keyboard back itself', async () => {
     mountApp()
     openSettings()
     makeSaveable()
@@ -273,8 +279,9 @@ describe('focus that leaves the popup in front for nowhere comes back to its dia
     expect(document.activeElement).toBe(box)
     act(() => void fireEvent.keyDown(box, { key: 'Escape' })) // the edit is dropped: the box is gone
     expect(box.isConnected).toBe(false)
+    expect(document.activeElement).toBe(card.getByRole('button', { name: 'Edit Flash Speed' }))
     await settled()
-    expect(document.activeElement).toBe(modalCard('save'))
+    expect(document.activeElement).toBe(card.getByRole('button', { name: 'Edit Flash Speed' }))
   })
 
   it('…and committed with Enter, which blurs it first', async () => {
@@ -288,7 +295,22 @@ describe('focus that leaves the popup in front for nowhere comes back to its dia
     fireEvent.change(box, { target: { value: '1.5' } })
     act(() => void fireEvent.keyDown(box, { key: 'Enter' }))
     await settled()
-    expect(card.getByRole('button', { name: 'Edit Flash Speed' }).textContent).toBe('1.5s')
+    const readout = card.getByRole('button', { name: 'Edit Flash Speed' })
+    expect(readout.textContent).toBe('1.5s')
+    expect(document.activeElement).toBe(readout)
+  })
+
+  it('…but not when the box was left by a tap elsewhere: the keyboard is not pulled back', async () => {
+    mountApp()
+    openSettings()
+    makeSaveable()
+    openModal('save')
+    const card = within(modalCard('save'))
+    tap(card.getByRole('button', { name: 'Edit Flash Speed' }))
+    const box = card.getByRole('textbox', { name: 'Flash Speed (seconds)' })
+    act(() => box.blur()) // a tap on the card's empty space: the box commits and nothing takes over
+    await settled()
+    // Focus went nowhere, so the popup's own rule (above) answers: the dialog, not the readout.
     expect(document.activeElement).toBe(modalCard('save'))
   })
 

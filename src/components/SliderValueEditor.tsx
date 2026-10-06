@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { commitSliderText } from '../lib/sliderValue.js'
 
@@ -22,6 +22,12 @@ import { commitSliderText } from '../lib/sliderValue.js'
 //     (components/LookupCard) followed it onto the same contract. Escape therefore means "throw this edit away" in every box you can type into, with no
 //     exception left to name: these readouts, both ⚙ Year Range boxes, the Save Defaults popup's N
 //     field, the AoX screen's run length, and the Lookup date box.
+//   • …and ENTER OR ESCAPE GIVES THE KEYBOARD BACK TO THE READOUT. The box is gone the moment
+//     either is pressed, and the keyboard used to be left on nothing: in a popup that sent it to
+//     the dialog card (components/Popup's rule for focus that goes nowhere), so the next Tab
+//     started again from the popup's first control and a keyboard user lost their place. The
+//     readout is the same control in its other state, so that is where it goes. Only for those two
+//     keys: a box left by a tap or by Tab has already sent the keyboard where the player wanted it.
 //
 // Width + zero shift (round 8): the cell is a `relative inline-block` whose ONLY in-flow child
 // is an always-mounted invisible block strut holding `widest`, so the cell locks to the widest
@@ -91,6 +97,9 @@ export default function SliderValueEditor({
 }) {
   const [text, setText] = useState<string | null>(null) // null = display mode
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const readoutRef = useRef<HTMLButtonElement | null>(null)
+  // Did Enter or Escape end the edit? Then the readout takes the keyboard as it comes back.
+  const endedByKeyRef = useRef(false)
   // If the slider locks mid-edit (a round starts via keyboard), drop the edit — the slider's
   // value is frozen, so a late commit would contradict the lock. Guarded render-phase reset
   // (the React "adjusting state when a prop changes" pattern): React re-renders before the
@@ -108,6 +117,12 @@ export default function SliderValueEditor({
   useEffect(() => {
     if (editing) inputRef.current?.focus()
   }, [editing])
+  // A layout effect, so the readout has the keyboard before anything looks for where it went.
+  useLayoutEffect(() => {
+    if (editing || !endedByKeyRef.current) return
+    endedByKeyRef.current = false
+    readoutRef.current?.focus({ preventScroll: true })
+  }, [editing])
   // The cell from the width note above: the in-flow strut sizes it, the live control overlays it.
   const cell = (control: ReactNode) => (
     <span className="relative inline-block shrink-0">
@@ -120,6 +135,7 @@ export default function SliderValueEditor({
   if (!editing)
     return cell(
       <button
+        ref={readoutRef}
         type="button"
         aria-label={`Edit ${label}`}
         aria-disabled={disabled || undefined}
@@ -151,8 +167,10 @@ export default function SliderValueEditor({
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault()
+          endedByKeyRef.current = true
           e.currentTarget.blur() // commit runs once, in onBlur
         } else if (e.key === 'Escape') {
+          endedByKeyRef.current = true
           setText(null) // revert; the input unmounts (no blur fires on removal)
         }
       }}
