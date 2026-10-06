@@ -23,8 +23,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { presetKey, PRESET_STORE_KEYS } from '../src/store/presets.js'
-import { openBrowsingSession } from '../src/store/browsingSession.js'
+import {
+  presetKey,
+  resolveActiveId,
+  normalizeRegistry,
+  PRESET_STORE_KEYS,
+} from '../src/store/presets.js'
+import { openBrowsingSession, forgetBrowsingSession } from '../src/store/browsingSession.js'
+import { recordSessionPreset, forgetSessionPreset } from '../src/store/sessionPreset.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const html = readFileSync(join(root, 'index.html'), 'utf8')
@@ -80,6 +86,7 @@ const seedRegistry = (activeId, presets, openInPreset = 'last') =>
   )
 
 const painted = () => document.documentElement.getAttribute('data-theme')
+const THEME_OF = { 1: 'parchment', 2: 'nebula', 3: 'midnight' }
 
 const originalMatchMedia = window.matchMedia
 
@@ -174,6 +181,63 @@ describe('index.html boot theme script', () => {
     openBrowsingSession() // the first boot of this session has happened
     runBootScript()
     expect(painted()).toBe('parchment')
+  })
+
+  // ★ …AND "THE PRESET THE PLAYER WAS ON" IS THE SESSION'S OWN RECORD, not the registry's activeId:
+  // a pinned fresh open writes nothing permanent, and another tab may have moved the registry
+  // since. The record is written through the REAL module, so the key the script reads is pinned to
+  // the one the app writes.
+  it('on a RELOAD paints the preset the session has on record, whatever the registry says', () => {
+    seedSettings(1, { useSystem: false, manualTheme: 'parchment' })
+    seedSettings(2, { useSystem: false, manualTheme: 'nebula' })
+    seedRegistry(1, [1, 2], 'last') // the device still says 1…
+    openBrowsingSession()
+    recordSessionPreset(2) // …and this session is on 2
+    runBootScript()
+    expect(painted()).toBe('nebula')
+  })
+
+  it('on a RELOAD a record that names no preset falls back to the persisted activeId', () => {
+    seedSettings(1, { useSystem: false, manualTheme: 'parchment' })
+    seedSettings(2, { useSystem: false, manualTheme: 'nebula' })
+    seedRegistry(2, [1, 2])
+    openBrowsingSession()
+    recordSessionPreset(9) // deleted since, in another tab
+    runBootScript()
+    expect(painted()).toBe('nebula')
+  })
+
+  it('on a FRESH open the record is not consulted', () => {
+    seedSettings(1, { useSystem: false, manualTheme: 'parchment' })
+    seedSettings(2, { useSystem: false, manualTheme: 'nebula' })
+    seedRegistry(1, [1, 2])
+    recordSessionPreset(2) // (a real close would have cleared this with the marker)
+    runBootScript()
+    expect(painted()).toBe('parchment')
+  })
+
+  // The script's three lines against the function the store itself uses, over every combination.
+  it('resolves the same preset as store/presets’ resolveActiveId, case by case', () => {
+    for (const id of [1, 2, 3]) seedSettings(id, { useSystem: false, manualTheme: THEME_OF[id] })
+    for (const fresh of [true, false])
+      for (const activeId of [1, 2])
+        for (const pin of ['last', 1, 2, 3, 7])
+          for (const record of [null, 1, 2, 3, 7]) {
+            seedRegistry(activeId, [1, 2, 3], pin)
+            forgetBrowsingSession()
+            forgetSessionPreset()
+            if (!fresh) openBrowsingSession()
+            if (record !== null) recordSessionPreset(record)
+            const reg = normalizeRegistry(JSON.parse(localStorage.getItem('cg-presets-v1')).state)
+            runBootScript()
+            expect([fresh, activeId, pin, record, painted()]).toEqual([
+              fresh,
+              activeId,
+              pin,
+              record,
+              THEME_OF[resolveActiveId(reg, fresh, record)],
+            ])
+          }
   })
 
   it('ignores an openInPreset that names no preset and uses the persisted activeId', () => {

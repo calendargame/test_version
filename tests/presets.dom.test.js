@@ -27,12 +27,13 @@ import {
   switchPreset,
   deletePreset,
   setOpenInPreset,
-  commitOpenedPreset,
+  commitSessionPreset,
   setPresetAmnesic,
   activePreset,
   isPresetFactory,
 } from '../src/store/presetControl.js'
 import { openBrowsingSession, forgetBrowsingSession } from '../src/store/browsingSession.js'
+import { sessionPresetId, forgetSessionPreset } from '../src/store/sessionPreset.js'
 import { writeSessionMode } from '../src/store/sessionMode.js'
 import { writeSessionRound } from '../src/store/sessionRound.js'
 import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
@@ -318,18 +319,97 @@ describe('the "open in" pin', () => {
     expect(fresh.usePresets.getState().activeId).toBe(2)
   })
 
-  it('commitOpenedPreset writes down a pin-moved preset, and only that', async () => {
-    const disk = () => JSON.parse(localStorage.getItem('cg-presets-v1') ?? 'null')?.state
+  // ★ "THE PRESET THIS SESSION IS ON" IS THE SESSION'S (store/sessionPreset). A fresh open writes
+  // nothing permanent; the reload that follows reads the session's record.
+  it('a fresh open the pin moved writes nothing permanent, and its reload stays where it landed', async () => {
+    const disk = () => localStorage.getItem('cg-presets-v1')
     // A device with no registry gains none.
-    commitOpenedPreset()
-    expect(disk()).toBeUndefined()
+    commitSessionPreset()
+    expect(disk()).toBeNull()
     createPreset('Timed')
     setOpenInPreset(2)
-    const fresh = await reopenApp() // a fresh open: memory says 2, the device still says 1
+    const lastVisit = disk()
+    expect(JSON.parse(lastVisit).state.activeId).toBe(1)
+    sessionStorage.clear() // the app was closed
+    const fresh = await reopenApp() // a fresh open: the pin lands it in 2
     expect(fresh.usePresets.getState().activeId).toBe(2)
-    expect(disk().activeId).toBe(1)
-    fresh.control.commitOpenedPreset()
-    expect(disk().activeId).toBe(2)
+    openBrowsingSession() // App's boot effect: the session is open…
+    fresh.control.commitSessionPreset() // …and on preset 2
+    expect(disk()).toBe(lastVisit) // the device still says the last visit ended on 1
+    const reloaded = await reopenApp()
+    expect(reloaded.usePresets.getState().activeId).toBe(2)
+    // …and a real close forgets the session: 'last' is again what the device says.
+    reloaded.control.setOpenInPreset('last') // (a registry write: it carries the preset you are on)
+    expect(JSON.parse(disk()).state.activeId).toBe(2)
+  })
+
+  // The defect this replaced: the fresh open used to WRITE the registry so the reload could find
+  // it, and a device full to the byte refused that write — the reload landed in the last visit's
+  // preset.
+  it('on a device too full to save the registry, a reload still lands where the pinned open did', async () => {
+    createPreset('Timed')
+    setOpenInPreset(2)
+    sessionStorage.clear()
+    const real = Storage.prototype.setItem
+    const full = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === localStorage)
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+      return real.call(this, key, value)
+    })
+    const fresh = await reopenApp()
+    expect(fresh.usePresets.getState().activeId).toBe(2)
+    openBrowsingSession()
+    fresh.control.commitSessionPreset()
+    const reloaded = await reopenApp()
+    expect(reloaded.usePresets.getState().activeId).toBe(2)
+    full.mockRestore()
+  })
+
+  it('a switch is on the session’s record at once; another tab’s switch does not move this tab’s reload', async () => {
+    createPreset('B')
+    openBrowsingSession()
+    switchPreset(2)
+    expect(sessionPresetId()).toBe(2)
+    // Another tab (or the other site on this origin) switches to preset 1 and saves the registry.
+    const saved = JSON.parse(localStorage.getItem('cg-presets-v1'))
+    saved.state.activeId = 1
+    localStorage.setItem('cg-presets-v1', JSON.stringify(saved))
+    const reloaded = await reopenApp()
+    expect(reloaded.usePresets.getState().activeId).toBe(2)
+    // After a real close the session is gone, and "last" is whoever saved last.
+    sessionStorage.clear()
+    const fresh = await reopenApp()
+    expect(fresh.usePresets.getState().activeId).toBe(1)
+  })
+
+  it('a session with nothing on record (an older build started it) reloads to the saved activeId', async () => {
+    createPreset('B')
+    switchPreset(2)
+    openBrowsingSession()
+    forgetSessionPreset()
+    const reloaded = await reopenApp()
+    expect(reloaded.usePresets.getState().activeId).toBe(2)
+  })
+
+  it('a record that names a preset deleted since falls back to the saved activeId', async () => {
+    createPreset('B')
+    createPreset('C')
+    switchPreset(3)
+    openBrowsingSession()
+    // Another tab deletes preset 3 and lands on 2.
+    const saved = JSON.parse(localStorage.getItem('cg-presets-v1'))
+    saved.state.presets = saved.state.presets.filter((p) => p.id !== 3)
+    saved.state.activeId = 2
+    localStorage.setItem('cg-presets-v1', JSON.stringify(saved))
+    const reloaded = await reopenApp()
+    expect(reloaded.usePresets.getState().activeId).toBe(2)
+  })
+
+  it('deleting the preset you are on puts its neighbour on the session’s record', () => {
+    createPreset('B')
+    switchPreset(2)
+    deletePreset(2)
+    expect(sessionPresetId()).toBe(1)
   })
 
   it('deleting the pinned preset drops the pin back to "last"', async () => {

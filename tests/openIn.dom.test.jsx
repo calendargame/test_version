@@ -95,9 +95,9 @@ describe('the pin applies on a fresh open only', () => {
     expect(diskActiveId()).toBe(1) // the last visit ends on preset 1
     closeAndReopen()
     expect(usePresets.getState().activeId).toBe(p2.id)
-    // The open wrote down where it landed, so the reload reads preset 2 off the device — not the
-    // preset the LAST visit ended on.
-    expect(diskActiveId()).toBe(p2.id)
+    // The open put where it landed on the SESSION's record (store/sessionPreset) and wrote nothing
+    // permanent: the device still says the last visit ended on preset 1, and the reload stays on 2.
+    expect(diskActiveId()).toBe(1)
     reload()
     expect(usePresets.getState().activeId).toBe(p2.id)
   })

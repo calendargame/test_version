@@ -13,6 +13,7 @@ import { amnesicModeOf, setSessionAmnesic, forgetSessionAmnesicOf } from './sess
 import type { AmnesicMode } from './amnesicMode.js'
 import { readItem, removeItem, storageSpaceFreed } from './storageHealth.js'
 import { removeProgressCopy, hasTimesKeys, sweepAbandonedTimes } from './progressStorage.js'
+import { recordSessionPreset } from './sessionPreset.js'
 import { discardSessionMode } from './sessionMode.js'
 import { discardSessionRounds, discardSessionRoundsOf, hasSessionRound } from './sessionRound.js'
 import {
@@ -485,26 +486,20 @@ export function setOpenInPreset(value: number | 'last'): boolean {
 }
 
 /**
- * Write down the preset this app open LANDED in, when the "open in" pin moved it — called once per
- * fresh open, by src/main.tsx's cold-open effect.
+ * Put the preset this page load landed in on the SESSION's record — called once per page load, by
+ * src/main.tsx's boot effect.
  *
- * WHY IT IS NEEDED. The pin is applied in the registry's hydrate `merge` (store/presets), and
- * hydration writes nothing: after a pinned open, memory says "preset 2" while the device still says
- * whatever the last visit ended on. A reload must stay on the preset the player is on, and a reload
- * reads the device — so without this line a refresh right after a pinned open would land in the
- * LAST visit's preset, which is neither where the player is nor where the pin points.
- * ⚠ ONLY WHEN THE DEVICE DISAGREES, and only when it holds a registry at all: a device that has
- * never created a second preset has no registry entry, the default one says nothing a missing one
- * does not, and this must not be the thing that creates it.
- * A registry edit and nothing else — `activeId` does not move in memory, so nothing rehydrates and
- * nothing remounts.
+ * WHY IT IS NEEDED. The "open in" pin is applied in the registry's hydrate `merge` (store/presets),
+ * and hydration writes nothing: after a pinned fresh open, memory says "preset 2" and nothing else
+ * does. A reload must stay on the preset the player is on, and a reload reads the session's record
+ * (store/sessionPreset) — so this is the line that makes a refresh right after a pinned open land
+ * where the player is.
+ * ⚠ A SESSION-STORAGE WRITE, AND NOTHING PERMANENT. It used to be a write of the shared registry,
+ * which a device full to the byte refused: the reload then landed in the last visit's preset. The
+ * registry's own `activeId` is still written by every CHANGE of preset, and stays what it means to
+ * a fresh open with no pin — the preset that was active last.
  */
-export function commitOpenedPreset(): void {
-  const { presets, activeId, nextId, openInPreset } = usePresets.getState()
-  const stored = readStoredRegistry()
-  if (stored && stored.activeId !== activeId)
-    usePresets.getState().applyRegistry({ presets, activeId, nextId, openInPreset })
-}
+export const commitSessionPreset = (): void => recordSessionPreset(usePresets.getState().activeId)
 
 /**
  * Clear away the sealed solve-time chunks of presets that no longer exist — called once per fresh
@@ -760,7 +755,7 @@ export function deletePreset(id: number): boolean {
   // on, rather than an arbitrary "first".
   const activeId = wasActive ? (reg.presets[index + 1] ?? reg.presets[index - 1]).id : reg.activeId
   // If the "open in" pin named the preset being deleted, drop it back to 'last' — the next cold
-  // open would land nowhere otherwise (store/presets' resolveOpenInActiveId falls back to activeId,
+  // open would land nowhere otherwise (store/presets' resolveActiveId falls back to activeId,
   // but clearing it here keeps the stored value honest rather than dangling).
   const openInPreset = reg.openInPreset === id ? 'last' : reg.openInPreset
   usePresets.getState().applyRegistry({ presets, activeId, nextId: reg.nextId, openInPreset })

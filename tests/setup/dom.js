@@ -33,6 +33,7 @@ import { discardGuidePlace } from '../../src/store/sessionGuide.js'
 import { discardLookupScreen } from '../../src/store/sessionLookup.js'
 import { forgetBrowsingSession } from '../../src/store/browsingSession.js'
 import { forgetSessionAmnesic } from '../../src/store/sessionAmnesic.js'
+import { forgetSessionPreset } from '../../src/store/sessionPreset.js'
 import { forgetStorageHealth } from '../../src/store/storageHealth.js'
 import { forgetStorageUsage } from '../../src/store/storageUsage.js'
 import { useUserDefaults } from '../../src/store/userDefaults.js'
@@ -123,6 +124,10 @@ beforeEach(() => {
   // here; every preset then reads Off until a test sets one, or models a page load
   // (tests/helpers/pageLoad.js) to have the saved defaults read.
   forgetSessionAmnesic()
+  // …and the session's record of WHICH PRESET it is on (store/sessionPreset), for the same reason
+  // and by the same route: it is what a reload lands in, so one left by an earlier test would put a
+  // later test's "reload" on a preset that test never opened.
+  forgetSessionPreset()
   useProgress.getState().resetProgress()
   // The per-mode setup store (Stage D follow-up) is the same kind of persisted singleton.
   useModePrefs.getState().resetModePrefs()
