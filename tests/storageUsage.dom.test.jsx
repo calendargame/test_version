@@ -296,11 +296,16 @@ describe('the count is kept by the storage door, and is right the moment a chang
 
     it('…and the stylesheet gives that reason the "Storage used" line`s own amber, in every theme', () => {
       const css = readFileSync('src/index.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-      // One pair of values, declared once, worn by the dot and by the line.
-      expect(css).toContain(':root{--storage-warn:rgba(251,191,36,.95)}')
-      expect(css).toContain(
-        '[data-theme="light"],[data-theme="parchment"]{--storage-warn:rgba(180,83,9,.95)}',
-      )
+      // One value per theme row, worn by the dot and by the line: amber on the dark themes (which
+      // take the root row's), a deeper amber on the two light ones.
+      const row = (selector) =>
+        css.split(/\r?\n/).find((line) => line.startsWith(`${selector}{--bg1:`))
+      expect(row(':root')).toContain('--storage-warn:rgba(251,191,36,.95)')
+      for (const theme of ['light', 'parchment'])
+        expect(row(`[data-theme="${theme}"]`)).toContain('--storage-warn:rgba(180,83,9,.95)')
+      for (const theme of ['dusk', 'midnight', 'nebula'])
+        expect(row(`[data-theme="${theme}"]`)).not.toContain('--storage-warn')
+      expect((css.match(/--storage-warn:/g) ?? []).length).toBe(3)
       expect(css).toContain(
         '[data-update-dot][data-reason="storage"]{background:var(--storage-warn)}',
       )
@@ -990,6 +995,9 @@ describe('the breakdown names what is saved at every size', () => {
     expect(rows).toContain('Lookup history (1)<1%')
     expect(rows.some((t) => /^Bests, settings and saved defaults<1%$/.test(t))).toBe(true)
     expect(rows.join('|')).not.toMatch(/Everything saved/)
+    // A mode nobody has played is not named: "Flash solve times (0)" would be a line about nothing.
+    expect(rows.join('|')).not.toMatch(/\(0\)/)
+    expect(rows).toHaveLength(4)
     // The app's own few keys are nobody's to clear: they are the one unnamed line, and the last.
     expect(rows.at(-1)).toBe('Everything else<1%')
   })

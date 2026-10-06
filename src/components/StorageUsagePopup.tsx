@@ -57,8 +57,12 @@ function rowLabel(row: UsageRow, presets: Preset[]): string {
 //   • what is left over is one last line, "Everything else": the many small owners a player with
 //     several presets has (each preset × each mode), and the app's own few keys, which are nobody's
 //     to clear.
+//   • an owner with NOTHING in it is never named: a mode nobody has played keeps an empty list of
+//     solve times, and "Flash solve times (0)" is a line about nothing, with nothing to clear. Its
+//     few characters go with "Everything else".
 // Largest first, so the line to act on is the first one read.
 const LISTED_AT_LEAST = 5
+const holdsSomething = (row: UsageRow): boolean => !('count' in row) || row.count > 0
 
 export default function StorageUsagePopup() {
   const open = useStorageUsage((s) => s.popupOpen)
@@ -76,7 +80,7 @@ export default function StorageUsagePopup() {
   const measured = limit !== null
   const share = (chars: number) => (measured ? (chars / limit) * 100 : 0)
   const owners: UsageRow[] = rows
-    .filter((row) => row.kind !== 'other')
+    .filter((row) => row.kind !== 'other' && holdsSomething(row))
     .sort((a, b) => b.chars - a.chars)
   const listed = owners.filter((row, i) => i < LISTED_AT_LEAST || share(row.chars) >= 1)
   const rest = rows.filter((row) => !listed.includes(row)).reduce((sum, row) => sum + row.chars, 0)

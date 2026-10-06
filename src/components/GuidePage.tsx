@@ -2916,8 +2916,9 @@ export default function GuidePage({
           how much of it is in use: <b>Storage used</b>, at the foot of the menu. Tap it to see what
           is using the room — each mode&apos;s solve times, the Lookup history, each preset&apos;s
           other data. The list is largest first; anything holding 1% or more is named, and so are
-          the largest few however little they hold, with whatever is left gathered into one last
-          line, &quot;Everything else&quot;. Under it is what you can clear to get some room back:{' '}
+          the largest few however little they hold — though never something with nothing in it, such
+          as a mode you have not played — with whatever is left gathered into one last line,
+          &quot;Everything else&quot;. Under it is what you can clear to get some room back:{' '}
           <b>Clear History</b> in Lookup, deleting a preset you no longer use, and{' '}
           <b>Reset Stats</b> in a mode — that last one only while the preset&apos;s Amnesic is{' '}
           <b>Off</b>. On Stats Only or Full, Reset Stats clears that session&apos;s numbers and
