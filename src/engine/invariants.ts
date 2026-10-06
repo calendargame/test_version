@@ -48,13 +48,27 @@
 //     neither of the card's two states, which is exactly how a toggle could stack credit or strand a
 //     second. And a card the clock timed out on has ONE state only, which no press may leave. So each
 //     of those is a tripwire, over every card in play.
+//   • The CARD'S CALENDAR: a date before the 1582 reform has two weekdays, and the Julian Calendar
+//     setting can change while a date is on screen — so every card that has been judged carries the
+//     calendar it was judged in (CardMeta.jul), and everything that shows the card reads that. Three
+//     tripwires hold it: a card with anything on its grid has its calendar and a card with an empty
+//     grid has none; the answer marked on a grid (and on an overridden card's stored as-answered
+//     grid) is the answer IN that calendar — a green its own codes do not arrive at is exactly the
+//     defect the stamp exists to end; and a Deduction puzzle's calendar is the one it was built in.
 //   • Date/calendar sanity: month 1-12, day 1-31, integer year; a weekday question resolves
 //     to an index in 0-6, and a Deduction puzzle's correct answer is actually among its
 //     options (correctIndexOf returns -1 if a generator ever produced a puzzle whose answer
 //     isn't selectable).
 // ─────────────────────────────────────────────────────────────────────────
-import { correctIndexOf, earnedCredit, forEachCard, overriddenLiveFlags } from './gameReducer.js'
-import type { EntryMeta, GameState, Question, Stats } from './gameReducer.js'
+import {
+  calendarOf,
+  correctIndexOf,
+  earnedCredit,
+  forEachCard,
+  overriddenLiveFlags,
+} from './gameReducer.js'
+import type { CardMeta, EntryMeta, GameState, Question, StackEntry, Stats } from './gameReducer.js'
+import type { Btns } from './answerButtons.js'
 
 const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0
 
@@ -93,8 +107,14 @@ export function checkStatsInvariants(s: Stats, where: string): string[] {
   return v
 }
 
-// Date/calendar sanity for the current question.
-function checkQuestionInvariants(q: Question, useJulian: boolean, where: string): string[] {
+// Date/calendar sanity for the current question, read in its card's calendar (calendarOf — the
+// setting, `useJulian`, answers only for a date nothing has judged yet).
+function checkQuestionInvariants(
+  q: Question,
+  card: CardMeta,
+  useJulian: boolean,
+  where: string,
+): string[] {
   const v: string[] = []
   if (!q || typeof q !== 'object') return [`${where}: question is missing`]
   if (!Number.isInteger(q.y)) v.push(`${where}: year is not an integer (${String(q.y)})`)
@@ -102,7 +122,7 @@ function checkQuestionInvariants(q: Question, useJulian: boolean, where: string)
     v.push(`${where}: month out of 1-12 (${String(q.m)})`)
   if (!(Number.isInteger(q.d) && q.d >= 1 && q.d <= 31))
     v.push(`${where}: day out of 1-31 (${String(q.d)})`)
-  const idx = correctIndexOf(q, useJulian)
+  const idx = correctIndexOf(q, calendarOf(card, q, useJulian))
   if (q.type === undefined) {
     if (!(Number.isInteger(idx) && idx >= 0 && idx <= 6))
       v.push(`${where}: weekday index out of 0-6 (${String(idx)})`)
@@ -112,12 +132,12 @@ function checkQuestionInvariants(q: Question, useJulian: boolean, where: string)
   return v
 }
 
-// The full engine-state check. `useJulian` honors the active calendar in the date checks (matching
-// what the reducer used to compute this state).
+// The full engine-state check. `useJulian` is the Julian Calendar setting as it stands — what the
+// question on screen is read in while nothing has judged it.
 export function checkGameInvariants(state: GameState, useJulian: boolean): string[] {
   const v: string[] = []
   v.push(...checkStatsInvariants(state.stats, 'stats'))
-  v.push(...checkQuestionInvariants(state.date, useJulian, 'date'))
+  v.push(...checkQuestionInvariants(state.date, state.card, useJulian, 'date'))
   if (!isCount(state.backDepth))
     v.push(`backDepth is not a non-negative integer (${state.backDepth})`)
   if (state.backDepth !== state.forwardStack.length)
@@ -135,7 +155,8 @@ export function checkGameInvariants(state: GameState, useJulian: boolean): strin
   //   • the SECONDS the cards name, held against the pool in order as the walk goes (the times
   //     ledger — see below),
   //   • the parked LIVE entry (the card ledger's last term — see liveCounted's note below),
-  //   • the per-card Override record (the seven tripwires — see visitCard).
+  //   • the per-card Override record (the seven tripwires — see visitCard) and the card's calendar
+  //     (three more — see checkCalendar).
   //
   // ⚠ HOT PATH. This runs in the app after EVERY state change (useGameEngine's tripwire effect) and
   // a run mode's history reaches a thousand cards, so the pass materialises nothing per card: no
@@ -151,6 +172,13 @@ export function checkGameInvariants(state: GameState, useJulian: boolean): strin
   forEachCard(state, (e, place, idx) => {
     // The walk runs forwardStack from its end, so the last isLive it meets is the lowest-indexed.
     if (place === 'forwardStack' && e.isLive) parkedLive = e
+    // The calendar tripwires read nothing but the card itself, and a history entry is never changed
+    // in place — so one that has passed them is not asked again (calendarChecked, below). The card on
+    // screen is rebuilt from the state's own fields on every walk, and is always asked. (The question
+    // a card asks: the card on screen asks `state.date`; a history entry IS its question.)
+    if (place === 'on-screen card') checkCalendar(rec, e, state.date, place, idx)
+    else if (!calendarChecked.has(e) && checkCalendar(rec, e, e as StackEntry, place, idx))
+      calendarChecked.add(e)
     const t = visitCard(rec, e, place, idx)
     if (t == null) return
     if (pool && base != null && pool[base + named] !== t) misplaced = true
@@ -210,7 +238,60 @@ function liveCounted(state: GameState, parked: EntryMeta | undefined): number {
 // Where a report points — built only when there is a report to make (idx < 0: the name stands alone).
 const at = (arr: string, idx: number): string => (idx < 0 ? arr : `${arr}[${idx}]`)
 
-// ONE card, for every check that is about a card (see the walk in checkGameInvariants):
+// Is the answer this grid marks — its green, or the 'override-wrong' on the answer an Override took
+// the credit from — anywhere but `correct`? (No allocation: this runs per card on the hot path.)
+function answerMisplaced(btns: Btns | undefined, correct: number): boolean {
+  for (const k in btns)
+    if ((btns[k] === 'correct' || btns[k] === 'override-wrong') && Number(k) !== correct)
+      return true
+  return false
+}
+const isMarked = (btns: Btns | undefined): boolean => {
+  for (const _ in btns) return true
+  return false
+}
+
+// ── THE CARD'S CALENDAR (tripwires 8–10) ─────────────────────────────────────────────────────────
+// ⚠ HOT PATH, AND THE ONE PLACE THE WALK REMEMBERS ANYTHING. Working out a date's weekday for every
+// card of a thousand-card history after every state change tripled the cost of the whole check (and
+// took the fuzz survey's deep-history profile past its limit). But these three read only the card —
+// its question, its grid, its record — and the reducer never changes a history entry in place: a
+// card that is toggled, browsed to or restored is a NEW object. So an entry that has passed is
+// remembered here by identity and not asked again; a new or replaced one is asked the first time
+// the walk meets it; and a parked blob, whose entries have all just come out of JSON, is checked in
+// full at the restore door. Returns whether the card passed.
+const calendarChecked = new WeakSet<object>()
+function checkCalendar(
+  rec: string[],
+  e: EntryMeta,
+  q: Question,
+  arr: string,
+  idx: number,
+): boolean {
+  const before = rec.length
+  const a = e.meta?.answered ?? null
+  // 8 — a card is stamped with its calendar exactly when something has judged it, and every
+  // judgement marks the grid: marked ⇔ stamped.
+  const jul = e.meta?.jul
+  const stamped = typeof jul === 'boolean'
+  if (isMarked(e.btns) !== stamped)
+    rec.push(
+      `${at(arr, idx)}: ${stamped ? 'a card nothing has judged carries a calendar' : 'a judged card carries no calendar'}`,
+    )
+  if (stamped && q) {
+    // 9 — the answer on its grid (and on its stored as-answered grid) is the answer in ITS calendar.
+    const correct = correctIndexOf(q, jul)
+    if (answerMisplaced(e.btns, correct) || (a !== null && answerMisplaced(a.btns, correct)))
+      rec.push(`${at(arr, idx)}: its grid marks an answer that is not the answer in its calendar`)
+    // 10 — a puzzle is read in the calendar it was built in (the weekday it shows was worked out
+    // in it).
+    if (q.type !== undefined && q._jul !== undefined && q._jul !== jul)
+      rec.push(`${at(arr, idx)}: a puzzle's calendar is not the one it was built in`)
+  }
+  return rec.length === before
+}
+
+// ONE card, for every other check that is about a card (see the walk in checkGameInvariants):
 //   • the seven Override-record tripwires go into `rec`;
 //   • it returns the second the card names — the times ledger's side of the pool, which the walk
 //     holds against the card's slot. `forwardStack` cards name one too, because a parked card is

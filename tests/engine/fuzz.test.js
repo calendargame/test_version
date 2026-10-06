@@ -201,6 +201,14 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.good).toBeGreaterThan(0)
       expect(cov.hydrated).toBeGreaterThan(0) // the model matched the reducer on hydrated-start sequences too
       expect(cov.toggleBack).toBeGreaterThan(0) // the model's flipped bit matched the reducer's restore
+      // ★ THE CARD'S CALENDAR (round 24): the model takes each question's calendar at its first
+      // judgement and works out every answer with its own arithmetic; the reducer's stamp and the
+      // answer its grid marks are held to both, per question, after every action. The stream really
+      // went there: the setting switched mid-play, dates whose two calendars disagree were answered,
+      // and cards were judged again, overridden and browsed with the setting unlike their own.
+      expect(cov.julianFlips).toBeGreaterThan(1000)
+      expect(cov.twoDayAnswers).toBeGreaterThan(1000)
+      expect(cov.crossJudged).toBeGreaterThan(1000)
     },
     T,
   )
@@ -241,6 +249,7 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.heldComplete).toBeGreaterThan(0)
       expect(cov.timedTimeout).toBeGreaterThan(0)
       expect(cov.hydrated).toBeGreaterThan(0)
+      expect(cov.crossJudged).toBeGreaterThan(1000) // presses on cards with the setting unlike their calendar
     },
     T,
   )
@@ -252,6 +261,9 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
   // forward stack), that the rule both regenerated and kept, that it reached a live question waiting
   // behind a browsed card, and, in the second profile, that it all held after forgetting the oldest
   // cards the way the size budget does.
+  // ★ Every restore is also made a second time from the state AS AN OLDER BUILD WOULD HAVE PARKED IT
+  // — no calendar on any card (round 24) — and the door must give each judged card a calendar that
+  // its own green cannot contradict (fuzzHarness' legacyRestoreBreaks).
   it(
     'reload-ref — a restore mid-play brings back the exact state, and the model agrees afterwards',
     () => {
@@ -264,6 +276,8 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.refChecks).toBeGreaterThan(0)
       expect(cov.toggleBack).toBeGreaterThan(0)
       expect(cov.hydrated).toBeGreaterThan(0)
+      expect(cov.legacyRestores).toBeGreaterThan(1000) // …and each one again, as an older build's blob
+      expect(cov.julianFlips).toBeGreaterThan(1000)
     },
     T,
   )

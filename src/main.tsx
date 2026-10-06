@@ -93,16 +93,19 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // addLookupEntry, moveEntryToTop and mergeForDisplay from it; nothing else reaches that module.
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Date snapshot fields. Every generated date object carries these stamps
-    // so that back-browse and codes display always reflect the system that was
-    // active when the date was generated, not the current setting:
+    // Date snapshot fields. Every generated date object carries these stamps:
     //   y, m, d   — year, month, day (1-indexed month)
     //   _fmt      — date format ID at generation (e.g. 'written-mdy', 'numeric-dmy').
     //               Random Format on → random roll per date; off → current dateFormat.
     //               Display layer always trusts _fmt over the live dateFormat setting.
-    //   _jul      — useJulian boolean at generation. Used by codes panel + history
-    //               so revisiting a Julian-era date via Back keeps Julian highlights/
-    //               codes even if the user has since toggled Julian off.
+    //   _jul      — useJulian boolean at generation: the setting the date was DRAWN under.
+    //               ⚠ It is NOT the calendar a date is answered or shown in. A weekday date
+    //               nobody has answered follows the setting as it stands, and the first answer,
+    //               Reveal or Show Codes stamps that calendar onto the CARD (the engine's
+    //               CardMeta.jul, read through calendarOf) — which is what the highlighted answer,
+    //               Show Codes, an Override, history browsing and a run breakdown all use. A
+    //               Deduction puzzle is the exception: the weekday it shows was worked out under
+    //               `_jul`, so that IS its calendar.
     // Deduction puzzles additionally carry: _abx (abCrossOnly), _julx (julCrossOnly),
     // _m1582 (monthOnly1582) — informational snapshots of per-mode toggles at spawn.
     // ─────────────────────────────────────────────────────────────────────────
@@ -149,7 +152,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // Shared format/time helpers -> src/lib/modeFormat.ts. Of that module App imports rollFormat +
     // isTouch ALONE; its time/accuracy formatters and input guards belong to the mode screens.
 
-    // entryWithGreen → src/engine/answerButtons.js. NOT imported here: App renders no answer buttons.
+    // greenOnMiss → src/engine/answerButtons.js. NOT imported here: App renders no answer buttons.
     // Its only consumer is src/engine/gameReducer.
 
     // FLASH_MS + the shared mode-screen hooks -> src/modes/modeHooks.ts, consumed there by the five
@@ -159,7 +162,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
     // there with the rest of that interaction), so it is no longer imported here.
 
     // computeHasCredit, markBtns, mkBtnsWithCorrect → src/engine/answerButtons.js. NOT imported here
-    // either — same reason as entryWithGreen above. Their only reader is src/engine/gameReducer.
+    // either — same reason as greenOnMiss above. Their only reader is src/engine/gameReducer.
 
     // Expander → src/components/Expander.jsx. Not used here, and since round 14 not reached from here
     // at all: the last indirect route was through MethodBreakdownSection, and this file no longer
@@ -1657,10 +1660,10 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // can trigger a fresh genDate call via regenDecisionFor (Random off→on always; Random
       // on→off and dropdown changes regen only on _fmt mismatch with the now-active format).
       // Wrong guesses defer format regen — the new format only applies on the next genDate.
-      // _jul is the calendar system in effect when the date was generated; used by stack
-      // entries (and deduction) so revisiting a past question shows codes consistent with
-      // the system that was active when it was created. Live questions ignore _jul and use
-      // current useJulian, so toggling Julian on a live (un-guessed) date updates the answer.
+      // _jul is the Julian Calendar setting the date was drawn under — a record of the draw, not
+      // the calendar it is answered in (see the snapshot-fields note at the top of this file): an
+      // untouched date follows the setting as it stands, so toggling Julian over it updates the
+      // answer, and the first judgement stamps the calendar onto the card.
       const genDate=(lo: number,hi: number)=>{
         const dt=randomDate(lo,hi,useJulian,leapChance,janFebChance,julianChance);
         dt._fmt=randomFormat?rollFormat():dateFormat;

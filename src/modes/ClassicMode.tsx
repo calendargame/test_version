@@ -138,8 +138,9 @@ function ClassicMode({
 
   // regenDecisionFor (App's popover effect, Classic slice): a format / leap / Jan-Feb /
   // Julian-chance / year-range change regens an UNANSWERED live date; a useJulian toggle
-  // keeps it (live useJulian flows through to the answer + codes). REGEN_DATE no-ops on a
-  // burned or browsed date, so we just fire it on the relevant changes.
+  // keeps it — an untouched date's answer and codes follow the setting as it stands, and one
+  // already judged keeps the calendar it was judged in (the engine's calendarOf). REGEN_DATE
+  // no-ops on a burned or browsed date, so we just fire it on the relevant changes.
   // Defer the live-date regen to the ⚙ popover CLOSE — batched, no per-keystroke timer churn.
   useSettingsCloseEffect(settingsOpen ?? false, dateSettings, () => eng.regenDate())
   // …and so does Save Stats coming back on while this mode's timing is shown (modeHooks).
@@ -255,7 +256,7 @@ function ClassicMode({
             onOpenChange={(open) => eng.showCodes(open)}
             className=""
             contentClassName="mt-2 rounded-2xl thin px-4 pt-[3px] pb-1.5"
-            useJulian={state.backDepth > 0 ? (date?._jul ?? useJulian) : useJulian}
+            useJulian={eng.julian}
             displayedFormat={date?._fmt || dateFormat}
           />
         </div>

@@ -68,7 +68,7 @@ describe('gameReducer — ANSWER', () => {
     expect(s.stack[0].btns).toEqual({ [C]: 'correct' })
     // The entry carries its Override record: never wrong (no wrongTime), never overridden — so its
     // materialised fields ARE its as-answered state, and nothing is stored twice.
-    expect(s.stack[0].meta).toEqual({ wrongTime: null, answered: null })
+    expect(s.stack[0].meta).toEqual({ wrongTime: null, answered: null, jul: false })
     expect(s.card).toEqual({ wrongTime: null, answered: null }) // the fresh live card starts blank
   })
 

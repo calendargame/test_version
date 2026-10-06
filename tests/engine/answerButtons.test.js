@@ -1,13 +1,11 @@
-// Unit tests for the engine's pure answer-button / history-entry helpers
-// (Stage C, Step 6 — extracted from main.jsx, shared by App, AoxMode, and the reducer).
+// Unit tests for the engine's pure answer-button helpers.
 import { describe, it, expect } from 'vitest'
 import {
   computeHasCredit,
   markBtns,
   mkBtnsWithCorrect,
-  entryWithGreen,
+  greenOnMiss,
 } from '../../src/engine/answerButtons.js'
-import { wday } from '../../src/lib/calendar.js'
 
 describe('computeHasCredit', () => {
   it('is false for empty state', () => {
@@ -36,28 +34,24 @@ describe('markBtns / mkBtnsWithCorrect', () => {
   })
 })
 
-describe('entryWithGreen', () => {
-  it('returns the entry unchanged when it already has a correct, or has no wrong', () => {
-    const correctEntry = { y: 2024, m: 1, d: 1, btns: { 1: 'correct' } }
-    expect(entryWithGreen(correctEntry, false)).toBe(correctEntry)
-    const cleanEntry = { y: 2024, m: 1, d: 1, btns: {} }
-    expect(entryWithGreen(cleanEntry, false)).toBe(cleanEntry)
+describe('greenOnMiss', () => {
+  it('returns the very same grid when it already has a green, or has no wrong', () => {
+    const credited = { 1: 'correct' }
+    expect(greenOnMiss(credited, 4)).toBe(credited)
+    const shown = { 1: 'correct', 2: 'wrong-prev' }
+    expect(greenOnMiss(shown, 4)).toBe(shown)
+    const empty = {}
+    expect(greenOnMiss(empty, 4)).toBe(empty)
+    const overridden = { 5: 'override-wrong' }
+    expect(greenOnMiss(overridden, 5)).toBe(overridden)
   })
-  it('synthesizes a green on the correct weekday for a wrong-only date entry, demoting the wrong', () => {
-    const ci = wday(2024, 1, 1) // the correct index for this date (Gregorian)
-    const result = entryWithGreen(
-      { y: 2024, m: 1, d: 1, btns: { 3: 'wrong-latest' }, _jul: false },
-      false,
-    )
-    expect(result.btns[ci]).toBe('correct')
-    expect(result.btns[3]).toBe('wrong-prev')
+  it('puts the green on the index it is GIVEN for a wrong-only grid, dimming the newest wrong', () => {
+    const input = { 3: 'wrong-latest', 6: 'wrong-prev' }
+    expect(greenOnMiss(input, 1)).toEqual({ 1: 'correct', 3: 'wrong-prev', 6: 'wrong-prev' })
+    expect(input).toEqual({ 3: 'wrong-latest', 6: 'wrong-prev' }) // not mutated
   })
-  it('derives the correct index from options for a deduction year entry', () => {
-    const result = entryWithGreen(
-      { type: 'year', options: [2000, 2001, 2002], y: 2001, btns: { 0: 'wrong-latest' } },
-      false,
-    )
-    expect(result.btns[1]).toBe('correct') // options.indexOf(2001) === 1
-    expect(result.btns[0]).toBe('wrong-prev')
+  it('leaves a grid alone when there is no answer to mark (a puzzle whose answer is not an option)', () => {
+    const input = { 0: 'wrong-latest' }
+    expect(greenOnMiss(input, -1)).toBe(input)
   })
 })

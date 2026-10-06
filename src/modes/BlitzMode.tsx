@@ -1215,7 +1215,7 @@ function BlitzMode({
             onOpenChange={onShowCodes}
             className=""
             contentClassName="mt-2 rounded-2xl thin px-4 pt-[3px] pb-1.5"
-            useJulian={state.backDepth > 0 ? (date?._jul ?? useJulian) : useJulian}
+            useJulian={eng.julian}
             displayedFormat={date?._fmt || dateFormat}
           />
         </div>

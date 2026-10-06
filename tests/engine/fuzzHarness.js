@@ -9,6 +9,7 @@
 import {
   gameReducer,
   initEngine,
+  calendarOf,
   correctIndexOf,
   effectiveSaveStats,
   overrideTarget,
@@ -40,15 +41,26 @@ export function mulberry32(a) {
 const chance = (rnd, p) => rnd() < p
 
 // ── Valid question generators (so nextDate covers every mode's question kind) ──
+// ★ THE YEARS STRADDLE THE 1582 REFORM, about four dates in ten before it — where a date has two
+// weekdays and the Julian Calendar setting, which the driver switches mid-sequence (pJulianFlip),
+// decides which is the answer. That is the ground a card's calendar (CardMeta.jul) is proved on: a
+// date drawn under one setting, judged under another, overridden and browsed under a third. `_jul`,
+// the setting at the draw, is random on purpose — nothing may judge by it.
 function randWeekday(rnd) {
-  return {
-    y: 1700 + Math.floor(rnd() * 400),
-    m: 1 + Math.floor(rnd() * 12),
-    d: 1 + Math.floor(rnd() * 28), // 1-28 is valid in every month
-    _fmt: 'numeric-ymd',
-    _jul: false,
+  for (;;) {
+    const q = {
+      y: 1200 + Math.floor(rnd() * 900),
+      m: 1 + Math.floor(rnd() * 12),
+      d: 1 + Math.floor(rnd() * 28), // 1-28 is valid in every month
+      _fmt: 'numeric-ymd',
+      _jul: rnd() < 0.5,
+    }
+    if (!(q.y === 1582 && q.m === 10 && q.d >= 5 && q.d <= 14)) return q // the ten days that never were
   }
 }
+// A puzzle carries the calendar it was BUILT in — or, one time in four, no record of it (a puzzle
+// is then read in the setting at its first judgement, like a weekday date).
+const built = (rnd, b) => (rnd() < 0.75 ? { _jul: b._jul } : {})
 function randDayPuzzle(rnd) {
   const b = randWeekday(rnd)
   const options = [b.d]
@@ -56,11 +68,19 @@ function randDayPuzzle(rnd) {
     const o = 1 + Math.floor(rnd() * 28)
     if (!options.includes(o)) options.push(o)
   }
-  return { type: 'day', y: b.y, m: b.m, d: b.d, w: 0, options }
+  return { type: 'day', y: b.y, m: b.m, d: b.d, w: 0, options, ...built(rnd, b) }
 }
 function randYearPuzzle(rnd) {
   const b = randWeekday(rnd)
-  return { type: 'year', y: b.y, m: b.m, d: b.d, w: 0, options: [b.y, b.y + 1, b.y + 2, b.y + 3] }
+  return {
+    type: 'year',
+    y: b.y,
+    m: b.m,
+    d: b.d,
+    w: 0,
+    options: [b.y, b.y + 1, b.y + 2, b.y + 3],
+    ...built(rnd, b),
+  }
 }
 function randMonthPuzzle(rnd) {
   const b = randWeekday(rnd)
@@ -76,6 +96,7 @@ function randMonthPuzzle(rnd) {
       { label: 'A', months: [b.m] },
       { label: 'B', months: [other] },
     ],
+    ...built(rnd, b),
   }
 }
 function randDate(rnd) {
@@ -569,6 +590,10 @@ export const PROFILES = {
   },
 }
 
+// How often, per step, the Julian Calendar setting is switched. Often enough that most sequences
+// judge, override and browse cards under a setting unlike the one they were first judged in.
+const P_JULIAN_FLIP = 0.06
+
 // Weighted pick of one action kind.
 function pickKind(rnd, weights) {
   let total = 0
@@ -676,6 +701,10 @@ export function freshCov() {
     browsedHeld: 0, //  back-browsed AWAY from a held live credit (the oracle's isLive-fold corner)
     timedTimeout: 0, // fired a LOCK_REVEAL / TIMEOUT_MISS on the active live edge (timed surface)
     refChecks: 0, //   reference-model comparisons performed (referenceModel profiles)
+    julianFlips: 0, // the Julian Calendar setting switched mid-sequence
+    crossJudged: 0, // a card judged AGAIN (or overridden) with the setting unlike its own calendar
+    twoDayAnswers: 0, // an answer on a date whose two calendars name different weekdays
+    legacyRestores: 0, // a restore of the state as an OLDER build would have parked it (no calendars)
     toggleBack: 0, //  an Undo — a press on a card that was already overridden (O → A)
     toggleDeep: 0, //  a press on a card browsed two or more deep
     retoggle: 0, //    the same card pressed three times running (consecutive presses hit one card)
@@ -690,14 +719,76 @@ export function freshCov() {
   }
 }
 
-// Is the LIVE question a Deduction puzzle? It is the question on screen at the live edge, and the
-// `isLive` entry at the bottom of the forward stack while browsing — the reference model's live slot
-// either way.
-const liveIsPuzzle = (state) => !!(state.backDepth > 0 ? state.forwardStack[0] : state.date).type
+// The LIVE question: the one on screen at the live edge, and the `isLive` entry at the bottom of the
+// forward stack while browsing — the reference model's live slot either way.
+const liveQuestion = (state) => (state.backDepth > 0 ? state.forwardStack[0] : state.date)
+
+// THE REDUCER'S CARDS AS THE REFERENCE MODEL COMPARES THEM — read off the state here, by the
+// harness's own walk (never the reducer's forEachCard): the history in play order (the cards behind
+// the one on screen, the browsed card, the non-live cards parked ahead of it, oldest first) and the
+// live card, each as the calendar stamped on it and the grid it shows.
+const view = (meta, btns) => ({ jul: meta.jul, btns: btns ?? {} })
+function refCards(state) {
+  const browsing = state.backDepth > 0
+  const parkedLive = state.forwardStack.find((e) => e.isLive)
+  return {
+    history: [
+      ...state.stack.map((e) => view(e.meta, e.btns)),
+      ...(browsing ? [view(state.card, state.persistBtns)] : []),
+      ...state.forwardStack
+        .slice()
+        .reverse()
+        .filter((e) => !e.isLive)
+        .map((e) => view(e.meta, e.btns)),
+    ],
+    live: browsing ? view(parkedLive.meta, parkedLive.btns) : view(state.card, state.persistBtns),
+  }
+}
+
+// ── A STATE AS AN OLDER BUILD WOULD HAVE PARKED IT ──────────────────────────────────────────────
+// Builds up to v2.27.3 park in the same slots and stamp no calendar on a card. `withoutCalendars` is
+// this state as they would have left it; the restore door (engine/parkedEngine) must give every
+// judged card a calendar again, and one that can never contradict the card's own green. What the
+// fuzz can demand of each card, and does (legacyRestoreBreaks):
+//   • the answer its grid marks decides it: wherever the two calendars name DIFFERENT answers for
+//     that question, the calendar that comes back is the original, exactly;
+//   • wherever they name the same answer, either calendar is right — the green cannot be wrong;
+//   • a card whose grid marks no answer yet (a live date holding only wrong picks) comes back in the
+//     calendar it was drawn under — nothing on the card says more.
+const stripCalendar = ({ jul: _jul, ...meta }) => meta
+const withoutCalendars = (s) => ({
+  ...s,
+  card: stripCalendar(s.card),
+  stack: s.stack.map((e) => ({ ...e, meta: stripCalendar(e.meta) })),
+  forwardStack: s.forwardStack.map((e) => ({ ...e, meta: stripCalendar(e.meta) })),
+})
+const marksAnAnswer = (btns) =>
+  Object.values(btns ?? {}).some((v) => v === 'correct' || v === 'override-wrong')
+function legacyRestoreBreaks(state, back, useJulian) {
+  if (!back) return ['LEGACY RESTORE: refused a state an older build could have parked']
+  const v = checkGameInvariants(back, useJulian)
+  const check = (where, q, was, now, btns) => {
+    if (was.jul === undefined) {
+      if (now.jul !== undefined) v.push(`LEGACY RESTORE: ${where} was never judged, now stamped`)
+    } else if (!marksAnAnswer(btns)) {
+      if (now.jul !== (q._jul ?? useJulian))
+        v.push(`LEGACY RESTORE: ${where} marks no answer, and is not in its drawn calendar`)
+    } else if (now.jul !== was.jul && correctIndexOf(q, true) !== correctIndexOf(q, false))
+      v.push(`LEGACY RESTORE: ${where} came back in the other calendar (${was.jul} → ${now.jul})`)
+  }
+  state.stack.forEach((e, i) => check(`stack[${i}]`, e, e.meta, back.stack[i].meta, e.btns))
+  state.forwardStack.forEach((e, i) =>
+    check(`forwardStack[${i}]`, e, e.meta, back.forwardStack[i].meta, e.btns),
+  )
+  check('the card on screen', state.date, state.card, back.card, state.persistBtns)
+  return v
+}
 
 export function runSequence(seed, steps, cov, profile) {
   const rnd = mulberry32(seed)
-  const useJulian = chance(rnd, profile.pJulian)
+  // The Julian Calendar setting — where it starts, and (below) switched at any step, as a player
+  // switches it in the ⚙ menu with a date on screen.
+  let useJulian = chance(rnd, profile.pJulian)
   // Hydrated start (the hydration net): with prob pHydrate, seed initEngine with a prior-session
   // baseline — lifetime stats the in-session stack CANNOT reconstruct (a continuous mode hydrates stats
   // but not the history behind them). This is what exercises the override bestFloor/streakCarry fold —
@@ -729,9 +820,7 @@ export function runSequence(seed, steps, cov, profile) {
   // field-by-field after every action. Seeded with the only display facts it consumes: whether the
   // initial question is a Deduction puzzle (and, per ANSWER, whether the click was correct), plus the
   // hydrated baseline above (folded into its derived stats, never browsed/overridden).
-  const model = profile.referenceModel
-    ? createRefModel(!!state.date.type, priorHistory, priorTimes)
-    : null
+  const model = profile.referenceModel ? createRefModel(state.date, priorHistory, priorTimes) : null
   const recent = []
   // Consecutive OVERRIDE dispatches. Consecutive presses always land on ONE card — a press that
   // stays leaves the button on the same card, and the one that advances leaves it on the card just
@@ -739,6 +828,10 @@ export function runSequence(seed, steps, cov, profile) {
   let pressRun = 0
 
   for (let i = 0; i < steps; i++) {
+    if (chance(rnd, P_JULIAN_FLIP)) {
+      useJulian = !useJulian
+      cov.julianFlips++
+    }
     // THE RELOAD (round 23): with prob pReload, the state goes through exactly what a reload does
     // to a casual mode — parked as the app parks it (engine/parkedHistory's parkedText, the times left
     // out), JSON and all, then restored over its own stats as the app restores it (restoreParked: the
@@ -779,6 +872,29 @@ export function runSequence(seed, steps, cov, profile) {
       state = back.engine
       cov.reloads++
       if (state.backDepth > 0) cov.reloadsDeep++
+      // …AND AS AN OLDER BUILD WOULD HAVE PARKED IT: the same state with no calendar on any card
+      // goes through the same door, and what comes back is held to legacyRestoreBreaks (above).
+      // Play then carries on from the state this build parked.
+      const legacy = restoreParked(
+        JSON.parse(parkedText(withoutCalendars(state), { config: '' })),
+        state.stats,
+        useJulian,
+        'classic',
+      )
+      const legacyBreaks = legacyRestoreBreaks(state, legacy?.engine, useJulian)
+      cov.legacyRestores++
+      if (legacyBreaks.length)
+        return {
+          ok: false,
+          profile: profile.name,
+          seed,
+          step: i,
+          violations: legacyBreaks,
+          action: 'LEGACY RESTORE',
+          prevStats: state.stats,
+          nowStats: legacy?.engine.stats,
+          recent,
+        }
       // THE LIVE-QUESTION RULE: a screen whose timing is shown regenerates the restored live question
       // (one REGEN_DATE, exactly as modes/modeHooks' restoredEngine dispatches it) — which swaps an
       // UNUSED question, wherever it sits, and keeps a used one. Nothing scored may move either way,
@@ -791,12 +907,12 @@ export function runSequence(seed, steps, cov, profile) {
           cov.restoreRegen++
           if (state.backDepth > 0) cov.regenBrowsing++
         }
-        if (model) applyRefModel(model, 'REGEN', null, { liveDedAfter: liveIsPuzzle(state) })
+        if (model) applyRefModel(model, 'REGEN', null, { liveAfter: liveQuestion(state) })
         const broken = [
           ...checkGameInvariants(state, useJulian),
           ...(state.stats === before.stats ? [] : ['RESTORE REGEN: the stats moved']),
           ...(profile.strongOracle ? checkStrongScoreOracle(state, priorHistory) : []),
-          ...(model ? compareRefModel(model, state, overridePlan(state)) : []),
+          ...(model ? compareRefModel(model, state, overridePlan(state), refCards(state)) : []),
         ]
         if (broken.length)
           return {
@@ -822,10 +938,19 @@ export function runSequence(seed, steps, cov, profile) {
 
     switch (kind) {
       case 'ANSWER': {
-        const corr = correctIndexOf(state.date, useJulian)
+        // Which option to click — the right one in the card's calendar most of the time, else any
+        // (on a date with two weekdays that is sometimes the OTHER calendar's answer, which must
+        // count as wrong). Only a choice of input: whether it IS right is the reducer's to decide
+        // and the reference model's to decide again, each for itself.
+        const corr = correctIndexOf(state.date, calendarOf(state.card, state.date, useJulian))
         const idx = chance(rnd, profile.pAnswerCorrect)
           ? corr
           : Math.floor(rnd() * optionCount(state.date))
+        if (
+          !state.date.type &&
+          correctIndexOf(state.date, true) !== correctIndexOf(state.date, false)
+        )
+          cov.twoDayAnswers++
         const elapsed = t()
         const complete = chance(rnd, profile.pComplete)
         action = {
@@ -899,6 +1024,9 @@ export function runSequence(seed, steps, cov, profile) {
     }
 
     if (!action) continue
+    // A card that already has its calendar, acted on with the setting now saying the other one.
+    if ('useJulian' in action && state.card.jul !== undefined && state.card.jul !== useJulian)
+      cov.crossJudged++
     if (kind === 'BACK' && state.stack.length) cov.back++
     if (state.date.type) cov.deduction++
     const prev = state
@@ -908,17 +1036,15 @@ export function runSequence(seed, steps, cov, profile) {
     // (priorTimes feeds only createRefModel at seed time + the model clears its own copy, so the oracle
     // side just needs priorHistory cleared here.)
     if (action.type === 'RESET') priorHistory = []
-    // Reference model: apply the same action with its exogenous DISPLAY facts — isCorrect from the
-    // PRE-action question (the one the user acted on), and the question kind before/after
-    // (nextDed for plain advances; liveDedAfter — the LIVE question's kind, on screen or waiting in
-    // the forward stack — for the view-ruled RESET/REGEN keep-vs-replace).
-    // See referenceModel.js for the independence boundary.
+    // Reference model: apply the same action with its exogenous DISPLAY facts — the incoming
+    // question (`next`, for plain advances) and the LIVE question afterwards (`liveAfter` — on
+    // screen, or waiting in the forward stack — for the view-ruled RESET/REGEN keep-vs-replace).
+    // Whether an ANSWER is right is the model's own to work out. See referenceModel.js for the
+    // independence boundary.
     if (model) {
       applyRefModel(model, kind, action, {
-        isCorrect:
-          action.type === 'ANSWER' ? action.idx === correctIndexOf(prev.date, useJulian) : null,
-        nextDed: action.nextDate ? !!action.nextDate.type : undefined,
-        liveDedAfter: liveIsPuzzle(state),
+        next: action.nextDate,
+        liveAfter: liveQuestion(state),
       })
       cov.refChecks++
     }
@@ -971,7 +1097,8 @@ export function runSequence(seed, steps, cov, profile) {
     if (action.type === 'REGEN_DATE' && regenReplaces(prev) !== (state !== prev))
       violations.push(`REGEN: regenReplaces said ${regenReplaces(prev)}, the reducer disagreed`)
     if (profile.strongOracle) violations.push(...checkStrongScoreOracle(state, priorHistory))
-    if (model) violations.push(...compareRefModel(model, state, overridePlan(state)))
+    if (model)
+      violations.push(...compareRefModel(model, state, overridePlan(state), refCards(state)))
     if (violations.length) {
       return {
         ok: false,

@@ -405,10 +405,11 @@ function DeductionMode({
   // keep the pulse: the designed feedback, as in the fixed 7-grid weekday modes.
   // deductionIsFresh above reads the RAW flash (a suppressed flash still owns a live timer).
   const gridFlash = flash && flash.n === date?.options.length ? flash : null
-  // Codes-panel target mirrors App's deduction calcTarget: just the date fields (so
-  // displayedFormat falls to the current dateFormat) + the puzzle's _jul snapshot.
-  const calcTarget: { y: number; m: number; d: number; _jul?: boolean; _fmt?: FormatId } | null =
-    date ? { y: date.y, m: date.m, d: date.d, _jul: date._jul } : null
+  // The codes panel's target: just the puzzle's date fields. It is shown in the current dateFormat,
+  // and worked in the puzzle's own calendar (eng.julian — the one it was built in).
+  const calcTarget: { y: number; m: number; d: number } | null = date
+    ? { y: date.y, m: date.m, d: date.d }
+    : null
   // cellDates for the Month 1582 codes panel (answer box groups months from both calendars).
   let cellDates = null
   if (date && date.type === 'month' && date.y === 1582 && date.boxes) {
@@ -744,8 +745,8 @@ function DeductionMode({
             onOpenChange={(open) => eng.showCodes(open)}
             className=""
             contentClassName="mt-2 rounded-2xl thin px-4 pt-[3px] pb-1.5"
-            useJulian={calcTarget?._jul ?? useJulian}
-            displayedFormat={calcTarget?._fmt || dateFormat}
+            useJulian={eng.julian}
+            displayedFormat={dateFormat}
             cellDates={cellDates}
           />
         </div>

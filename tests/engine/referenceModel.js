@@ -14,13 +14,14 @@
 // disagrees here. It also asserts `played` — which no prior oracle checked at all.
 //
 // INDEPENDENCE BOUNDARY (designed, not accidental): the model consumes only DISPLAY facts —
-// question identity, never scoring state:
-//   • per ANSWER, `isCorrect` (does the clicked option match the on-screen question — date math,
-//     separately proven by the date-gen fuzz + invariants);
-//   • per advancing/reset/regen action, whether the question now on screen is a Deduction puzzle
-//     (`nextDed` from the action's nextDate / `liveDedAfter` from the screen — which date survives
-//     a Reset/regen is a VIEW rule about the displayed question, so the model reads the outcome
-//     rather than re-deriving keep-vs-replace nuances).
+// the QUESTION a player can read off the screen, never scoring state:
+//   • the question itself — its date, or a puzzle's options and the calendar it was built in — as
+//     each one arrives: `next` from an advancing action's nextDate, and `liveAfter` from the screen
+//     after a Reset / regen (which date survives those is a VIEW rule about the displayed question,
+//     so the model reads the outcome rather than re-deriving keep-vs-replace nuances);
+//   • per ANSWER, the option clicked — and the model works out FOR ITSELF whether it is right, with
+//     its own calendar arithmetic (refWeekday below: the platform's Date for the Gregorian calendar,
+//     Zeller's congruence for the Julian one — neither is the app's Julian-Day-Number formula).
 //   • Everything else — per-question credit/burn/freeze state, the browse cursor, which question
 //     the Override button points at and what a press does to it, played/good/streak/best/times
 //     derivation — is modeled here from first principles (the contract: How-to-Play + the
@@ -63,10 +64,50 @@
 //     still there underneath, untouched, for the Undo to fall back onto.
 //   • Only SCORED questions enter history on advance (an unscored question vanishes — it was never
 //     played); LOCK_REVEAL resolves a question without scoring it.
+//   • ★ THE CALENDAR (round 24). A date on or before October 4, 1582 has two weekdays, and the
+//     Julian Calendar setting can be switched at any moment. The contract: a question has ONE
+//     calendar, fixed by the FIRST thing that judges it — an answer right or wrong, a Reveal, a Show
+//     Codes that shows the answer, either timeout — as the setting stood at that moment (`jul`); a
+//     Deduction puzzle's is the one it was built in. Every later judgement of that question, and
+//     everything that shows it, reads that. So the model decides right-or-wrong in `jul`, and
+//     compareRefModel holds the reducer to two things per question, in play order: the calendar it
+//     stamped, and that the answer its grid marks is the model's own answer in that calendar.
 // ─────────────────────────────────────────────────────────────────────────
 
-const freshLive = (ded) => ({
-  ded, //          the question is a Deduction puzzle (a display fact; kept for the push)
+// ── The model's own calendar arithmetic (0 = Sunday … 6 = Saturday) ──────────────────────────────
+// Julian applies to a date up to October 4, 1582, and only when the question's calendar says so.
+const beforeReform = (q) => q.y < 1582 || (q.y === 1582 && (q.m < 10 || (q.m === 10 && q.d <= 4)))
+const gregorianWeekday = (q) => {
+  const dt = new Date(0)
+  dt.setUTCFullYear(q.y, q.m - 1, q.d) // the proleptic Gregorian calendar, any year
+  return dt.getUTCDay()
+}
+// Zeller's congruence, Julian form: January and February count as months 13 and 14 of the year
+// before; its 0 is Saturday.
+const julianWeekday = (q) => {
+  const m = q.m < 3 ? q.m + 12 : q.m
+  const y = q.m < 3 ? q.y - 1 : q.y
+  const K = y % 100
+  const C = Math.floor(y / 100)
+  const h = (q.d + Math.floor((13 * (m + 1)) / 5) + K + Math.floor(K / 4) + 5 + 6 * C) % 7
+  return (h + 6) % 7
+}
+export const refWeekday = (q, jul) =>
+  jul && beforeReform(q) ? julianWeekday(q) : gregorianWeekday(q)
+// The option that is right, in calendar `jul`. A puzzle's is one of its own options whatever the
+// calendar (its year, the box holding its month, its day).
+export const refAnswer = (q, jul) =>
+  q.type === 'year'
+    ? q.options.indexOf(q.y)
+    : q.type === 'month'
+      ? q.boxes.findIndex((b) => b.months.includes(q.m))
+      : q.type === 'day'
+        ? q.options.indexOf(q.d)
+        : refWeekday(q, jul)
+
+const freshLive = (q) => ({
+  q, //            the question as displayed (kept for the push, and for its answer)
+  jul: undefined, // its calendar — taken at the first judgement, never again (undefined = unjudged)
   ssFrozen: null, // the frozen effective Save-Stats (null = untouched; true = scored)
   // ── how it was ANSWERED (never touched by an Override) ──
   aCredited: false, // a clean first-try correct that counted
@@ -91,10 +132,10 @@ const viewLocked = (l) => l.overridden || l.locked
 const viewRevealed = (l) => (l.overridden ? !credited(l) : l.revealed)
 const viewBurned = (l) => (l.overridden ? !credited(l) : l.burned)
 
-export function createRefModel(initialDed, priorHistory = [], priorTimes = []) {
+export function createRefModel(initialQuestion, priorHistory = [], priorTimes = []) {
   return {
     history: [], // advanced-past SCORED questions, in order
-    live: freshLive(initialDed),
+    live: freshLive(initialQuestion),
     cursor: 0, // 0 = live edge; k>0 = browsing history[length-k]
     violations: [], // model-detected protocol breaks (driver/model disagreement)
     // The hydrated prior-session baseline (the hydration net): a continuous mode (Classic/Flash/
@@ -112,15 +153,24 @@ export function createRefModel(initialDed, priorHistory = [], priorTimes = []) {
 const freeze = (m, saveStats) => {
   if (m.live.ssFrozen === null) m.live.ssFrozen = saveStats
 }
+// The live question is being JUDGED: the first time, it takes its calendar — the one a puzzle was
+// built in, else the setting at this moment — and keeps it. Returns the calendar it is judged in.
+const judge = (m, useJulian) => {
+  const l = m.live
+  if (l.jul === undefined) l.jul = (l.q.type ? l.q._jul : undefined) ?? useJulian
+  return l.jul
+}
 
 // Advance past the live question: push it if SCORED (else it vanishes) and load a fresh live slot.
-// The pushed question keeps everything the Override needs — how it was answered and its bit.
-const advance = (m, nextDed) => {
+// The pushed question keeps everything the Override needs — how it was answered and its bit — and
+// the calendar it was judged in.
+const advance = (m, next) => {
   m.cursor = 0
   const l = m.live
   if (l.ssFrozen === true) {
     m.history.push({
-      ded: l.ded,
+      q: l.q,
+      jul: l.jul,
       aCredited: l.aCredited,
       aTime: l.aTime,
       wrongTime: l.wrongTime,
@@ -129,7 +179,7 @@ const advance = (m, nextDed) => {
       timedOut: l.timedOut,
     })
   }
-  m.live = freshLive(nextDed)
+  m.live = freshLive(next)
 }
 
 // Which question the one button means — the model's own reading (see the header). Returns
@@ -158,14 +208,15 @@ const flip = (q, tracking) => {
 }
 
 // Apply one driver action to the model. `ctx` carries the exogenous display facts:
-//   isCorrect — ANSWER only: the clicked option matches the on-screen question.
-//   nextDed   — advancing actions: whether the INCOMING question is a Deduction puzzle.
+//   next      — advancing actions: the INCOMING question.
+//   liveAfter — RESET / REGEN: the question the live slot holds afterwards.
+// The actions that judge carry the Julian Calendar setting at that moment (`action.useJulian`).
 export function applyRefModel(m, kind, action, ctx) {
   const live = m.live
   switch (kind) {
     case 'ANSWER': {
       if (m.cursor > 0 || viewLocked(live)) return // browsing locks the view; a locked question is resolved
-      if (ctx.isCorrect) {
+      if (action.idx === refAnswer(live.q, judge(m, action.useJulian))) {
         if (!live.burned) {
           freeze(m, action.saveStats)
           if (live.ssFrozen === true) {
@@ -180,7 +231,7 @@ export function applyRefModel(m, kind, action, ctx) {
           }
         }
         // A first-try correct moves on; so does a late correct on a burned question (no credit).
-        advance(m, ctx.nextDed)
+        advance(m, ctx.next)
       } else {
         // Wrong: score it (first touch), break the streak (derived), stay on the question.
         if (!live.burned) {
@@ -193,6 +244,7 @@ export function applyRefModel(m, kind, action, ctx) {
     }
     case 'REVEAL': {
       if (m.cursor > 0 || viewLocked(live)) return // browsing reveal is read-only; locked is resolved
+      judge(m, action.useJulian)
       if (!live.burned) {
         freeze(m, action.saveStats)
         live.wrongTime = action.elapsed
@@ -207,6 +259,7 @@ export function applyRefModel(m, kind, action, ctx) {
       // on screen, an overridden question (locked either way), or an answer already shown. Otherwise
       // it's the peek penalty (a scored miss).
       if (m.cursor > 0 || live.held || live.overridden || live.revealed) return
+      judge(m, action.useJulian)
       if (!live.burned) {
         freeze(m, action.saveStats)
         live.wrongTime = action.elapsed
@@ -219,7 +272,7 @@ export function applyRefModel(m, kind, action, ctx) {
       return
     case 'NEW': {
       // Returns to the live edge first (browse edits are already in the ledger), then advances.
-      advance(m, ctx.nextDed)
+      advance(m, ctx.next)
       return
     }
     case 'BACK': {
@@ -236,6 +289,7 @@ export function applyRefModel(m, kind, action, ctx) {
       // locked question (an overridden one included) is left exactly as it is, and so is everything
       // while browsing: the clock belongs to the live question, and the view is a history one.
       if (m.cursor > 0 || viewLocked(live)) return
+      judge(m, action.useJulian) // it shows the answer, so it fixes which answer that is
       live.locked = true
       live.revealed = true
       return
@@ -246,6 +300,7 @@ export function applyRefModel(m, kind, action, ctx) {
       // after it becomes history; on one already answered wrong it is just the end of a burned
       // question, which stays overridable. Nothing while browsing (see LOCK_REVEAL).
       if (m.cursor > 0 || viewLocked(live)) return
+      judge(m, action.useJulian)
       if (!live.burned) {
         freeze(m, action.saveStats)
         live.timedOut = true
@@ -258,10 +313,10 @@ export function applyRefModel(m, kind, action, ctx) {
     case 'RESET': {
       // Which date survives a Reset (keep-vs-regenerate) is a VIEW rule about the on-screen
       // question — display plumbing, not scoring — so the model takes the answer from the screen
-      // (ctx.liveDedAfter) rather than re-deriving it. (The 50× sweep proved the point: two
+      // (ctx.liveAfter) rather than re-deriving it. (The 50× sweep proved the point: two
       // hand-modeled regen rules in a row desynced on browse-view nuances the reducer reads live.)
       m.history = []
-      m.live = freshLive(ctx.liveDedAfter)
+      m.live = freshLive(ctx.liveAfter)
       m.cursor = 0
       m.priorHistory = [] // a full Reset re-inits the engine blank — the hydrated baseline is gone too
       m.priorTimes = []
@@ -271,8 +326,9 @@ export function applyRefModel(m, kind, action, ctx) {
       // Swaps an untouched LIVE question in place (kept when burned/revealed/credited — a view rule;
       // the driver says which question the live slot holds now). It is the live question wherever the
       // cursor is: mid-browse the question on screen is a history one, and the live slot is the one
-      // that changes. Nothing scored moves — the model's whole claim about a regen.
-      live.ded = ctx.liveDedAfter
+      // that changes. Nothing scored moves — the model's whole claim about a regen. (Only a question
+      // nothing has judged is ever swapped, so its calendar is still to be taken either way.)
+      live.q = ctx.liveAfter
       return
     }
     case 'OVERRIDE': {
@@ -285,7 +341,7 @@ export function applyRefModel(m, kind, action, ctx) {
       const wasOverridden = q.overridden
       flip(q, action.tracking)
       // The one press that moves play on: the live question newly overridden to a credit, unheld.
-      if (t === 'live' && !wasOverridden && credited(q) && !action.hold) advance(m, ctx.nextDed)
+      if (t === 'live' && !wasOverridden && credited(q) && !action.hold) advance(m, ctx.next)
       return
     }
     default:
@@ -293,12 +349,30 @@ export function applyRefModel(m, kind, action, ctx) {
   }
 }
 
+// One question's calendar, model against reducer: the calendar the reducer stamped on its card, and
+// every answer that card's grid marks (its green, or the mark an Override leaves on the answer),
+// against the model's own answer in the model's own calendar.
+const compareCalendar = (v, where, q, card) => {
+  if (q.jul !== card.jul) v.push(`REF calendar: model ${q.jul}, reducer ${card.jul} (${where})`)
+  if (q.jul === undefined) return
+  const answer = refAnswer(q.q, q.jul)
+  for (const k in card.btns)
+    if ((card.btns[k] === 'correct' || card.btns[k] === 'override-wrong') && Number(k) !== answer)
+      v.push(`REF answer: model ${answer}, the reducer's grid marks ${k} (${where})`)
+}
+
 // The model's derived stats vs the reducer's. Returns violation strings (empty = agree).
 // `plan` is the reducer's own answer to "what does the button point at, and does it read Undo"
-// (overridePlan), compared against the model's independent answer.
-export function compareRefModel(m, state, plan) {
+// (overridePlan), compared against the model's independent answer. `cards` is the reducer's cards
+// as the harness reads them off the state — `history` in play order, and the `live` one — each as
+// { jul, btns }: the calendar stamped on the card and the grid it shows.
+export function compareRefModel(m, state, plan, cards) {
   const v = [...m.violations]
   m.violations = []
+  if (cards.history.length !== m.history.length)
+    v.push(`REF history: model ${m.history.length} questions, reducer ${cards.history.length}`)
+  else m.history.forEach((q, i) => compareCalendar(v, `question ${i + 1}`, q, cards.history[i]))
+  compareCalendar(v, 'the live question', m.live, cards.live)
   const liveScored = m.live.ssFrozen === true
   // Fold the hydrated prior-session baseline in as a prefix of the credit sequence + the times pool
   // (the in-session ledger can't reconstruct it). Empty for a blank start → identical to before.

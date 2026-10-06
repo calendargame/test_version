@@ -1482,8 +1482,9 @@ export default function GuidePage({
           <li>
             <b>The day letters.</b> Each weekday gets a single letter, chosen so no two days share
             one — Thursday is R and Sunday is U, keeping them apart from Tuesday&apos;s T and
-            Saturday&apos;s S. It is the day under the calendar that date was asked in, so a Julian
-            date shows its Julian weekday.
+            Saturday&apos;s S. It is the day in the calendar that date was answered in — the same
+            one its highlighted answer and its codes use — so a date answered as Julian shows its
+            Julian weekday.
             {/* THE KEY, rendered FROM lib/format's DAY_LETTER + DAY rather than typed out, so it
                 cannot disagree with the letters the rows print. A <dl> because it IS a list of
                 term → meaning pairs, which is also how a screen reader announces it; each pair
@@ -2358,23 +2359,28 @@ export default function GuidePage({
             weekday, and the codes, of a date on or before it.
           </li>
           <li>
-            <b>Classic and Flash</b> — the date on screen stays, whether or not you&apos;ve already
-            answered it wrong, revealed it, or shown its codes. If it is one of those early dates,
-            its correct answer and its codes follow the setting from the moment you change it; the
-            marks already on the answer grid stay as they are.
+            <b>One date, one calendar.</b> The first time a date is judged — you pick a day (right
+            or wrong), Reveal it, open Show Codes on it, or a Blitz clock runs out on it — it takes
+            the calendar the setting stood at in that moment, and keeps it for good. From then on
+            its green and red marks, Reveal, Override and Undo, Show Codes, its weekday letter in a
+            run or round breakdown, and coming back to it with &lt; all read that one calendar,
+            whatever the setting says later. So the highlighted answer is always the one its codes
+            arrive at. (A Deduction puzzle takes the calendar it was drawn under instead, because
+            the weekday it shows you was worked out in it.)
+          </li>
+          <li>
+            <b>Classic and Flash</b> — the date on screen stays when you change the setting. If
+            nothing has been judged on it yet, its correct answer and its codes follow the new
+            setting. If you&apos;ve already answered it wrong, revealed it, or shown its codes, it
+            keeps the calendar it was first judged in — a day that would be right under the new
+            setting is still a wrong answer on that date — and the change applies from the next
+            date.
           </li>
           <li>
             <b>Deduction and MoX (idle)</b> — the change is treated like any other date setting: an
             unanswered puzzle (in all three Deduction sub-types) or the date MoX has waiting is
-            redrawn when you close the ⚙ menu, and one you&apos;ve already answered wrong, revealed,
-            or shown codes on stays.
-          </li>
-          <li>
-            Each date remembers the calendar system it was drawn under, so revisiting an earlier
-            question via Back works its codes under that system. Its green and red marks are the
-            ones it was given as you answered it — so for a date that was drawn under one setting
-            and answered under the other (Classic and Flash keep such a date on screen), the marks
-            and the codes can disagree.
+            redrawn when you close the ⚙ menu, and a puzzle you&apos;ve already answered wrong,
+            revealed, or shown codes on stays, in its own calendar.
           </li>
           <li>
             In MoX runs and Blitz rounds (active or just ended), a Julian toggle resets the

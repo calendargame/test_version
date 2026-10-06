@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // engine/runBreakdown.ts — an ended run/round, solve by solve.
 //
-// Pure: (GameState, the calendar-system fallback) => the ordered list of cards that were PLAYED,
+// Pure: (GameState, the Julian Calendar setting) => the ordered list of cards that were PLAYED,
 // each with the date it asked, the weekday that date fell on, the second it is contributing to the
 // mean, and whether it earned its point — plus the summary line the popup prints above them
 // (components/RunBreakdown). No React, no app state, no formatting; the caller owns every string.
@@ -42,8 +42,8 @@
 // it is a per-question `missKind` set at REVEAL / SHOW_CODES / TIMEOUT_MISS and carried by advance()
 // exactly the way `solveTime` is — the ledger built here is the pattern to copy.
 // ─────────────────────────────────────────────────────────────────────────
-import { activeWday, earnedCredit } from './gameReducer.js'
-import type { GameState, Question, StackEntry } from './gameReducer.js'
+import { activeWday, calendarOf, earnedCredit } from './gameReducer.js'
+import type { CardMeta, GameState, Question, StackEntry } from './gameReducer.js'
 import type { Btns } from './answerButtons.js'
 import { calcAvg, calcMed } from './stats.js'
 
@@ -55,8 +55,8 @@ export type SolveMark = 'wrong' | 'shown' | 'override' | null
 
 export interface BreakdownRow {
   n: number //             1-based position in the run — the card's own number, matching the Q# badge
-  question: Question //    the date (or Deduction puzzle) this card asked, with its _fmt/_jul snapshot
-  wday: number //          0 = Sunday … 6 = Saturday: the weekday that date fell on, under ITS OWN _jul
+  question: Question //    the date (or Deduction puzzle) this card asked, with its _fmt snapshot
+  wday: number //          0 = Sunday … 6 = Saturday: the weekday that date fell on, in the CARD'S calendar
   time: number | null //   the second this card contributes to the mean; null = it contributes none
   credited: boolean
   mark: SolveMark
@@ -86,6 +86,7 @@ export interface RunBreakdown {
 // live entry, the card on screen) so the walk below can treat them alike.
 interface CardView {
   question: Question
+  meta: CardMeta //     the card's record — read here for its calendar (CardMeta.jul)
   btns: Btns
   counted: boolean //   did this card take its `played` increment? (uncounted cards are not rows)
   credited: boolean
@@ -96,6 +97,7 @@ interface CardView {
 // Every such entry is counted, by the card ledger's correspondence (see GameState.historyBase).
 const fromEntry = (e: StackEntry): CardView => ({
   question: e,
+  meta: e.meta,
   btns: e.btns ?? {},
   counted: true,
   credited: !!e.hasCredit,
@@ -110,6 +112,7 @@ const fromLiveEntry = (e: StackEntry): CardView => {
   const ls = e.liveState
   return {
     question: e,
+    meta: e.meta,
     btns: e.btns ?? {},
     counted: ls?.saveStatsFrozen === true,
     credited: earnedCredit(e.btns, !!ls?.revealed, !!ls?.countedWrong),
@@ -126,6 +129,7 @@ const fromCurrent = (state: GameState): CardView =>
   state.backDepth === 0
     ? {
         question: state.date,
+        meta: state.card,
         btns: state.persistBtns,
         counted: state.saveStatsThisQ === true,
         credited: earnedCredit(state.persistBtns, state.revealed, state.countedWrong),
@@ -133,6 +137,7 @@ const fromCurrent = (state: GameState): CardView =>
       }
     : {
         question: state.date,
+        meta: state.card,
         btns: state.persistBtns,
         counted: true,
         credited: state.browseHasCredit,
@@ -151,16 +156,15 @@ const markOf = (btns: Btns): SolveMark => {
   return 'shown'
 }
 
-// ★ THE WEEKDAY IS READ UNDER THE CARD'S OWN CALENDAR SYSTEM — the `_jul` it was generated with —
-// and not under today's setting, for the same reason its date is printed in its own `_fmt`: a row
-// describes the question as it was ASKED. A pre-1582 date's Julian and proleptic-Gregorian weekdays
-// differ, so reading a Julian-era card under a since-flipped toggle would print a day that was never
-// the answer. (MoX and Blitz reset a run when Julian changes, so in practice every row of one run
-// shares a snapshot; the per-row read is what makes that an irrelevance rather than a dependency.)
-// `fallbackJulian` answers only for a card generated WITHOUT a stamp — App's genDate always stamps,
-// but a mode mounted on its bare `randomDate` default does not — and it is the mode's live setting,
-// the same `_jul ?? useJulian` fallback every mode's codes panel applies to a browsed-back card.
-export function buildRunBreakdown(state: GameState, fallbackJulian: boolean): RunBreakdown {
+// ★ THE WEEKDAY IS READ IN THE CARD'S OWN CALENDAR — the one it was JUDGED in (CardMeta.jul, through
+// gameReducer's calendarOf, the reader every codes panel uses) — and not under today's setting: a
+// row's letter is the answer that card's green marks. A date before the reform has two weekdays, so
+// reading one under a since-switched setting would print a day that was never the answer. (MoX and
+// Blitz reset a run when the setting changes, so in practice every row of one run shares a calendar;
+// the per-row read is what makes that an irrelevance rather than a dependency.) Every row is a card
+// that was counted, so it has been judged and carries its calendar; `useJulian` — the setting as it
+// stands — is only what calendarOf falls back to for a card nothing has judged, which is never a row.
+export function buildRunBreakdown(state: GameState, useJulian: boolean): RunBreakdown {
   // The run in order: the cards behind the one on screen, the one on screen, then the cards ahead of
   // it. forwardStack is stored nearest-LAST (BACK appends), so reversing it walks forward in time.
   const ordered: CardView[] = [
@@ -178,7 +182,7 @@ export function buildRunBreakdown(state: GameState, fallbackJulian: boolean): Ru
     rows.push({
       n: rows.length + 1,
       question: q,
-      wday: activeWday(q.y, q.m, q.d, q._jul ?? fallbackJulian),
+      wday: activeWday(q.y, q.m, q.d, calendarOf(c.meta, q, useJulian)),
       time: c.time,
       credited: c.credited,
       mark: c.credited ? null : markOf(c.btns),

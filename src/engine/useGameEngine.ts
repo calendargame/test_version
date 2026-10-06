@@ -8,7 +8,8 @@
 //   • solve times — `performance.now()` deltas from a per-question start stamp, snapped onto the
 //     0.1 ms grid (engine/stats' solveTimeFromMs).
 //
-// It returns the engine state, the derived `correct` weekday, the Override button's whole state
+// It returns the engine state, the calendar the card on screen is read in (`julian`) and its
+// `correct` answer in that calendar, the Override button's whole state
 // (`overrideAvail` = is the press on offer, `overridden` = which word it reads, `overridePlan` = what
 // a press would do to which card), and the action callbacks the UI wires to buttons.
 //
@@ -22,6 +23,7 @@ import { useReducer, useRef, useEffect, useMemo } from 'react'
 import {
   gameReducer,
   initEngine,
+  calendarOf,
   correctIndexOf,
   effectiveSaveStats,
   overridePlan,
@@ -127,9 +129,15 @@ export function useGameEngine({
   }, [state, useJulian, label])
 
   const tracking = !timingOff // Classic: timing visible ⇒ record solve times into stats.times
-  // The correct answer index — weekday for Classic/Flash/Blitz, puzzle option for Deduction
-  // (correctIndexOf dispatches on whether state.date is a puzzle). Used for the answer flash.
-  const correct = useMemo(() => correctIndexOf(state.date, useJulian), [state.date, useJulian])
+  // THE CALENDAR THE CARD ON SCREEN IS READ IN (gameReducer's calendarOf): the one it was judged in
+  // once anything has judged it — live or browsed to — and the Julian Calendar setting as it stands
+  // for a date nobody has touched. The mode hands it to its codes panel, so the codes always arrive
+  // at the answer the grid marks.
+  const julian = calendarOf(state.card, state.date, useJulian)
+  // The correct answer index in that calendar — weekday for Classic/Flash/Blitz, puzzle option for
+  // Deduction (correctIndexOf dispatches on whether state.date is a puzzle). Used for the answer
+  // flash.
+  const correct = useMemo(() => correctIndexOf(state.date, julian), [state.date, julian])
 
   // ── THE OVERRIDE BUTTON (one permanent per-card toggle) ──────────────────────────────────────
   // What a press would do, and to which card, from the ONE selector the reducer itself acts on
@@ -209,6 +217,7 @@ export function useGameEngine({
 
   return {
     state,
+    julian,
     correct,
     overrideAvail,
     overridden,

@@ -8,7 +8,7 @@
 // live and it is the only thing that can move a time from one card to another (or take one away).
 //
 // CLAIM 2: the rows are the run, in order, and each one says what it is — its number, its date, the
-// weekday that date fell on (under the card's OWN calendar snapshot), its time, and a mark when it
+// weekday that date fell on (in the calendar the card was JUDGED in), its time, and a mark when it
 // earned nothing.
 //
 // CLAIM 3 (round 22): a FAILED MoX run is a run like any other — every way a run can fail leaves the
@@ -264,44 +264,36 @@ describe('runBreakdown — cards that were never played are never rows', () => {
 })
 
 describe('runBreakdown — the weekday on each row', () => {
-  // ★ October 14, 1066 (Hastings) is the historical case the snapshot exists for: a Saturday on the
-  // Julian calendar it was fought under, and a different day entirely on the proleptic Gregorian one.
-  // The two are asserted to DIFFER first, so the case cannot pass by the two calendars agreeing.
+  // ★ October 14, 1066 (Hastings) is the historical case the card's calendar exists for: a Saturday
+  // on the Julian calendar it was fought under, and a different day entirely on the proleptic
+  // Gregorian one. The two are asserted to DIFFER first, so the case cannot pass by the two agreeing.
+  // (tests/engine/cardCalendar holds the whole rule; these are the breakdown's rows.)
   const HASTINGS = { y: 1066, m: 10, d: 14, _fmt: 'numeric-ymd' }
-  it('a pre-1582 date reads under the calendar it was ASKED in — its own _jul, not the setting', () => {
+  it('a pre-1582 date reads in the calendar it was JUDGED in — not the setting now, not the draw', () => {
     expect(wdayJulian(1066, 10, 14)).toBe(6) //                         Saturday, as history has it
     expect(wday(1066, 10, 14)).not.toBe(6) //                            …and proleptic Gregorian disagrees
-    const jul = { ...HASTINGS, _jul: true }
-    const greg = { ...HASTINGS, _jul: false }
-    // Julian card: its weekday is the Julian one EVEN WITH THE FALLBACK SAYING GREGORIAN.
-    let s = answer(initEngine(jul), wdayJulian(1066, 10, 14), 2, D2, { useJulian: true })
+    // Judged with Julian on (though DRAWN with it off): the Julian weekday, even with the setting
+    // now saying Gregorian.
+    let s = answer(initEngine({ ...HASTINGS, _jul: false }), 6, 2, D2, { useJulian: true })
     expect(buildRunBreakdown(s, false).rows[0].wday).toBe(6)
-    // Gregorian card: the Gregorian weekday EVEN WITH THE FALLBACK SAYING JULIAN.
-    s = answer(initEngine(greg), wday(1066, 10, 14), 2, D2)
+    // Judged with Julian off (though drawn with it on): the Gregorian weekday, even with the
+    // setting now saying Julian.
+    s = answer(initEngine({ ...HASTINGS, _jul: true }), wday(1066, 10, 14), 2, D2)
     expect(buildRunBreakdown(s, true).rows[0].wday).toBe(wday(1066, 10, 14))
   })
 
   it('one run can hold both systems, and each row keeps its own', () => {
-    let s = answer(
-      initEngine({ ...HASTINGS, _jul: true }),
-      6,
-      2,
-      { ...HASTINGS, _jul: false },
-      {
-        useJulian: true,
-      },
-    )
+    let s = answer(initEngine(HASTINGS), 6, 2, HASTINGS, { useJulian: true })
     s = answer(s, wday(1066, 10, 14), 3, D2)
-    const b = buildRunBreakdown(s, false)
-    expect(b.rows.map((r) => r.wday)).toEqual([6, wday(1066, 10, 14)])
+    for (const now of [true, false])
+      expect(buildRunBreakdown(s, now).rows.map((r) => r.wday)).toEqual([6, wday(1066, 10, 14)])
   })
 
-  it('a card generated WITHOUT a stamp falls back to the mode’s live setting', () => {
-    // A mode mounted on its bare randomDate default generates {y,m,d} with no _jul; the caller's
-    // setting is then the only answer there is — the same `_jul ?? useJulian` the codes panels use.
-    const s = answer(initEngine(HASTINGS), wdayJulian(1066, 10, 14), 2, D2, { useJulian: true })
-    expect(buildRunBreakdown(s, true).rows[0].wday).toBe(6)
-    expect(buildRunBreakdown(s, false).rows[0].wday).toBe(wday(1066, 10, 14))
+  it('a missed row reads in the calendar of its first judgement, whatever came after', () => {
+    // A wrong pick with Julian on, then a Reveal dispatched with it off: one card, one calendar.
+    let s = answer(initEngine(HASTINGS), 0, 2, D2, { useJulian: true })
+    s = gameReducer(s, { type: 'REVEAL', elapsed: 3, ...ctx })
+    expect(buildRunBreakdown(s, false).rows[0]).toMatchObject({ wday: 6, credited: false })
   })
 
   it('a post-1582 date reads the same under either system — Julian has no say there', () => {

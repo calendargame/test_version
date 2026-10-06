@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { isJulianDate, wday, wdayJulian } from '../lib/calendar.js'
 import { computeStreaks } from './streak.js'
-import { computeHasCredit, markBtns, mkBtnsWithCorrect, entryWithGreen } from './answerButtons.js'
+import { computeHasCredit, markBtns, mkBtnsWithCorrect, greenOnMiss } from './answerButtons.js'
 import type { ButtonState, Btns } from './answerButtons.js'
 import type { FormatId } from '../lib/format.js'
 
@@ -42,7 +42,11 @@ export interface WeekdayQuestion {
   m: number
   d: number
   _fmt?: FormatId //  the date-format this question was generated in
-  _jul?: boolean //   the calendar system (Julian/Gregorian) at generation
+  // The Julian Calendar setting when the date was DRAWN. It decided which dates could be drawn, and
+  // nothing reads it to judge or show a card: a date nobody has answered follows the setting as it
+  // stands, and an answered one carries its own calendar (CardMeta.jul). Its one reader is the
+  // restore door (engine/parkedEngine), for a card an older build parked without that stamp.
+  _jul?: boolean
 }
 // One of a Deduction puzzle's answer boxes (Month sub-mode): a label + the months it covers.
 export interface DedBox {
@@ -60,6 +64,9 @@ interface BasePuzzle {
   d: number
   w: number //         the shown weekday index (0=Sun)
   _fmt?: FormatId
+  // The Julian Calendar setting the puzzle was BUILT under. Unlike a weekday question's, it is part
+  // of the question: the weekday the puzzle shows was worked out in it, so the puzzle is read in it
+  // from the start (calendarOf), whatever the setting says later.
   _jul?: boolean
 }
 export interface DayPuzzle extends BasePuzzle {
@@ -132,6 +139,18 @@ export interface CardMeta {
   // it (scored, answer shown, not burned) are the LIVE card's and do not survive it becoming history:
   // there it would look exactly like a Reveal, which can be overridden. Absent on every other card.
   timedOut?: true
+  // ★ THE CALENDAR THIS CARD IS READ IN (true = Julian for a date up to October 4, 1582), stamped the
+  // first time anything JUDGES the card — an answer right or wrong, a Reveal, a Show Codes that shows
+  // the answer, a timeout — and never changed after. A date before the reform has two weekdays, and
+  // the Julian Calendar setting can be switched while a date is on screen; without the stamp a card
+  // was judged by the setting at the answer and re-read, on every later look, by whatever its reader
+  // happened to consult (the setting at the draw, or the setting now), so a green answer and the
+  // codes under it could be for two different calendars. With it, a card has ONE calendar: its
+  // marks, its answer, an Override of it, its codes and its row in a run breakdown all read this
+  // (calendarOf below is the one reader). Absent ⇔ nothing has judged the card yet — its grid is
+  // empty — and engine/invariants holds every card to that, and holds the answer on every grid to
+  // the card's own calendar.
+  jul?: boolean
 }
 
 // ★ THE LIVE FLAGS OF AN OVERRIDDEN LIVE CARD — state O's half of LiveFlags, which (unlike state A's)
@@ -307,17 +326,26 @@ export type GameAction =
   | { type: 'BACK' }
   | { type: 'FORWARD'; useJulian: boolean }
 
-// Weekday index (0=Sun) honoring the active calendar (Julian vs Gregorian).
+// ★ WHICH CALENDAR A CARD IS READ IN — the one reader of CardMeta.jul, for the reducer that judges a
+// card, the hook that shows its answer, every mode's codes panel and the run breakdown:
+//   • a card that has been judged — its own stamp, for good;
+//   • a Deduction puzzle nobody has judged — the calendar it was built in, because the weekday it
+//     shows was worked out in it;
+//   • a weekday date nobody has judged — the Julian Calendar setting as it stands (`useJulian`), so
+//     switching the setting over an untouched date changes its answer, and the first judgement then
+//     stamps whichever was in force.
+export const calendarOf = (card: CardMeta, q: Question, useJulian: boolean): boolean =>
+  card.jul ?? (q.type === undefined ? useJulian : (q._jul ?? useJulian))
+
+// Weekday index (0=Sun) in the given calendar (`useJulian` — Julian for a date up to the reform).
 export const activeWday = (y: number, m: number, d: number, useJulian: boolean): number =>
   useJulian && isJulianDate(y, m, d) ? wdayJulian(y, m, d) : wday(y, m, d)
 
-// The correct answer index for a question. This is what makes the one shared engine serve
+// The correct answer index for a question, read in the calendar given — a CARD's answer is
+// correctIndexOf(question, calendarOf(card, question, setting)). This is what makes the one shared engine serve
 // BOTH weekday modes and Deduction: a Deduction puzzle resolves by its own options/answer —
 // year: options.indexOf(y); month: the box whose months include m; day: options.indexOf(d) —
-// while a plain weekday question resolves by activeWday on (y,m,d). Mirrors App's
-// getDedCorrectIdx / dedCorrectIdxFor and the same dispatch in answerButtons.entryWithGreen.
-// Weekday entries have no `type`, so this is byte-identical to the old direct activeWday call
-// for Classic/Flash/Blitz. (Month always carries `boxes` from makeDedPuzzle, so it resolves
+// while a plain weekday question resolves by activeWday on (y,m,d). (Month always carries `boxes` from makeDedPuzzle, so it resolves
 // through them — the old boxless `options.indexOf(m)` fallback was dead and is gone.)
 export const correctIndexOf = (e: Question, useJulian: boolean): number => {
   if (e.type === 'year') return e.options.findIndex((y) => y === e.y)
@@ -357,6 +385,18 @@ const stripEntryMeta = ({
   meta,
   ...date
 }: StackEntry): Question => date
+
+// ★ JUDGING THE CARD ON SCREEN — every action that marks its grid comes through here first: the
+// card with its calendar stamped (the first judgement stamps it; every later one reads the stamp),
+// and the answer in that calendar. So a date answered wrong under one setting cannot be revealed,
+// answered again or overridden under the other.
+const judged = (state: GameState, useJulian: boolean): { card: CardMeta; correct: number } => {
+  const jul = calendarOf(state.card, state.date, useJulian)
+  return {
+    card: state.card.jul === jul ? state.card : { ...state.card, jul },
+    correct: correctIndexOf(state.date, jul),
+  }
+}
 
 const blankStats = (): Stats => ({ played: 0, good: 0, streak: 0, best: 0, times: [] })
 // A card nobody has answered or overridden — every fresh question starts with one.
@@ -764,13 +804,15 @@ const advance = (
     // itself gets, so undoing it later lands exactly where it would have been had it never been
     // overridden. (Only an O card carries `answered`; an A card's A is the entry itself.)
     const a = state.card.answered
+    // The answer in the card's own calendar (a pushed card has been judged, so it is stamped).
+    const correct = correctIndexOf(state.date, calendarOf(state.card, state.date, useJulian))
     const meta: CardMeta =
       a === null
         ? state.card
         : {
             ...state.card,
             answered: {
-              btns: entryWithGreen({ ...state.date, btns: a.btns }, useJulian)?.btns ?? a.btns,
+              btns: greenOnMiss(a.btns, correct),
               hasCredit: a.hasCredit,
               solveTime: a.solveTime,
             },
@@ -779,10 +821,11 @@ const advance = (
     // the bugs behind it are at earnedCredit above. Getting it wrong here inflates streak/best PAST
     // good on the next Override that recomputes from history (an impossible score that slips by the
     // good≤played check).
-    const pushed = entryWithGreen(
+    stack = [
+      ...state.stack,
       {
         ...state.date,
-        btns,
+        btns: greenOnMiss(btns, correct),
         hasCredit: earnedCredit(btns, state.revealed, state.countedWrong),
         // The times ledger hands off here: the time the live card was contributing becomes the
         // pushed card's, and the live half is cleared below. A card that is NOT pushed can never be
@@ -794,10 +837,7 @@ const advance = (
         solveTime: state.liveSolveTime,
         meta,
       },
-      useJulian,
-    )
-    // pushed is built from a non-null literal, so it's always defined — the guard just satisfies the type.
-    if (pushed) stack = [...state.stack, pushed]
+    ]
   }
   return {
     ...state,
@@ -848,11 +888,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // A locked card is resolved — including every card an Override left on screen (both of its
       // overridden states lock), so an answer can never paint over a card's overridden grid.
       if (state.locked) return state
-      const correct = correctIndexOf(state.date, useJulian)
+      const { card, correct } = judged(state, useJulian)
       const effective = effectiveSaveStats(state, saveStats)
 
       if (idx === correct) {
-        const next: GameState = { ...state, saveStatsThisQ: effective }
+        const next: GameState = { ...state, card, saveStatsThisQ: effective }
         if (!state.countedWrong) {
           const recorded = elapsed != null && tracking && effective ? elapsed : null
           // The ledger's live half, written in the same breath as the pool below — they are one
@@ -890,8 +930,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       // Wrong.
-      const next: GameState = { ...state, saveStatsThisQ: effective }
-      if (!state.countedWrong) next.card = { ...state.card, wrongTime: elapsed }
+      const next: GameState = { ...state, card, saveStatsThisQ: effective }
+      if (!state.countedWrong) next.card = { ...card, wrongTime: elapsed }
       next.persistBtns = markBtns(state.persistBtns, idx, 'wrong-latest')
       if (!state.countedWrong && effective) {
         next.stats = { ...state.stats, played: state.stats.played + 1, streak: 0 }
@@ -905,7 +945,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     // otherwise it burns the question (counts as played, streak reset) and locks.
     case 'REVEAL': {
       const { useJulian, elapsed, saveStats } = action
-      const correct = correctIndexOf(state.date, useJulian)
+      const { card, correct } = judged(state, useJulian)
       if (state.locked && !state.revealed && state.backDepth > 0) {
         return {
           ...state,
@@ -915,11 +955,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }
       if (state.locked) return state
       const effective = effectiveSaveStats(state, saveStats)
-      const next: GameState = { ...state, saveStatsThisQ: effective }
+      const next: GameState = { ...state, card, saveStatsThisQ: effective }
       if (!state.countedWrong) {
         // Reveal counts as a miss, so it records the card's wrongTime exactly like a wrong answer —
         // an Override that later credits the card contributes it.
-        next.card = { ...state.card, wrongTime: elapsed }
+        next.card = { ...card, wrongTime: elapsed }
         if (effective) next.stats = { ...state.stats, played: state.stats.played + 1, streak: 0 }
       }
       next.countedWrong = true
@@ -956,10 +996,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       //     a later advance pushes it as a PHANTOM history miss (a good/streak desync). A read-only
       //     review keeps saveStatsThisQ untouched. (Fuzz fix, timed-strong profile.)
       if (!showCodesPenalizes(state)) return { ...state, calcOpen: true }
-      const correct = correctIndexOf(state.date, useJulian)
+      const { card, correct } = judged(state, useJulian)
       const effective = effectiveSaveStats(state, saveStats)
       const next: GameState = {
         ...state,
+        card,
         calcPenaltyActive: true,
         calcOpen: true,
         saveStatsThisQ: effective,
@@ -967,7 +1008,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const firstPenalty = !state.countedWrong && !state.revealed
       if (firstPenalty) {
         // A miss like a wrong answer, so it records the card's wrongTime the same way.
-        next.card = { ...state.card, wrongTime: elapsed }
+        next.card = { ...card, wrongTime: elapsed }
         if (effective) next.stats = { ...state.stats, played: state.stats.played + 1, streak: 0 }
       }
       if (state.backDepth === 0) next.persistBtns = mkBtnsWithCorrect(state.persistBtns, correct)
@@ -1046,9 +1087,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // an unlocked live card, and a run fails on an unlocked wrong); the engine refuses anyway, as
       // ANSWER and TIMEOUT_MISS already do.
       if (state.locked) return state
-      const correct = correctIndexOf(state.date, useJulian)
+      const { card, correct } = judged(state, useJulian)
       return {
         ...state,
+        card,
         persistBtns: mkBtnsWithCorrect(state.persistBtns, correct),
         locked: true,
         revealed: true,
@@ -1070,7 +1112,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // engine must not rely on the component to forbid an invalid move. (Session-6 hardening,
       // same class as the TIMEOUT_MISS lock fix.)
       if (state.locked) return state
-      const correct = correctIndexOf(state.date, useJulian)
+      const { card, correct } = judged(state, useJulian)
       const effective = effectiveSaveStats(state, saveStats)
       // One played per question: a burned (countedWrong) question already took its increment at the
       // wrong answer — the timeout still resolves it (locks + reveals) but must not re-count it.
@@ -1082,7 +1124,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         saveStatsThisQ: effective,
         stats,
-        ...(state.countedWrong ? {} : { card: { ...state.card, timedOut: true as const } }),
+        card: state.countedWrong ? card : { ...card, timedOut: true as const },
         persistBtns: mkBtnsWithCorrect(state.persistBtns, correct),
         // The answer is shown → mark revealed (like LOCK_REVEAL), so if this question were ever
         // advanced into history its 'correct' grid isn't mistaken for an earned credit. (Fuzz
@@ -1166,7 +1208,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           solveTime: e.solveTime ?? null,
           meta: e.meta,
         }
-        const after = toggleCard(before, correctIndexOf(e, useJulian), tracking)
+        const correct = correctIndexOf(e, calendarOf(e.meta, e, useJulian))
+        const after = toggleCard(before, correct, tracking)
         const entry: StackEntry = { ...e, ...after }
         return withStreaks({
           ...state,
@@ -1175,6 +1218,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         })
       }
 
+      // The card on screen — browsed to, or live — and its answer in its own calendar (every card
+      // the button can point at has been judged, so it is stamped).
+      const correct = correctIndexOf(state.date, calendarOf(state.card, state.date, useJulian))
       if (plan.target === 'browsed') {
         const before: CardFields = {
           btns: state.persistBtns,
@@ -1182,7 +1228,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           solveTime: state.liveSolveTime,
           meta: state.card,
         }
-        const after = toggleCard(before, correctIndexOf(state.date, useJulian), tracking)
+        const after = toggleCard(before, correct, tracking)
         return withStreaks({
           ...state,
           stats: retime(state.stats, poolSlot(state, state.stack.length), before, after),
@@ -1210,7 +1256,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         solveTime: state.liveSolveTime,
         meta: state.card,
       }
-      const after = toggleCard(before, correctIndexOf(state.date, useJulian), tracking, liveFlags)
+      const after = toggleCard(before, correct, tracking, liveFlags)
       const onCard: GameState = {
         ...state,
         stats: retime(state.stats, poolSlot(state, state.stack.length), before, after),
@@ -1298,20 +1344,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const { useJulian } = action
       const fwd = state.forwardStack[state.forwardStack.length - 1]
       if (!fwd) return state
-      const pushed = entryWithGreen(
-        {
-          ...state.date,
-          btns: { ...state.persistBtns },
-          hasCredit: state.browseHasCredit,
-          solveTime: state.liveSolveTime,
-          meta: state.card,
-        },
-        useJulian,
-      )
+      const pushed: StackEntry = {
+        ...state.date,
+        btns: greenOnMiss(
+          state.persistBtns,
+          correctIndexOf(state.date, calendarOf(state.card, state.date, useJulian)),
+        ),
+        hasCredit: state.browseHasCredit,
+        solveTime: state.liveSolveTime,
+        meta: state.card,
+      }
       const base: GameState = {
         ...state,
         calcOpen: false,
-        stack: pushed ? [...state.stack, pushed] : [...state.stack],
+        stack: [...state.stack, pushed],
         forwardStack: state.forwardStack.slice(0, -1),
         backDepth: Math.max(0, state.backDepth - 1),
         date: stripEntryMeta(fwd),
