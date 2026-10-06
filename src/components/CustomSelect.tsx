@@ -112,16 +112,46 @@ export interface CustomSelectOption {
 }
 // Measured coordinates for the portaled panel, in VIEWPORT space. The panel is position:fixed, so
 // its containing block IS the viewport and a getBoundingClientRect reading needs no conversion:
-// right edge pinned to the trigger's, top 6px below it.
+// 6px below the trigger, and pinned to ONE of its side edges — which one is dropdownWidth's to say
+// (panelBox, below).
 interface PanelPos {
+  // The trigger wrapper's left edge, and its right edge measured the way CSS `right` is (from the
+  // viewport's right edge).
+  left: number
   right: number
   top: number
-  // The trigger wrapper's own rendered width at the moment the panel opened. Only consumed when
-  // dropdownWidth === 'match-trigger' (the preset switcher), where the panel is sized to the
-  // space-filling trigger instead of to its widest option; 'content' (the default, the mode
-  // selector) ignores it and the panel stays width:max-content exactly as before.
+  // The trigger wrapper's own rendered width at the moment the panel opened.
   width: number
 }
+// The room the app keeps between anything and the screen's side edges (the top bar's and the ⚙
+// menu's own gutter). A list that grows past its trigger stops this far short of the edge.
+const SCREEN_GUTTER = '1rem'
+// WHERE THE PANEL SITS AND HOW WIDE IT IS — the two ways a call site can ask for.
+//   • 'content' — the mode selector. As wide as its widest option (max-content, 90vw at most),
+//     its RIGHT edge on the trigger's. Its trigger is pinned to that same width
+//     (triggerMatchesDropdown), so the two are one column.
+//   • 'at-least-trigger' — the two preset lists. NEVER NARROWER THAN THE TRIGGER, AND AS WIDE AS
+//     ITS LONGEST NAME NEEDS. A list the exact width of its trigger cannot show what the trigger
+//     shows: a row spends width the trigger does not (the ✓ column, wider padding, a larger text
+//     tier), so its name cell is the narrower of the two — and a preset's name is allowed to be
+//     exactly as long as the TRIGGER can display (lib/presetNameWidth), so every name near that
+//     length was cut short with "…" in the very list you pick it from. So the list takes the width
+//     its names ask for, with the trigger's width as its floor (short names: the same box as
+//     before, to the pixel). It is pinned by its LEFT edge and grows to the right, because that is
+//     where the room is: the preset switcher sits at the left of the bar, a few dozen pixels from
+//     the screen's edge. It stops one gutter short of the right edge of the screen; a name longer
+//     than that — one made on a wider screen — is the only one still shortened, by the name's own
+//     ellipsis (components/PresetSwitcher's PresetOptionLabel).
+const panelBox = (dropdownWidth: 'content' | 'at-least-trigger', pos: PanelPos) =>
+  dropdownWidth === 'content'
+    ? { right: pos.right, width: 'max-content', maxWidth: '90vw' }
+    : {
+        left: pos.left,
+        width: 'max-content',
+        // min() because a min-width beats a max-width: the floor must never exceed the ceiling.
+        minWidth: `min(${pos.width}px, 100vw - ${pos.left}px - ${SCREEN_GUTTER})`,
+        maxWidth: `calc(100vw - ${pos.left}px - ${SCREEN_GUTTER})`,
+      }
 
 // The box metrics of ONE dropdown option row, shared by the real portaled rows and the hidden
 // width-mirror that triggerMatchesDropdown renders. The two MUST stay byte-identical here: the
@@ -156,14 +186,11 @@ export default function CustomSelect({
   ariaLabel?: string
   wrapperRef?: RefObject<HTMLDivElement | null>
   showChevron?: boolean
-  // How the PORTALED PANEL is sized. 'content' (default) — width:max-content, the panel is as
-  // wide as its widest option; this is the mode selector, and it must stay this way (its dropdown's
-  // rendered width is not allowed to change). 'match-trigger' — the panel takes the trigger
-  // wrapper's live rendered width instead (measured on open, re-measured on resize / visualViewport
-  // / --bar-h, same as the panel position); this is the preset switcher, whose trigger already
-  // fills the row's leftover space (main.tsx: flex-1 min-w-0), so the menu now fills it too rather
-  // than shrink-wrapping to the widest preset name. maxWidth:90vw stays as a clamp for both.
-  dropdownWidth?: 'content' | 'match-trigger'
+  // How the PORTALED PANEL is sized and which edge of the trigger it hangs from — panelBox, above,
+  // says both. 'content' (default) is the mode selector and must stay as it is (its dropdown's
+  // rendered width is not allowed to change); 'at-least-trigger' is the two preset lists. The
+  // trigger is measured on open and re-measured on resize / visualViewport / --bar-h.
+  dropdownWidth?: 'content' | 'at-least-trigger'
   // Widen the trigger BUTTON to exactly its own dropdown's outer width, WITHOUT changing the
   // dropdown. The mode selector wants this: its dropdown rows use a bigger text tier and more
   // padding than the trigger, so "both size to content" would never make them equal. A hidden
@@ -264,8 +291,8 @@ export default function CustomSelect({
     // above catches any width change that causes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerMatchesDropdown, options.map((o) => o.value).join(OPTION_VALUE_SEPARATOR)])
-  // measurePanel reads the trigger's current viewport rect and writes panelPos: right edge
-  // aligned to the trigger, 6px below it. Called on open, on resize / visualViewport change, and
+  // measurePanel reads the trigger's current viewport rect and writes panelPos: both side edges
+  // and its width, and the top, 6px below it. Called on open, on resize / visualViewport change, and
   // when --bar-h moves the bar the trigger sits in — and on NOTHING else, in particular never on
   // a scroll (see the effect below).
   // Plain function (no useCallback): it reads ref.current, which a manual dep array can't
@@ -300,7 +327,7 @@ export default function CustomSelect({
     // 400 scrolled, −1494px at 1500) and needed a reposition per scroll event, while the fixed one
     // holds its exact 6px gap at every offset with ZERO reposition calls — and app mode is
     // pixel-identical either way, since scrollY was always 0 there.
-    setPanelPos({ right, top: rect.bottom + 6, width: rect.width })
+    setPanelPos({ left: rect.left, right, top: rect.bottom + 6, width: rect.width })
   }
   // Toggle handler. On the way OPEN it measures where the panel goes — the one thing that can only
   // be decided at that instant. Measurement only happens on open (close is cheap).
@@ -631,19 +658,13 @@ export default function CustomSelect({
             // is above #root) — harmless here, since the panel is sized to sit on screen.
             style={{
               position: 'fixed',
-              right: panelPos.right,
+              ...panelBox(dropdownWidth, panelPos),
               top: panelPos.top,
               zIndex: 60,
               background: 'rgba(245,245,247,0.50)',
               WebkitBackdropFilter: 'blur(28px) saturate(120%)',
               backdropFilter: 'blur(28px) saturate(120%)',
               boxShadow: '0 6px 28px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.05)',
-              // 'content' (mode selector, default) keeps the historical max-content sizing
-              // untouched; 'match-trigger' (preset switcher) takes the trigger wrapper's live
-              // width measured in measurePanel, so the menu fills the same row space the trigger
-              // does. The 90vw clamp applies to both.
-              width: dropdownWidth === 'match-trigger' ? `${panelPos.width}px` : 'max-content',
-              maxWidth: '90vw',
               // Round 23: never taller than the room between the panel's top and the bottom of
               // the viewable area, less the same 1rem cushion (and bottom safe area) the ⚙ panel
               // keeps — a longer list scrolls inside (listRef, above). CSS rather than a measured

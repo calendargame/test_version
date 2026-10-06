@@ -30,7 +30,7 @@
 // ⚠ AND THE MEASUREMENT ITSELF WAS DESKTOP CHROMIUM, NOT AN IPHONE. Glyph advances and the system
 // UI font differ there; only the owner's device can confirm the real thing.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { screen, cleanup } from '@testing-library/react'
+import { screen, cleanup, within } from '@testing-library/react'
 import {
   mountApp,
   resetAppState,
@@ -39,6 +39,7 @@ import {
   isSettingsOpen,
   outsideTarget,
   gear,
+  panelEl,
 } from './helpers/settingsPanel.jsx'
 
 const bar = () => screen.getByRole('banner')
@@ -233,14 +234,26 @@ describe('the width cuts that paid for the fourth control', () => {
     expect(screen.getByRole('listbox', { name: 'Mode' }).style.width).toBe('max-content')
   })
 
-  it("sizes the preset dropdown to the trigger (dropdownWidth='match-trigger'), not to its content", () => {
+  it("the preset dropdown is at least as wide as its trigger and as wide as its names need (dropdownWidth='at-least-trigger')", () => {
     mountApp()
     tap(presetTrigger())
-    // 'match-trigger' writes a px width from the trigger wrapper's measured rect; jsdom's rect is
-    // 0, so the concrete value is '0px' here — the POINT is that it is a px string, never
-    // 'max-content'. A real browser turns the same code path into the trigger's true width.
-    const w = screen.getByRole('listbox', { name: 'Preset' }).style.width
-    expect(w).toMatch(/px$/)
-    expect(w).not.toBe('max-content')
+    // The trigger's measured width is the list's FLOOR, not its width: a name is allowed to be as
+    // long as the trigger can show, and a list row has less room for it than the trigger has, so a
+    // list the trigger's exact width cut long names short. jsdom's rects are 0, so the floor reads
+    // 0px here; the point is which three properties carry it. A real browser was used to check that
+    // every name the rename box accepts is shown whole (and tests/customselect pins the arithmetic).
+    const list = screen.getByRole('listbox', { name: 'Preset' })
+    expect(list.style.width).toBe('max-content')
+    expect(list.getAttribute('style')).toMatch(/min-width: min\(0px, /)
+    expect(list.getAttribute('style')).toMatch(/max-width: calc\(/)
+  })
+
+  it('"Open in" in the ⚙ menu is the same kind of list', () => {
+    mountApp()
+    openSettings()
+    tap(within(panelEl()).getByRole('button', { name: /^Open in/ }))
+    const list = screen.getByRole('listbox', { name: 'Open in' })
+    expect(list.style.width).toBe('max-content')
+    expect(list.getAttribute('style')).toMatch(/min-width: min\(0px, /)
   })
 })

@@ -359,9 +359,9 @@ describe('CustomSelect — the fixed portal panel (position, what closes it, --b
 
 // ── dropdownWidth + triggerMatchesDropdown ─────────────────────────────────────────────────
 //
-// Two opposite width behaviours the one shared component now has to carry, so the mode selector's
-// trigger can match its own (unchanged) dropdown while the preset switcher's dropdown matches its
-// (space-filling) trigger. jsdom lays out nothing and reports every rect as 0, so what is pinned
+// Two opposite width behaviours the one shared component has to carry: the mode selector's trigger
+// matches its own (unchanged) dropdown, while a preset list is never narrower than its
+// (space-filling) trigger and is as wide as its longest name needs. jsdom lays out nothing and reports every rect as 0, so what is pinned
 // here is the WIRING — which style each prop produces — not the pixel result (that is verified in a
 // real browser and recorded at src/main.tsx's budget block).
 describe('CustomSelect — width props', () => {
@@ -387,10 +387,17 @@ describe('CustomSelect — width props', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Test,/ }))
     expect(panel().style.width).toBe('max-content')
     expect(panel().style.maxWidth).toBe('90vw')
+    // …hung from the trigger's RIGHT edge, with no floor and no left pin.
+    expect(panel().style.right).not.toBe('')
+    expect(panel().style.left).toBe('')
+    expect(panel().style.minWidth).toBe('')
   })
 
-  it("dropdownWidth='match-trigger' sizes the panel to the trigger wrapper's measured width", () => {
-    // Mock the wrapper rect so the panel has a concrete width to copy (jsdom's real rects are 0).
+  // A preset's name may be as long as its TRIGGER can show, and a list row shows less of a name
+  // than the trigger does at the same width (it spends width on the ✓ column, wider padding and a
+  // larger text tier). So a list exactly as wide as its trigger cut those names short with "…".
+  it("dropdownWidth='at-least-trigger': never narrower than the trigger, as wide as its names need", () => {
+    // Mock the wrapper rect so the panel has a concrete width to floor at (jsdom's real rects are 0).
     rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       top: 40,
       bottom: 63,
@@ -402,10 +409,24 @@ describe('CustomSelect — width props', () => {
       height: 23,
       toJSON: () => ({}),
     })
-    mountBare({ dropdownWidth: 'match-trigger' })
+    mountBare({ dropdownWidth: 'at-least-trigger' })
     fireEvent.click(screen.getByRole('button', { name: /^Test,/ }))
-    expect(panel().style.width).toBe('220px') // the trigger wrapper's rect width, not max-content
-    expect(panel().style.maxWidth).toBe('90vw') // the clamp survives
+    const style = panel().getAttribute('style')
+    // As wide as its content asks…
+    expect(style).toMatch(/(^|; )width: max-content;/)
+    // …never narrower than the trigger wrapper (220px) — a floor that itself gives way to the
+    // ceiling, because a min-width beats a max-width…
+    expect(style).toMatch(/min-width: min\(220px, [^;]*100vw[^;]*\);/)
+    // …and never past one gutter short of the screen's right edge, measured from where it starts.
+    expect(style).toMatch(/max-width: calc\([^;]*100vw[^;]*\);/)
+    for (const bound of [/min-width: ([^;]*);/, /max-width: ([^;]*);/]) {
+      const value = bound.exec(style)[1]
+      expect(value).toContain('100px') // the trigger's left edge
+      expect(value).toContain('1rem') // the gutter
+    }
+    // Hung from the trigger's LEFT edge, so it grows to the right, where the room is.
+    expect(panel().style.left).toBe('100px')
+    expect(panel().style.right).toBe('')
   })
 
   it('triggerMatchesDropdown renders a hidden width-mirror that is invisible to roles and the user', () => {

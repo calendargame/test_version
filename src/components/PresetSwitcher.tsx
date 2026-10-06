@@ -74,11 +74,11 @@ import { AMNESIC_SPOKEN } from '../store/amnesicMode.js'
 //   structurally different flex row (not the trigger's stacked grid) and would NOT have picked up
 //   the same fill by construction — see that file's option-row rendering for the fix and why it
 //   was needed once this cell stopped being a fixed constant.
-//   THE FLOOR STAYS as the TRIGGER-GRID floor and a defensive one. Since round 21 the
-//   portaled panel is `dropdownWidth="match-trigger"` — it takes this trigger's live rendered
-//   width, not `max-content` — so a menu row now DOES have something to fill (the label cell is
-//   `flex-1` of a `w-full` row of a panel sized to the trigger), and PRESET_NAME_COL rarely binds
-//   in the menu any more. It still binds in the trigger's own stacked grid, and it is still the
+//   THE FLOOR STAYS as the TRIGGER-GRID floor and a defensive one. The portaled panel is
+//   `dropdownWidth="at-least-trigger"` — never narrower than this trigger's live rendered width,
+//   and wider when its longest name needs it — so a menu row always has something to fill (the
+//   label cell is `flex-1` of a `w-full` row of that panel), and PRESET_NAME_COL rarely binds
+//   in the menu. It still binds in the trigger's own stacked grid, and it is still the
 //   thing that stops a name cell collapsing toward bare content if the trigger is ever squeezed
 //   toward its own minimum — kept as a "never smaller than this" rather than an "always exactly
 //   this". `em`, not px or rem, for the reason it always was: the root font-size is FLUID
@@ -87,10 +87,10 @@ import { AMNESIC_SPOKEN } from '../store/amnesicMode.js'
 //   instead — the same PRESET_NAME_COL floor is roomier in the dropdown's larger text tier than
 //   in the trigger's `text-sm` automatically, with no second constant.
 //
-// ⚠ NOTE WHAT IS *STILL NOT CONSTRAINED* BY THE BAR: the portaled dropdown panel. Since round 21 it is
-// `width:<this trigger's live px>` rather than `width:max-content`, but it is still an overlay
-// (`position:fixed`, `maxWidth:90vw`) that answers to the viewport, not to the bar — and the width
-// it now copies is one the bar already handed the trigger, so nothing it does can widen the bar.
+// ⚠ NOTE WHAT IS *STILL NOT CONSTRAINED* BY THE BAR: the portaled dropdown panel. It is an overlay
+// (`position:fixed`) that answers to the viewport, not to the bar — at least as wide as this
+// trigger, as wide as its longest name asks, and stopped one gutter short of the screen's right
+// edge (CustomSelect's panelBox) — so nothing it does can widen the bar.
 //
 // ⚠⚠ TWO MECHANISMS STILL BOUND A NAME, BUT THEY NO LONGER AGREE BY CONSTRUCTION THE WAY TWO FIXED
 // CONSTANTS DID. store/presets' MAX_PRESET_NAME is now a generous, DEVICE-INDEPENDENT ceiling for
@@ -250,12 +250,12 @@ export default function PresetSwitcher({
       ariaLabel="Preset"
       showChevron
       pressDrag
-      // The portaled menu takes THIS trigger's live width instead of shrink-wrapping to the
-      // widest preset name. The trigger already fills the row's leftover space (w-full inside
-      // main.tsx's flex-1 min-w-0), so the menu now fills it too — no more a narrow dropdown under
-      // a wide trigger, and still nothing that can widen the bar (the panel answers to the
-      // viewport, and 90vw still clamps it). The mode selector keeps the default 'content'.
-      dropdownWidth="match-trigger"
+      // The portaled menu is never narrower than THIS trigger — which already fills the row's
+      // leftover space (w-full inside main.tsx's flex-1 min-w-0), so there is no narrow dropdown
+      // under a wide trigger — and it is wider whenever a name needs it: a name may be as long as
+      // this trigger can show, and a row shows less of it than the trigger does at the same width
+      // (CustomSelect's panelBox has the whole argument). The mode selector keeps 'content'.
+      dropdownWidth="at-least-trigger"
       // The mode selector's trigger classes, CHARACTER FOR CHARACTER, plus two the mode selector
       // does NOT wear — the two controls sit side by side in the same bar, so anything that
       // differed without a reason would read as one of them being wrong, and these two have one.

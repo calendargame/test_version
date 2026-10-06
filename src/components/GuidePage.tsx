@@ -1220,7 +1220,11 @@ export default function GuidePage({
             are still there when you switch back, until you press Reset or close the app.
           </li>
           <li>
-            A long name is cut short with an … so the bar can never be pushed wider than the screen.
+            The list shows each name in full: it is at least as wide as the control it opens from,
+            wider when a name needs it, and stops only at the edge of the screen — the same in the ⚙
+            menu&apos;s <b>Open in</b> list. The control in the bar is where a name can be cut short
+            with an …, so the bar can never be pushed wider than the screen; that only happens to a
+            name made on a wider screen than the one you are holding.
           </li>
         </UL>
         <Subhead>Making and managing them</Subhead>

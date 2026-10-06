@@ -956,7 +956,7 @@ export function SettingsPanel({
                 options={openInOptions}
                 ariaLabel="Open in"
                 showChevron
-                dropdownWidth="match-trigger"
+                dropdownWidth="at-least-trigger"
                 className="w-full min-w-0 border surface-tray rounded-xl px-3 py-1.5 pr-6 text-xs font-medium text-left text-(--tx-100-80) focus-ring"
               />
             </div>
