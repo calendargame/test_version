@@ -179,6 +179,31 @@ export function observeScrollExtent(el: HTMLElement, onChange: () => void): () =
   }
 }
 
+// ── WATCHING A SCROLLER'S EDGES, AND COMMITTING THE ANSWER IN THE FRAME THAT ASKED ──────────────
+// The one way an edge evaluator is attached to a scroller: `evaluate` runs on every scroll and on
+// every change of the scroll extent (observeScrollExtent above), and returns the detach.
+// ★ INSIDE flushSync. An edge evaluator writes two kinds of thing: --shade, straight onto the DOM,
+// and the fade-mask CLASS, which is React state. The browser dispatches a scroll event (and a
+// resize observation) in the frame's own rendering steps, just before it paints — and React does
+// not render an update made there until a later task, which is after that paint. So the shadow
+// moved with the scroll and the fade arrived one frame behind it: a list scrolled off its top edge
+// showed one frame with the shadow and no fade, and one scrolled back showed a frame of fade over
+// nothing. flushSync renders the update before the handler returns, so both land in the frame that
+// shows the scroll. It costs nothing on the frames that move no boundary — React bails on a
+// setState to the value already held, so there is nothing to flush — which is nearly all of them.
+// ⚠ ONLY FROM THE BROWSER'S CALLBACKS, never from a layout effect: React refuses a flushSync while
+// it is already rendering, and has no need of one there (an update made in a layout effect is
+// rendered before the paint anyway). So the caller's own first evaluation is a plain call.
+export function watchScrollEdges(el: HTMLElement, evaluate: () => void): () => void {
+  const commit = () => flushSync(evaluate)
+  el.addEventListener('scroll', commit, { passive: true })
+  const stopExtent = observeScrollExtent(el, commit)
+  return () => {
+    el.removeEventListener('scroll', commit)
+    stopExtent()
+  }
+}
+
 // Scroll-edge state for one scroll region: which edges have content extending past them.
 //   scrolledFromTop → feed the top fade mask
 //   atBottom        → feed the bottom fade mask
@@ -200,7 +225,8 @@ export function observeScrollExtent(el: HTMLElement, onChange: () => void): () =
 // indicators.
 // A scroll listener tracks the user; observeScrollExtent above tracks everything else the answer
 // depends on — the region's own box AND its content (the history list gaining its tenth entry
-// mid-view, or Show Codes opening in the card above it and taking the list's height with it).
+// mid-view, or Show Codes opening in the card above it and taking the list's height with it). Both
+// are attached by watchScrollEdges, which commits each answer in the frame that asked for it.
 // A LAYOUT effect, matching the app-scroller effect in main.tsx that already argues the point:
 // evaluated after paint, a region would show one frame with no fade and no boundary shadow before
 // the indicators arrive. That frame is cheap to avoid and it is the frame the eye lands on when a
@@ -248,11 +274,9 @@ export function useScrollEdgeState<T extends HTMLElement>(
       writeShade(bottomEl, edgeShade(gaps.bottom, BOTTOM_EDGE_BAND_PX, rampPx))
     }
     evaluate()
-    el.addEventListener('scroll', evaluate, { passive: true })
-    const stopExtent = observeScrollExtent(el, evaluate)
+    const stopWatching = watchScrollEdges(el, evaluate)
     return () => {
-      el.removeEventListener('scroll', evaluate)
-      stopExtent()
+      stopWatching()
       // Deactivation reset. The FLAGS can only reset here — they are React state, and writing
       // them from the effect body would trip react-hooks/set-state-in-effect (a CI error here).
       // The SHADES reset in both places: here on teardown, and in the no-scroller path above,

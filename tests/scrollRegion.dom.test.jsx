@@ -363,3 +363,49 @@ describe('the shared defaults card caps itself against a short viewport (round 1
     ]).toEqual(['1.000', '0.000'])
   })
 })
+
+// ── The fade arrives in the frame that shows the scroll (round 24) ───────────────────────────────
+// A region's boundary shadow is written straight to the DOM and its fade-mask class is React state.
+// The browser dispatches a scroll event in the frame's own rendering steps, just before it paints,
+// and React does not render an update made there until a later task — so the fade used to land one
+// frame behind the shadow. The watcher now commits inside the event (scrollRegion's
+// watchScrollEdges), and that is what these pin: the scroll event is dispatched OUTSIDE act(), as
+// the browser dispatches it, and the class must already be right when the dispatch returns.
+describe('a scroll region’s fade class is committed inside the scroll event', () => {
+  afterEach(cleanup)
+  const history = Array.from({ length: 12 }, (_, i) => entry(i))
+  const fades = (el) => el.className.split(/\s+/).filter((c) => c.startsWith('fade-scroll-'))
+
+  it('scrolling off the top edge, into the middle and down to the end', () => {
+    const { container } = render(<LookupCard history={history} />)
+    const list = container.querySelector('ul')
+    act(() => {
+      setScrollGeometry(list, { scrollTop: 0, scrollHeight: 1800, clientHeight: 600 })
+      list.dispatchEvent(new Event('scroll'))
+    })
+    expect(fades(list)).toEqual(['fade-scroll-bottom'])
+    // From here on: no act(). Each assertion reads the DOM straight after the event returns.
+    list.scrollTop = 300
+    list.dispatchEvent(new Event('scroll'))
+    expect(fades(list)).toEqual(['fade-scroll-both'])
+    list.scrollTop = 1200
+    list.dispatchEvent(new Event('scroll'))
+    expect(fades(list)).toEqual(['fade-scroll-top'])
+    list.scrollTop = 0
+    list.dispatchEvent(new Event('scroll'))
+    expect(fades(list)).toEqual(['fade-scroll-bottom'])
+  })
+
+  it('a scroll that crosses no boundary commits nothing and changes nothing', () => {
+    const { container } = render(<LookupCard history={history} />)
+    const list = container.querySelector('ul')
+    act(() => {
+      setScrollGeometry(list, { scrollTop: 300, scrollHeight: 1800, clientHeight: 600 })
+      list.dispatchEvent(new Event('scroll'))
+    })
+    const before = list.className
+    list.scrollTop = 400
+    list.dispatchEvent(new Event('scroll'))
+    expect(list.className).toBe(before)
+  })
+})

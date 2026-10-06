@@ -31,7 +31,7 @@ import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
 import StorageUsagePopup from './components/StorageUsagePopup.jsx'
 import { useStorageUsage, watchStorageUsage, refreshStorageUsage } from './store/storageUsage.js'
-import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, observeScrollExtent, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
+import { SCROLLER_CORE_CLASS, scrollFadeClass, scrollEdgeGaps, isAtBottom, isScrolledFromTop, edgeShade, readShadeRampPx, writeShade, watchScrollEdges, BOTTOM_EDGE_BAND_PX } from './components/scrollRegion.js'
 import { installPointerGestures } from './lib/pointerGestures.js'
 import { installSelectAllOnEntry } from './lib/textEntry.js'
 import { readBuildStamp, writeBuildStamp, buildChanged } from './lib/buildStamp.js'
@@ -1033,9 +1033,11 @@ import BlitzMode from './modes/BlitzMode.jsx'
           setAppScrolledFromTop(!guide&&isScrolledFromTop(gaps));
         };
         evaluate();
-        el.addEventListener('scroll',evaluate,{passive:true});
-        const stopExtent=observeScrollExtent(el,evaluate);
-        return()=>{el.removeEventListener('scroll',evaluate);stopExtent();};
+        // …and from here on through the shared watcher, which commits each answer in the frame that
+        // asked for it (components/scrollRegion's watchScrollEdges says why): the two booleans are
+        // React state, and left to React's own schedule the page's fade arrived a frame behind the
+        // bar's shadow, which is written straight to the DOM.
+        return watchScrollEdges(el,evaluate);
       },[mode,paintBarShade]);
       // Root-scroll invariant on MOUNT and on BFCache restore — nothing else. The division of
       // labour, stated explicitly because this effect used to overreach (round 8):
