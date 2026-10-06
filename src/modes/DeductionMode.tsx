@@ -46,7 +46,12 @@ import { parkedFlag } from '../engine/parkedHistory.js'
 // timer readouts were hidden — which is exactly the set the confirm resets (modeHooks'
 // useStatsHideToggles). Named, because the one timing switch covers all three sub-types and the
 // one on screen need not be among them.
-const enableResetBody = (names: string[]): string => {
+// `yearUnavailable`: Year is one of them, and its button is greyed out — the Year Range no longer
+// allows a Year puzzle. Its stats are still saved and are still reset, so the popup still names it;
+// but named bare, it pointed at a sub-type the player could not open to see what was being reset,
+// and read as if the popup had the wrong one. So it says why the button is off and that the stats
+// are real.
+const enableResetBody = (names: string[], yearUnavailable: boolean): string => {
   const [where, what, kept] =
     names.length === 3
       ? ['all three sub-types', "all three sub-types' stats", 'The other modes keep theirs']
@@ -61,7 +66,10 @@ const enableResetBody = (names: string[]): string => {
             "that sub-type's stats",
             'The other modes and sub-types keep theirs',
           ]
-  return `The timer readouts were hidden while stats changed in ${where}, so turning them back on has to reset ${what} for the preset you are on. ${kept}, and no other preset is touched.`
+  const year = yearUnavailable
+    ? ' The Year sub-type is switched off by your current Year Range, but its stats are still saved, and this resets them.'
+    : ''
+  return `The timer readouts were hidden while stats changed in ${where}, so turning them back on has to reset ${what} for the preset you are on.${year} ${kept}, and no other preset is touched.`
 }
 
 // ============================================================
@@ -473,9 +481,10 @@ function DeductionMode({
         onCancel={closeEnableReset}
         onConfirm={confirmEnableReset}
         title="Enable and Reset Stats?"
-        body={enableResetBody(
-          silos.filter((s) => timingMismatch(s.eng.state.stats)).map((s) => s.name),
-        )}
+        body={(() => {
+          const names = silos.filter((s) => timingMismatch(s.eng.state.stats)).map((s) => s.name)
+          return enableResetBody(names, names.includes('Year') && !yearSubPossible)
+        })()}
         confirmLabel="Enable and Reset Stats"
         id="enable-reset-stats-deduction"
       />

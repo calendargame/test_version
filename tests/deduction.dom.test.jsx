@@ -1029,4 +1029,55 @@ describe('Deduction — turning timing back on settles all three sub-types', () 
     confirm()
     expect(survey()).toEqual(['Day: new 0/0', 'Month: new 0/0', 'Year: new 0/0'])
   })
+
+  // The popup can name Year while Year's button is greyed out: its stats moved with timing hidden,
+  // and the Year Range was then narrowed to one that cannot build a Year puzzle. The reset still
+  // covers it (the one timing switch does), so it is still named — and the popup says why a
+  // sub-type the player cannot open is on the list, instead of naming it bare.
+  const YEAR_OFF =
+    'The Year sub-type is switched off by your current Year Range, but its stats are still saved, and this resets them.'
+  it('names a Year sub-type the Year Range has switched off, and says so', () => {
+    mountApp()
+    switchToDeduction()
+    clickCtrl('Year')
+    answerCorrect() // Year 1/1 with timing hidden: a credit with no time
+    act(() => {
+      useSettings.getState().setMinY(1900)
+      useSettings.getState().setMaxY(1900) // one year: no Year puzzle can be built
+    })
+    expect(isOffered(ctrl('Year'))).toBe(false)
+    tapStat('Last')
+    expect(dialog().textContent).toContain('stats changed in the Year sub-type,')
+    expect(dialog().textContent).toContain(YEAR_OFF)
+    confirm()
+    expect(dialog()).toBeNull()
+    expect(statValue('Last')).toBe('—')
+  })
+
+  it('…in a list of two, too — and says nothing of the kind while Year can be opened', () => {
+    mountApp()
+    switchToDeduction()
+    answerCorrect() // Day 1/1
+    clickCtrl('Year')
+    answerCorrect() // Year 1/1
+    tapStat('Last')
+    expect(dialog().textContent).toContain('stats changed in the Day and Year sub-types,')
+    expect(dialog().textContent).not.toContain('switched off')
+    act(() => fireEvent.keyDown(document, { key: 'Escape' }))
+    act(() => {
+      useSettings.getState().setMinY(1900)
+      useSettings.getState().setMaxY(1900)
+    })
+    tapStat('Last')
+    expect(dialog().textContent).toContain('stats changed in the Day and Year sub-types,')
+    expect(dialog().textContent).toContain(YEAR_OFF)
+    // A mismatch that does NOT include Year never mentions it, greyed out or not.
+    confirm()
+    tapStat('Last') // hide timing again
+    clickCtrl('Month')
+    answerCorrect() // Month 1/1, timing hidden
+    tapStat('Last')
+    expect(dialog().textContent).toContain('stats changed in the Month sub-type,')
+    expect(dialog().textContent).not.toContain('switched off')
+  })
 })

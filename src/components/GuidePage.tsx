@@ -1432,7 +1432,9 @@ export default function GuidePage({
           three at once, whichever one is on screen: each sub-type gets a new puzzle (unless its
           puzzle was already answered wrong, revealed, or shown codes), and the popup opens if the
           score and times no longer match in any of them. It names the sub-types that will be reset
-          — only those are; the others keep their stats.
+          — only those are; the others keep their stats. One of them can be Year while the Year
+          button is greyed out (your Year Range no longer allows a Year puzzle): its stats are still
+          saved and still reset, and the popup says so.
         </p>
         <p>
           When Save Stats is off, the whole stats strip dims site-wide (every mode, including MoX)
