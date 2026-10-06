@@ -23,6 +23,7 @@ import { screen, within, cleanup, fireEvent, act } from '@testing-library/react'
 import { useSettings, SETTINGS_DEFAULTS } from '../src/store/settings.js'
 import { useModePrefs, MODE_PREFS_DEFAULTS } from '../src/store/modePrefs.js'
 import { useUserDefaults } from '../src/store/userDefaults.js'
+import { PRACTICE_MODES } from '../src/lib/modes.js'
 import {
   mountApp,
   openSettings,
@@ -53,8 +54,16 @@ const saveSnapshot = () => {
 }
 // A row's tap-to-type readout (SliderValueEditor display mode) inside a dialog.
 const readout = (dialog, label) => within(dialog).getByRole('button', { name: `Edit ${label}` })
-// The shared card's four row labels, in their fixed order (the parity contract).
-const ROW_LABELS = ['MoX Run Length', 'Flash Speed', 'Blitz Round Timer', 'Blitz Question Timer']
+// The shared card's four row labels, IN THE APP'S ONE MODE ORDER (lib/modes) — each mode's rows
+// where that mode stands in the list, so a reorder there reorders the card. They were once typed
+// out here and in the card in the order the modes used to have (MoX first), and the reorder that
+// moved the mode menu, Default Mode's pills and How to Play left both behind.
+const ROWS_OF_MODE = {
+  aox: ['MoX Run Length'],
+  flash: ['Flash Speed'],
+  blitz: ['Blitz Round Timer', 'Blitz Question Timer'],
+}
+const ROW_LABELS = PRACTICE_MODES.flatMap((mode) => ROWS_OF_MODE[mode.id] ?? [])
 const expectRowsInOrder = (dialog) => {
   const els = ROW_LABELS.map((t) => within(dialog).getByText(t))
   for (let i = 1; i < els.length; i++)
@@ -302,6 +311,22 @@ describe('The defaults manager', () => {
     expect(savedManager()).toBeInTheDocument() // and the manager now opens on the saved view
   })
 
+  it('the rows follow the mode list: Flash, then MoX, then Blitz', () => {
+    // The list today is Classic, Deduction, Flash, MoX, Blitz; the first two set nothing here.
+    expect(ROW_LABELS).toEqual([
+      'Flash Speed',
+      'MoX Run Length',
+      'Blitz Round Timer',
+      'Blitz Question Timer',
+    ])
+    // …and every mode that has rows is a mode in the list (a renamed id would silently drop one).
+    expect(Object.keys(ROWS_OF_MODE).sort()).toEqual(
+      PRACTICE_MODES.map((mode) => mode.id)
+        .filter((id) => id in ROWS_OF_MODE)
+        .sort(),
+    )
+  })
+
   it('SHARED-CARD PARITY: both popups render the same rows, sliders, and readouts — the AoX box is the one difference', () => {
     act(() => useModePrefs.getState().setFlashMs(800))
     mountApp()
@@ -431,12 +456,13 @@ describe('The defaults manager', () => {
     const dialog = managerDialog()
     // At rest (round 21) the card has no Close button, but it is NOT control-free: the four row
     // readouts are their own "Edit …" buttons and three rows also carry a range slider. First and
-    // last in DOM order are the MoX and Blitz-Question readouts.
+    // last in DOM order are the first row's slider (Flash Speed — the rows are in the mode list's
+    // order) and the Blitz-Question readout.
     const scrim = dialog.closest('[data-settings-modal]')
     const stops = [...scrim.querySelectorAll('button,input')]
     const first = stops[0]
     const last = stops[stops.length - 1]
-    expect(first).toBe(readout(dialog, 'MoX Run Length'))
+    expect(first).toBe(within(dialog).getByRole('slider', { name: 'Flash Speed' }))
     expect(last).toBe(readout(dialog, 'Blitz Question Timer'))
     // Tab from the LAST control wraps to the first instead of escaping to the panel under the
     // scrim; Shift+Tab from the FIRST wraps back to the last.

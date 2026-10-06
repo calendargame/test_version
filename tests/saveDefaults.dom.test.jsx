@@ -602,16 +602,17 @@ describe('Save Defaults + gear indicator', () => {
     const dialog = modalCard('Save current settings as your defaults?')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(document.activeElement).toBe(dialog) // focus landed IN the dialog on open
-    // Tab from the LAST control wraps to the first (the N field) instead of escaping to the panel
-    // under the scrim (where Enter would edit the LIVE store while Save persists the open snapshot).
+    // Tab from the LAST control wraps to the first (the Flash Speed slider — the rows are in the
+    // mode list's order) instead of escaping to the panel under the scrim (where Enter would edit
+    // the LIVE store while Save persists the open snapshot).
     const save = btn('Save')
     act(() => {
       save.focus()
       fireEvent.keyDown(save, { key: 'Tab' })
     })
-    expect(document.activeElement).toBe(nField())
+    expect(document.activeElement).toBe(flashSlider())
     // Shift+Tab from the FIRST control wraps back to the last.
-    act(() => fireEvent.keyDown(nField(), { key: 'Tab', shiftKey: true }))
+    act(() => fireEvent.keyDown(flashSlider(), { key: 'Tab', shiftKey: true }))
     expect(document.activeElement).toBe(save)
   })
 

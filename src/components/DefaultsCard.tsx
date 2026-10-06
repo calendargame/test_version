@@ -76,7 +76,7 @@
 // Stateless by design — the popup lifecycle (portal, scrim, Escape, Back, focus) is the shared
 // shell's (components/Popup), which both callers in components/SettingsPanel wrap this card in;
 // edits touch only the caller's pending snapshot via setPrefs.
-import { useRef } from 'react'
+import { Fragment, useRef, type ReactNode } from 'react'
 import type { PrefDefaults } from '../store/userDefaults.js'
 import { normalizeAoxN } from '../store/userDefaults.js'
 import { NUM_INPUT_BASE, NUM_INPUT_CLASS } from './controlClasses.js'
@@ -84,6 +84,7 @@ import { MODAL_CARD_CLASS, MODAL_CARD_SHADOW } from './modalContract.js'
 import { SCROLL_REGION_CLASS, scrollFadeClass, useScrollEdgeState } from './scrollRegion.js'
 import { fmtBlitzT, fmtFlashT, SLIDER_READOUT_WIDEST } from '../lib/modeFormat.js'
 import SliderValueEditor from './SliderValueEditor.jsx'
+import { PRACTICE_MODES, type PracticeModeId } from '../lib/modes.js'
 
 const NUM_INPUT_DIRTY_CLASS = NUM_INPUT_BASE + ' btn-solid border border-transparent'
 function DefaultsCard({
@@ -128,137 +129,127 @@ function DefaultsCard({
   const headRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLDivElement>(null)
   const { scrolledFromTop, atBottom } = useScrollEdgeState(rowsRef, true, headRef, footRef)
-  return (
-    <div
-      tabIndex={-1}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      style={MODAL_CARD_SHADOW}
-      className={`${MODAL_CARD_CLASS} flex flex-col max-h-[calc(100dvh_-_2rem)]`}
-    >
-      {/* The three space-y-3 rhythms below reproduce the single card-level one the flat card had:
-          title→subline, the gaps between the four rows, and note→buttons were all this same gap,
-          and grouping them under the header / scroller / footer changes none of them. */}
-      <div ref={headRef} className="elev-shadow-down shrink-0 px-4 space-y-3">
-        <div id={titleId} className="text-sm font-semibold text-(--tx-50)">
-          {title}
-        </div>
-        {subline && <div className="text-xs text-(--tx-200-80)">{subline}</div>}
-      </div>
-      <div
-        ref={rowsRef}
-        className={`${SCROLL_REGION_CLASS} min-h-0 space-y-3 ${scrollFadeClass(scrolledFromTop, atBottom)}`}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-(--tx-200-80) shrink-0">MoX Run Length</span>
-          {/* ★ ESCAPE DISCARDS — round 15. It used to normalize-COMMIT, which made this the
-                only field in the popup where Escape kept the edit: the tap-to-type readouts beside
-                the three sliders (SliderValueEditor, the `manage` branch below) have reverted
-                WITHOUT committing since round 2, and the ⚙ Year Range boxes since round 14. Escape
-                now means one thing in every box you can type a NUMBER into — Enter keeps the edit
-                and lets go, Escape throws it away and lets go, and the container is left for a
-                second Escape (here, the popup's, once the field no longer has the keyboard).
-                DISMISSING the popup — that second Escape, a tap on the scrim, Android Back — is
-                what discards the WHOLE popup now that the Cancel button is gone; this is the
-                field.
-                ★ AND SINCE ROUND 17 IT IS APP-WIDE: the Lookup date box (components/LookupCard)
-                was the one text field outside the contract, and it is on it now — so neither this
-                note nor the guide's Keyboard Input bullet names an exception any more.
-                ⚠ THE DISCARD TARGET IS CAPTURED ON FOCUS, because `prefs.aoxN` is the pending
-                snapshot itself — onChange rewrites it on every keystroke, so the value being
-                discarded back to is gone by the time Escape arrives. Same shape, same reason, as
-                the AoX mode screen's own run-length box.
-                ⚠ NO flushSync HERE, unlike the ⚙ year boxes, and the difference is real rather
-                than an inconsistency: commitAoxN is a FUNCTIONAL setPrefs updater, so the commit
-                the blur below fires reads the reverted value React has already queued instead of a
-                stale render closure. The year boxes' commit parses a text mirror and clamps it
-                against the other field, which no updater can express — hence flushSync there.
-                ⚠ NOTHING ELSE ANSWERS THIS PRESS: Escape closes the top open layer
-                (components/overlayStack) only when no text box has the keyboard, which is what
-                leaves the first press to the field and the second to the popup. */}
-          {manage ? (
-            <SliderValueEditor
-              value={+normalizeAoxN(prefs.aoxN)}
-              min={2}
-              max={1000}
-              snap={1}
-              accent={dirtyAox}
-              inputMode="numeric"
-              label="MoX Run Length"
-              editLabel="MoX Run Length"
-              format={String}
-              toText={String}
-              widest="1000"
-              onCommit={(v) => setPrefs((p) => ({ ...p, aoxN: String(v) }))}
-            />
-          ) : (
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              aria-label="MoX Run Length"
-              value={prefs.aoxN}
-              onChange={(e) => {
-                const v = e.target.value
-                if (v === '' || /^\d*$/.test(v)) setPrefs((p) => ({ ...p, aoxN: v }))
-              }}
-              onFocus={() => {
-                aoxNAtFocusRef.current = prefs.aoxN
-              }}
-              onBlur={commitAoxN}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  commitAoxN()
-                  e.currentTarget.blur()
-                } else if (e.key === 'Escape') {
-                  const at = aoxNAtFocusRef.current
-                  setPrefs((p) => ({ ...p, aoxN: at }))
-                  e.currentTarget.blur()
-                }
-              }}
-              className={`${dirtyAox ? NUM_INPUT_DIRTY_CLASS : NUM_INPUT_CLASS} py-1 w-14 shrink-0`}
-            />
-          )}
-        </div>
-        <div className="space-y-1">
-          <div className="text-xs text-(--tx-200-80)">Flash Speed</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min="100"
-              max="5000"
-              step="100"
-              aria-label="Flash Speed"
-              value={prefs.flashMs}
-              onChange={(e) => {
-                const v = +e.target.value
-                setPrefs((p) => ({ ...p, flashMs: v }))
-              }}
-              style={
-                {
-                  '--rng-fill': Math.round(((prefs.flashMs - 100) / 4900) * 100) + '%',
-                } as React.CSSProperties
+  // ★ THE ROWS, BY THE MODE EACH BELONGS TO — and drawn in the app's ONE mode order (lib/modes'
+  // PRACTICE_MODES), like the mode menu, Default Mode's pills and How to Play. They used to be
+  // written out in the order the modes once had (MoX first), so the reorder that moved every other
+  // list left this card behind. A mode with nothing to set here (Classic, Deduction) has no entry;
+  // a new mode that has something adds one and lands in its place by itself.
+  const rowsByMode: Partial<Record<PracticeModeId, ReactNode>> = {
+    aox: (
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-(--tx-200-80) shrink-0">MoX Run Length</span>
+        {/* ★ ESCAPE DISCARDS — round 15. It used to normalize-COMMIT, which made this the
+                  only field in the popup where Escape kept the edit: the tap-to-type readouts beside
+                  the three sliders (SliderValueEditor, the `manage` branch below) have reverted
+                  WITHOUT committing since round 2, and the ⚙ Year Range boxes since round 14. Escape
+                  now means one thing in every box you can type a NUMBER into — Enter keeps the edit
+                  and lets go, Escape throws it away and lets go, and the container is left for a
+                  second Escape (here, the popup's, once the field no longer has the keyboard).
+                  DISMISSING the popup — that second Escape, a tap on the scrim, Android Back — is
+                  what discards the WHOLE popup now that the Cancel button is gone; this is the
+                  field.
+                  ★ AND SINCE ROUND 17 IT IS APP-WIDE: the Lookup date box (components/LookupCard)
+                  was the one text field outside the contract, and it is on it now — so neither this
+                  note nor the guide's Keyboard Input bullet names an exception any more.
+                  ⚠ THE DISCARD TARGET IS CAPTURED ON FOCUS, because `prefs.aoxN` is the pending
+                  snapshot itself — onChange rewrites it on every keystroke, so the value being
+                  discarded back to is gone by the time Escape arrives. Same shape, same reason, as
+                  the AoX mode screen's own run-length box.
+                  ⚠ NO flushSync HERE, unlike the ⚙ year boxes, and the difference is real rather
+                  than an inconsistency: commitAoxN is a FUNCTIONAL setPrefs updater, so the commit
+                  the blur below fires reads the reverted value React has already queued instead of a
+                  stale render closure. The year boxes' commit parses a text mirror and clamps it
+                  against the other field, which no updater can express — hence flushSync there.
+                  ⚠ NOTHING ELSE ANSWERS THIS PRESS: Escape closes the top open layer
+                  (components/overlayStack) only when no text box has the keyboard, which is what
+                  leaves the first press to the field and the second to the popup. */}
+        {manage ? (
+          <SliderValueEditor
+            value={+normalizeAoxN(prefs.aoxN)}
+            min={2}
+            max={1000}
+            snap={1}
+            accent={dirtyAox}
+            inputMode="numeric"
+            label="MoX Run Length"
+            editLabel="MoX Run Length"
+            format={String}
+            toText={String}
+            widest="1000"
+            onCommit={(v) => setPrefs((p) => ({ ...p, aoxN: String(v) }))}
+          />
+        ) : (
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            aria-label="MoX Run Length"
+            value={prefs.aoxN}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === '' || /^\d*$/.test(v)) setPrefs((p) => ({ ...p, aoxN: v }))
+            }}
+            onFocus={() => {
+              aoxNAtFocusRef.current = prefs.aoxN
+            }}
+            onBlur={commitAoxN}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitAoxN()
+                e.currentTarget.blur()
+              } else if (e.key === 'Escape') {
+                const at = aoxNAtFocusRef.current
+                setPrefs((p) => ({ ...p, aoxN: at }))
+                e.currentTarget.blur()
               }
-              className="flex-1"
-            />
-            <SliderValueEditor
-              value={prefs.flashMs}
-              min={100}
-              max={5000}
-              snap={100}
-              accent={dirtyFlash}
-              inputMode="decimal"
-              label="Flash Speed"
-              format={fmtFlashT}
-              toText={(v) => String(v / 1000)}
-              fromText={(n) => n * 1000}
-              widest={SLIDER_READOUT_WIDEST}
-              onCommit={(v) => setPrefs((p) => ({ ...p, flashMs: v }))}
-            />
-          </div>
+            }}
+            className={`${dirtyAox ? NUM_INPUT_DIRTY_CLASS : NUM_INPUT_CLASS} py-1 w-14 shrink-0`}
+          />
+        )}
+      </div>
+    ),
+    flash: (
+      <div className="space-y-1">
+        <div className="text-xs text-(--tx-200-80)">Flash Speed</div>
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min="100"
+            max="5000"
+            step="100"
+            aria-label="Flash Speed"
+            value={prefs.flashMs}
+            onChange={(e) => {
+              const v = +e.target.value
+              setPrefs((p) => ({ ...p, flashMs: v }))
+            }}
+            style={
+              {
+                '--rng-fill': Math.round(((prefs.flashMs - 100) / 4900) * 100) + '%',
+              } as React.CSSProperties
+            }
+            className="flex-1"
+          />
+          <SliderValueEditor
+            value={prefs.flashMs}
+            min={100}
+            max={5000}
+            snap={100}
+            accent={dirtyFlash}
+            inputMode="decimal"
+            label="Flash Speed"
+            format={fmtFlashT}
+            toText={(v) => String(v / 1000)}
+            fromText={(n) => n * 1000}
+            widest={SLIDER_READOUT_WIDEST}
+            onCommit={(v) => setPrefs((p) => ({ ...p, flashMs: v }))}
+          />
         </div>
+      </div>
+    ),
+    blitz: (
+      <>
         <div className="space-y-1">
           <div className="text-xs text-(--tx-200-80)">Blitz Round Timer</div>
           <div className="flex items-center gap-2">
@@ -331,6 +322,34 @@ function DefaultsCard({
             />
           </div>
         </div>
+      </>
+    ),
+  }
+  return (
+    <div
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      style={MODAL_CARD_SHADOW}
+      className={`${MODAL_CARD_CLASS} flex flex-col max-h-[calc(100dvh_-_2rem)]`}
+    >
+      {/* The three space-y-3 rhythms below reproduce the single card-level one the flat card had:
+          title→subline, the gaps between the four rows, and note→buttons were all this same gap,
+          and grouping them under the header / scroller / footer changes none of them. */}
+      <div ref={headRef} className="elev-shadow-down shrink-0 px-4 space-y-3">
+        <div id={titleId} className="text-sm font-semibold text-(--tx-50)">
+          {title}
+        </div>
+        {subline && <div className="text-xs text-(--tx-200-80)">{subline}</div>}
+      </div>
+      <div
+        ref={rowsRef}
+        className={`${SCROLL_REGION_CLASS} min-h-0 space-y-3 ${scrollFadeClass(scrolledFromTop, atBottom)}`}
+      >
+        {PRACTICE_MODES.map((mode) =>
+          rowsByMode[mode.id] ? <Fragment key={mode.id}>{rowsByMode[mode.id]}</Fragment> : null,
+        )}
       </div>
       <div ref={footRef} className="elev-shadow-up shrink-0 px-4 space-y-3">
         {manage &&
