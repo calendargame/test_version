@@ -33,6 +33,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { App } from '../src/main.jsx'
+import { KEYBOARD_ATTR } from '../src/lib/keyboardFocus.js'
 import { useSettings } from '../src/store/settings.js'
 import { SCROLLER_CORE_CLASS } from '../src/components/scrollRegion.js'
 import { installGuideScroller } from './helpers/guideScroller.jsx'
@@ -88,17 +89,29 @@ describe('How to Play scrolls the app container — one scroller, every screen',
     // replacement is the claim that NOTHING is written there any more: the guide is now a change
     // of what a container shows, not a change of what the page is. Asserted twice over — the live
     // DOM across a full round trip, and the source, so a dormant copy of the rule cannot survive.
+    // ONE attribute is written on <html> by something that is not a mode, and this case drives the
+    // app with keys, so it meets it: lib/keyboardFocus marks the document while the keyboard is
+    // what is being used (it is what the focus ring is drawn from — tests/keyboardFocus). It says
+    // how the app is being driven, never which page is showing: the same mark for H as for K, gone
+    // again with the app. So it is asserted to be exactly that, and left out of the comparison.
     const { unmount } = mountApp()
     const html = document.documentElement
-    const names = () => [...html.attributes].map((a) => a.name).sort()
+    const names = () =>
+      [...html.attributes]
+        .map((a) => a.name)
+        .filter((n) => n !== KEYBOARD_ATTR)
+        .sort()
     const launch = names()
     expect(launch).not.toContain('data-doc-scroll')
+    expect(html.hasAttribute(KEYBOARD_ATTR)).toBe(false)
     for (const key of ['H', 'K', 'H']) {
       pressKey(key)
       expect(names()).toEqual(launch)
+      expect(html.hasAttribute(KEYBOARD_ATTR)).toBe(true)
     }
     unmount()
     expect(names()).toEqual(launch)
+    expect(html.hasAttribute(KEYBOARD_ATTR)).toBe(false)
     // …and in the source, as DECLARATIONS and CALLS rather than text: both files still discuss the
     // old mechanism at length, and a must-not-appear pin has to read the code, not the prose that
     // explains why the code is gone.
