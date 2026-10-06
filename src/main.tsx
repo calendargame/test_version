@@ -25,7 +25,7 @@ import GuidePage from './components/GuidePage.jsx'
 import LookupCard from './components/LookupCard.jsx'
 import W5Logo from './components/W5Logo.jsx'
 import PresetSwitcher from './components/PresetSwitcher.jsx'
-import { isAppWidePopupOpen, isPageCovered, isPopupOpen, useBackButton, useLayer, usePopupOpen } from './components/overlayStack.js'
+import { closeLists, isAppWidePopupOpen, isPageCovered, isPopupOpen, useBackButton, useLayer, usePopupOpen } from './components/overlayStack.js'
 import { useYearRangeMirrors } from './components/useYearRangeMirrors.js'
 import { SettingsPanel } from './components/SettingsPanel.jsx'
 import StorageFullNotice from './components/StorageFullNotice.jsx'
@@ -1582,9 +1582,13 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // Category 3a/3b: a page's letter (lib/modes' PAGES carries each one) — direct switchMode, no
         // DOM button per page. Every letter goes TO its page except How to Play's, which TOGGLES:
         // pressed on the guide it returns to the previous non-guide page.
+        // ★ EITHER KIND CLOSES AN OPEN DROPDOWN LIST AS IT ACTS (overlayStack's closeLists argues it):
+        // the press is about the whole screen, and a list left open over the result — still holding
+        // the keyboard — belongs to neither the old screen nor the new one.
         const page=PAGE_BY_KEY[dataKey];
         if(page){
           e.preventDefault();
+          closeLists();
           if(page.id==='guide')switchMode(m=>m==='guide'?(prevNonGuideModeRef.current||'classic'):'guide');
           else switchMode(page.id);
           setSettingsOpen(false);
@@ -1599,7 +1603,7 @@ import BlitzMode from './modes/BlitzMode.jsx'
         // false ⇒ the popup belongs to a mode screen (or is the storage-full notice over one).
         // When the panel IS open its own popups are children of it, and G still closes both
         // together (tests/settingsPanel.defaults) — that path is untouched.
-        if(dataKey==='G'){if(isPopupOpen()&&!settingsOpen)return;e.preventDefault();toggleSettings();return;}
+        if(dataKey==='G'){if(isPopupOpen()&&!settingsOpen)return;e.preventDefault();closeLists();toggleSettings();return;}
         // Category 2: data-key DOM walk for game-loop letters and arrows — GATED for the same
         // reason as Category 1, and it is the one that shipped the bug (Override, through a scrim).
         if(isPageCovered())return;

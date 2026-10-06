@@ -177,6 +177,25 @@ describe('CustomSelect — active-cursor highlight', () => {
 // swallow its value — "Mode" without "Classic", "Preset" without the preset. Both live call sites
 // are pinned end-to-end in tests/topBar.dom; these two cases are the component's own contract,
 // including the branch neither call site exercises (no ariaLabel at all).
+// A button answers Space with a click on the key's way UP, and not every browser drops that click
+// because the key-down was handled: the list opened on the press and closed again on the release.
+describe('Space on a list button acts on the way down, and only then', () => {
+  afterEach(() => {
+    cleanup()
+    document.getElementById('root')?.remove()
+  })
+
+  it('the key-up is swallowed, so no click follows it', () => {
+    const trigger = openWith()
+    fireEvent.click(trigger) // closed again, with the keyboard on its button
+    expect(screen.queryByRole('listbox')).toBeNull()
+    fireEvent.keyDown(trigger, { key: ' ' })
+    expect(screen.queryByRole('listbox')).not.toBeNull()
+    expect(fireEvent.keyUp(trigger, { key: ' ' })).toBe(false) // default prevented
+    expect(fireEvent.keyUp(trigger, { key: 'Enter' })).toBe(true) // only Space
+  })
+})
+
 describe('CustomSelect — the trigger names its setting AND its value', () => {
   afterEach(() => {
     cleanup()

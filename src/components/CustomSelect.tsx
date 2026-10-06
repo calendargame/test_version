@@ -423,6 +423,13 @@ export default function CustomSelect({
       handleToggle()
     }
   }
+  // ★ SPACE ACTS ON THE WAY DOWN, AND ONLY THEN. A button's own answer to Space is a click on the
+  // way UP, and not every browser drops that click because the key-down was handled (Firefox does
+  // not): the list would open on the press and close again on the release. Swallowing the key-up
+  // is what takes the click away everywhere.
+  const handleTriggerKeyUp = (e: React.KeyboardEvent) => {
+    if (e.key === ' ') e.preventDefault()
+  }
   // ★ THE OPEN LIST'S ENTRY IN THE APP'S STACK (components/overlayStack). listboxId is a stable
   // per-instance useId, so every select registers distinctly.
   //   • ESCAPE AND ANDROID BACK close it and hand the keyboard back to the trigger — and close ONLY
@@ -568,6 +575,7 @@ export default function CustomSelect({
             : undefined
         }
         onKeyDown={handleTriggerKeyDown}
+        onKeyUp={handleTriggerKeyUp}
         data-select-trigger={pressDrag || undefined}
         className={className}
         // Pin the trigger to its dropdown's measured outer width (triggerMatchesDropdown). Both

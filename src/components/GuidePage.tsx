@@ -1824,13 +1824,14 @@ export default function GuidePage({
             menu or a popup takes the keyboard off it, so <Kbd>Enter</Kbd> and <Kbd>Space</Kbd>{' '}
             can&apos;t press it again from behind, and closing gives the keyboard back to it. The
             mode letters and <Kbd>H</Kbd> still work: they leave the screen, closing the ⚙ menu and
-            taking any popup that belongs to the screen with it (a list that was open stays open
-            until you close it). <Kbd>G</Kbd> still closes the ⚙ menu together with any of its
-            popups, but does nothing while a game screen&apos;s own popup (such as a Reset Stats
-            question or a breakdown) is open. The two popups those keys can&apos;t take with them
-            are the ones that belong to no screen — the &quot;Your progress isn&apos;t being
-            saved&quot; notice and the <b>Storage used</b> breakdown: while one of them is up the
-            mode letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing either, until you close it.
+            any list that was open, and taking any popup that belongs to the screen with them.{' '}
+            <Kbd>G</Kbd> still opens the ⚙ menu, or closes it together with any of its popups, and
+            closes an open list as it does either — but it does nothing while a game screen&apos;s
+            own popup (such as a Reset Stats question or a breakdown) is open. The two popups those
+            keys can&apos;t take with them are the ones that belong to no screen — the &quot;Your
+            progress isn&apos;t being saved&quot; notice and the <b>Storage used</b> breakdown:
+            while one of them is up the mode letters, <Kbd>H</Kbd> and <Kbd>G</Kbd> do nothing
+            either, until you close it.
           </li>
           <li>
             <Kbd>Tab</Kbd> means three things, by what is open. <b>On the page</b> it opens the mode
@@ -1838,10 +1839,11 @@ export default function GuidePage({
             first if you'd rather; a later note says what each of those does).{' '}
             <b>With the ⚙ menu or a popup open</b> it walks that menu&apos;s or popup&apos;s own
             controls one at a time, and <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> walks them backwards; both
-            wrap round at the ends, and neither steps out to the page behind.{' '}
-            <b>With a list open</b>, <Kbd>Tab</Kbd> or <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> closes the
-            list and leaves the keyboard on its button. Tab plus any other modifier (Ctrl+Tab,
-            Ctrl+Shift+Tab, etc.) passes through to the browser.
+            wrap round at the ends, neither steps out to the page behind, and each step scrolls the
+            control it lands on into view. <b>With a list open</b>, <Kbd>Tab</Kbd> or{' '}
+            <Kbd>Shift</Kbd>+<Kbd>Tab</Kbd> closes the list and leaves the keyboard on its button.
+            Tab plus any other modifier (Ctrl+Tab, Ctrl+Shift+Tab, etc.) passes through to the
+            browser.
           </li>
           <li>
             Every list opens from the keyboard once the keyboard is on its button: <Kbd>Enter</Kbd>{' '}
@@ -2136,7 +2138,8 @@ export default function GuidePage({
             many popups are open the screen is dimmed once, behind the popup in front, and a popup
             waiting underneath is dimmed with the page. Closing a popup hands the keyboard back to
             where it was: the control that opened it, or the popup underneath. Closing the ⚙ menu
-            does the same for the page.
+            does the same — back to the button on the page, or the button in the top bar, that had
+            the keyboard when the menu opened.
           </li>
         </UL>
         <Subhead>Motion</Subhead>

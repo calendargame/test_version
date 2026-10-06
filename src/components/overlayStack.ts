@@ -171,7 +171,7 @@ export const usePopupOpen = () => useSyncExternalStore(subscribe, isPopupOpen)
 //   3. FOCUS THAT ARRIVES OUTSIDE COMES STRAIGHT BACK (the focusin listener below) — a screen
 //      behind focusing itself, a script, a browser walking Tab somewhere this did not expect.
 //   4. TAB AND SHIFT+TAB WALK THE LAYER'S OWN CONTROLS AND WRAP AT THE ENDS (the keydown listener
-//      below), so neither can walk out into the page.
+//      below) — every step of it the stack's own — so neither can walk out into the page.
 // WHY NOT THE `inert` ATTRIBUTE on what is covered, which gives 2–4 for nothing: it also takes the
 // POINTER and the SCROLL away from whatever wears it, and under the ⚙ menu and a list those belong
 // to the page still — a tap outside closes the menu AND lands on what was tapped, and the page
@@ -185,6 +185,9 @@ const topCover = (): Entry | undefined => topWhere((entry) => entry.reach !== nu
 export const isPageCovered = () => topCover() !== undefined
 const within = (reach: Reach, el: Element | null) =>
   el !== null && reach.parts().some((part) => part !== null && part.contains(el))
+// Putting the keyboard somewhere on the stack's own account — as a layer opens, when stray focus is
+// pulled back, when a closed layer hands it back — never scrolls anything: the player did not ask
+// to be moved. (A Tab step is the opposite case and scrolls its target into view: see the listener.)
 const focusOn = (el: HTMLElement | null) => el?.focus({ preventScroll: true })
 // Where focus is, when it is on something: null for nothing, <body>, or an element already removed.
 const focused = (): HTMLElement | null => {
@@ -205,6 +208,15 @@ const tabStops = (walk: HTMLElement) =>
       !(el as HTMLButtonElement | HTMLInputElement).disabled &&
       el.offsetParent !== null,
   )
+// ★ EVERY OPEN DROPDOWN LIST CLOSES — for the keys that replace or close what is on screen (a mode
+// letter, H, G: src/main.tsx). A list in the top bar belongs to no screen and no menu, so nothing
+// those keys do takes it away: it used to stay open over the new page, still holding the keyboard,
+// or under a ⚙ menu that Escape then closed first. A list is the one covering layer with nothing for
+// Tab to walk (Reach's `walk`), which is how it is told from the menu and from a popup.
+export function closeLists(): void {
+  for (const entry of [...stack])
+    if (entry.reach && !entry.modal && entry.reach.walk() === null) entry.close()
+}
 // Is THIS the top popup, as the stack stands this instant? For a popup's own event handlers, which
 // can run between the stack changing and React re-rendering the popups to match (components/Popup's
 // focus rule); rendering reads the same answer through usePopupLayer.
@@ -358,13 +370,24 @@ if (typeof window !== 'undefined') {
     true,
   )
   // THE KEYBOARD'S REACH, part 4 — TAB. Capture, like Escape, so no control inside can switch it
-  // off; and it stops nothing, so whatever else listens for Tab (lib/keyboardFocus) still hears it.
-  // In the middle of the layer's controls the browser's own step is left to happen: it is right,
-  // and it is the only thing that knows the order a screen reader shares. This acts at the edges —
-  // the step that would leave — and when the keyboard is not on one of the controls at all (on the
-  // card, on the gear, on nothing), where the first Tab goes to the first control and the first
-  // Shift+Tab to the last. A layer with NO control (the Changelog, the run breakdown, the
-  // storage-full notice — text only) keeps the keyboard on what it holds.
+  // off; and it stops nothing else, so whatever listens for Tab (lib/keyboardFocus) still hears it.
+  // ★ EVERY STEP IS TAKEN HERE, none left to the browser. The middle steps used to be the browser's
+  // own, and browsers do not agree on what Tab stops at: desktop Safari skips every button unless a
+  // system setting says otherwise, so the walk there would have covered the text boxes and nothing
+  // else. The order is the document's — the layer's controls as they are written, which is also the
+  // order a screen reader reads them in (nothing in the app carries a positive tabindex).
+  //   • From a control: to the next one in the direction of travel, wrapping at the ends.
+  //   • From anything else — the card, the gear, nothing at all: Tab goes to the first control
+  //     after where the keyboard is (the first of all, from outside the walk), Shift+Tab to the
+  //     last one before it. A control INSIDE the focused element counts as after it, never before.
+  //   • A control that will not take focus (hidden some way the test above does not see) is passed
+  //     over for the next.
+  //   • A layer with NO control (the Changelog, the run breakdown, the storage-full notice — text
+  //     only) keeps the keyboard on what it holds.
+  // ★ AND THE STEP SCROLLS ITS TARGET INTO VIEW — a plain focus(), unlike every other focus this
+  // file places. The player asked to go there. Without it the wrap from the last control of a long
+  // list to the first landed on a control scrolled out of sight: nothing on screen wore the ring,
+  // and the next key typed went into a box nobody could see.
   // Ctrl/Alt/⌘ + Tab are the browser's and the system's.
   window.addEventListener(
     'keydown',
@@ -373,23 +396,27 @@ if (typeof window !== 'undefined') {
       const reach = topCover()?.reach
       const walk = reach?.walk()
       if (!reach || !walk) return
+      e.preventDefault()
       const stops = tabStops(walk)
       const active = focused()
-      // Is there a control further on in the direction of travel? (A control INSIDE the focused
-      // element counts as after it and never as before it.)
-      const further =
-        active !== null &&
-        walk.contains(active) &&
-        stops.some((stop) => {
-          if (stop === active) return false
-          const where = active.compareDocumentPosition(stop)
-          return e.shiftKey
-            ? (where & Node.DOCUMENT_POSITION_PRECEDING) !== 0 && !stop.contains(active)
-            : (where & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-        })
-      if (further) return
-      e.preventDefault()
-      focusOn(stops.length ? stops[e.shiftKey ? stops.length - 1 : 0] : reach.hold())
+      const at = active && walk.contains(active) ? active : null
+      const beyond = (stop: HTMLElement): boolean => {
+        if (!at || stop === at) return false
+        const where = at.compareDocumentPosition(stop)
+        return e.shiftKey
+          ? (where & Node.DOCUMENT_POSITION_PRECEDING) !== 0 && !stop.contains(at)
+          : (where & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+      }
+      // The controls in the order this press would try them: those further on in the direction of
+      // travel, nearest first, then round from the other end.
+      const ahead = stops.filter(beyond)
+      const round = stops.filter((stop) => !beyond(stop) && stop !== at)
+      const order = e.shiftKey ? [...ahead.reverse(), ...round.reverse()] : [...ahead, ...round]
+      for (const stop of order) {
+        stop.focus()
+        if (document.activeElement === stop) return
+      }
+      if (!at) focusOn(reach.hold())
     },
     true,
   )
@@ -438,12 +465,16 @@ function pushOverlay(opened: Omit<Entry, 'depth' | 'returnTo'>): Entry | null {
   dismissKeyboard()
   // THE KEYBOARD'S REACH, part 2 — a layer that covers the page TAKES THE KEYBOARD AS IT OPENS,
   // unless the keyboard is already inside it (a list's button, focused by the press that opened
-  // it; the gear). What had it is remembered, to be given it back when this closes (handBack).
+  // it; the gear). What had it is remembered, to be given it back when this closes (handBack) —
+  // unless that is the very element this layer holds the keyboard ON (a list's own button): then
+  // nothing is being handed over, and there will be nothing to hand back.
   // After the line above, on purpose: what is remembered is then never a text box, so closing a
   // layer can never put the soft keyboard back up.
   if (entry.reach) {
-    entry.returnTo = focused()
-    if (!within(entry.reach, entry.returnTo)) focusOn(entry.reach.hold())
+    const had = focused()
+    const hold = entry.reach.hold()
+    entry.returnTo = had === hold ? null : had
+    if (!within(entry.reach, had)) focusOn(hold)
   }
   if (IOS_STANDALONE) return entry
   const marker = { cgOverlay: entry.id, cgDepth: entry.depth }
@@ -462,10 +493,12 @@ function pushOverlay(opened: Omit<Entry, 'depth' | 'returnTo'>): Entry | null {
 //     because what held it has just been removed. Focus already somewhere else — the press that
 //     closed a menu has focused what it pressed — is left where it is.
 //   • To what had it when the layer opened — the control that opened a popup, the button on the
-//     page that was last pressed — if that is still there, and within reach of whatever still
-//     covers the page. Not when that was part of the layer itself (a list's own button, the gear):
-//     the layer handed nothing over, so there is nothing to hand back, and a tap outside a list
-//     must not pull the keyboard back onto its button.
+//     page that was last pressed, the top-bar button the keyboard was on when G opened the ⚙ menu
+//     over it — if that is still there, and within reach of whatever still covers the page. (The
+//     last of those is inside the menu's own reach, which is the whole top bar, and used not to
+//     count: Tab into the menu and Escape out left the keyboard on nothing.) A list remembered
+//     nothing to give back (pushOverlay): a tap outside one must not pull the keyboard back onto
+//     its button.
 //   • Otherwise to the layer now on top, if there is one: a popup that was waiting under the one
 //     just closed takes the keyboard again.
 function handBack(closed: Entry) {
@@ -474,7 +507,7 @@ function handBack(closed: Entry) {
   if (active && !within(closed.reach, active)) return
   const reach = topCover()?.reach
   const from = closed.returnTo
-  const back = from?.isConnected && !within(closed.reach, from) ? from : null
+  const back = from?.isConnected ? from : null
   if (back && (!reach || within(reach, back))) focusOn(back)
   else if (reach && !within(reach, active)) focusOn(reach.hold())
 }

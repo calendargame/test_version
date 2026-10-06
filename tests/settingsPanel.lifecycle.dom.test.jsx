@@ -684,7 +684,9 @@ describe('the settings panel — the markers that carry its behaviour (group 13)
       openModal(key)
       openModeMenu()
       guarded.push(`${key}: menu ${modeMenuOpen()}, modal ${queryModalCard(key) !== null}`)
-      closeModal(key, 'dismiss')
+      // (By its scrim: the Tab has walked the keyboard onto the popup's first control, and where
+      // that is a text box the first Escape would be the box's own.)
+      closeModal(key, 'scrim')
     }
     expect(guarded).toEqual(MODAL_KEYS.map((key) => `${key}: menu false, modal true`))
     // With the modals gone the ⚙ menu still covers the page, and there Tab walks the menu's own

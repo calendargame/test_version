@@ -278,9 +278,10 @@ describe('the keyboard stays in the ⚙ menu while it is open', () => {
     act(() => all[all.length - 1].focus())
     expect(tabOn(document.activeElement).taken).toBe(true)
     expect(document.activeElement).toBe(all[0])
-    // In the middle the browser's own step is left alone.
+    // In the middle the step is the rule's own too: to the next control.
     act(() => all[2].focus())
-    expect(tabOn(document.activeElement).taken).toBe(false)
+    expect(tabOn(document.activeElement).taken).toBe(true)
+    expect(document.activeElement).toBe(all[3])
     expect(modeMenuOpen()).toBe(false)
   })
 
@@ -337,6 +338,88 @@ describe('an open dropdown list blocks the page`s keys like the menu does', () =
     expect(modeMenuOpen()).toBe(false)
     pressKey('n')
     expect(sameDate(readDate(), before)).toBe(false)
+  })
+})
+
+// A list in the top bar belongs to no screen and no menu, so nothing a mode letter, H or G does
+// used to take it away: it stayed open over the new page, still holding the keyboard — or under a
+// ⚙ menu that Escape then closed FIRST, though the list was the thing on top.
+describe('a mode letter, H or G closes an open top-bar list as it acts', () => {
+  const presetList = () => screen.getByRole('button', { name: /^Preset,/ })
+  const openPresetList = () => act(() => void fireEvent.click(presetList()))
+
+  it.each([
+    ['the mode list', () => tapModeMenu()],
+    ['the preset list', () => openPresetList()],
+  ])('%s, with the menu closed: a mode letter, H, G', (_name, openList) => {
+    mountApp()
+    openList()
+    expect(modeMenuOpen()).toBe(true)
+    pressKey('D')
+    expect(currentMode()).toBe('Deduction')
+    expect(modeMenuOpen()).toBe(false)
+
+    openList()
+    pressKey('H')
+    expect(currentMode()).toBe('How to Play')
+    expect(modeMenuOpen()).toBe(false)
+
+    openList()
+    pressKey('G')
+    expect(isSettingsOpen()).toBe(true)
+    expect(modeMenuOpen()).toBe(false)
+    // …so Escape closes the menu, the one thing open, and not a list left over it.
+    pressKey('Escape')
+    expect(isSettingsOpen()).toBe(false)
+  })
+
+  it.each([
+    ['the mode list', () => tapModeMenu()],
+    ['the preset list', () => openPresetList()],
+  ])('%s, over the open menu: G, a mode letter and H close both', (_name, openList) => {
+    mountApp()
+    for (const [key, lands] of [
+      ['G', null],
+      ['B', 'Blitz'],
+      ['H', 'How to Play'],
+    ]) {
+      openSettings('key')
+      openList()
+      expect(modeMenuOpen()).toBe(true)
+      pressKey(key)
+      expect(modeMenuOpen()).toBe(false)
+      expect(isSettingsOpen()).toBe(false)
+      if (lands) expect(currentMode()).toBe(lands)
+    }
+  })
+
+  it('the menu`s own "Open in" list goes with the menu', () => {
+    mountApp()
+    openSettings('key')
+    act(() => void fireEvent.click(screen.getByRole('button', { name: /^Open in/ })))
+    expect(modeMenuOpen()).toBe(true)
+    pressKey('G')
+    expect(modeMenuOpen()).toBe(false)
+    expect(isSettingsOpen()).toBe(false)
+  })
+})
+
+describe('closing the ⚙ menu hands the keyboard back to where it was', () => {
+  // Tab opens the mode list (the keyboard goes onto its button), G opens the menu over it, Tab
+  // walks into the menu, Escape closes it — and the keyboard used to be left on nothing.
+  it('Tab, G, Tab, Escape: back on the Mode button', () => {
+    mountApp()
+    pressKey('Tab')
+    const mode = screen.getByRole('button', { name: /^Mode,/ })
+    expect(document.activeElement).toBe(mode)
+    pressKey('G')
+    expect(isSettingsOpen()).toBe(true)
+    expect(document.activeElement).toBe(mode)
+    act(() => void fireEvent.keyDown(mode, { key: 'Tab' }))
+    expect(panelEl().contains(document.activeElement)).toBe(true)
+    act(() => void fireEvent.keyDown(document.activeElement, { key: 'Escape' }))
+    expect(isSettingsOpen()).toBe(false)
+    expect(document.activeElement).toBe(mode)
   })
 })
 
