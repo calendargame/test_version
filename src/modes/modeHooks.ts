@@ -3,7 +3,7 @@
 // together because every screen uses some subset and none of them belongs to any one screen.
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { gameReducer } from '../engine/gameReducer.js'
+import { gameReducer, waitingDateMissing } from '../engine/gameReducer.js'
 import type { GameState, Question, Stats } from '../engine/gameReducer.js'
 import type { GameEngine, FlashState } from './modeTypes.js'
 import { calcLast, calcAvg, calcMed } from '../engine/stats.js'
@@ -264,6 +264,35 @@ export function useChangeEffect(deps: React.DependencyList, fn: () => void) {
 // screens import it from there.
 
 /**
+ * ★ A DATE SETTING CHANGED IN THE ⚙ PANEL, ON A SCREEN THAT KEEPS ITS WAITING DATE ACROSS A SWITCH OF
+ * THE JULIAN CALENDAR SETTING (Classic and Flash) — applied once, as the panel closes:
+ *   • a setting the date was DRAWN under changed (`dateSettings` — format, the three chances, the
+ *     year range): the waiting question is regenerated, as it always was;
+ *   • only the Julian Calendar setting changed: the waiting date STAYS — an untouched date's answer
+ *     and codes follow the setting as it stands (gameReducer's calendarOf) — unless it is a date the
+ *     calendar now in force does not have (gameReducer's waitingDateMissing: February 29 of a year
+ *     like 1500, drawn with the setting on, after it is switched off). That one is a question the
+ *     settings no longer ask, and it is regenerated like any other.
+ * Both are the engine's one REGEN_DATE (`regenWaiting` — eng.regenDate, plus whatever the screen
+ * keeps about the question that went), which keeps a question that has been USED — and a used date
+ * carries its own calendar, so it is never the one the second rule is about.
+ * (Deduction regenerates its unanswered puzzles on every switch of the setting — a puzzle is built in
+ * a calendar — and the run modes reset; neither comes through here.)
+ */
+export function useDateSettingsOnRegen(
+  settingsOpen: boolean,
+  dateSettings: React.DependencyList,
+  useJulian: boolean,
+  state: GameState,
+  regenWaiting: () => void,
+) {
+  useSettingsCloseEffect(settingsOpen, [...dateSettings, useJulian], (before) => {
+    const drawnDifferently = dateSettings.some((v, i) => v !== before[i])
+    if (drawnDifferently || waitingDateMissing(state, useJulian)) regenWaiting()
+  })
+}
+
+/**
  * ★ SAVE STATS COMING BACK ON, IN A CASUAL MODE WHOSE TIMING IS SHOWN — the live-question rule's
  * third door, beside "turning timing back on" (useStatsHideToggles above) and a screen coming back
  * (restoredEngine below). The rule: a question the player has already looked at is regenerated the
@@ -328,6 +357,9 @@ interface LiveQuestion {
   // The date settings a question drawn now is drawn under — the same values, spelled the same way,
   // that the screen parks as `config` (and that its settings-close effect regenerates on).
   config: string
+  // The Julian Calendar setting as it stands. Not part of `config`: a waiting weekday date is kept
+  // across a switch of it — unless the calendar now in force does not have that date.
+  useJulian: boolean
   // Draw one.
   newDate: () => Question
 }
@@ -371,15 +403,24 @@ export function readParkedHistory(
  *     and useSaveStatsOnRegen, above.)
  *   • and an unanswered question drawn under DIFFERENT date settings is regenerated too (the settings
  *     are shared by every copy of a preset's stats and bests, so a guest can change them under a parked history) —
- *     which is only what changing those settings does to a question on screen.
- * All three are ONE engine action, REGEN_DATE: the rule the app already had for "turning timing back
+ *     which is only what changing those settings does to a question on screen;
+ *   • and so is an unanswered date the calendar now in force does not have (gameReducer's
+ *     waitingDateMissing) — the Julian Calendar setting was switched off while the history was away,
+ *     by another tab or under a guest — again exactly what switching it does to a date on screen
+ *     (useDateSettingsOnRegen, above).
+ * All of them are ONE engine action, REGEN_DATE: the rule the app already had for "turning timing back
  * on" and for a date-setting change — it keeps a question that has been used, and reaches the live
  * question even when the history came back browsed to an earlier card (gameReducer). This function
  * only decides whether to ask.
  */
 export function restoredEngine(back: RestoredHistory | null, live: LiveQuestion): GameState | null {
   if (!back) return null
-  if (!live.timeRecorded && back.config === live.config) return back.engine
+  if (
+    !live.timeRecorded &&
+    back.config === live.config &&
+    !waitingDateMissing(back.engine, live.useJulian)
+  )
+    return back.engine
   return gameReducer(back.engine, { type: 'REGEN_DATE', nextDate: live.newDate() })
 }
 

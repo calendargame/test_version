@@ -17,6 +17,7 @@ import {
   initEngine,
   calendarOf,
   correctIndexOf,
+  waitingDateMissing,
 } from '../../src/engine/gameReducer.js'
 import { checkGameInvariants } from '../../src/engine/invariants.js'
 import { buildRunBreakdown } from '../../src/engine/runBreakdown.js'
@@ -384,6 +385,137 @@ describe('the tripwires (engine/invariants)', () => {
     expect(join(checkGameInvariants({ ...s, card: { ...s.card, jul: false } }, true))).toContain(
       "a puzzle's calendar is not the one it was built in",
     )
+  })
+})
+
+// ── A DATE ONLY THE JULIAN CALENDAR HAS ──────────────────────────────────────────────────────────
+// February 29, 1500 is a day in the Julian calendar and no day at all in the Gregorian one. It can be
+// drawn with the Julian Calendar setting on, and Classic and Flash keep an untouched date when the
+// setting is switched — so it used to be judged, with the setting off, as a Gregorian date that never
+// existed: the weekday of March 1, 1500 came out as its answer. Two rules end that. The engine reads
+// such a date in the one calendar that has it, whatever the setting says; and a screen whose setting
+// is off does not keep it waiting at all (waitingDateMissing → the one REGEN_DATE).
+describe('a date only the Julian calendar has (February 29, 1500)', () => {
+  const leapDay = (drawn = true) => ({ y: 1500, m: 2, d: 29, _fmt: 'numeric-ymd', _jul: drawn })
+  const JL = wdayJulian(1500, 2, 29)
+  const NEVER = wday(1500, 2, 29) // what the old reading gave: the Gregorian formula run off the end of February
+  const MISS = [0, 1, 2, 3, 4, 5, 6].find((i) => i !== JL && i !== NEVER)
+  const blank = { wrongTime: null, answered: null }
+
+  it('the fixture: the old reading was the weekday of March 1, and it is not the Julian answer', () => {
+    expect(NEVER).toBe(wday(1500, 3, 1))
+    expect(NEVER).not.toBe(JL)
+    // …and the day itself is the one after February 28 in the calendar that has it.
+    expect(JL).toBe((wdayJulian(1500, 2, 28) + 1) % 7)
+  })
+
+  it('calendarOf reads it as Julian with the setting off, untouched — the setting has no say', () => {
+    expect(calendarOf(blank, leapDay(), false)).toBe(true)
+    expect(calendarOf(blank, leapDay(), true)).toBe(true)
+    // An ordinary pre-reform date still follows the setting.
+    expect(calendarOf(blank, { ...leapDay(), d: 28 }, false)).toBe(false)
+  })
+
+  // Every way a card is judged, with the setting OFF — the state a clock running out behind the open
+  // ⚙ panel reaches before the screen has replaced the date.
+  const JUDGES = [
+    ['a wrong answer', (s) => answer(s, MISS, false), (s) => s],
+    ['the right answer', (s) => answer(s, JL, false), (s) => s.stack[0]],
+    ['a Reveal', (s) => reveal(s, false), (s) => s],
+    ['Show Codes', (s) => codes(s, false), (s) => s],
+    [
+      'a per-round timeout',
+      (s) => gameReducer(s, { type: 'LOCK_REVEAL', useJulian: false }),
+      (s) => s,
+    ],
+    [
+      'a per-question timeout',
+      (s) => gameReducer(s, { type: 'TIMEOUT_MISS', useJulian: false, saveStats: true }),
+      (s) => s,
+    ],
+  ]
+  it.each(JUDGES)(
+    '%s with the setting off judges it as the Julian day it is',
+    (_n, judge, where) => {
+      const s = judge(initEngine(leapDay()))
+      const card = where(s)
+      expect((card.meta ?? card.card).jul).toBe(true)
+      for (const day of marked(card.btns ?? card.persistBtns)) expect(day).toBe(JL)
+      healthy(s)
+    },
+  )
+  it('the day the old reading called right is a WRONG answer', () => {
+    const s = answer(initEngine(leapDay()), NEVER, false)
+    expect(s.persistBtns[NEVER]).toBe('wrong-latest')
+    expect(s.stats.good).toBe(0)
+    healthy(s)
+  })
+  it('the run breakdown shows its row in the Julian calendar too', () => {
+    const s = answer(initEngine(leapDay()), JL, false)
+    expect(buildRunBreakdown(s, false).rows[0].wday).toBe(JL)
+  })
+
+  it('11 — a card stamped with the calendar that lacks its date trips the wire, on screen and in history', () => {
+    const s = reveal(initEngine(leapDay()), false)
+    const onScreen = { ...s, card: { ...s.card, jul: false }, persistBtns: { [NEVER]: 'correct' } }
+    expect(checkGameInvariants(onScreen, false).join(' | ')).toContain(
+      'on-screen card: judged in a calendar that does not have its date',
+    )
+    const h = answer(initEngine(leapDay()), JL, true)
+    const e = {
+      ...h.stack[0],
+      btns: { [NEVER]: 'correct' },
+      meta: { ...h.stack[0].meta, jul: false },
+    }
+    expect(checkGameInvariants({ ...h, stack: [e] }, true).join(' | ')).toContain(
+      'stack[0]: judged in a calendar that does not have its date',
+    )
+  })
+
+  describe('waitingDateMissing — is the waiting question one the setting no longer asks?', () => {
+    const regen = (s) => gameReducer(s, { type: 'REGEN_DATE', nextDate: MODERN })
+    it('an untouched Julian-only date with the setting OFF is; with it ON it is not', () => {
+      const s = initEngine(leapDay())
+      expect(waitingDateMissing(s, false)).toBe(true)
+      expect(waitingDateMissing(s, true)).toBe(false)
+      expect(regen(s).date).toBe(MODERN) // …and the one REGEN_DATE replaces it
+    })
+    it('an ordinary date never is, whichever way the setting is switched', () => {
+      for (const q of [hastings(true), hastings(false), MODERN, { ...leapDay(), d: 28 }])
+        for (const jul of [true, false]) expect(waitingDateMissing(initEngine(q), jul)).toBe(false)
+    })
+    it.each([
+      ['answered wrong', (s) => answer(s, MISS, true)],
+      ['revealed', (s) => reveal(s, true)],
+      ['shown its codes', (s) => codes(s, true)],
+      ['held as a credit', (s) => answer(s, JL, true, MODERN, { complete: true })],
+    ])('a date that was %s is not — it is a Julian card for good, and stays', (_n, use) => {
+      const s = use(initEngine(leapDay()))
+      expect(waitingDateMissing(s, false)).toBe(false)
+      expect(regen(s)).toBe(s)
+      expect(calendarOf(s.card, s.date, false)).toBe(true)
+      healthy(s)
+    })
+    it('it is the live question wherever it waits: behind a browsed card too', () => {
+      let s = answer(initEngine(MODERN), wday(2024, 1, 1), false, leapDay())
+      s = back(s) // browsing the answered card; the leap day waits in the forward stack
+      expect(s.date.y).toBe(2024)
+      expect(waitingDateMissing(s, false)).toBe(true)
+      expect(waitingDateMissing(s, true)).toBe(false)
+      const after = regen(s)
+      expect(after.forwardStack[0].y).toBe(2024)
+      expect(waitingDateMissing(after, false)).toBe(false)
+      // …and a Julian-only date being BROWSED, with an ordinary one waiting, is not the question.
+      let t = answer(initEngine(leapDay()), JL, true, MODERN)
+      t = back(t)
+      expect(t.date.d).toBe(29)
+      expect(waitingDateMissing(t, false)).toBe(false)
+    })
+    it('a Deduction puzzle is never one — it is read in the calendar it was built in', () => {
+      const p = { type: 'day', y: 1500, m: 2, d: 29, w: JL, options: [27, 28, 29], _jul: true }
+      expect(waitingDateMissing(initEngine(p), false)).toBe(false)
+      expect(calendarOf(blank, p, false)).toBe(true)
+    })
   })
 })
 

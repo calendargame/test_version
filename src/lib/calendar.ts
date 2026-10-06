@@ -78,6 +78,18 @@ const isJulianEraMonth = (y: number, m: number): boolean => isJulianDate(y, m, 1
 // Gregorian 28. Lookup validates against this: a date that exists in either calendar is a date.
 export const dimEither = (y: number, m: number): number =>
   isJulianEraMonth(y, m) ? Math.max(dim(y, m, true), dim(y, m)) : dim(y, m)
+// Is this a date ONLY the Julian calendar has — a real day before the reform that the Gregorian
+// calendar, projected back, never had? That is February 29 of a year the Julian every-fourth-year
+// rule makes a leap year and the Gregorian century rule does not: 1500, 1400, 1300, 1100, 1000, 900,
+// 700, … (and the same centuries BC). It is the one way the two calendars disagree about which dates
+// EXIST, and it only runs this way round: every Gregorian leap year is a Julian one too, so there is
+// no date before the reform that the Gregorian calendar has and the Julian one lacks
+// (tests/calendar.test.js walks every day of every year to prove it).
+// So such a date has exactly one reading — the Julian one. The engine reads it that way whatever the
+// Julian Calendar setting says (engine/gameReducer's calendarOf), and a screen whose setting is off
+// does not ask it at all (gameReducer's waitingDateMissing).
+export const isJulianOnlyDate = (y: number, m: number, d: number): boolean =>
+  isJulianDate(y, m, d) && d > dim(y, m) && d <= dim(y, m, true)
 // Returns true if [lo,hi] contains at least one leap year, evaluated under the active calendar
 // (Julian rule for years <1582 when useJulian is on; Gregorian rule otherwise). Used to lock the
 // Leap Year Chance buttons when no leap year is reachable — without this, setting 50/75/100% would

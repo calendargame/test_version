@@ -11,6 +11,7 @@ import {
   isJulianDate,
   isGapDate,
   dimEither,
+  isJulianOnlyDate,
   rangeHasLeapYear,
 } from '../src/lib/calendar.js'
 
@@ -207,6 +208,67 @@ describe('dimEither — days in month under any calendar the date can be read in
     expect(dimEither(1582, 2)).toBe(28) // 1582 is leap under neither rule
     expect(dimEither(1584, 2)).toBe(29) // Gregorian leap, and the Julian rule no longer applies
     expect(dimEither(1700, 2)).toBe(28) // Julian WOULD say 29 — but 1700 is not a Julian-era year
+  })
+})
+
+// isJulianOnlyDate — the dates the two calendars disagree about the EXISTENCE of. A date drawn with
+// the Julian Calendar setting on can be one; with the setting off it must never be asked or judged
+// as if the Gregorian calendar had it (engine/gameReducer's calendarOf and waitingDateMissing).
+describe('isJulianOnlyDate — a day the Julian calendar has and the Gregorian one never did', () => {
+  // The years the app can draw from that are leap by the Julian rule alone, before the reform.
+  const JULIAN_ONLY_LEAP = [100, 200, 300, 500, 600, 700, 900, 1000, 1100, 1300, 1400, 1500]
+
+  it('is exactly February 29 of the century years the Gregorian rule drops, and nothing else', () => {
+    const found = []
+    for (let y = 1; y <= 2400; y++)
+      for (let m = 1; m <= 12; m++)
+        for (let d = 1; d <= 31; d++) if (isJulianOnlyDate(y, m, d)) found.push(`${y}-${m}-${d}`)
+    expect(found).toEqual(JULIAN_ONLY_LEAP.map((y) => `${y}-2-29`))
+  })
+  it('the day before and the day after are ordinary dates', () => {
+    expect(isJulianOnlyDate(1500, 2, 28)).toBe(false)
+    expect(isJulianOnlyDate(1500, 3, 1)).toBe(false)
+    expect(isJulianOnlyDate(1500, 2, 30)).toBe(false) // not a date in either calendar
+  })
+  it('a leap day both calendars have is not one, and nor is anything after the reform', () => {
+    expect(isJulianOnlyDate(1200, 2, 29)).toBe(false) // 1200 divides by 400
+    expect(isJulianOnlyDate(1504, 2, 29)).toBe(false)
+    expect(isJulianOnlyDate(1700, 2, 29)).toBe(false) // Julian would say leap — not a Julian-era year
+    expect(isJulianOnlyDate(1900, 2, 29)).toBe(false)
+  })
+  it('holds before year 1 too (the same centuries, counted astronomically)', () => {
+    expect(isJulianOnlyDate(-101, 2, 29)).toBe(true) //  101 BC = astronomical −100
+    expect(isJulianOnlyDate(-401, 2, 29)).toBe(false) // 401 BC = astronomical −400
+  })
+
+  // ★ THE OTHER DIRECTION DOES NOT EXIST, which is why only "Julian switched OFF" ever has a waiting
+  // date to replace: every date the Gregorian rules give a month is a date under the Julian setting
+  // too. Walked, not argued — every day of every month the Gregorian calendar has, across the whole
+  // range a year box accepts and a stretch BC, exists in the calendar the Julian setting reads it in
+  // (Julian up to October 4, 1582; Gregorian after).
+  it('no date the Gregorian calendar has is missing under the Julian setting', () => {
+    const missing = []
+    for (let y = -800; y <= 10000; y++) {
+      if (y === 0) continue
+      for (let m = 1; m <= 12; m++)
+        for (let d = 1; d <= dim(y, m); d++) {
+          if (isGapDate(y, m, d)) continue // the ten days neither setting ever draws
+          if (d > dim(y, m, isJulianDate(y, m, d))) missing.push(`${y}-${m}-${d}`)
+        }
+    }
+    expect(missing).toEqual([])
+  })
+  it('…while the Julian setting has exactly the Julian-only dates that the Gregorian one lacks', () => {
+    const lacking = []
+    for (let y = 1; y <= 1582; y++)
+      for (let m = 1; m <= 12; m++)
+        for (let d = 1; d <= dim(y, m, true); d++)
+          if (isJulianDate(y, m, d) && d > dim(y, m)) lacking.push(`${y}-${m}-${d}`)
+    expect(lacking).toEqual(JULIAN_ONLY_LEAP.map((y) => `${y}-2-29`))
+    for (const y of JULIAN_ONLY_LEAP) {
+      expect(isLeapJulian(y), `${y}`).toBe(true)
+      expect(isLeap(y), `${y}`).toBe(false)
+    }
   })
 })
 

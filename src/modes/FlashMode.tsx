@@ -13,8 +13,8 @@ import {
   restoredEngine,
   useParkedHistory,
   useSaveStatsOnRegen,
+  useDateSettingsOnRegen,
 } from './modeHooks.js'
-import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { RESET_BTN_CLASS, RESET_STATS_BTN_CLASS } from '../components/controlClasses.js'
 import { fmtFlashT, SLIDER_READOUT_WIDEST } from '../lib/modeFormat.js'
 import { useUserDefaults, effectivePrefDefaults } from '../store/userDefaults.js'
@@ -118,6 +118,7 @@ function FlashMode({
       restoredEngine(parked, {
         timeRecorded: !timingOff && saveStats,
         config: dateConfig,
+        useJulian,
         newDate: () => genDate(minY, maxY),
       }),
   })
@@ -372,8 +373,9 @@ function FlashMode({
   } // primary "Reset" while live (= App arm)
 
   // ★ THE WAITING QUESTION WAS REPLACED UNDER THE SCREEN — by one of the three doors that regenerate
-  // it (a date setting changed in the ⚙ panel, timing shown again, Save Stats back on while timing is
-  // shown) or by "Enable and Reset Stats". Everything on this screen that belonged to the question
+  // it (a date setting changed in the ⚙ panel — or the Julian Calendar setting switched off over a
+  // date only that calendar has — timing shown again, Save Stats back on while timing is shown) or
+  // by "Enable and Reset Stats". Everything on this screen that belonged to the question
   // that went goes with it (clearFlash): a flash that was live (it was that question's reveal window
   // — left running, the player would be judged against a date they were never shown), a date left
   // showing, and a countdown a Reveal or Show Codes had frozen ("Enable and Reset Stats" replaces
@@ -410,8 +412,10 @@ function FlashMode({
 
   // Defer the live-date regen to the ⚙ popover CLOSE — batched, no per-keystroke timer churn. (The
   // flash keeps running behind the panel; if the question it belongs to is regenerated as the panel
-  // closes, the flash ends with it — regenWaiting.)
-  useSettingsCloseEffect(settingsOpen ?? false, dateSettings, regenWaiting)
+  // closes, the flash ends with it — regenWaiting.) Which changes regenerate it is modeHooks'
+  // useDateSettingsOnRegen: a setting the date was drawn under, or the Julian Calendar setting
+  // switched off over a date only that calendar has.
+  useDateSettingsOnRegen(settingsOpen ?? false, dateSettings, useJulian, state, regenWaiting)
   // Save Stats coming back on while timing is shown regenerates it too (modeHooks).
   useSaveStatsOnRegen(settingsOpen ?? false, saveStats, timingOff, regenWaiting)
 

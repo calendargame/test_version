@@ -175,6 +175,9 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
     () => {
       const cov = runFuzzProfile('timed-strong')
       expect(cov.timedTimeout).toBeGreaterThan(0) // actually fired a gated LOCK_REVEAL / TIMEOUT_MISS
+      // …including on a date only the Julian calendar has, with the setting off: the clock running
+      // out behind the open ⚙ panel, before the screen has replaced the date.
+      expect(cov.julianOnlyJudgedOff).toBeGreaterThan(500)
       expect(cov.override).toBeGreaterThan(0)
       expect(cov.toggleBack).toBeGreaterThan(0) // actually undid overrides alongside the timeouts
       expect(cov.overrideBrowsing).toBeGreaterThan(0)
@@ -209,6 +212,13 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.julianFlips).toBeGreaterThan(1000)
       expect(cov.twoDayAnswers).toBeGreaterThan(1000)
       expect(cov.crossJudged).toBeGreaterThan(1000)
+      // ★ A DATE ONLY THE JULIAN CALENDAR HAS (February 29 of a year like 1500): drawn, the setting
+      // switched off over it, and then either replaced by the screen's rule as the ⚙ panel closes
+      // (the one REGEN_DATE, on the engine's own say-so) or judged where it stood — and the model,
+      // asking the platform's Date whether the Gregorian calendar has that day, says it is a Julian
+      // question every time. engine/invariants holds each such card to the calendar that has it.
+      expect(cov.julianOnlyJudgedOff).toBeGreaterThan(500)
+      expect(cov.missingRegens).toBeGreaterThan(100)
     },
     T,
   )
@@ -278,6 +288,7 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.hydrated).toBeGreaterThan(0)
       expect(cov.legacyRestores).toBeGreaterThan(1000) // …and each one again, as an older build's blob
       expect(cov.julianFlips).toBeGreaterThan(1000)
+      expect(cov.missingRegens).toBeGreaterThan(100) // a restored date the calendar now in force lacks, replaced
     },
     T,
   )

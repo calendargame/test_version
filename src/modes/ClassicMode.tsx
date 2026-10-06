@@ -13,8 +13,8 @@ import {
   restoredEngine,
   useParkedHistory,
   useSaveStatsOnRegen,
+  useDateSettingsOnRegen,
 } from './modeHooks.js'
-import { useSettingsCloseEffect } from '../components/useSettingsCloseEffect.js'
 import { RESET_STATS_BTN_CLASS } from '../components/controlClasses.js'
 import WeekdayAnswer from '../components/WeekdayAnswer.jsx'
 import StatPanel from '../components/StatPanel.jsx'
@@ -94,6 +94,7 @@ function ClassicMode({
       restoredEngine(parked, {
         timeRecorded: !timingOff && saveStats,
         config: dateConfig,
+        useJulian,
         newDate: () => genDate(minY, maxY),
       }),
   })
@@ -137,13 +138,15 @@ function ClassicMode({
     eng.override()
   }
 
-  // regenDecisionFor (App's popover effect, Classic slice): a format / leap / Jan-Feb /
-  // Julian-chance / year-range change regens an UNANSWERED live date; a useJulian toggle
-  // keeps it — an untouched date's answer and codes follow the setting as it stands, and one
-  // already judged keeps the calendar it was judged in (the engine's calendarOf). REGEN_DATE
-  // no-ops on a burned or browsed date, so we just fire it on the relevant changes.
-  // Defer the live-date regen to the ⚙ popover CLOSE — batched, no per-keystroke timer churn.
-  useSettingsCloseEffect(settingsOpen ?? false, dateSettings, () => eng.regenDate())
+  // A format / leap / Jan-Feb / Julian-chance / year-range change regenerates an UNANSWERED waiting
+  // date; a switch of the Julian Calendar setting keeps it — an untouched date's answer and codes
+  // follow the setting as it stands, and one already judged keeps the calendar it was judged in (the
+  // engine's calendarOf) — unless it is a date the calendar now in force does not have. The rule is
+  // modeHooks' useDateSettingsOnRegen; REGEN_DATE keeps a date that has been used, so the screen just
+  // asks. Deferred to the ⚙ popover CLOSE — batched, no per-keystroke timer churn.
+  useDateSettingsOnRegen(settingsOpen ?? false, dateSettings, useJulian, state, () =>
+    eng.regenDate(),
+  )
   // …and so does Save Stats coming back on while this mode's timing is shown (modeHooks).
   useSaveStatsOnRegen(settingsOpen ?? false, saveStats, timingOff, () => eng.regenDate())
   // Freshness — engine state at launch default + Classic's own toggle/flash fields. Reported up

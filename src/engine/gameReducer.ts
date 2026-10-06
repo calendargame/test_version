@@ -27,7 +27,7 @@
 // `correctIndexOf` narrow by `type` with no casts. History entries are `StackEntry`
 // (a question plus its answer bookkeeping and its CardMeta).
 // ─────────────────────────────────────────────────────────────────────────
-import { isJulianDate, wday, wdayJulian } from '../lib/calendar.js'
+import { isJulianDate, isJulianOnlyDate, wday, wdayJulian } from '../lib/calendar.js'
 import { computeStreaks } from './streak.js'
 import { computeHasCredit, markBtns, mkBtnsWithCorrect, greenOnMiss } from './answerButtons.js'
 import type { ButtonState, Btns } from './answerButtons.js'
@@ -334,8 +334,18 @@ export type GameAction =
 //   • a weekday date nobody has judged — the Julian Calendar setting as it stands (`useJulian`), so
 //     switching the setting over an untouched date changes its answer, and the first judgement then
 //     stamps whichever was in force.
+// ★ …EXCEPT A DATE ONLY THE JULIAN CALENDAR HAS (lib/calendar's isJulianOnlyDate — February 29 of
+// 1500 and its like), which has one reading and is read in it whatever the setting says. Such a date
+// can be on screen with the setting off: it was drawn with the setting on, and the setting was then
+// switched. A screen replaces it as its ⚙ panel closes (waitingDateMissing, below) — but a clock can
+// run out behind the open panel first, and the engine does not rest on a screen to forbid an
+// impossible judgement: read by the setting, the card would be marked, stamped and shown its codes
+// as "February 29, 1500" in a calendar that has no such day (it came out as the weekday of March 1).
+// So no card is ever judged in a calendar that lacks its date — which engine/invariants holds every
+// judged card to.
 export const calendarOf = (card: CardMeta, q: Question, useJulian: boolean): boolean =>
-  card.jul ?? (q.type === undefined ? useJulian : (q._jul ?? useJulian))
+  card.jul ??
+  (isJulianOnlyDate(q.y, q.m, q.d) || (q.type === undefined ? useJulian : (q._jul ?? useJulian)))
 
 // Weekday index (0=Sun) in the given calendar (`useJulian` — Julian for a date up to the reform).
 export const activeWday = (y: number, m: number, d: number, useJulian: boolean): number =>
@@ -459,6 +469,22 @@ export function regenReplaces(state: GameState): boolean {
   const ls = live?.liveState
   if (!live?.isLive || !ls) return false
   return !(ls.countedWrong || ls.revealed || earnedCredit(live.btns, ls.revealed, ls.countedWrong))
+}
+
+// IS THE QUESTION THIS ENGINE HAS WAITING A DATE THE CALENDAR IN FORCE DOES NOT HAVE? — a weekday
+// date only the Julian calendar has (lib/calendar's isJulianOnlyDate), waiting unused (regenReplaces)
+// while the Julian Calendar setting is off. It was drawn with the setting on, and no draw with it off
+// produces it — so it is a question the settings no longer ask, exactly like a date left outside a
+// year range that has just been narrowed, and the screen answers it the same way: the one
+// REGEN_DATE. Two doors ask (modes/modeHooks): the ⚙ panel closing on a switched setting, and a
+// parked history coming back under a setting that was switched while it was away.
+// A question that has been USED is not one of these: something has judged it, so it carries its own
+// calendar — the Julian one (calendarOf) — and stays the card it is. Nor is a Deduction puzzle, which
+// is read in the calendar it was built in from the start.
+export function waitingDateMissing(state: GameState, useJulian: boolean): boolean {
+  if (useJulian || !regenReplaces(state)) return false
+  const q = state.backDepth === 0 ? state.date : state.forwardStack[0]
+  return q.type === undefined && isJulianOnlyDate(q.y, q.m, q.d)
 }
 
 // The card's LIFETIME number — the figure the Q# badge shows beside the Score box. `stack` holds the

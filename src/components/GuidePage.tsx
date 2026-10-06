@@ -2401,6 +2401,15 @@ export default function GuidePage({
             date.
           </li>
           <li>
+            <b>The one date that cannot stay</b> — February 29 of a year like 1500 is a day in the
+            Julian calendar and no day at all in the Gregorian one, so it is only ever drawn with
+            the setting on. Switch the setting off with one waiting untouched and it is replaced
+            when you close the ⚙ menu (a flash that was showing it ends, as with any regenerated
+            date); the same happens if it was waiting when the page reloads with the setting now
+            off. One you&apos;ve already answered wrong, revealed, or shown codes on stays, and is
+            always read as the Julian date it is — whatever the setting says.
+          </li>
+          <li>
             <b>Deduction and MoX (idle)</b> — the change is treated like any other date setting: an
             unanswered puzzle (in all three Deduction sub-types) or the date MoX has waiting is
             redrawn when you close the ⚙ menu, and a puzzle you&apos;ve already answered wrong,

@@ -68,7 +68,10 @@
 //     Julian Calendar setting can be switched at any moment. The contract: a question has ONE
 //     calendar, fixed by the FIRST thing that judges it — an answer right or wrong, a Reveal, a Show
 //     Codes that shows the answer, either timeout — as the setting stood at that moment (`jul`); a
-//     Deduction puzzle's is the one it was built in. Every later judgement of that question, and
+//     Deduction puzzle's is the one it was built in; and a date only the Julian calendar HAS — a
+//     February 29 the Gregorian calendar never had — is a Julian question whatever the setting says,
+//     because there is no other calendar to judge it in (gregorianHas below: the platform's Date,
+//     asked whether that day of that month exists). Every later judgement of that question, and
 //     everything that shows it, reads that. So the model decides right-or-wrong in `jul`, and
 //     compareRefModel holds the reducer to two things per question, in play order: the calendar it
 //     stamped, and that the answer its grid marks is the model's own answer in that calendar.
@@ -77,11 +80,17 @@
 // ── The model's own calendar arithmetic (0 = Sunday … 6 = Saturday) ──────────────────────────────
 // Julian applies to a date up to October 4, 1582, and only when the question's calendar says so.
 const beforeReform = (q) => q.y < 1582 || (q.y === 1582 && (q.m < 10 || (q.m === 10 && q.d <= 4)))
-const gregorianWeekday = (q) => {
+const gregorianDay = (q) => {
   const dt = new Date(0)
   dt.setUTCFullYear(q.y, q.m - 1, q.d) // the proleptic Gregorian calendar, any year
-  return dt.getUTCDay()
+  return dt
 }
+const gregorianWeekday = (q) => gregorianDay(q).getUTCDay()
+// Does the Gregorian calendar have this day at all? Date rolls a day its month lacks into the next
+// month, so the month it lands in says. (Every question the driver draws is a real day in the
+// Julian calendar; before the reform, one the Gregorian calendar lacks is the Julian calendar's alone.)
+const gregorianHas = (q) => gregorianDay(q).getUTCMonth() === q.m - 1
+const onlyJulianHas = (q) => beforeReform(q) && !gregorianHas(q)
 // Zeller's congruence, Julian form: January and February count as months 13 and 14 of the year
 // before; its 0 is Saturday.
 const julianWeekday = (q) => {
@@ -154,11 +163,13 @@ export function createRefModel(initialQuestion, priorHistory = [], priorTimes = 
 const freeze = (m, saveStats) => {
   if (m.live.ssFrozen === null) m.live.ssFrozen = saveStats
 }
-// The live question is being JUDGED: the first time, it takes its calendar — the one a puzzle was
-// built in, else the setting at this moment — and keeps it. Returns the calendar it is judged in.
+// The live question is being JUDGED: the first time, it takes its calendar — the only one that has
+// its date, else the one a puzzle was built in, else the setting at this moment — and keeps it.
+// Returns the calendar it is judged in.
 const judge = (m, useJulian) => {
   const l = m.live
-  if (l.jul === undefined) l.jul = (l.q.type ? l.q._jul : undefined) ?? useJulian
+  if (l.jul === undefined)
+    l.jul = onlyJulianHas(l.q) || ((l.q.type ? l.q._jul : undefined) ?? useJulian)
   return l.jul
 }
 

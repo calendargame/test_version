@@ -28,6 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { checkGameInvariants } from './invariants.js'
 import { correctIndexOf } from './gameReducer.js'
+import { isJulianOnlyDate } from '../lib/calendar.js'
 import { captureError } from '../observability/sentry.js'
 import type { CardMeta, GameState, Question, StackEntry } from './gameReducer.js'
 import type { Btns } from './answerButtons.js'
@@ -63,7 +64,8 @@ const markedAnswer = (btns: Btns | undefined): number | null => {
   return null
 }
 function calendarFromGrid(q: Question, btns: Btns | undefined, useJulian: boolean): boolean | null {
-  const drawn = q._jul ?? useJulian
+  // (A date only the Julian calendar has was drawn under it, whatever else is on record.)
+  const drawn = isJulianOnlyDate(q.y, q.m, q.d) || (q._jul ?? useJulian)
   if (q.type !== undefined) return drawn
   const marked = markedAnswer(btns)
   if (marked === null) return drawn

@@ -50,11 +50,15 @@
 //     of those is a tripwire, over every card in play.
 //   • The CARD'S CALENDAR: a date before the 1582 reform has two weekdays, and the Julian Calendar
 //     setting can change while a date is on screen — so every card that has been judged carries the
-//     calendar it was judged in (CardMeta.jul), and everything that shows the card reads that. Three
+//     calendar it was judged in (CardMeta.jul), and everything that shows the card reads that. Four
 //     tripwires hold it: a card with anything on its grid has its calendar and a card with an empty
 //     grid has none; the answer marked on a grid (and on an overridden card's stored as-answered
 //     grid) is the answer IN that calendar — a green its own codes do not arrive at is exactly the
-//     defect the stamp exists to end; and a Deduction puzzle's calendar is the one it was built in.
+//     defect the stamp exists to end; a Deduction puzzle's calendar is the one it was built in; and
+//     the calendar HAS the card's date — February 29 of a year like 1500 is a day in the Julian
+//     calendar only, and a card judged as that date in the other one was judged as a day that never
+//     was. (The same holds for the date nothing has judged yet, and needs no tripwire: the calendar
+//     it WILL be judged in is calendarOf's, which is the Julian one for such a date by definition.)
 //   • Date/calendar sanity: month 1-12, day 1-31, integer year; a weekday question resolves
 //     to an index in 0-6, and a Deduction puzzle's correct answer is actually among its
 //     options (correctIndexOf returns -1 if a generator ever produced a puzzle whose answer
@@ -67,6 +71,7 @@ import {
   forEachCard,
   overriddenLiveFlags,
 } from './gameReducer.js'
+import { isJulianOnlyDate } from '../lib/calendar.js'
 import type { CardMeta, EntryMeta, GameState, Question, StackEntry, Stats } from './gameReducer.js'
 import type { Btns } from './answerButtons.js'
 
@@ -156,7 +161,7 @@ export function checkGameInvariants(state: GameState, useJulian: boolean): strin
   //     ledger — see below),
   //   • the parked LIVE entry (the card ledger's last term — see liveCounted's note below),
   //   • the per-card Override record (the seven tripwires — see visitCard) and the card's calendar
-  //     (three more — see checkCalendar).
+  //     (four more — see checkCalendar).
   //
   // ⚠ HOT PATH. This runs in the app after EVERY state change (useGameEngine's tripwire effect) and
   // a run mode's history reaches a thousand cards, so the pass materialises nothing per card: no
@@ -260,10 +265,10 @@ const isMarked = (btns: Btns | undefined): boolean => {
   return false
 }
 
-// ── THE CARD'S CALENDAR (tripwires 8–10) ─────────────────────────────────────────────────────────
+// ── THE CARD'S CALENDAR (tripwires 8–11) ─────────────────────────────────────────────────────────
 // ⚠ HOT PATH, AND THE ONE PLACE THE WALK REMEMBERS ANYTHING. Working out a date's weekday for every
 // card of a thousand-card history after every state change tripled the cost of the whole check (and
-// took the fuzz survey's deep-history profile past its limit). But these three read only the card —
+// took the fuzz survey's deep-history profile past its limit). But these four read only the card —
 // its question, its grid, its record — and the reducer never changes a history entry in place: a
 // card that is toggled, browsed to or restored is a NEW object. So an entry that has passed is not
 // asked again while it stays where it is; a new or replaced one is asked the first time the walk
@@ -310,6 +315,9 @@ function checkCalendar(
     // in it).
     if (q.type !== undefined && q._jul !== undefined && q._jul !== jul)
       rec.push(`${at(arr, idx)}: a puzzle's calendar is not the one it was built in`)
+    // 11 — its calendar has its date: one only the Julian calendar has is a Julian card.
+    if (!jul && isJulianOnlyDate(q.y, q.m, q.d))
+      rec.push(`${at(arr, idx)}: judged in a calendar that does not have its date`)
   }
   return rec.length === before
 }

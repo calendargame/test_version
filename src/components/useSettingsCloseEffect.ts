@@ -15,7 +15,9 @@ import { useLayoutEffect, useRef } from 'react'
 // change-then-revert is a no-op). The ⚙ settings only change while the popover is open, so this
 // batches their side-effects — a date regen, a run/round reset, an aborted update check — to a
 // single apply on close instead of one per keystroke, and never resets the solve timer
-// mid-adjustment. fn runs through a ref so the latest closure (current run/round state) fires.
+// mid-adjustment. fn runs through a ref so the latest closure (current run/round state) fires, and
+// is handed the values as they stood when the popover opened (`before`, index for index with
+// `deps`) for the caller whose reaction depends on WHICH of them moved.
 // (Values that change OUTSIDE the popover must keep modeHooks' useChangeEffect — they would never
 // see an open→close transition coincide with their change.)
 //
@@ -27,7 +29,7 @@ import { useLayoutEffect, useRef } from 'react'
 export function useSettingsCloseEffect(
   settingsOpen: boolean,
   deps: React.DependencyList,
-  fn: () => void,
+  fn: (before: React.DependencyList) => void,
 ) {
   const fnRef = useRef(fn)
   useLayoutEffect(() => {
@@ -44,9 +46,9 @@ export function useSettingsCloseEffect(
     } // opened → snapshot the current values
     if (!settingsOpen && wasOpen) {
       // closed → fire once iff anything changed
-      const changed = deps.some((d, i) => d !== snapRef.current[i])
+      const before = snapRef.current
       snapRef.current = deps
-      if (changed) fnRef.current()
+      if (deps.some((d, i) => d !== before[i])) fnRef.current(before)
     }
   }, [settingsOpen, ...deps]) // eslint-disable-line react-hooks/exhaustive-deps
 }

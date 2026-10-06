@@ -179,6 +179,7 @@ function DeductionMode({
   const liveQuestion = (newDate: () => DedPuzzle) => ({
     timeRecorded: !timingOff && saveStats,
     config: dateConfig,
+    useJulian,
     newDate,
   })
   const dayEng = useGameEngine({
