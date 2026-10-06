@@ -41,7 +41,8 @@ import { dismissKeyboard, opensKeyboard } from '../lib/textEntry.js'
 // in lockstep with what's open. Every marker entry records HOW DEEP it is (entryDepth, below), which
 // is what lets one rule keep that lockstep everywhere: the place in the history is never left
 // deeper than the newest thing still open. When nothing is open, Back does
-// its normal thing (leaves the app). A single module-level popstate listener drives the stack, so
+// its normal thing (leaves the app) — including when the page was reloaded with things open that
+// did not come back, and so stands on their entries (leaveIfOwed, below). A single module-level popstate listener drives the stack, so
 // nested overlays close one at a time, newest-first. In a browser tab the entries help beyond the
 // hardware button — a back-swipe closes the overlay instead of leaving the site.
 //
@@ -176,6 +177,7 @@ const IOS_STANDALONE =
 if (typeof window !== 'undefined') {
   window.addEventListener('popstate', (event) => {
     onLoadedOverlayEntry = false // a traversal: wherever this is, it is not where the page loaded
+    const from = entryDepth
     entryDepth = depthOf(event.state)
     if (ignorePop) {
       // This popstate came from our own settle() — not a real Back. Settle once more from where it
@@ -183,6 +185,7 @@ if (typeof window !== 'undefined') {
       // with no depth (an older build's) can have another like it underneath.
       ignorePop = false
       settle()
+      leaveIfOwed()
       return
     }
     // A real Back press: close the top-most overlay. The browser already popped its history entry,
@@ -193,12 +196,38 @@ if (typeof window !== 'undefined') {
     if (top) {
       notify()
       top.close()
+    } else if (entryDepth < from) {
+      // …or a real Back press with NOTHING open (see leaveIfOwed): the press is still owed.
+      backOwed = true
     }
     // …and wherever that landed, do not stay on an entry nothing owns (settle, below): the entry of
     // an overlay that is already closed — moved FORWARD onto, or left underneath the one this Back
     // just closed by a reload with two things open.
     settle()
+    leaveIfOwed()
   })
+}
+
+// ── A BACK PRESS THAT CLOSED NOTHING IS STILL A BACK PRESS ─────────────────────────────────────
+// A page reloaded with something open starts on that thing's entry (onLoadedOverlayEntry, above).
+// When what was open does not come back after a reload — the ⚙ menu, a popup — nothing is open and
+// the page is still one or more overlay entries deep. Back from there used to step down onto the
+// page's own entry and stop: the press was spent, and nothing on the screen had changed. With
+// nothing open, Back means what it means on any page — leave — so the press is passed on: once the
+// place has settled on the page's own entry, one more step back is taken on the player's behalf.
+// HOW A BACK PRESS IS TOLD FROM A FORWARD ONE: both arrive as the same event, with nothing open in
+// either case when the entry is a dead one — but Back lands on a SHALLOWER entry than it left and
+// Forward on a deeper one, and every entry carries its depth. (Two markers an older build left
+// carry no depth and read the same, so a press between them is not passed on: it settles onto the
+// page as before.)
+// ⚠ ONLY EVER FROM THE PAGE'S OWN ENTRY, and only as a plain history.back() that nothing waits for:
+// if there is a page before this one the app is left, and if there is none (the app was the first
+// thing in the tab) the call does nothing at all — no popstate comes, so no flag is left standing.
+let backOwed = false
+function leaveIfOwed() {
+  if (!backOwed || ignorePop) return // a settle is still on its way: it comes back through here
+  backOwed = false
+  if (entryDepth === 0 && stack.length === 0) window.history.back()
 }
 
 // ── THE PLACE IN THE HISTORY NEVER SITS DEEPER THAN THE NEWEST THING STILL OPEN ────────────────

@@ -718,8 +718,11 @@ button:focus,select:focus{outline:none}
    because a white ring on the very edge of a fill is only visible against a dark card: on the two
    light themes it melts into the white around the button and reads as the button shrinking. With
    the fill on both sides of it, it is a ring in every theme. Solid and bright, it cannot be taken
-   for Amnesic's dashed frame (.session-only), and since that one is a ::after border and this one
-   an outline, a control can wear both.
+   for Amnesic's dashed frame (.session-only). That one is a ::after border and this one an
+   outline, so neither switches the other off — but nothing wears both today (the dashed frame
+   lives on the game screens, outside every scope), and at this inset the ring would be drawn
+   exactly over the dashes: a control that ever does wear both must set --kbd-ring-offset further
+   in, so the two are seen side by side.
    ONE CONTROL TAKES IT ON THE OUTSIDE (.ring-outside): the tap-to-type readout beside a slider
    (components/SliderValueEditor) is a button exactly the size of its digits — no padding for a
    ring to sit in, filled or not — so there the ring is drawn 2px clear of the box, in the card's

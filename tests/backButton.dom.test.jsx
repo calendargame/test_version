@@ -396,11 +396,113 @@ describe('a page that loaded onto an overlay entry (a reload with something open
       expect(window.history.state).toEqual({ sentinel: true })
     })
 
-    it('with nothing coming back open, the first Back lands on the page', async () => {
-      await reloadedOnTwo(BOTH)
-      act(() => window.history.back())
-      await flushTraversals()
-      expect(window.history.state).toEqual({ sentinel: true })
+    // ★ NOTHING COMES BACK OPEN — the ⚙ menu and a popup do not survive a reload. Nothing is on
+    // screen to close, so a Back press means what it means on any page: leave. It used to stop on
+    // the page's own entry — a press spent with nothing changed on the screen.
+    describe('…and nothing comes back open: Back LEAVES, in one press', () => {
+      // The page before the app, so "left the app" is somewhere this harness can see.
+      async function reloadedDeep(markers) {
+        window.history.pushState({ before: true }, '')
+        return reloadedOnTwo(markers)
+      }
+      afterEach(async () => {
+        // These cases end on entries that are this harness's own; step off them.
+        for (
+          let i = 0;
+          i < 4 && (window.history.state?.before || window.history.state?.sentinel);
+          i++
+        ) {
+          window.history.back()
+          await flushTraversals()
+        }
+      })
+
+      it('two entries deep: one Back press goes past both AND past the page', async () => {
+        await reloadedDeep(BOTH)
+        act(() => window.history.back()) // ONE real Back press
+        await flushTraversals()
+        expect(window.history.state).toEqual({ before: true })
+      })
+
+      it('one entry deep: the same', async () => {
+        await reloadedDeep([{ cgOverlay: 'settings', cgDepth: 1 }])
+        act(() => window.history.back())
+        await flushTraversals()
+        expect(window.history.state).toEqual({ before: true })
+      })
+
+      it('three entries deep: the same', async () => {
+        await reloadedDeep([...BOTH, { cgOverlay: 'changelog', cgDepth: 3 }])
+        act(() => window.history.back())
+        await flushTraversals()
+        expect(window.history.state).toEqual({ before: true })
+      })
+
+      // The other direction must NOT be passed on: Forward onto the leftover entry of a closed
+      // overlay bounces back to the page and stays in the app.
+      it('a FORWARD press onto a dead entry still only bounces back to the page', async () => {
+        const useBackButton = await reloadedDeep([])
+        function Menu({ open }) {
+          useBackButton(open, () => {}, 'settings')
+          return null
+        }
+        const { rerender } = render(<Menu open />)
+        rerender(<Menu open={false} />) // closed from the UI: its entry is now a dead forward one
+        await flushTraversals()
+        expect(window.history.state).toEqual({ sentinel: true })
+        act(() => window.history.forward())
+        await flushTraversals()
+        expect(window.history.state).toEqual({ sentinel: true }) // bounced, and no further
+      })
+
+      it('something opened again after the reload is closed by Back as always — nothing is passed on', async () => {
+        const useBackButton = await reloadedDeep(BOTH)
+        const close = vi.fn()
+        function Menu() {
+          const [open, setOpen] = useState(true)
+          useBackButton(
+            open,
+            () => {
+              close()
+              setOpen(false)
+            },
+            'settings',
+          )
+          return null
+        }
+        render(<Menu />)
+        act(() => window.history.back())
+        await flushTraversals()
+        expect(close).toHaveBeenCalledTimes(1)
+        expect(window.history.state).toEqual({ sentinel: true }) // on the page, still in the app
+      })
+
+      it('after a press was passed on, the next overlay still opens and closes as always', async () => {
+        const useBackButton = await reloadedDeep(BOTH)
+        act(() => window.history.back())
+        await flushTraversals()
+        expect(window.history.state).toEqual({ before: true })
+        // (In a browser the app is gone by now. Here the module lives on, which is what lets this
+        // show that nothing was left standing: no swallowed popstate, no owed press.)
+        const close = vi.fn()
+        function Menu() {
+          const [open, setOpen] = useState(true)
+          useBackButton(
+            open,
+            () => {
+              close()
+              setOpen(false)
+            },
+            'settings',
+          )
+          return null
+        }
+        render(<Menu />)
+        act(() => window.history.back())
+        await flushTraversals()
+        expect(close).toHaveBeenCalledTimes(1)
+        expect(window.history.state).toEqual({ before: true })
+      })
     })
 
     it('a second overlay opened after the takeover sits one deeper, and each close lands right', async () => {
