@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { isPageCovered, useLayer } from './overlayStack.js'
+import { InOpenListContext } from './openListContext.js'
 import {
   SCROLLER_CORE_CLASS,
   holdScrollRegion,
@@ -146,7 +147,8 @@ const SCREEN_GUTTER = '1rem'
 //     exactly as long as the TRIGGER can display (lib/presetNameWidth), so every name near that
 //     length was cut short with "…" in the very list you pick it from. So the list takes the width
 //     its names ask for, with the trigger's width as its floor (short names: the same box as
-//     before, to the pixel). It is pinned by its LEFT edge and grows to the right, because that is
+//     before, to the pixel — which holds only because a label holds no width of its own open in
+//     the list; components/openListContext is how the preset name cell knows to let go of its). It is pinned by its LEFT edge and grows to the right, because that is
 //     where the room is: the preset switcher sits at the left of the bar, a few dozen pixels from
 //     the screen's edge. It stops one gutter short of the right edge of the screen; a name longer
 //     than that — one made on a wider screen — is the only one still shortened, by the name's own
@@ -741,7 +743,9 @@ export default function CustomSelect({
                     (`w-full` of one shared panel), so flex-1 stretches every row's label cell to
                     that same shared width regardless of that row's own text length — which is the
                     width a long preset name truncates against. */}
-                  <span className="min-w-0 flex-1">{opt.label}</span>
+                  <span className="min-w-0 flex-1">
+                    <InOpenListContext value={true}>{opt.label}</InOpenListContext>
+                  </span>
                 </button>
               ))}
             </div>

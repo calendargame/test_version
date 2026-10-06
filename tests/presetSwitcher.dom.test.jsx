@@ -249,27 +249,30 @@ describe('an amnesic preset in the list: nothing drawn, and a word spoken', () =
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 describe('the control must not size itself to its longest option', () => {
-  it('gives every option the SAME MINIMUM-width name cell — a floor, not a fixed width any more', () => {
+  it('floors the name cell in the TRIGGER, and lets a list row ask for exactly its name', () => {
     // Round 20: the cell used to be exactly PRESET_NAME_COL wide (a `width` style); now it is
     // AT LEAST that wide (a `minWidth` style), and the actual width — how much wider — is jsdom's
     // to not know, since it has no layout engine (main.tsx's budget block and
     // components/PresetSwitcher's own comments are where that arithmetic lives now). What this
     // environment CAN still pin: `width` is gone (the mechanism that made the cell rigid), and
-    // `minWidth` is still the same exported constant, applied identically everywhere the label
-    // renders — the floor that stops a short name's row collapsing in the menu.
+    // `minWidth` is the exported constant on every one of the trigger's stacked cells.
+    // ★ AND NOT IN THE OPEN LIST. There the floor held nothing open — the panel is never narrower
+    // than the trigger — and it SET the panel's width instead: floor + ✓ column + padding, at the
+    // list's larger text, is 5px more than the trigger at 390 wide, so a list holding only
+    // "Preset 1" was drawn wider than the button it hangs from. A row asks for its name's width.
     act(() => {
       createPreset('W'.repeat(MAX_PRESET_NAME)) // the widest name the store will accept
       createPreset('Hi')
     })
     mount()
     openMenu()
-    // Every row, and every one of the trigger's stacked cells.
-    const cells = [...options().map(optionWrapper), ...triggerWrappers()].map(nameCell)
-    expect(cells).toHaveLength(6) // 3 presets, each rendered once in the menu and once in the stack
-    for (const cell of cells) {
-      expect(cell.style.width).toBe('')
-      expect(cell.style.minWidth).toBe(PRESET_NAME_COL)
-    }
+    const inTrigger = triggerWrappers().map(nameCell)
+    const inList = options().map(optionWrapper).map(nameCell)
+    expect(inTrigger).toHaveLength(3) // 3 presets, each rendered once in the stack…
+    expect(inList).toHaveLength(3) // …and once in the menu
+    for (const cell of [...inTrigger, ...inList]) expect(cell.style.width).toBe('')
+    for (const cell of inTrigger) expect(cell.style.minWidth).toBe(PRESET_NAME_COL)
+    for (const cell of inList) expect(cell.style.minWidth).toBe('')
   })
 
   it('marks every cell with the DOM hook lib/presetNameWidth reads across the component boundary', () => {

@@ -1,5 +1,6 @@
-import { type RefObject } from 'react'
+import { use, type RefObject } from 'react'
 import CustomSelect from './CustomSelect.jsx'
+import { InOpenListContext } from './openListContext.js'
 import { usePresets } from '../store/presets.js'
 import type { Preset } from '../store/presets.js'
 import { switchPreset } from '../store/presetControl.js'
@@ -74,11 +75,12 @@ import { AMNESIC_SPOKEN } from '../store/amnesicMode.js'
 //   structurally different flex row (not the trigger's stacked grid) and would NOT have picked up
 //   the same fill by construction — see that file's option-row rendering for the fix and why it
 //   was needed once this cell stopped being a fixed constant.
-//   THE FLOOR STAYS as the TRIGGER-GRID floor and a defensive one. The portaled panel is
-//   `dropdownWidth="at-least-trigger"` — never narrower than this trigger's live rendered width,
-//   and wider when its longest name needs it — so a menu row always has something to fill (the
-//   label cell is `flex-1` of a `w-full` row of that panel), and PRESET_NAME_COL rarely binds
-//   in the menu. It still binds in the trigger's own stacked grid, and it is still the
+//   THE FLOOR STAYS as the TRIGGER-GRID floor and a defensive one, AND ONLY THERE. The portaled
+//   panel is `dropdownWidth="at-least-trigger"` — never narrower than this trigger's live rendered
+//   width, and wider when its longest name needs it — so a menu row always has something to fill
+//   (the label cell is `flex-1` of a `w-full` row of that panel), and a floor in the menu holds
+//   nothing open; it only made the panel wider than its trigger (PresetOptionLabel says by how
+//   much, and drops it there). It binds in the trigger's own stacked grid, and it is still the
 //   thing that stops a name cell collapsing toward bare content if the trigger is ever squeezed
 //   toward its own minimum — kept as a "never smaller than this" rather than an "always exactly
 //   this". `em`, not px or rem, for the reason it always was: the root font-size is FLUID
@@ -170,6 +172,15 @@ export const PRESET_NAME_CELL_SELECTOR = '[data-select-trigger] [data-preset-nam
 // one with pressDrag), so lib/presetNameWidth can never measure the ⚙ panel's copy by mistake.
 export function PresetOptionLabel({ preset: p }: { preset: Preset }) {
   const spoken = AMNESIC_SPOKEN[useSessionAmnesic((s) => s.modes[p.id] ?? 'off')]
+  // ★ THE FLOOR IS THE TRIGGER'S, NOT THE LIST'S. In the trigger it is what keeps the name cell
+  // from collapsing toward bare content. In an open list there is nothing for it to hold — the
+  // panel is never narrower than the trigger and the row's label cell fills it — and what it did
+  // instead was SET the panel's width: a row is the floor plus its ✓ column and padding, which at
+  // the list's larger text is a few pixels more than the trigger, so a list of short names
+  // ("Preset 1") came out 5px wider than the button it hangs from. In the list the cell asks for
+  // exactly its name's width, so a list that needs no extra room is its trigger's width to the
+  // pixel, and one that does grows by what the longest name needs.
+  const inOpenList = use(InOpenListContext)
   return (
     // The name cell (floor PRESET_NAME_COL, grows past it — see the ⚠⚠ block above). `flex`
     // makes it a block-level flex container, so inside the trigger's grid cell AND inside a
@@ -180,7 +191,7 @@ export function PresetOptionLabel({ preset: p }: { preset: Preset }) {
     // measurement reads off THIS exact element via PRESET_NAME_CELL_SELECTOR.
     <span
       className="flex items-center"
-      style={{ minWidth: PRESET_NAME_COL }}
+      style={inOpenList ? undefined : { minWidth: PRESET_NAME_COL }}
       data-preset-name-cell="true"
     >
       {/* `truncate` (overflow-hidden + ellipsis + nowrap) goes on the NAME, not on the cell: a
