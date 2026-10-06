@@ -1,0 +1,230 @@
+// @vitest-environment jsdom
+// Drives an OLDER build's real app (this file is copied into that build's tests/ folder) over a
+// seeded SEALED save, and writes down what it stored after each step.
+import { describe, it, expect, afterEach } from 'vitest'
+import { render, screen, within, cleanup, fireEvent, act } from '@testing-library/react'
+import { writeFileSync } from 'node:fs'
+import { App } from '../src/main.jsx'
+import { useSettings } from '../src/store/settings.js'
+import { useModePrefs } from '../src/store/modePrefs.js'
+import { useProgress } from '../src/store/progress.js'
+import { rehydrate } from './helpers/persistence.js'
+import { createPreset, switchPreset, setPresetAmnesic } from '../src/store/presetControl.js'
+import { readDate, correctDayName } from './helpers/modeScreen.jsx'
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+function mountApp() {
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+  return render(<App />)
+}
+function unmountApp() {
+  cleanup()
+  document.getElementById('root')?.remove()
+}
+const isHidden = (el) => {
+  for (let n = el; n; n = n.parentElement) if (n.style && n.style.display === 'none') return true
+  return false
+}
+const visibleButton = (name) =>
+  screen.getAllByRole('button', { name }).find((b) => !isHidden(b))
+const answer = (right) =>
+  act(() => {
+    const good = correctDayName(readDate())
+    const name = right ? good : DAYS.find((d) => d !== good)
+    fireEvent.click(visibleButton(name))
+  })
+const tapStat = (label) =>
+  act(() => {
+    fireEvent.click(
+      screen
+        .getAllByRole('button')
+        .find(
+          (b) =>
+            !isHidden(b) &&
+            [...b.querySelectorAll('span')].some((s) => s.textContent.trim() === label),
+        ),
+    )
+  })
+const tap = (el) =>
+  act(() => {
+    fireEvent.pointerDown(el)
+    fireEvent.click(el, { detail: 1 })
+  })
+
+const TAIL = Array.from({ length: 300 }, (_, i) => 2 + (i % 50) / 10)
+const IDS = ['aaa0', 'bbb1', 'ccc2', 'ddd3']
+const SEED = {
+  state: {
+    stats: {
+      classic: {
+        played: 1400,
+        good: 1300,
+        streak: 3,
+        best: 40,
+        times: TAIL,
+        timesLost: 1000,
+        sealed: { n: 1000, ids: IDS },
+      },
+      flash: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+      dedDay: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+      dedMonth: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+      dedYear: { played: 0, good: 0, streak: 0, best: 0, times: [] },
+    },
+    blitzBest: {},
+    suddenBest: {},
+    suddenAmBest: {},
+    aoxBest: {},
+  },
+  version: 5,
+}
+
+const log = []
+const view = (area, key) => {
+  const raw = area.getItem(key)
+  if (raw === null) return null
+  const env = JSON.parse(raw)
+  const c = env.state?.stats?.classic
+  return {
+    version: env.version,
+    classic: c && { ...c, times: c.times.length, lastTimes: c.times.slice(-2) },
+  }
+}
+const snap = (step) => {
+  const chunkKeys = Object.keys(localStorage).filter((k) => k.startsWith('cg-times-v1'))
+  log.push({
+    step,
+    main: view(localStorage, 'cg-progress-v1'),
+    p2: view(localStorage, 'cg-progress-v1~p2'),
+    session: view(sessionStorage, 'cg-progress-v1'),
+    chunkKeys: chunkKeys.length,
+    dialog: screen.queryAllByRole('dialog').map((d) => d.getAttribute('aria-label') ?? d.textContent.slice(0, 40)),
+  })
+}
+
+describe('an older build over a sealed save', () => {
+  afterEach(() => {
+    writeFileSync(process.env.SEALED_OUT, JSON.stringify(log, null, 1))
+    unmountApp()
+  })
+  it('drive', async () => {
+    localStorage.clear()
+    sessionStorage.clear()
+    useSettings.getState().resetToFactory()
+    useSettings.getState().setRandomFormat(false)
+    useSettings.getState().setDateFormat('numeric-ymd')
+    useSettings.getState().setMinY(1583)
+    useSettings.getState().setMaxY(10000)
+    useModePrefs.getState().resetModePrefs()
+    useModePrefs.getState().setClassicTimingOff(false)
+    localStorage.setItem('cg-progress-v1', JSON.stringify(SEED))
+    IDS.forEach((id, j) =>
+      localStorage.setItem(`cg-times-v1:classic:${j}.${id}`, JSON.stringify(TAIL.slice(0, 250))),
+    )
+    snap('seeded')
+    await rehydrate(useProgress)
+    snap('loaded')
+    mountApp()
+    snap('mounted')
+    answer(true)
+    answer(true)
+    answer(true)
+    snap('3 timed answers')
+    answer(false)
+    snap('a wrong answer')
+    // The wrong answer locked the question; move on if the build wants a tap for that.
+    const next = screen.queryAllByRole('button', { name: /^(Next|Continue)/ }).find((b) => !isHidden(b))
+    if (next) tap(next)
+    answer(true)
+    snap('1 more timed answer')
+    tap(visibleButton('Override'))
+    snap('override in the tail (credit taken back)')
+    const undo = screen.queryAllByRole('button', { name: 'Undo' }).find((b) => !isHidden(b))
+    if (undo) {
+      await new Promise((r) => setTimeout(r, 700)) // past the double-tap guard
+      tap(undo)
+      snap('override undone')
+    }
+    tapStat('Last')
+    snap('timing hidden')
+    tapStat('Last')
+    snap('timing shown again')
+    const ask = screen.queryByRole('dialog', { name: 'Enable and Reset Stats?' })
+    if (ask) {
+      const names = within(ask).getAllByRole('button').map((x) => x.textContent)
+      log.push({ popupButtons: names })
+      const keep = within(ask)
+        .getAllByRole('button')
+        .find((x) => /Cancel|Keep|No/.test(x.textContent))
+      if (keep) tap(keep)
+      else act(() => { fireEvent.keyDown(document, { key: 'Escape' }) })
+      log.push({ popupStillOpen: !!screen.queryByRole('dialog', { name: 'Enable and Reset Stats?' }) })
+      snap('the false popup was declined')
+    }
+    act(() => {
+      setPresetAmnesic(1, true)
+    })
+    snap('amnesic on')
+    answer(true)
+    snap('an answer while amnesic')
+    act(() => {
+      setPresetAmnesic(1, false)
+    })
+    snap('amnesic off')
+    let p2
+    act(() => {
+      p2 = createPreset().id
+      localStorage.setItem('cg-settings-v1~p' + p2, localStorage.getItem('cg-settings-v1'))
+      switchPreset(p2)
+    })
+    act(() => {
+      useSettings.getState().setRandomFormat(false)
+      useSettings.getState().setDateFormat('numeric-ymd')
+      useSettings.getState().setMinY(1583)
+      useSettings.getState().setMaxY(10000)
+    })
+    answer(true)
+    snap('switched to a new preset and answered')
+    act(() => {
+      switchPreset(1)
+    })
+    answer(true)
+    snap('switched back and answered')
+    unmountApp()
+    await rehydrate(useProgress)
+    mountApp()
+    answer(true)
+    snap('reloaded and answered')
+    act(() => {
+      fireEvent.click(visibleButton('Reset Stats'))
+    })
+    act(() => {
+      fireEvent.click(
+        within(screen.getByRole('dialog', { name: 'Reset Stats?' })).getByRole('button', {
+          name: 'Reset Stats',
+        }),
+      )
+    })
+    snap('Reset Stats')
+    // The same save with a tail one short of the old 1,000 cap, played past it.
+    unmountApp()
+    const long = JSON.parse(JSON.stringify(SEED))
+    Object.assign(long.state.stats.classic, {
+      played: 1999,
+      good: 1999,
+      times: Array.from({ length: 999 }, (_, i) => 2 + (i % 50) / 10),
+    })
+    localStorage.setItem('cg-progress-v1', JSON.stringify(long))
+    useModePrefs.getState().setClassicTimingOff(false) // v2.26.0 left timing hidden above
+    await rehydrate(useProgress)
+    mountApp()
+    snap('trim: loaded a 999-time tail')
+    answer(true)
+    answer(true)
+    answer(true)
+    snap('trim: 3 timed answers past 1,000')
+    writeFileSync(process.env.SEALED_OUT, JSON.stringify(log, null, 1))
+    expect(log.length).toBeGreaterThan(10)
+  }, 600000)
+})
