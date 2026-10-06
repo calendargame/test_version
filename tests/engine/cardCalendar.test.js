@@ -523,6 +523,8 @@ describe('a date only the Julian calendar has (February 29, 1500)', () => {
 // Builds up to v2.27.3 park in these same slots and stamp nothing. `asOlderBuild` turns a state this
 // build produced into what they would have parked: the same state with every stamp removed. Where the
 // case needs the older build's DEFECT too, the grid is rewritten by hand to what it would have stored.
+// ⏰ TEMPORARY, with the code it tests: this block goes in the release that turns sealing on and
+// deletes `SEAL_NEW_SILOS` (src/store/progressStorage.ts) — engine/parkedEngine's header says why.
 describe('the restore door — a card an older build parked without its calendar', () => {
   const strip = ({ jul: _j, ...meta }) => meta
   const asOlderBuild = (s) => {
@@ -564,12 +566,52 @@ describe('the restore door — a card an older build parked without its calendar
     expect(restoreParkedEngine(bare, false, 'classic').stack[0].meta.jul).toBe(false)
   })
 
-  it('a live date holding only wrong picks is stamped with the calendar it was drawn under', () => {
+  // ── A LIVE DATE HOLDING ONLY WRONG PICKS — no green on the grid to read the calendar off ──
+  it('wrong picks that are neither calendar’s answer: the calendar the date was drawn under', () => {
     const old = asOlderBuild(answer(initEngine(hastings(true)), OTHER, true))
     const back = restoreParkedEngine(old, false, 'classic')
     expect(back.card.jul).toBe(true)
     // …so the answer it goes on to show is that calendar's, whatever the setting is now.
     expect(marked(reveal(back, false).persistBtns)).toEqual([J])
+  })
+  it('a wrong pick ON one calendar’s answer: the card was not judged in that calendar', () => {
+    // Drawn with Julian on; the setting was switched off; the player picked the JULIAN day and was
+    // told it was wrong. Stamped by its draw, the card would come back with its own answer marked
+    // wrong — the day the player had already been refused, now the one that finishes the card.
+    for (const now of [true, false]) {
+      const back = restoreParkedEngine(
+        asOlderBuild(answer(initEngine(hastings(true)), J, false)),
+        now,
+        'classic',
+      )
+      expect(back.card.jul).toBe(false)
+      expect(back.persistBtns[J]).toBe('wrong-latest')
+      expect(marked(reveal(back, now).persistBtns)).toEqual([G])
+      healthy(back)
+    }
+    // …and the same the other way round.
+    const other = restoreParkedEngine(
+      asOlderBuild(answer(initEngine(hastings(false)), G, true)),
+      false,
+      'classic',
+    )
+    expect(other.card.jul).toBe(true)
+    expect(marked(reveal(other, false).persistBtns)).toEqual([J])
+  })
+  it('wrong picks on BOTH calendars’ answers say nothing: the drawn calendar, then the setting', () => {
+    // Reachable only in an older build: one day refused under each setting.
+    const old = asOlderBuild(answer(initEngine(hastings(true)), OTHER, true))
+    old.persistBtns = { [J]: 'wrong-prev', [G]: 'wrong-latest' }
+    expect(restoreParkedEngine(old, false, 'classic').card.jul).toBe(true)
+    delete old.date._jul
+    expect(restoreParkedEngine(old, false, 'classic').card.jul).toBe(false)
+  })
+  it('the green decides before the wrong picks do', () => {
+    // Revealed with Julian off after the Julian day was refused… and the Gregorian day too, earlier,
+    // under the other setting: the green names the card's calendar, whatever the reds say.
+    const old = asOlderBuild(reveal(answer(initEngine(hastings(true)), J, false), false))
+    expect(marked(old.persistBtns)).toEqual([G])
+    expect(restoreParkedEngine(old, true, 'classic').card.jul).toBe(false)
   })
 
   it('a live date nothing has judged stays unstamped', () => {
@@ -599,21 +641,93 @@ describe('the restore door — a card an older build parked without its calendar
     expect(restoreParkedEngine(j, true, 'classic')).toBe(j)
   })
 
-  it('an overridden card whose two grids name different days is refused, not shown', () => {
-    // The older build could override a card with the setting switched: state O's grid on one
-    // calendar's day, the stored as-answered grid on the other's. No stamp makes both right, and an
-    // Undo would bring back a green the codes contradict — so the whole history is dropped.
-    let s = gameReducer(answer(initEngine(hastings(true)), OTHER, true), {
-      type: 'NEW',
-      nextDate: MODERN,
-      useJulian: true,
-      saveStats: true,
+  // ── AN OVERRIDDEN CARD — its calendar is the one it was ANSWERED in, and its Override mark is
+  // put on that calendar's answer. The older build marked the answer of the setting at the press,
+  // so with the setting switched in between, the Override's green and the as-answered grid stored
+  // under it named two different days — and an Undo moved the green. (This card used to cost the
+  // whole history: no stamp made both grids right, so the blob was refused.)
+  describe('an overridden card whose Override was pressed under the other setting', () => {
+    const jsonOf = (s) => JSON.parse(JSON.stringify(s))
+    // A miss answered with Julian on, pushed into history, then credited by Override.
+    const overriddenInHistory = () =>
+      override(
+        gameReducer(answer(initEngine(hastings(true)), OTHER, true), {
+          type: 'NEW',
+          nextDate: MODERN,
+          useJulian: true,
+          saveStats: true,
+        }),
+        true,
+      )
+
+    it('in history: it comes back exactly as this build would have left it', () => {
+      const s = overriddenInHistory()
+      expect(s.stack[0].btns).toEqual({ [J]: 'correct' })
+      const old = asOlderBuild(s)
+      old.stack[0].btns = { [G]: 'correct' } // pressed with Julian off: the green on the Gregorian day
+      for (const now of [true, false]) {
+        const back = restoreParkedEngine(jsonOf(old), now, 'classic')
+        expect(back).toEqual(jsonOf(s))
+        healthy(back)
+        // …and the Undo lands on the grid it was answered with, green on the same day.
+        const undone = override(back, now)
+        expect(marked(undone.stack[0].btns)).toEqual([J])
+        expect(undone.stack[0].btns[OTHER]).toBe('wrong-prev')
+        healthy(undone)
+      }
+      expect(captureError).not.toHaveBeenCalled()
     })
-    s = override(s, true)
-    const old = asOlderBuild(s)
-    old.stack[0].btns = { [G]: 'correct' } // overridden with Julian off: O's green on the Gregorian day
-    expect(restoreParkedEngine(old, true, 'classic')).toBe(null)
-    expect(vi.mocked(captureError).mock.calls[0][1].reason).toBe('breaks an engine invariant')
+
+    it('a credit taken away under the other setting: the mark moves the same way', () => {
+      const s = override(back(answer(initEngine(hastings(true)), J, true)), true)
+      expect(s.persistBtns).toEqual({ [J]: 'override-wrong' })
+      const old = asOlderBuild(s)
+      old.persistBtns = { [G]: 'override-wrong' }
+      expect(restoreParkedEngine(old, false, 'classic')).toEqual(jsonOf(s))
+    })
+
+    it('the live card, its wrong pick on one calendar’s answer: answered in the other, so the mark goes there', () => {
+      // The Julian day refused with the setting off; the setting switched on; Override pressed.
+      const s = override(answer(initEngine(hastings(true)), J, false), false, { hold: true })
+      expect(s.persistBtns).toEqual({ [G]: 'correct' })
+      const old = asOlderBuild(s)
+      old.persistBtns = { [J]: 'correct' } // …so that build's green sat on the day it had just refused
+      const restored = restoreParkedEngine(old, true, 'classic')
+      expect(restored).toEqual(jsonOf(s))
+      healthy(restored)
+    })
+
+    it('the live card, its wrong picks saying nothing: the Override’s own mark is all there is, and stays', () => {
+      const s = override(answer(initEngine(hastings(false)), OTHER, true), true, { hold: true })
+      expect(s.persistBtns).toEqual({ [J]: 'correct' })
+      // Drawn with Julian off — but the green on screen is the Julian day, and nothing contradicts it.
+      const restored = restoreParkedEngine(asOlderBuild(s), false, 'classic')
+      expect(restored.card.jul).toBe(true)
+      expect(restored.persistBtns).toEqual({ [J]: 'correct' })
+      healthy(restored)
+    })
+
+    it('an as-answered grid that marks BOTH calendars’ days is no card at all: refused', () => {
+      const old = asOlderBuild(overriddenInHistory())
+      old.stack[0].meta.answered.btns = { [J]: 'correct', [G]: 'correct' }
+      expect(restoreParkedEngine(old, true, 'classic')).toBe(null)
+      expect(vi.mocked(captureError).mock.calls[0][1].reason).toBe('breaks an engine invariant')
+    })
+  })
+
+  it('a card of a date only the Julian calendar has is never read in the other one', () => {
+    const leap = { y: 1500, m: 2, d: 29, _fmt: 'numeric-ymd', _jul: true }
+    const JL = wdayJulian(1500, 2, 29)
+    const NEVER = wday(1500, 2, 29)
+    // Wrong picks only — one of them the Julian day itself, refused by the older build's Gregorian
+    // reading of a day that calendar never had. There is still only one calendar to read it in.
+    const live = asOlderBuild(answer(initEngine(leap), NEVER, true))
+    live.persistBtns = { [JL]: 'wrong-latest' }
+    expect(restoreParkedEngine(live, false, 'classic').card.jul).toBe(true)
+    // …and a green on the day that reading called right fits no calendar that has the date: refused.
+    const judged = asOlderBuild(reveal(initEngine(leap), true))
+    judged.persistBtns = { [NEVER]: 'correct' }
+    expect(restoreParkedEngine(judged, false, 'classic')).toBe(null)
   })
 
   it('a green that is the answer in NEITHER calendar is refused', () => {

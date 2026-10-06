@@ -272,8 +272,10 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
   // behind a browsed card, and, in the second profile, that it all held after forgetting the oldest
   // cards the way the size budget does.
   // ★ Every restore is also made a second time from the state AS AN OLDER BUILD WOULD HAVE PARKED IT
-  // — no calendar on any card (round 24) — and the door must give each judged card a calendar that
-  // its own green cannot contradict (fuzzHarness' legacyRestoreBreaks).
+  // — no calendar on any card, and about half the overridden cards' Override marks on the OTHER
+  // calendar's day, where that build put them when the setting was switched before the press (round
+  // 24) — and the door must give each judged card a calendar that its own green cannot contradict,
+  // and put such a mark back on the card's own answer (fuzzHarness' legacyRestoreBreaks).
   it(
     'reload-ref — a restore mid-play brings back the exact state, and the model agrees afterwards',
     () => {
@@ -287,6 +289,7 @@ describe('fuzz / bug survey — engine invariants hold across random play', () =
       expect(cov.toggleBack).toBeGreaterThan(0)
       expect(cov.hydrated).toBeGreaterThan(0)
       expect(cov.legacyRestores).toBeGreaterThan(1000) // …and each one again, as an older build's blob
+      expect(cov.legacyCrossed).toBeGreaterThan(1000) // …with Override marks on the other calendar's day
       expect(cov.julianFlips).toBeGreaterThan(1000)
       expect(cov.missingRegens).toBeGreaterThan(100) // a restored date the calendar now in force lacks, replaced
     },

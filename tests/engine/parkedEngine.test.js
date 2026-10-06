@@ -10,9 +10,11 @@
 //
 // ⚠ There is one thing an older build's blob is given at the door, and it is not tested here: the
 // slots this build reads (`cg-round-v2`, `cg-history-v1`) are also written by builds that stamp no
-// calendar on a judged card, and the door stamps those from the card's own grid (or refuses the
-// blob when the grid fits neither calendar). tests/engine/cardCalendar.test.js owns that. Any other
-// difference in shape is refused like every blob that is not a healthy engine state.
+// calendar on a judged card, and the door stamps those from the card's own grid, puts an overridden
+// card's Override mark on that calendar's answer (or refuses the blob when the grid fits neither
+// calendar). tests/engine/cardCalendar.test.js owns that — until the release that turns sealing on
+// removes it (engine/parkedEngine's header). Any other difference in shape is refused like every
+// blob that is not a healthy engine state.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { restoreParkedEngine } from '../../src/engine/parkedEngine.js'
 import { captureError } from '../../src/observability/sentry.js'

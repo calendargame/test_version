@@ -15,75 +15,148 @@
 // reload, every reload died the same way for the rest of the browsing session: a mode screen bricked
 // until the tab was closed.
 //
-// ⚠ THERE IS NO MIGRATION HERE, AND THAT IS DELIBERATE. Both slots are keyed by a name only builds
-// with TODAY'S engine shape have ever written (`cg-round-v2`, `cg-history-v1`); the older shapes
-// lived under a key this build does not read. A later build that changes the shape changes the key,
-// and anything else that turns up in a slot is refused below rather than guessed at.
+// ⚠ A DIFFERENT SHAPE IS NEVER MIGRATED, AND THAT IS DELIBERATE. Both slots are keyed by a name only
+// builds with TODAY'S engine shape have ever written (`cg-round-v2`, `cg-history-v1`); the older
+// shapes lived under a key this build does not read. A later build that changes the shape changes the
+// key, and anything else that turns up in a slot is refused below rather than guessed at.
 //
-// ★ THE ONE THING THE DOOR COMPLETES: A CARD'S CALENDAR (CardMeta.jul). Builds up to v2.27.3 share
-// these slots and this shape, and judged a card without recording which calendar they judged it in —
-// and one of them can be loaded in this tab between two loads of this build, so an unstamped card
-// can turn up at any time, not once. Such a card is not refused and not guessed at: its own grid is
-// the record of the judgement (withCalendars, below).
+// ★ THE ONE THING THE DOOR COMPLETES, FOR ONE RELEASE: A CARD'S CALENDAR (CardMeta.jul). That is a
+// field added to today's shape, not another shape: builds up to v2.27.3 write these same slots, and
+// judged a card without recording which calendar they judged it in — and one of them can be loaded in
+// this tab between two loads of this build, so an unstamped card can turn up at any time, not once.
+// Such a card is not refused and not guessed at: its own grid is the record of the judgement
+// (withCalendars, below).
+// ⏰ TEMPORARY — IT IS REMOVED IN THE RELEASE THAT TURNS SEALING ON. A parked blob lives only for a
+// browsing session, so the stamping is needed only while a build that does not stamp (v2.27.3 or
+// older) can still be loaded in the same tab as this one — across the update to this release, and
+// while the two sites are a release apart. The release after this one is published over builds that
+// all stamp. It is the same release that deletes `SEAL_NEW_SILOS` in src/store/progressStorage.ts
+// (the staged roll-out of the chunked solve-time layout), and the two removals point at each other so
+// that whoever finds one finds the other. What goes then: the whole "calendar of a card an older
+// build judged" section below (withCalendars and everything it calls) and its one call in
+// restoreParkedEngine; WeekdayQuestion._jul in engine/gameReducer and the line in src/main.tsx's
+// genDate that writes it (this section is its only reader); the "as an older build would have parked
+// it" half of tests/engine/fuzzHarness; and the restore-door block of tests/engine/cardCalendar. An
+// unstamped judged card is then refused by the invariant walk like any other card this engine could
+// not have produced.
 // ─────────────────────────────────────────────────────────────────────────
 import { checkGameInvariants } from './invariants.js'
 import { correctIndexOf } from './gameReducer.js'
 import { isJulianOnlyDate } from '../lib/calendar.js'
 import { captureError } from '../observability/sentry.js'
 import type { CardMeta, GameState, Question, StackEntry } from './gameReducer.js'
-import type { Btns } from './answerButtons.js'
+import type { Btns, ButtonState } from './answerButtons.js'
 
 /** Is this a non-null object — the first question asked of anything read back out of storage. */
 export const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null
 
 // ── THE CALENDAR OF A CARD AN OLDER BUILD JUDGED ─────────────────────────────────────────────────
-// The answer that build marked on the card's grid — its green, or the 'override-wrong' an Override
-// left on the answer — IS the judgement, so the card's calendar is whichever one that answer belongs
-// to. Read off the grid, in this order:
-//   • the marked answer is the date's weekday in exactly ONE calendar → that calendar. Exact: the
-//     card keeps the green it was given, and its codes now arrive at it. (This is the card the stamp
-//     exists for — drawn under one setting, answered under the other — and that build would have
-//     worked its codes in the wrong one.)
-//   • the marked answer fits BOTH — the two calendars agree on that date's weekday (they do across
-//     whole centuries), or the date is after the reform and has only one — or the grid marks no
-//     answer yet (a live date holding only wrong picks) → the calendar the date was drawn under,
-//     which is the one that build judged it in unless the setting was switched in between; and,
-//     failing that record, the setting now. The green cannot be wrong either way.
-//   • a Deduction puzzle → the calendar it was built in, as for every puzzle (gameReducer's
-//     calendarOf).
-//   • the marked answer fits NEITHER calendar → no stamp: the card is not one this engine could
-//     have produced, and the invariant walk refuses the whole blob for it, as it refuses a card whose
-//     overridden grid and stored as-answered grid name different days (that build could override a
-//     card under the other setting).
-// So nothing an older build parked can come back showing a green its own codes contradict: the card
-// is read in the calendar its green belongs to, or the history is dropped and the mode starts from
-// its saved stats.
-const markedAnswer = (btns: Btns | undefined): number | null => {
-  for (const k in btns) if (btns[k] === 'correct' || btns[k] === 'override-wrong') return Number(k)
-  return null
+// ⏰ TEMPORARY: this whole section goes in the release that turns sealing on and deletes
+// `SEAL_NEW_SILOS` (src/store/progressStorage.ts) — see the header.
+//
+// In this build a card has ONE calendar, fixed by the first thing that judges it. An older build
+// judged each time by the setting of that moment, and kept no record — but the card's grid AS THE
+// PLAYER LEFT IT is the record of those judgements: the grid itself, or, for a card an Override has
+// flipped, the as-answered grid stored under it (CardMeta.answered). So the calendar is read off
+// that grid, by what it says, strongest first:
+//   1. THE ANSWER IT MARKS (its green) decides, when it marks one: the calendar that has the date
+//      and whose answer that is. Exact — the card keeps the green it was given, and its codes now
+//      arrive at it. (This is the card the stamp exists for: drawn under one setting, answered under
+//      the other; that build would have worked its codes in the wrong one.) An answer that is the
+//      date's weekday in NEITHER calendar, or two marked answers that no one calendar explains, is
+//      no card this engine could have produced: no stamp, and the invariant walk refuses the blob —
+//      the history is dropped and the mode starts from its saved stats.
+//   2. …and when that leaves both calendars standing — the two agree on that date's weekday (they do
+//      across whole centuries), the date is after the reform and has one reading, or the grid marks
+//      no answer yet (a live date holding only wrong picks) — THE WRONG PICKS speak next: a calendar
+//      whose answer the grid marks WRONG is not the one those picks were judged in, so when exactly
+//      one calendar's answer is clear of a wrong mark, it is that one. (Without this a live card
+//      could come back in the calendar whose answer the player had already been told was wrong.)
+//   3. …then, for an overridden card, THE DAY THE OVERRIDE MARKED (its own grid is that answer
+//      alone), when it is one calendar's and not the other's: the green that was on screen stays.
+//   4. …then the calendar the date was drawn under — the one that build judged it in unless the
+//      setting was switched in between — and, failing that record, the setting now. Nothing on the
+//      card contradicts either.
+//   A calendar that does not HAVE the date (lib/calendar's isJulianOnlyDate) is never in the running.
+//   A Deduction puzzle is read in the calendar it was built in, as every puzzle is (gameReducer's
+//   calendarOf).
+//
+// ★ AN OVERRIDDEN CARD'S OWN GRID IS THEN REBUILT IN THAT CALENDAR. That grid is not a record of
+// anything the player did: by rule it is the card's answer alone, marked as a credit or as a credit
+// taken away (gameReducer's toggleCard). An older build marked the answer of the setting at the
+// press, which could be the other calendar's day than the one the card had been answered in — so an
+// Undo brought back a green on a different day from the one the Override showed. The card's
+// calendar is the one it was ANSWERED in (above), and its Override mark is moved onto that
+// calendar's answer: the card comes back exactly as this build would have left it after the same
+// play, and both of its states name one day. (Such a card used to be the whole reason an older
+// build's history was refused across the update.)
+// So nothing an older build parked can come back showing a green its own codes contradict.
+const isWrongMark = (s: ButtonState | undefined): boolean =>
+  s === 'wrong' || s === 'wrong-latest' || s === 'wrong-prev'
+const isAnswerMark = (s: ButtonState | undefined): boolean =>
+  s === 'correct' || s === 'override-wrong'
+// Is `answer` every answer this grid marks? (True of a grid that marks none.)
+const marksOnly = (btns: Btns, answer: number): boolean => {
+  for (const k in btns) if (isAnswerMark(btns[k]) && Number(k) !== answer) return false
+  return true
 }
-function calendarFromGrid(q: Question, btns: Btns | undefined, useJulian: boolean): boolean | null {
-  // (A date only the Julian calendar has was drawn under it, whatever else is on record.)
-  const drawn = isJulianOnlyDate(q.y, q.m, q.d) || (q._jul ?? useJulian)
-  if (q.type !== undefined) return drawn
-  const marked = markedAnswer(btns)
-  if (marked === null) return drawn
-  const julian = marked === correctIndexOf(q, true)
-  const gregorian = marked === correctIndexOf(q, false)
-  return julian && gregorian ? drawn : julian ? true : gregorian ? false : null
-}
-// The card's record with its calendar, when the card has been judged (its grid is marked) and
-// carries none; otherwise the very same record.
-function stamped(
+function calendarFromGrid(
+  q: Question,
+  btns: Btns,
   meta: CardMeta,
+  useJulian: boolean,
+): boolean | null {
+  const julianOnly = isJulianOnlyDate(q.y, q.m, q.d)
+  const drawn = julianOnly || (q._jul ?? useJulian)
+  if (q.type !== undefined) return drawn
+  const asAnswered = meta.answered?.btns ?? btns
+  const julianDay = correctIndexOf(q, true)
+  const gregorianDay = correctIndexOf(q, false)
+  // 1 — the answer the as-answered grid marks.
+  const julian = marksOnly(asAnswered, julianDay)
+  const gregorian = !julianOnly && marksOnly(asAnswered, gregorianDay)
+  if (julian !== gregorian) return julian
+  if (!julian) return null
+  if (julianDay !== gregorianDay) {
+    // 2 — the wrong picks.
+    const julianWrong = isWrongMark(asAnswered[julianDay])
+    const gregorianWrong = isWrongMark(asAnswered[gregorianDay])
+    if (julianWrong !== gregorianWrong) return gregorianWrong
+    // 3 — the day the Override marked.
+    if (meta.answered) {
+      if (isAnswerMark(btns[julianDay]) !== isAnswerMark(btns[gregorianDay]))
+        return isAnswerMark(btns[julianDay])
+    }
+  }
+  return drawn
+}
+// An overridden card's own grid, on its calendar's answer: the same grid when it already is (or is
+// not the single mark every overridden grid is — the invariant walk reports that one).
+function overrideGridIn(q: Question, btns: Btns, jul: boolean): Btns {
+  const marks = Object.keys(btns)
+  const answer = correctIndexOf(q, jul)
+  if (marks.length !== 1 || !isAnswerMark(btns[marks[0]]) || Number(marks[0]) === answer)
+    return btns
+  return { [answer]: btns[marks[0]] }
+}
+// A card with its calendar — its record stamped and, if it is overridden, its grid on that
+// calendar's answer — when it has been judged (its grid is marked) and carries none; otherwise the
+// very same grid and record.
+function completed(
   q: Question,
   btns: Btns | undefined,
+  meta: CardMeta,
   useJulian: boolean,
-): CardMeta {
-  if (typeof meta.jul === 'boolean' || !btns || Object.keys(btns).length === 0) return meta
-  const jul = calendarFromGrid(q, btns, useJulian)
-  return jul === null ? meta : { ...meta, jul }
+): { btns: Btns | undefined; meta: CardMeta } {
+  if (typeof meta.jul === 'boolean' || !btns || Object.keys(btns).length === 0)
+    return { btns, meta }
+  const jul = calendarFromGrid(q, btns, meta, useJulian)
+  if (jul === null) return { btns, meta }
+  return {
+    btns: meta.answered && q.type === undefined ? overrideGridIn(q, btns, jul) : btns,
+    meta: { ...meta, jul },
+  }
 }
 // Every card of a parked state with its calendar. A state this build parked comes back as the same
 // object: all of its judged cards are stamped already.
@@ -91,19 +164,19 @@ function withCalendars(state: GameState, useJulian: boolean): GameState {
   const entries = (list: StackEntry[]): StackEntry[] => {
     let out = list
     list.forEach((e, i) => {
-      const meta = stamped(e.meta, e, e.btns, useJulian)
+      const { btns, meta } = completed(e, e.btns, e.meta, useJulian)
       if (meta === e.meta) return
       if (out === list) out = list.slice()
-      out[i] = { ...e, meta }
+      out[i] = { ...e, btns, meta }
     })
     return out
   }
   const stack = entries(state.stack)
   const forwardStack = entries(state.forwardStack)
-  const card = stamped(state.card, state.date, state.persistBtns, useJulian)
-  return stack === state.stack && forwardStack === state.forwardStack && card === state.card
+  const { btns, meta } = completed(state.date, state.persistBtns, state.card, useJulian)
+  return stack === state.stack && forwardStack === state.forwardStack && meta === state.card
     ? state
-    : { ...state, stack, forwardStack, card }
+    : { ...state, stack, forwardStack, card: meta, persistBtns: btns ?? state.persistBtns }
 }
 
 // A parked blob in, today's engine state out, or null when the blob is not one. Null means "nothing
