@@ -106,29 +106,39 @@ const release = (storage: Storage, key: string): void => {
 const retryHeld = (): void => {
   for (const [storage, area] of [...held])
     for (const [key, value] of [...area]) {
-      try {
-        storage.setItem(key, value)
-      } catch (e) {
-        if (!isQuotaError(e)) throw e
-        continue
-      }
-      release(storage, key)
+      if (tryWriteItem(storage, key, value)) release(storage, key)
     }
 }
 
-/** Save `value` at (storage, key) — or, if the device refuses it, hold it for that place. */
-export function writeItem(storage: Storage, key: string, value: string): void {
+/**
+ * Save `value` at (storage, key) and say whether the device took it. A refusal is NOT held: this is
+ * for a value that is only worth having once it is on the device, and whose absence loses nothing —
+ * a sealed chunk of solve times (store/progressStorage), which stays in the main save until it fits.
+ */
+export function tryWriteItem(storage: Storage, key: string, value: string): boolean {
   try {
     storage.setItem(key, value)
   } catch (e) {
     if (!isQuotaError(e)) throw e
+    return false
+  }
+  return true
+}
+
+/**
+ * Save `value` at (storage, key) — or, if the device refuses it, hold it for that place. Returns
+ * whether it is on the device (false: refused, and held).
+ */
+export function writeItem(storage: Storage, key: string, value: string): boolean {
+  if (!tryWriteItem(storage, key, value)) {
     hold(storage, key, value)
     settle()
-    return
+    return false
   }
   release(storage, key)
   retryHeld() // a write just fit, so there may be room for the others now
   settle()
+  return true
 }
 
 /** What (storage, key) holds — the value held for it when its last save was refused. */
@@ -185,7 +195,7 @@ export const guardedStorage = (getStorage: () => Storage) => (): StateStorage =>
   const s = getStorage()
   return {
     getItem: (name) => readItem(s, name),
-    setItem: (name, value) => writeItem(s, name, value),
+    setItem: (name, value) => void writeItem(s, name, value),
     removeItem: (name) => removeItem(s, name),
   }
 }

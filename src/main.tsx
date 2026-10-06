@@ -38,7 +38,7 @@ import { DEPLOY_TS } from './deployStamp.js'
 import { GEAR_DOT_KEY, CHANGELOG_DOT_KEY, readUpdateDot, markUpdateDot, clearUpdateDot, subscribeUpdateDot, CHANGELOG, changelogSignature, changelogChanged, readChangelogSeen, writeChangelogSeen } from './changelog.js'
 import { usePresets } from './store/presets.js'
 import { activeDataId, selectAmnesic, discardParkedStats } from './store/amnesic.js'
-import { setPresetAmnesic, commitOpenedPreset } from './store/presetControl.js'
+import { setPresetAmnesic, commitOpenedPreset, sweepDeletedPresetTimes } from './store/presetControl.js'
 import { openBrowsingSession } from './store/browsingSession.js'
 import { useSettings, readStoredDefaultMode } from './store/settings.js'
 import { readSessionMode, writeSessionMode } from './store/sessionMode.js'
@@ -1822,9 +1822,12 @@ import BlitzMode from './modes/BlitzMode.jsx'
       // left to discard anyway: the browser cleared sessionStorage when it closed the session.)
       // ★ …AND THE PRESET THIS OPEN LANDED IN IS WRITTEN DOWN FIRST (commitOpenedPreset): the "Open in"
       // pin is applied at hydrate, in memory only, and the reload that may follow reads the device.
+      // ★ …AND THE SOLVE-TIME CHUNKS OF PRESETS THAT NO LONGER EXIST ARE CLEARED (sweepDeletedPresetTimes
+      // — what an older build's preset delete leaves behind).
       useEffect(()=>{
         if(!openBrowsingSession())return;
         commitOpenedPreset();
+        sweepDeletedPresetTimes();
         for(const p of usePresets.getState().presets)setPresetAmnesic(p.id,storedAmnesicDefault(p.id));
       },[]);
       // ★ COLD-OPEN PAGE (round 21). `mode` starts "classic" only for the first paint; this

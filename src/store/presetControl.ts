@@ -10,6 +10,7 @@ import {
 import type { Preset } from './presets.js'
 import { isAmnesic, discardSessionStats, readSessionStats, dataIdOf } from './amnesic.js'
 import { readItem, removeItem, storageSpaceFreed } from './storageHealth.js'
+import { removeProgressCopy, hasTimesKeys, sweepAbandonedTimes } from './progressStorage.js'
 import { discardSessionMode } from './sessionMode.js'
 import { discardSessionRounds, discardSessionRoundsOf, hasSessionRound } from './sessionRound.js'
 import {
@@ -156,7 +157,9 @@ const reloadPresetStores = () => {
 
 // Remove one preset's saved copy — its four keys and nothing else. Derived from the key record
 // rather than by scanning localStorage for a pattern, so it cannot sweep up a neighbour, and so a
-// fifth per-preset store becomes deletable by the act of being listed there.
+// fifth per-preset store becomes deletable by the act of being listed there. (The progress key's
+// sealed chunks of solve times are part of that key's copy and go with it —
+// store/progressStorage's removeProgressCopy, which lists exactly this preset's.)
 // Swallows a refusing localStorage: there is nothing to delete in a browser that has stored nothing.
 // Through store/storageHealth's removeItem, so a save the device REFUSED for one of these keys is
 // forgotten with the key — a deleted preset must not be written back out when room appears.
@@ -164,6 +167,7 @@ const clearPresetStorage = (presetId: number) => {
   try {
     for (const baseKey of Object.values(PRESET_STORE_KEYS))
       removeItem(window.localStorage, presetKey(baseKey, presetId))
+    removeProgressCopy({ area: window.localStorage, presetId })
   } catch {
     /* storage refused — nothing was ever written, so nothing is left behind */
   }
@@ -208,8 +212,17 @@ const readPresetPayload = (baseKey: string, presetId: number): string | null => 
 
 // Is any of this preset's saved data already on disk? Used only when allocating an id — see
 // createPreset, which is where the reason it can ever be true is argued.
-const presetStorageInUse = (presetId: number): boolean =>
-  Object.values(PRESET_STORE_KEYS).some((baseKey) => readPresetPayload(baseKey, presetId) !== null)
+// (Sealed chunks of solve times count: an older build's preset delete removes the four keys and
+// leaves those, and a new preset must not be handed a namespace that still holds them.)
+const presetStorageInUse = (presetId: number): boolean => {
+  if (Object.values(PRESET_STORE_KEYS).some((key) => readPresetPayload(key, presetId) !== null))
+    return true
+  try {
+    return hasTimesKeys({ area: window.localStorage, presetId })
+  } catch {
+    return false
+  }
+}
 
 // ── IS A PRESET FACTORY-FRESH? ────────────────────────────────────────────────────────────────
 //
@@ -503,6 +516,28 @@ export function commitOpenedPreset(): void {
   const stored = readStoredRegistry()
   if (stored && stored.activeId !== activeId)
     usePresets.getState().applyRegistry({ presets, activeId, nextId, openInPreset })
+}
+
+/**
+ * Clear away the sealed solve-time chunks of presets that no longer exist — called once per fresh
+ * open, by src/main.tsx's cold-open effect.
+ *
+ * WHY IT IS NEEDED. Deleting a preset in THIS build removes its chunks with it. An older build on
+ * this origin (live and staging share one copy of the data) removes only the four keys it knows, so
+ * a preset deleted there leaves its chunks behind with nothing pointing at them.
+ * ⚠ ONLY A PRESET NEITHER REGISTRY KNOWS — the one in memory and the one on the device, which
+ * another tab may have added to since this page loaded — and only when it has no progress key
+ * (store/progressStorage's sweepAbandonedTimes checks that half, held saves included).
+ */
+export function sweepDeletedPresetTimes(): void {
+  const known = new Set(
+    [...usePresets.getState().presets, ...(readStoredRegistry()?.presets ?? [])].map((p) => p.id),
+  )
+  try {
+    sweepAbandonedTimes(window.localStorage, (id) => known.has(id))
+  } catch {
+    /* storage refused — there is nothing to sweep */
+  }
 }
 
 /** Rename a preset. An empty or whitespace-only name falls back to the default one. */

@@ -45,8 +45,10 @@ import { useSettings } from './settings.js'
 // set of solves than the in-visit one. The size that cap was guarding is small once the times are
 // short (engine/stats' 0.1 ms grid, ~7 bytes each: ~0.5 MB per mode for 200 answers a day for a
 // year), and a save the device refuses to take is reported to the player (store/storageHealth)
-// rather than lost in silence. Saves the old cap already trimmed are repaired once, at hydration —
-// see the v5 migration below.
+// rather than lost in silence. Saves the old cap already trimmed are repaired as they are read
+// (store/progressStorage's baselineTrimmedTimes) — and that file is also what keeps the save of a
+// long history small: the store holds every time in one array, the device holds the older ones in
+// sealed chunks.
 
 // All-time best shapes (config-keyed). Moved here from main.tsx so the persisted store
 // is the single owner; the mode components import these back.
@@ -97,39 +99,7 @@ export type ProgressState = ProgressValues & {
 
 const blankStats = (): Stats => ({ played: 0, good: 0, streak: 0, best: 0, times: [] })
 
-// ── v4 → v5: THE ONE-TIME REPAIR OF A SAVE THE OLD 1,000-TIME CAP TRIMMED ─────────────────────
-//
-// Builds up to v2.26.0 saved only the newest 1,000 solve times. A silo they trimmed is
-// recognisable exactly: 1,000 times beside MORE than 1,000 correct answers. The older times are gone
-// — nothing can bring them back — so the gap is recorded ONCE as `timesLost` (engine Stats), which
-// the desync check subtracts; every time from here on is kept, so the gap never grows.
-// ⚠ AND IT IS RE-DERIVED, NOT ADDED TO, on every v4 payload. Live and staging share one browser
-// origin, i.e. ONE copy of the saved data, so an older build can load a v5 save, trim it again and
-// write it back as v4 — carrying our `timesLost` along untouched on its `...stats` spreads. `good −
-// 1,000` is then the WHOLE gap again (the earlier baseline included), never an increment on top of
-// it; a v4 silo that was NOT re-trimmed keeps whatever baseline it carries.
-// ⚠ ONE THING IT CANNOT KNOW: whether some of that gap was answers given while timing was hidden
-// (the popup's real case). In a trimmed save those are indistinguishable from discarded times, so
-// they are folded into the baseline — the only alternative is the false popup this exists to end.
-// Exported for tests.
-export const LEGACY_TIMES_CAP = 1000
-export function baselineTrimmedTimes(stats: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [key, silo] of Object.entries(stats)) {
-    const s = silo as Partial<Stats> | null
-    const trimmed =
-      !!s &&
-      typeof s === 'object' &&
-      Array.isArray(s.times) &&
-      s.times.length === LEGACY_TIMES_CAP &&
-      Number.isInteger(s.good) &&
-      (s.good as number) > LEGACY_TIMES_CAP
-    out[key] = trimmed ? { ...s, timesLost: (s.good as number) - LEGACY_TIMES_CAP } : silo
-  }
-  return out
-}
-
-// ── v4 → v5, THE OTHER REPAIR: A BEST RECORD THAT SAYS NOTHING IS NOT A RECORD ─────────────────
+// ── v4 → v5: A BEST RECORD THAT SAYS NOTHING IS NOT A RECORD ─────────────────
 //
 // Every Best map holds a key ONLY for a configuration that has a record (engine/bestMap). Builds up
 // to v2.26.0 broke that in one corner: a round or run that set a config's FIRST record and was then
@@ -242,22 +212,23 @@ export const useProgress = create<ProgressState>()(
       // matters here more than anywhere, because live and staging share one browser origin.
       name: PRESET_STORE_KEYS.progress,
       // Presets 2, 3, 4… read and write a namespaced key instead. The `name` above never moves; the
-      // adapter rewrites it per read/write from the active preset — and, uniquely among the four
-      // stores, decides WHICH STORAGE AREA that key lives in. ★ THIS IS THE ONE STORE AMNESIC
+      // adapter resolves the active preset per read/write — and, uniquely among the four stores,
+      // decides WHICH STORAGE AREA that copy lives in, and lays it out there through
+      // store/progressStorage (this store's values in, this store's values out). ★ THIS IS THE ONE STORE AMNESIC
       // TOUCHES, and that is the whole of the CLEARS/KEEPS split: the settings, the per-mode setup
       // and the saved personal defaults keep store/presets' permanent adapter, so an amnesic preset
       // cannot forget any of them however this file changes. See store/amnesic.
       storage: presetStatsStorage<Partial<ProgressState>>(),
-      // v5 = every solve time is kept; a save the old 1,000 cap trimmed gains its
-      // one-time `timesLost` baseline in `migrate` below — and no Best map holds a record of
-      // nothing (dropEmptyBests). The TIMES THEMSELVES ARE NOT REWRITTEN —
+      // v5 = every solve time is kept; a save the old 1,000 cap trimmed gains its `timesLost`
+      // baseline as it is read (store/progressStorage, which sees the stored array) — and no Best
+      // map holds a record of nothing (dropEmptyBests, in `migrate` below). The TIMES THEMSELVES ARE NOT REWRITTEN —
       // a legacy time's long float spelling round-trips exactly through JSON, and snapping it onto
       // the new 0.1 ms grid could move a displayed hundredth that sat on a boundary (a Last or a
       // Median, measured at ~0.15%). At most 1,000 such times per silo, ~10 KB, once.
       // ⚠ v5 STILL READS CORRECTLY IN EVERY OLDER BUILD, which matters because live and staging
       // share one saved copy: the times are still seconds, and an older build's `migrate` passes a
-      // newer version through untouched. What an older build does WRITE is the trim, which the
-      // v4 → v5 step re-derives (above).
+      // newer version through untouched. What an older build does WRITE is the trim, which
+      // store/progressStorage re-derives on every save stamped older than this.
       // v4 = lookupHistory LEFT the shape (round 20 — see store/lookupHistory). The bump
       // still records that change even though nothing here has to REWRITE anything for it: an old
       // payload's `lookupHistory` field is not in PERSISTED_KEYS above any more, so partialize
@@ -271,8 +242,7 @@ export const useProgress = create<ProgressState>()(
       // and the stray field does nothing" half of this claim.
       version: 5,
       // Saved-shape migrations — the version-gated REWRITES, run once at hydrate when the stored
-      // version is older: aoxBest's keys gained a dimension (v2); a trimmed save's lost-times count
-      // exists only at the moment the trimmed save is read (v5); and the Best records of nothing an
+      // version is older: aoxBest's keys gained a dimension (v2), and the Best records of nothing an
       // older build left behind are dropped (v5, dropEmptyBests). Zustand re-saves the result at
       // the current version.
       migrate: (persisted, version) => {
@@ -283,14 +253,7 @@ export const useProgress = create<ProgressState>()(
             aoxBest: migrateAoxBestKeys(state.aoxBest, useSettings.getState().julianChance),
           }
         }
-        if (version < 5 && state && typeof state === 'object') {
-          if (state.stats && typeof state.stats === 'object')
-            state = {
-              ...state,
-              stats: baselineTrimmedTimes(state.stats) as ProgressValues['stats'],
-            }
-          state = dropEmptyBests(state)
-        }
+        if (version < 5 && state && typeof state === 'object') state = dropEmptyBests(state)
         return state
       },
       // Persist only the data values, never the setter functions.

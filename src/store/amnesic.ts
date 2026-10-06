@@ -1,6 +1,7 @@
-import { createJSONStorage } from 'zustand/middleware'
+import type { PersistStorage, StorageValue } from 'zustand/middleware'
 import { usePresets, presetKey, PRESET_STORE_KEYS } from './presets.js'
-import { readItem, writeItem, removeItem } from './storageHealth.js'
+import { readItem } from './storageHealth.js'
+import { createProgressCodec, removeProgressCopy } from './progressStorage.js'
 import type { PresetRegistryValues } from './presets.js'
 import type { ProgressValues } from './progress.js'
 
@@ -158,13 +159,14 @@ const openSessionStorage = (): Storage | null => {
  * directions — see presetControl's setPresetAmnesic, where the two directions are argued) and when
  * a preset is deleted.
  * Swallows a refusing sessionStorage: nothing was ever written there, so nothing is left behind.
- * Through store/storageHealth's removeItem, so a session save the device REFUSED is forgotten with
- * the copy it was for — a guest's unsaved numbers must not be written out after the guest is gone.
+ * The copy goes whole (store/progressStorage's removeProgressCopy): its sealed chunks of solve times
+ * with it, and a session save the device REFUSED is forgotten with the copy it was for — a guest's
+ * unsaved numbers must not be written out after the guest is gone.
  */
 export function discardSessionStats(presetId: number): void {
   try {
     const ss = openSessionStorage()
-    if (ss) removeItem(ss, statsKey(presetId))
+    if (ss) removeProgressCopy({ area: ss, presetId })
   } catch {
     /* storage refused — the session copy only ever lived in memory */
   }
@@ -220,7 +222,7 @@ export function readSessionStats(presetId: number): string | null {
  */
 export function discardParkedStats(presetId: number): void {
   try {
-    removeItem(window.localStorage, statsKey(presetId))
+    removeProgressCopy({ area: window.localStorage, presetId })
   } catch {
     /* storage refused — there is no parked copy to remove */
   }
@@ -270,50 +272,61 @@ const seedFromParked = (parked: string | null): string | null => {
 // exactly the 500-cards-becomes-4 shape — two sets of stats, one of them stale, one write picking
 // the wrong one — and the owner ruled it out. Toggling OFF discards; it never reconciles.
 //
-// This is store/presets' presetScopedStorage with ONE extra question asked per call, and it stays a
-// SECOND named adapter rather than an option on the first: the first is the rule for the three
-// stores that are always permanent, and an adapter that could be either would put a boolean in
-// front of the sentence above.
-export const presetStatsStorage = <T>() =>
-  createJSONStorage<T>(() => {
-    // ⚠ EAGER, exactly as presetScopedStorage is and for the same reason: a browser that throws on
-    // the localStorage property access must throw HERE, where zustand's createJSONStorage catches
-    // it and puts the store on the in-memory-only path, rather than inside every getItem/setItem —
-    // i.e. inside hydration and inside every setState. sessionStorage is opened after it, guarded,
-    // because it is allowed to be missing on its own.
-    const ls = window.localStorage
-    const ss = openSessionStorage()
-    // Resolved per call, never captured: the active preset and its flag both change under a live
-    // store, and the whole point of an adapter (rather than a swapped persist `name`) is that there
-    // is no window in which it is pointed at one preset while holding another's.
-    const target = (name: string) => {
-      const reg = usePresets.getState()
-      return { key: presetKey(name, reg.activeId), amnesic: selectAmnesic(reg) }
-    }
-    return {
-      // Every access goes through store/storageHealth, in BOTH areas: sessionStorage has an
-      // allowance of its own, and a refusal there is the same promise broken — the guest's session
-      // stops being kept. A refused save is held for the exact (area, key) it was for, so the two
-      // copies stay apart even while neither can be written: the permanent copy's held value can
-      // only ever be read back as, and retried to, the permanent copy.
-      getItem: (name) => {
-        const { key, amnesic } = target(name)
-        const parked = readItem(ls, key)
-        if (!amnesic) return parked
-        // The session copy once it exists; the seed derived from the parked copy until then. Note
-        // that `parked` is read either way and is never written — an amnesic preset can SEE its
-        // permanent payload (that is how the kept keys get their values) and can never alter it.
-        return (ss && readItem(ss, key)) ?? seedFromParked(parked)
-      },
-      setItem: (name, value) => {
-        const { key, amnesic } = target(name)
-        if (!amnesic) writeItem(ls, key, value)
-        else if (ss) writeItem(ss, key, value)
-      },
-      removeItem: (name) => {
-        const { key, amnesic } = target(name)
-        if (!amnesic) removeItem(ls, key)
-        else if (ss) removeItem(ss, key)
-      },
-    }
-  })
+// This is store/presets' presetScopedStorage with ONE extra question asked per call — WHICH COPY —
+// and it stays a SECOND named adapter rather than an option on the first: the first is the rule for
+// the three stores that are always permanent, and an adapter that could be either would put a
+// boolean in front of the sentence above.
+// ★ IT ONLY CHOOSES THE COPY. How a copy is laid out on the device — the main key, and the sealed
+// chunks a long history of solve times is kept in — is store/progressStorage's, which is handed
+// exactly one (area, preset) per call and can therefore reach no other: while a preset is amnesic
+// nothing there reads, lists or deletes a single chunk of its permanent copy.
+export const presetStatsStorage = <S>(): PersistStorage<S> | undefined => {
+  // ⚠ EAGER, exactly as presetScopedStorage is and for the same reason: a browser that throws on the
+  // localStorage property access must be found out HERE, so the store lands on persist's
+  // in-memory-only path (no storage at all), rather than inside every getItem/setItem — i.e. inside
+  // hydration and inside every setState. sessionStorage is opened after it, guarded, because it is
+  // allowed to be missing on its own.
+  let ls: Storage
+  try {
+    ls = window.localStorage
+  } catch {
+    return undefined
+  }
+  const ss = openSessionStorage()
+  const codec = createProgressCodec<S>()
+  // Resolved per call, never captured: the active preset and its flag both change under a live
+  // store, and the whole point of an adapter (rather than a swapped persist `name`) is that there is
+  // no window in which it is pointed at one preset while holding another's.
+  const target = () => {
+    const reg = usePresets.getState()
+    return { presetId: reg.activeId, amnesic: selectAmnesic(reg) }
+  }
+  return {
+    // Every access goes through store/storageHealth, in BOTH areas: sessionStorage has an allowance
+    // of its own, and a refusal there is the same promise broken — the guest's session stops being
+    // kept. A refused save is held for the exact (area, key) it was for, so the two copies stay
+    // apart even while neither can be written: the permanent copy's held value can only ever be
+    // read back as, and retried to, the permanent copy.
+    getItem: () => {
+      const { presetId, amnesic } = target()
+      if (!amnesic) return codec.load({ area: ls, presetId })
+      // The session copy once it exists; the seed derived from the parked copy until then. Note that
+      // the parked MAIN KEY is read and is never written — an amnesic preset can SEE its permanent
+      // payload (that is how the kept keys get their values) and can never alter it.
+      const session = ss && codec.load({ area: ss, presetId })
+      if (session) return session
+      const seed = seedFromParked(readItem(ls, statsKey(presetId)))
+      return seed === null ? null : (JSON.parse(seed) as StorageValue<S>)
+    },
+    setItem: (_name, value) => {
+      const { presetId, amnesic } = target()
+      if (!amnesic) codec.save({ area: ls, presetId }, value)
+      else if (ss) codec.save({ area: ss, presetId }, value)
+    },
+    removeItem: () => {
+      const { presetId, amnesic } = target()
+      if (!amnesic) removeProgressCopy({ area: ls, presetId })
+      else if (ss) removeProgressCopy({ area: ss, presetId })
+    },
+  }
+}
