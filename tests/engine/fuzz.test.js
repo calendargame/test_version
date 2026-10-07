@@ -54,7 +54,15 @@ import { runFuzzProfile, SCALE } from './fuzzHarness.js'
 // vitest's 5s default per-test timeout — especially under full-suite CPU contention. Give them an
 // explicit, generous budget, scaled with the sweep size (SCALE, imported from the harness) so a
 // FUZZ_SCALE big-sweep doesn't trip it. A sweep can also pass `--testTimeout=…`.
-const T = 30000 * SCALE
+// ⚠ THE BUDGET IS A HANG DETECTOR, NOT A SPEED ASSERTION, and it has to leave real room. It was 30s
+// when a profile took about 5s. Each step now does two to three times the checking — the calendar
+// checks on every card, the reference model compared every step, every state frozen all the way
+// down — so the heaviest profiles take 14–16s alone on the development laptop, and one reached 36s
+// in a full-suite run on a busy machine: a red suite with nothing wrong. Where the added time went
+// was measured before this was touched (two avoidable costs were removed; what is left is the new
+// coverage itself). Per-dispatch cost in the app is a separate matter and is measured in
+// microseconds. If a profile ever needs more than this, look for a real slowdown first.
+const T = 120000 * SCALE
 
 describe('fuzz / bug survey — engine invariants hold across random play', () => {
   // The broad, unbiased baseline — no invariant may ever break across the whole action space.
