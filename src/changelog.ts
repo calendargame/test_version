@@ -74,9 +74,18 @@
 // when the newest entry here has actually changed since this device last looked — see
 // CHANGELOG_SEEN_KEY at the bottom of this file for why, and for the migration case. Opening ⚙
 // Settings clears the gear button's dot; the first tap on the Changelog link clears the link's own.
-// Plain localStorage like the build stamp (lib/buildStamp) — the flags describe the code that ran,
-// not user data — and try/catch for the same reason: blocked storage (privacy modes) must never
-// break boot, it just means no dots.
+// Plain localStorage, not a store — the flags describe the code that ran, not user data — and
+// try/catch throughout: blocked storage (privacy modes) must never break boot, it just means no
+// dots.
+//
+// ★ THIS FILE WRITES localStorage ITSELF, AND SAYS SO EVERY TIME. Every other write in the app goes
+// through store/storageHealth — the storage door — and that is how the count of how full the device
+// is (store/storageUsage) stays exact. This file cannot call the door: it may import nothing
+// (vite.config.js loads it at build time). So the dependency runs the other way. The door hands
+// this file one listener (reportWritesTo), and each writer below names the key it has just written
+// or removed; the door reads what that key now holds and counts it. Where the door was never
+// loaded — the build-time import — there is nobody to tell, and nothing is said.
+// ⚠ A NEW WRITER HERE MUST DO THE SAME, on the line after its write. tests/storageDoor pins it.
 
 export type ChangelogEntry = {
   date: string // the day's Pacific date, ISO YYYY-MM-DD (unique — same-day deploys merge)
@@ -84,6 +93,30 @@ export type ChangelogEntry = {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    date: '2026-10-06',
+    items: [
+      'Amnesic, in ⚙ Settings → Stats, now has three choices: Off, Stats Only and Full. Full is what Amnesic always was. On Stats Only your Blitz and MoX bests are your real saved ones and a new best is kept for good, while everything in the stats strip is for the session only and Lookup history saves as normal.',
+      'The A that marked an amnesic preset is gone, so a preset’s name has its full room back. Instead, a dashed outline goes round whatever won’t be kept: the stats strip on Stats Only and Full, and the Best line too on Full.',
+      '⚙ Settings now always shows a “Storage used” line near the bottom. Tap it to see what is taking the space and what you can clear. If you ever reach 80% it turns amber, the ⚙ button shows an amber dot, and the breakdown opens once by itself at a moment when you aren’t mid-question.',
+      'The modes are now listed Classic, Deduction, Flash, MoX, Blitz — in the mode menu, in Default Mode, in Save Defaults and throughout How to Play. The letter keys are unchanged.',
+      'The ⚙ menu and every popup now have a fully solid background, so nothing behind them shows through. The drop-down lists keep their frosted look.',
+      'In How to Play, a section you open now settles in the same spot its title pins at, flush under the top bar, and the shadow sits under whichever edge the text is sliding beneath.',
+      'In ⚙ Settings → Manage Presets, the ✕ is now drawn dead centre, and a row you drag no longer carries a pill around the whole row — only its ✕ button and name box lift. The other rows now make way at the halfway point in both directions.',
+      'The preset list at the top of the screen now widens to show every name in full.',
+      'An answered date now remembers which calendar it was judged in, so browsing back to it always shows an answer and codes that agree, even if you changed Julian Calendar in between. A February 29 that the regular calendar doesn’t have is replaced with a new date when you switch Julian off before answering it.',
+      'While the ⚙ menu, a drop-down list or a popup is open, no key reaches the page behind it any more. The mode letters, H and G still work.',
+      'Keyboard: Tab and Shift+Tab now stay inside the ⚙ menu and walk all of its controls; the preset list, the mode list and Open in all open with Enter or Space; and a ring now shows where the keyboard is, anywhere in the app. The ring never appears for a tap or a click, and the game’s shortcut keys don’t trigger it.',
+      'Which preset you are on, and its Amnesic setting, now belong to the window you are in, so two windows no longer change each other and a reload always comes back to the same place.',
+      'In MoX, the tag in the breakdown now reads Same Run or Different Runs.',
+      'The Reset Stats and storage popups now say exactly what they clear for the Amnesic setting you are on.',
+      'How to Play has been checked line by line against the app again.',
+      'Fixed: in Flash, the countdown could stay frozen after Reset Stats.',
+      'Fixed: one Back press could do nothing after a reload with the ⚙ menu or a popup open.',
+      'Fixed: dragging a preset down by a single pixel could swap it with the one below.',
+      'Fixed: a finished round you came back to could write over a better best set in another window.',
+    ],
+  },
   {
     date: '2026-10-02',
     items: [
@@ -230,16 +263,13 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Fixed: the three buttons at the foot of the Settings menu now do nothing at all while they are dimmed. Save Defaults could previously be opened with a keyboard when there was nothing to save.',
     ],
   },
-  {
-    date: '2026-08-08',
-    items: [
-      'How to Play now scrolls inside its own panel, the same way every other page in the app already did. Two things change with it: tapping the status bar no longer jumps the guide to the top, and dragging on the top bar itself no longer scrolls it.',
-      'Lookup now keeps your 100 most recent dates instead of 20, and once there are two or more the History heading shows how many are saved. Older ones still drop off the bottom on their own.',
-      'Settings now reads properly with a screen reader: the four On/Off switches and the two Year Range boxes each say which setting they belong to. Before this they had no name of their own, so they all announced alike.',
-      'Fixed: on a very short window — or zoomed a long way in — the Save/View defaults box could push its own title and buttons off screen where you could not reach them. It now fits the screen and scrolls inside itself.',
-    ],
-  },
 ]
+
+// Who is told which key this file has just written or removed (the header says why).
+let wrote: ((key: string) => void) | null = null
+export const reportWritesTo = (listener: (key: string) => void): void => {
+  wrote = listener
+}
 
 // The two persisted update-signal dots (the breadcrumb's two stages).
 export const GEAR_DOT_KEY = 'cg-update-dot-gear'
@@ -288,6 +318,7 @@ export const subscribeUpdateDot = (listener: () => void): (() => void) => {
 export const markUpdateDot = (key: string): void => {
   try {
     localStorage.setItem(key, '1')
+    wrote?.(key)
   } catch {
     /* best-effort */
   }
@@ -300,6 +331,7 @@ export const markUpdateDot = (key: string): void => {
 export const clearUpdateDot = (key: string): void => {
   try {
     localStorage.removeItem(key)
+    wrote?.(key)
   } catch {
     /* best-effort */
   }
@@ -365,6 +397,7 @@ export const readChangelogSeen = (): string | null => {
 export const writeChangelogSeen = (stamp: string): void => {
   try {
     localStorage.setItem(CHANGELOG_SEEN_KEY, stamp)
+    wrote?.(CHANGELOG_SEEN_KEY)
   } catch {
     /* best-effort — the same rule as the dots: blocked storage must never break boot */
   }

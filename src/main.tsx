@@ -1486,8 +1486,8 @@ import BlitzMode from './modes/BlitzMode.jsx'
         return()=>{cancelled=true;if(holdId!==undefined)window.clearTimeout(holdId);if(engageOnCss)window.removeEventListener('app-css-ready',engageOnCss);};
       },[]);
       // The device is counted from here on (store/storageUsage: once now, then every save and removal
-      // moves the count). ⚠ AFTER the effect above, on purpose: its build stamp and changelog marker
-      // are written around the storage door, and the first count has to include them.
+      // moves the count — the build stamp and the changelog's markers included, whichever side of
+      // this line they are written on).
       useEffect(()=>watchStorageUsage(),[]);
       // The update paths' #boot handoff (paired with updateEngagedRef above — the auto-update flow
       // and the build-change flash): remove the splash only AFTER the Updating overlay has

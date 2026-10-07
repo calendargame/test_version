@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { StateStorage } from 'zustand/middleware'
+import { reportWritesTo } from '../changelog.js'
 
 // store/storageHealth.ts — A SAVE THE DEVICE REFUSES IS NEVER SILENT, AND NEVER GOES ANYWHERE ELSE.
 //
@@ -12,10 +13,12 @@ import type { StateStorage } from 'zustand/middleware'
 //
 // ★ WHAT HAPPENS INSTEAD — the whole mechanism. THIS FILE IS THE DOOR TO localStorage: every saved
 // value of every persisted store, and every marker a store file keeps beside them, is read, written
-// and removed through the functions below. (Two leaf modules write a few characters of their own —
-// src/changelog's update dots and seen-stamp, lib/buildStamp's build stamp: both must stay free of
-// imports, and neither holds anything a player made. tests/storageDoor pins that list, so nothing
-// else in src/ can start writing around the door.) A write the device refuses is caught
+// and removed through the functions below. (ONE module writes for itself: src/changelog — its update
+// dots and its seen-stamp, nothing a player made. It must stay free of imports, so it cannot call
+// in here; it tells this file which key it has just touched instead, and that is reported like any
+// other change — see "the one writer outside the door" below. tests/storageDoor pins that it is the
+// only one, so nothing else in src/ can start writing around the door.) A write the device refuses
+// is caught
 // and HELD IN MEMORY UNDER THE EXACT PLACE IT WAS FOR: this storage area, this key. From then on:
 //   • a READ of that place returns the held value — it is what that place would hold if it had fit.
 //     So anything that re-reads saved data inside this page (a preset switch and the switch back, an
@@ -107,6 +110,16 @@ export function watchStorage(next: StorageWatcher): () => void {
     if (watcher === next) watcher = null
   }
 }
+
+// ── The one writer outside the door ───────────────────────────────────────────────────────────
+// src/changelog writes and removes its own few keys (it may import nothing, so it cannot call the
+// functions below) and names each one as it does. What the key holds NOW is read from the device
+// and reported exactly as a write through the door is — so the watcher's count has no key it does
+// not hear about. Nothing else happens here on purpose: those writes are best-effort over there, so
+// one the device refused changed nothing, is not held, and is not named.
+reportWritesTo((key) =>
+  watcher?.changed(window.localStorage, key, window.localStorage.getItem(key)),
+)
 
 // ── The scratch key ───────────────────────────────────────────────────────────────────────────
 // measureRoom (below) finds how much more a storage area will take by writing this one key and

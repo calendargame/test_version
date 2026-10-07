@@ -5,17 +5,19 @@
 // store/storageUsage's count of how full the device is moves only when the door reports a write or
 // a removal — a write made around it is a save nobody holds and a size nobody counted.
 //
-// The two exceptions are leaf modules that must stay free of imports (vite.config.js imports
-// src/changelog.ts to check the changelog's date, and lib/buildStamp sits under the boot path).
-// They write a few characters each — the update dots, the changelog's seen-marker, the build stamp —
-// none of it anything a player made; the count picks them up at the next page load.
+// The one exception is src/changelog.ts, which must stay free of imports (vite.config.js imports it
+// to check the changelog's date) and so cannot call the door. It writes its own few keys — the
+// update dots, the changelog's seen-marker, none of it anything a player made — and tells the door
+// about each one as it does (its reportWritesTo), so the count hears of those too. What is pinned
+// for it here is that EVERY raw write it makes is followed by that telling; that the telling is
+// counted exactly is pinned where the count is (tests/storageUsage.dom).
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 const SRC = join(process.cwd(), 'src')
 const THE_DOOR = 'store/storageHealth.ts'
-const LEAF_WRITERS = ['changelog.ts', 'lib/buildStamp.ts']
+const LEAF_WRITER = 'changelog.ts'
 
 function sources(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -34,7 +36,7 @@ describe('the storage door', () => {
     text: code(readFileSync(path, 'utf8')),
   }))
 
-  it('only the door, and the two leaf modules, call setItem / removeItem / clear on a storage area', () => {
+  it('only the door, and the one leaf module, call setItem / removeItem / clear on a storage area', () => {
     // sessionStorage is a different allowance and has its own guarded writers; what must not
     // exist is a raw write that could be aimed at localStorage — a bare call on a Storage.
     const rawWriters = files
@@ -43,16 +45,27 @@ describe('the storage door', () => {
       )
       .map(({ file }) => file)
       .sort()
-    expect(rawWriters).toEqual([...LEAF_WRITERS, THE_DOOR].sort())
+    expect(rawWriters).toEqual([LEAF_WRITER, THE_DOOR].sort())
   })
 
-  it('the leaf modules write localStorage and nothing they write is a store’s key', () => {
-    for (const leaf of LEAF_WRITERS) {
-      const { text } = files.find(({ file }) => file === leaf)
-      expect(text).not.toMatch(/^import /m) // still a leaf: the reason it may not use the door
-      expect(text).not.toMatch(
-        /cg-(progress|settings|modeprefs|userdefaults|presets|lookup|times)-/,
-      )
-    }
+  it('the leaf module is still a leaf, and nothing it writes is a store’s key', () => {
+    const { text } = files.find(({ file }) => file === LEAF_WRITER)
+    expect(text).not.toMatch(/^import /m) // the reason it may not use the door
+    expect(text).not.toMatch(/cg-(progress|settings|modeprefs|userdefaults|presets|lookup|times)-/)
+  })
+
+  it('every write the leaf module makes is told to the door on the very next line', () => {
+    const { text } = files.find(({ file }) => file === LEAF_WRITER)
+    const writes = text.match(/\blocalStorage\.(setItem|removeItem|clear)\(/g) ?? []
+    // The write, then — as the next statement — the same key named to whoever is listening.
+    const told =
+      text.match(/\blocalStorage\.(setItem|removeItem)\((\w+)\b[^\n]*\n\s*wrote\?\.\(\2\)/g) ?? []
+    expect(writes.length).toBeGreaterThan(0)
+    expect(told).toHaveLength(writes.length)
+  })
+
+  it('the door is who the leaf module tells', () => {
+    const { text } = files.find(({ file }) => file === THE_DOOR)
+    expect(text).toMatch(/\breportWritesTo\(/)
   })
 })

@@ -31,8 +31,8 @@ import { captureError } from '../observability/sentry.js'
 // exactly that difference. Another tab's changes arrive the same way (the browser's `storage`
 // event, through the same door). So the figure is right the moment a save lands or a reset, a Clear
 // History or a preset delete takes something away — and an answer costs it one addition, however
-// much is saved. (The two leaf modules that write a few characters around the door are picked up at
-// the next count: a page load, or the popup opening.)
+// much is saved. No write is left out: the one module that writes for itself (src/changelog) names
+// each key to the door as it does, and the door reports it like any other.
 // It counts localStorage and nothing else: a session copy of an Amnesic preset lives in
 // sessionStorage, which has an allowance of its own and empties itself.
 //

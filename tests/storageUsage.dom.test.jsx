@@ -33,7 +33,10 @@ import {
 import {
   useStorageHealth,
   writeItem,
+  tryWriteItem,
   readItem,
+  removeItem,
+  storageSpaceFreed,
   forgetStorageHealth,
   measureRoom,
   SCRATCH_KEY,
@@ -50,7 +53,16 @@ import {
 } from '../src/store/presetControl.js'
 import { resetStatsFreesRoom } from '../src/store/amnesic.js'
 import { usePlayerBusy } from '../src/lib/playerBusy.js'
-import { GEAR_DOT_KEY, markUpdateDot, readUpdateDot } from '../src/changelog.js'
+import {
+  GEAR_DOT_KEY,
+  CHANGELOG_DOT_KEY,
+  CHANGELOG_SEEN_KEY,
+  markUpdateDot,
+  clearUpdateDot,
+  readUpdateDot,
+  writeChangelogSeen,
+} from '../src/changelog.js'
+import { BUILD_STAMP_KEY, writeBuildStamp } from '../src/lib/buildStamp.js'
 import { seedSealed, chunkId } from './helpers/progressWorld.js'
 import { readDate, correctDayName } from './helpers/modeScreen.jsx'
 import {
@@ -399,12 +411,153 @@ describe('the count is kept by the storage door, and is right the moment a chang
     expect(storageUsed()).toBe(everything())
   })
 
-  it('opening the popup counts the device afresh, so a marker written around the door is in it', () => {
+  // src/changelog may import nothing, so it writes its own keys and names each to the door; the
+  // build stamp goes through the door outright. (Before: neither was heard of until the next page
+  // load or the popup opening, and the count was short — or long — by exactly those keys.)
+  it('the update dots, the changelog’s seen-stamp and the build stamp are counted as they land', () => {
     watch()
-    markUpdateDot(GEAR_DOT_KEY) // src/changelog writes its own few characters
-    expect(storageUsed()).toBe(everything() - GEAR_DOT_KEY.length - 1)
-    usage().openPopup()
+    const passes = vi.spyOn(Storage.prototype, 'key')
+    const exact = () => {
+      const counted = storageUsed()
+      passes.mockClear() // (the helper below lists the keys itself)
+      expect(counted).toBe(everything())
+    }
+    const before = storageUsed()
+    markUpdateDot(GEAR_DOT_KEY)
+    expect(storageUsed()).toBe(before + GEAR_DOT_KEY.length + 1)
+    markUpdateDot(GEAR_DOT_KEY) // again: the same key, nothing more
+    expect(storageUsed()).toBe(before + GEAR_DOT_KEY.length + 1)
+    markUpdateDot(CHANGELOG_DOT_KEY)
+    exact()
+    clearUpdateDot(GEAR_DOT_KEY)
+    exact()
+    clearUpdateDot(GEAR_DOT_KEY) // nothing there to remove
+    clearUpdateDot(CHANGELOG_DOT_KEY)
+    expect(storageUsed()).toBe(before)
+    writeChangelogSeen('x'.repeat(5000)) // a long entry…
+    exact()
+    writeChangelogSeen('x'.repeat(40)) // …then a short one over it
+    exact()
+    writeBuildStamp('2026-10-06T00:00:00.000Z')
+    exact()
+    writeBuildStamp('2026-10-07T00:00:00.000Z')
+    exact()
+    expect(passes).not.toHaveBeenCalled() // each one moved the count; none of them read the device
+  })
+
+  it('…and one the device refuses changes nothing, and is counted as nothing', () => {
+    watch()
+    const before = storageUsed()
+    deviceLimit(everything() + 10)
+    markUpdateDot(GEAR_DOT_KEY)
+    writeChangelogSeen('x'.repeat(5000))
+    writeBuildStamp('2026-10-06T00:00:00.000Z')
+    expect(storageUsed()).toBe(before)
     expect(storageUsed()).toBe(everything())
+    expect(useStorageHealth.getState().unsaved).toBe(false) // best-effort: nothing is held for them
+  })
+
+  it('on the mounted app the count is the device, from the first screen on', () => {
+    writeBuildStamp('an-earlier-build') // an update landed: the boot lights both dots
+    mountApp()
+    expect(readUpdateDot(GEAR_DOT_KEY)).toBe(true)
+    expect(readUpdateDot(CHANGELOG_DOT_KEY)).toBe(true)
+    expect(storageUsed()).toBe(everything())
+    openSettings() // …which clears the gear's
+    expect(readUpdateDot(GEAR_DOT_KEY)).toBe(false)
+    expect(storageUsed()).toBe(everything())
+    act(() => markUpdateDot(GEAR_DOT_KEY))
+    expect(storageUsed()).toBe(everything())
+    act(() => clearUpdateDot(CHANGELOG_DOT_KEY))
+    expect(storageUsed()).toBe(everything())
+    expect(popup()).toBeNull() // (nothing above counted the device afresh)
+  })
+
+  // ★ THE PROPERTY ALL OF THE ABOVE ARE CASES OF: whatever is done to the device, in whatever
+  // order, the running count equals a full reading of it after every single step. 6,000 steps of
+  // everything that can touch localStorage — saves through the door (held or not, refused or not,
+  // on a device small enough that plenty are refused), removals, another tab's writes, removals and
+  // clears, a measurement, and the writers outside the stores: the dots, the seen-stamp, the build
+  // stamp. The session's area takes a share of the steps too, and must never move the count.
+  it('no drift: after each of 6,000 mixed steps the count equals a full reading of the device', () => {
+    let seed = 12345
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+    const pick = (list) => list[Math.floor(rnd() * list.length)]
+    freshPage(null)
+    deviceLimit(30_000)
+    watch()
+    const keys = [
+      'cg-progress-v1',
+      'cg-progress-v1~p2',
+      'cg-times-v1:classic:0.abc',
+      'cg-times-v1~p2:flash:3.zz.1',
+      'cg-lookup-v1',
+      'cg-settings-v1',
+      'zzz-other',
+      LIMIT_KEY,
+      WARNED_KEY,
+      GEAR_DOT_KEY,
+      CHANGELOG_DOT_KEY,
+      CHANGELOG_SEEN_KEY,
+      BUILD_STAMP_KEY,
+    ]
+    const elsewhere = (area, key, newValue) =>
+      window.dispatchEvent(new StorageEvent('storage', { key, newValue, storageArea: area }))
+    const steps = [
+      (area, key, text) => writeItem(area, key, text),
+      (area, key, text) => tryWriteItem(area, key, text),
+      (area, key) => removeItem(area, key),
+      () => storageSpaceFreed(),
+      (area, key) => readItem(area, key),
+      () => measureStorageLimit(),
+      // Another tab: a write (if the device takes it), a removal, its measurement passing through,
+      // and — rarely — a clear.
+      (area, key, text) => {
+        try {
+          area.setItem(key, text)
+        } catch {
+          return
+        }
+        elsewhere(area, key, text)
+      },
+      (area, key) => {
+        area.removeItem(key)
+        elsewhere(area, key, null)
+      },
+      (area) => {
+        try {
+          area.setItem(SCRATCH_KEY, 'x'.repeat(50))
+          elsewhere(area, SCRATCH_KEY, 'x'.repeat(50))
+        } catch {
+          /* no room for it */
+        }
+        area.removeItem(SCRATCH_KEY)
+        elsewhere(area, SCRATCH_KEY, null)
+      },
+      (area) => {
+        if (rnd() > 0.02) return
+        area.clear()
+        elsewhere(area, null, null)
+      },
+      // The writers outside the stores.
+      () => markUpdateDot(pick([GEAR_DOT_KEY, CHANGELOG_DOT_KEY])),
+      () => clearUpdateDot(pick([GEAR_DOT_KEY, CHANGELOG_DOT_KEY])),
+      (area, key, text) => writeChangelogSeen(text),
+      (area, key, text) => writeBuildStamp(text.slice(0, 24)),
+    ]
+    const drift = []
+    for (let step = 0; step < 6000 && drift.length < 5; step++) {
+      const key = pick(keys)
+      const text = 'v'.repeat(Math.floor(rnd() * rnd() * 9000))
+      const area = rnd() < 0.2 ? sessionStorage : localStorage
+      const at = Math.floor(rnd() * steps.length)
+      steps[at](area, key, text)
+      if (storageUsed() !== everything())
+        drift.push({ step, at, key, by: storageUsed() - everything() })
+      if (localStorage.getItem(SCRATCH_KEY) !== null)
+        drift.push({ step, at, scratch: 'left behind' })
+    }
+    expect(drift).toEqual([])
   })
 })
 
