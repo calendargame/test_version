@@ -20,8 +20,13 @@ import { join } from 'node:path'
 // owner ruled the cap should never constrain feature work). The check is kept purely as an ACCIDENT
 // tripwire: normal growth will never reach it, but an unexpected jump (accidentally importing a large
 // library, re-adding Sentry Replay, a build-config regression) still fails loudly. If it ever trips,
-// run `npm run analyze` first — at this ceiling a trip almost certainly means a mistake, not growth.
-const BUDGET_TOTAL_JS_GZIP_KB = 250
+// run `npm run analyze` first.
+// → 350 (owner, 2026-10-05: "the budget is arbitrary though right?" — yes). "Normal growth will never
+// reach it" turned out false: nineteen rounds of real features took the app from 164 to about 250, each
+// step looked at as it happened (the storage layout reader, the storage warning, the three-way
+// Amnesic setting and the keyboard work were the last 19 KB). It is still an accident tripwire and
+// nothing else — when it trips, look at WHY first, and raise it again if the answer is features.
+const BUDGET_TOTAL_JS_GZIP_KB = 350
 
 const ASSETS_DIR = 'dist/assets'
 

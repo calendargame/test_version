@@ -14,6 +14,13 @@ lives with the data, in the charter comment at the top of `src/changelog.ts`.
 
 ## Retired entries
 
+### 2026-08-08
+
+- How to Play now scrolls inside its own panel, the same way every other page in the app already did. Two things change with it: tapping the status bar no longer jumps the guide to the top, and dragging on the top bar itself no longer scrolls it.
+- Lookup now keeps your 100 most recent dates instead of 20, and once there are two or more the History heading shows how many are saved. Older ones still drop off the bottom on their own.
+- Settings now reads properly with a screen reader: the four On/Off switches and the two Year Range boxes each say which setting they belong to. Before this they had no name of their own, so they all announced alike.
+- Fixed: on a very short window — or zoomed a long way in — the Save/View defaults box could push its own title and buttons off screen where you could not reach them. It now fits the screen and scrolls inside itself.
+
 ### 2026-08-07
 
 - In Settings, Leap Year Chance and Jan/Feb Chance on Leap Years now come before the Julian Calendar settings, so the ones most people change sit nearer the top. How to Play covers them in the same new order.
